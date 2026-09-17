@@ -76,9 +76,8 @@ import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __show
 
 
 // === コンソールログの自動収集 & 確実なネイティブコンソール出力 ===
-window._covoLogs = [];
+window._covoLogs = window._covoLogs || [];
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
-
 // テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
   try {
@@ -355,6 +354,17 @@ console.log = function (...args) {
 };
 console.warn = function (...args) {
   _pushLog('WARN', args);
+  try {
+    const errObj = args.find(a => a instanceof Error);
+    if (errObj) {
+      _reportTelemetryError('warn', errObj.message || String(errObj), errObj.stack || '');
+    } else {
+      const msg = args.map(a => typeof a === 'object' ? (a ? JSON.stringify(a) : String(a)) : String(a)).join(' ');
+      if (msg && msg.trim()) {
+        _reportTelemetryError('warn', msg, '');
+      }
+    }
+  } catch (_) {}
   _orgWarn.apply(console, args);
 };
 console.error = function (...args) {
@@ -854,17 +864,10 @@ function initializeFirebase() {
       app = initializeApp(firebaseConfig);
       try {
         db = initializeFirestore(app, {
-          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+          localCache: memoryLocalCache()
         });
       } catch (e) {
-        console.warn("IndexedDB cache failed, falling back to memory cache to speed up loading.", e);
-        try {
-          db = initializeFirestore(app, {
-            localCache: memoryLocalCache()
-          });
-        } catch (e2) {
-          db = getFirestore(app);
-        }
+        db = getFirestore(app);
       }
       auth = getAuth(app);
       auth.languageCode = 'ja';
@@ -978,12 +981,12 @@ function initializeFirebase() {
           // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
           if (isGoogleUser && !hasPasswordProvider && cleanEmail) {
             try {
-              const existingUsersSnap = await getDocs(query(
+              const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
+              const existingUsersSnap = await withTimeoutCheck(getDocs(query(
                 collection(db, `artifacts/${appId}/users`),
                 where('email', '==', cleanEmail),
                 limit(5)
-              )).catch(() => null);
-
+              )).catch(() => null), 2000);
               if (existingUsersSnap && !existingUsersSnap.empty) {
                 const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
                 if (otherAccount) {
@@ -5751,7 +5754,16 @@ function getInstantAccentColor(avatarUrl, seedId = '') {
   if (seedId && _avatarColorCache.has('uid_' + seedId)) {
     return _avatarColorCache.get('uid_' + seedId);
   }
-  return getHashColor(seedId || avatarUrl);
+  if (seedId && window._userProfileCache?.has(seedId)) {
+    const prof = window._userProfileCache.get(seedId);
+    if (prof.avatarUrl && _avatarColorCache.has(prof.avatarUrl)) {
+      return _avatarColorCache.get(prof.avatarUrl);
+    }
+  }
+  const fallbackCol = getHashColor(seedId || avatarUrl);
+  if (seedId) _avatarColorCache.set('uid_' + seedId, fallbackCol);
+  if (avatarUrl) _avatarColorCache.set(avatarUrl, fallbackCol);
+  return fallbackCol;
 }
 window.getInstantAccentColor = getInstantAccentColor;
 function hslToHex(h, s, l) {
@@ -8976,23 +8988,25 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       <button id="dmBannerFriendBtn" class="dm-banner-btn" title="フレンドアクション">
         <i class="fas fa-user-plus"></i>
       </button>
-      <button id="dmBannerMoreBtn" class="dm-banner-btn" title="その他のオプション" onclick="window.toggleDmBannerMenu(event)">
-        <i class="fas fa-ellipsis"></i>
-      </button>
-      <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
-        <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-          <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+      <div class="relative">
+        <button id="dmBannerMoreBtn" class="dm-banner-btn" title="その他のオプション" onclick="window.toggleDmBannerMenu(event)">
+          <i class="fas fa-ellipsis"></i>
         </button>
-        <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-          <i class="fas fa-phone w-4 text-center"></i> 音声通話
-        </button>
-        <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-          <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
-        </button>
-        <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
-        <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
-          <i class="fas fa-ban w-4 text-center"></i> ブロック
-        </button>
+        <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
+          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+            <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+          </button>
+          <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+            <i class="fas fa-phone w-4 text-center"></i> 音声通話
+          </button>
+          <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+            <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
+          </button>
+          <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
+          <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+            <i class="fas fa-ban w-4 text-center"></i> ブロック
+          </button>
+        </div>
       </div>
     </div>
     <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-20" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
@@ -9003,7 +9017,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         <div class="status-indicator status-offline" id="dmPanelStatusDot" style="position: absolute; bottom: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%;"></div>
       </div>
     </div>
-    <div class="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-3 pb-3">
+    <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 space-y-3 pb-2">
       <div class="dm-profile-card">
         <div class="mb-3">
           <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
@@ -9037,7 +9051,7 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       </div>
     </div>
     <!-- input_file_1.png / input_file_3.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
-    <div class="mt-auto p-3 border-t border-gray-200/60 dark:border-white/5 bg-transparent flex-shrink-0">
+    <div class="mt-auto p-3 border-t border-gray-200/60 dark:border-white/5 bg-[#f2f3f5] dark:bg-[#111827] flex-shrink-0 relative z-20">
       <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
         <span>プロフィール全体を表示</span>
       </button>
@@ -12634,9 +12648,6 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
       await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
 
       if (currentServerData) currentServerData.iconUrl = fileUrl;
-      if (window.__globalRoomsCache && window.__globalRoomsCache[currentServerId]) {
-        window.__globalRoomsCache[currentServerId].iconUrl = fileUrl;
-      }
       if (typeof updateTitleBarContext === 'function') {
         updateTitleBarContext('server', currentServerData);
       }
@@ -12663,18 +12674,20 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
 // =========================================================================
 function loadServerRooms(serverId, _retry = 0, targetGen = null) {
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
-  if (currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
+  if (!serverId || currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
   const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
   let hasLoaded = false;
-
-  // ローカルキャッシュがあれば0msで即座にルーム一覧を描画
+  // ローカルキャッシュがあれば0msで即座にルーム一覧を描画 (正規のルームデータのみ抽出)
   const cachedRoomsMap = window.__globalRoomsCache?.[serverId];
-  if (cachedRoomsMap && Object.keys(cachedRoomsMap).length > 0) {
-    const cachedDocs = Object.keys(cachedRoomsMap).map(id => ({
-      id,
-      data: () => cachedRoomsMap[id]
-    }));
-    renderRooms({ forEach: (cb) => cachedDocs.forEach(cb) });
+  if (cachedRoomsMap && typeof cachedRoomsMap === 'object') {
+    const validRoomKeys = Object.keys(cachedRoomsMap).filter(k => k && cachedRoomsMap[k] && typeof cachedRoomsMap[k] === 'object' && cachedRoomsMap[k].name);
+    if (validRoomKeys.length > 0) {
+      const cachedDocs = validRoomKeys.map(id => ({
+        id,
+        data: () => cachedRoomsMap[id]
+      }));
+      renderRooms({ forEach: (cb) => cachedDocs.forEach(cb) });
+    }
   }
 
   function renderRooms(snapshot) {
@@ -12886,27 +12899,26 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     isRoomsFirst = false;
   }
 
-  // セーフティタイマー: 1.2秒経過しても onSnapshot からスナップショットが届かない場合、getDocs で強制取得
+  // セーフティタイマー: 800ms経過しても届かない場合、getDocs で即座に強制取得
   const fallbackTimer = setTimeout(() => {
     if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
       getDocs(roomsQuery).then(snap => {
         if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
           renderRooms(snap);
         }
-      }).catch(e => console.error("loadServerRooms fallback error:", e));
+      }).catch(e => console.warn("loadServerRooms fallback warning:", e));
     }
-  }, 1200);
-
+  }, 800);
   loadServerRooms._unsub = onSnapshot(roomsQuery, (snapshot) => {
     clearTimeout(fallbackTimer);
     onRoomsChanged(snapshot);
   }, async (error) => {
     clearTimeout(fallbackTimer);
-    if (!auth.currentUser || !userId || currentServerId !== serverId || error?.code === 'permission-denied') return;
-    console.error("loadServerRooms error:", error);
-    if (_retry < 3 && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
+    if (!auth.currentUser || !userId || currentServerId !== serverId) return;
+    console.warn("loadServerRooms onSnapshot retry:", error?.code || error);
+    if (_retry < 5 && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
       try { await auth.currentUser?.getIdToken(true); } catch (_) { }
-      setTimeout(() => loadServerRooms(serverId, _retry + 1, targetGen), 1000 * (_retry + 1));
+      setTimeout(() => loadServerRooms(serverId, _retry + 1, targetGen), 500 * (_retry + 1));
     }
   });
   // 即時キックスタート取得
@@ -12914,7 +12926,7 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     if (!hasLoaded && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
       renderRooms(snap);
     }
-  }).catch(e => console.error("loadServerRooms kickstart error:", e));
+  }).catch(e => console.warn("loadServerRooms kickstart warning:", e));
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".dropdown-container")) {
@@ -15962,9 +15974,9 @@ function createMessageElement(message, messageId, readByCount = 0) {
   if (message.text) {
     const messageTextSpan = document.createElement("span");
     messageTextSpan.className = `message-content text-gray-900 text-left`;
-    const isEnc = isEncrypted(message.text) || (message._originalText && isEncrypted(message._originalText));
+    const isEnc = isEncrypted(message.text) || (message._originalText && isEncrypted(message._originalText)) || (typeof message.text === 'string' && message.text.startsWith('enc::'));
     let textToDisplay;
-    if (message._decrypted) {
+    if (message._decrypted && typeof message.text === 'string' && !message.text.startsWith('enc::')) {
       textToDisplay = message.text;
     } else if (message._decryptedErrorText) {
       textToDisplay = message._decryptedErrorText;
@@ -15973,7 +15985,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
     } else {
       textToDisplay = message.text;
     }
-    if (textToDisplay === null) {
+    if (textToDisplay === null || (typeof textToDisplay === 'string' && textToDisplay.startsWith('enc::'))) {
       messageTextSpan.innerHTML = '<span class="opacity-50 select-none inline-flex items-center gap-1.5 py-0.5 text-xs text-gray-400 font-medium"><i class="fas fa-lock text-[10px] text-indigo-400"></i><span>メッセージを復号中...</span></span>';
       messageElement.appendChild(messageTextSpan);
     } else {
@@ -16676,8 +16688,8 @@ function renderMessagesWithReadReceipts() {
       }
       const textSpan = row.querySelector('.message-content');
       if (textSpan && msg.text) {
-        const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText));
-        if (msg._decrypted) {
+        const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText)) || (typeof msg.text === 'string' && msg.text.startsWith('enc::'));
+        if (msg._decrypted && typeof msg.text === 'string' && !msg.text.startsWith('enc::')) {
           textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
         } else if (msg._decryptedErrorText) {
           textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);

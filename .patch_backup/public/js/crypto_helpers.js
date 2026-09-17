@@ -698,6 +698,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m.text = decrypted;
             m._decryptedErrorText = null;
             m._decrypted = true;
+            if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              LocalStore.putMessage(m).catch(() => {});
+            }
           }
         } catch (e) {
           m.text = "（復号化エラー：メッセージを解読できません）";
