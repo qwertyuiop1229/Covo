@@ -1,3 +1,11 @@
+// 🔒 セキュリティ: appId および ID パラメータの厳格な検証関数
+function isValidAppId(appId, env) {
+  if (!appId || typeof appId !== 'string') return false;
+  if (!/^[a-zA-Z0-9_\-]+$/.test(appId)) return false;
+  if (env && env.FIREBASE_APP_ID && appId !== env.FIREBASE_APP_ID) return false;
+  return true;
+}
+
 // 🔒 許可するオリジン判定関数（本番・プレビュー・Tauri・ローカル開発を網羅）
 function isAllowedOrigin(origin) {
   if (!origin) return false;
@@ -165,6 +173,9 @@ async function handleEmergencyPasswordReset(request, env) {
     const { email, code, newPassword, appId } = await request.json();
     if (!email || !code || !newPassword || !appId) {
       return new Response(JSON.stringify({ success: false, error: "必須項目が不足しています" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ success: false, error: "不正なappIdが指定されました" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     if (newPassword.length < 6) {
@@ -481,6 +492,9 @@ async function handleJoinServer(request, env) {
     if (!serverId || !userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(serverId) || !/^[a-zA-Z0-9_\-]+$/.test(userId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
@@ -728,6 +742,9 @@ async function handleSyncRtdb(request, env) {
     if (!serverId || !userId || !appId || !idToken || !rtdbUrl) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(serverId) || !/^[a-zA-Z0-9_\-]+$/.test(userId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
@@ -921,6 +938,9 @@ async function handleSendCallNotification(request, env) {
     if (!calleeId || !callId || !appId || !callerId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== callerId) {
@@ -1062,11 +1082,13 @@ async function handleSendCallNotification(request, env) {
 // -------------------------------------------------------------
 async function handleSendNotification(request, env) {
   const dynamicCors = getCorsHeaders(request);
-
   try {
     const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
+    }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid appId" }), { status: 400, headers: dynamicCors });
     }
 
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
@@ -1418,8 +1440,13 @@ async function handleUploadFile(request, env) {
     const key = crypto.randomUUID().replace(/-/g, '');
     const folder = formData.get('folder') || '';
     const serverId = formData.get('serverId') || '';
-    if (folder && folder.includes('..')) {
+    if (folder && (folder.includes('..') || !/^[a-zA-Z0-9_\-\/]+$/.test(folder))) {
       return new Response(JSON.stringify({ error: '不正なフォルダパスです' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
+      });
+    }
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ error: '不正なサーバー識別子です' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
@@ -1578,8 +1605,8 @@ async function handleDeleteFile(request, env, url) {
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
-        // サーバー管理者の場合: 削除対象ファイルが該当サーバーの添付ファイルであること（meta.serverId === serverId、またはmeta.serverIdが未設定・空文字のレガシー添付ファイル）を確認
-        if (serverId && meta && (!meta.serverId || meta.serverId === serverId)) {
+        // 🔒 サーバー管理者の場合: 削除対象ファイルが確実に該当サーバーの添付ファイルであること（meta.serverId === serverId）を確認 (IDOR防止)
+        if (serverId && meta && meta.serverId && meta.serverId === serverId) {
           isPrivilegedAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
         }
       }
@@ -2092,8 +2119,25 @@ async function handleAdminDeleteMessage(request, env) {
 
     // --- サーバーメッセージの削除処理 ---
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+    let isOwner = false;
     if (!isGlobal && !isSvAdmin) {
-      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      // 🔒 一般メンバーでも自分が送信したメッセージであれば削除を許可する（クライアント直接削除失敗時の安全なフォールバック）
+      const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+      const msgCheckRes = await fetch(msgCheckUrl);
+      const msgCheckData = await msgCheckRes.json().catch(() => null);
+      if (msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid)) {
+        isOwner = true;
+      } else {
+        const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
+        const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+        const fsCheckData = await fsCheckRes.json().catch(() => null);
+        if (fsCheckData && fsCheckData.fields && (fsCheckData.fields.senderId?.stringValue === verifiedUser.uid || fsCheckData.fields.userId?.stringValue === verifiedUser.uid)) {
+          isOwner = true;
+        }
+      }
+      if (!isOwner) {
+        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      }
     }
     if (env.DB) {
       try {

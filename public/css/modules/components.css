@@ -11,6 +11,7 @@
       word-wrap: break-word;
       -webkit-touch-callout: none;
       /* iOS長押しメニュー防止 */
+      transition: background-color 0.8s ease-out, transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
     }
 
 
@@ -334,10 +335,7 @@
       animation: scaleInFade 0.22s ease both;
     }
 
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
+    /* === メッセージバブルフェードイン (クラス再付与時の再発火を防ぐため静的定義をクリーンアップ) === */
 
     /* === ルームリストアイテムのフェード === */
     .room-item-animate {
