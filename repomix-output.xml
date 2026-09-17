@@ -1771,504 +1771,6 @@ module.exports = {
 }
 </file>
 
-<file path="public/css/modules/components.css">
-/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
-    .flipped {
-      transform: scaleY(-1);
-    }
-    .message-bubble {
-      max-width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 1rem;
-      margin-bottom: 0;
-      word-wrap: break-word;
-      -webkit-touch-callout: none;
-      /* iOS長押しメニュー防止 */
-    }
-    .msg-avatar {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #374151;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.78rem;
-      font-weight: 700;
-      flex-shrink: 0;
-      cursor: pointer;
-      overflow: hidden;
-      transition: opacity 0.15s;
-    }
-    .msg-avatar:hover {
-      opacity: 0.85;
-    }
-    .msg-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .my-message {
-      background-color: #e0e0e0;
-      /* 薄いグレー */
-      border-top-right-radius: 0.25rem;
-    }
-    .other-message {
-      background-color: #f0f0f0;
-      /* 非常に薄いグレー */
-      border-top-left-radius: 0.25rem;
-    }
-    .scrollable {
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
-    #updateOverlay {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(16px);
-      flex-direction: column;
-    }
-    #updateOverlay.show {
-      display: flex;
-    }
-    .update-card {
-      position: relative;
-      background: #ffffff;
-      color: #1f2937;
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      border-radius: 1.75rem;
-      padding: 2.75rem 2.25rem;
-      max-width: 420px;
-      width: 90%;
-      text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .update-close-btn {
-      position: absolute;
-      top: 1.25rem;
-      right: 1.25rem;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .update-close-btn.hidden {
-      display: none !important;
-    }
-    .update-close-btn:hover {
-      background: rgba(0, 0, 0, 0.1);
-      color: #111827;
-      transform: scale(1.05);
-    }
-    @keyframes updateCardPopIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-    .update-icon {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 1.25rem;
-      background: #4f46e5;
-      border-radius: 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
-      color: white;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
-    }
-    .update-title {
-      color: #111827;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-    }
-    .update-version {
-      color: #6b7280;
-      font-size: 0.9rem;
-      margin-bottom: 1.25rem;
-    }
-    .update-body {
-      color: #4b5563;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      margin-bottom: 1.75rem;
-      max-height: 140px;
-      overflow-y: auto;
-      text-align: left;
-      padding: 1rem;
-      background: #f3f4f6;
-      border-radius: 1rem;
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-    .update-btn {
-      width: 100%;
-      padding: 0.85rem;
-      border: none;
-      border-radius: 0.75rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: #4f46e5;
-      color: white;
-      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-    }
-    .update-btn:hover {
-      background: #4338ca;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
-    }
-    .update-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .update-progress {
-      margin-top: 1rem;
-      color: #6b7280;
-      font-size: 0.85rem;
-      display: none;
-    }
-    .update-progress.show {
-      display: block;
-    }
-    .update-spinner {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid #e2e8f0;
-      border-top-color: #4f46e5;
-      border-radius: 50%;
-      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-    /* === 設定トグルスイッチ === */
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid #f3f4f6;
-    }
-    .setting-row:last-child {
-      border-bottom: none;
-    }
-    .setting-label {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #374151;
-    }
-    .setting-label i {
-      width: 18px;
-      text-align: center;
-      color: #6b7280;
-    }
-    .toggle-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      inset: 0;
-      background-color: #d1d5db;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: background-color 0.25s;
-    }
-    .toggle-slider::before {
-      content: "";
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    }
-    .toggle-switch input:checked+.toggle-slider {
-      background-color: #374151;
-    }
-    .toggle-switch input:checked+.toggle-slider::before {
-      transform: translateX(20px);
-    }
-    #updateErrorBox textarea {
-      width: 100%;
-      height: 80px;
-      padding: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
-      font-size: 0.7rem;
-      background: #1e293b;
-      color: #fca5a5;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      resize: vertical;
-      margin-bottom: 8px;
-      white-space: pre;
-      overflow: auto;
-    }
-    #updateErrorBox button {
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.1);
-      color: #f1f5f9;
-      border: 1px solid #475569;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    #updateErrorBox button:hover {
-      background: rgba(255, 255, 255, 0.2);
-    }
-    /* === モーダルアニメーション === */
-    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
-    /* .modal-box { placeholder } */
-    .modal-opening {
-      animation: scaleInFade 0.22s ease both;
-    }
-    /* === メッセージバブルフェードイン === */
-    .message-bubble {
-      animation: slideUpFade 0.18s ease both;
-    }
-    /* === ルームリストアイテムのフェード === */
-    .room-item-animate {
-      animation: fadeIn 0.15s ease both;
-    }
-    /* === ボタン全般のactiveフィードバック === */
-    button:not(.server-list-user-btn):active {
-      opacity: 0.8;
-    }
-    #backToServerListBtn {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      transition: background 0.15s, color 0.15s;
-    }
-    /* サーバー設定モーダル内のタブ */
-    .ss-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .ss-tab.active {
-      background: #1f2937;
-      color: white;
-    }
-    .ss-tab:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-    .ss-tab:not(.active):hover {
-      background: #f3f4f6;
-    }
-    /* 招待コード表示 */
-    .invite-code-item {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-    }
-    .invite-code-text {
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-      flex: 1;
-      letter-spacing: 2px;
-    }
-    .invite-code-meta {
-      font-size: 0.7rem;
-      color: #9ca3af;
-    }
-    /* === サーバービュー用ニックネームヘッダー === */
-    #globalAppHeader {
-      display: none;
-      background: #374151;
-      color: white;
-      padding: 0.45rem 1rem;
-      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    #globalAppHeader.server-mode {
-      display: flex;
-    }
-    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
-    body.discord-ui-mode #globalAppHeader {
-      display: none !important;
-    }
-    #headerTitle {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      opacity: 0.88;
-    }
-    /* === カスタム確認ダイアログ === */
-    #customConfirmModal,
-    #customPromptModal,
-    #customAlertModal {
-      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
-    }
-    #customConfirmModal .confirm-box {
-      text-align: left;
-    }
-    /* === モーダル角丸崩れ防止 === */
-    .modal-dark-header {
-      border-radius: inherit;
-      border-bottom-left-radius: 0;
-      border-bottom-right-radius: 0;
-    }
-    /* === メンションバッジ通知 === */
-    .mention-toast {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .mention-toast-badge {
-      background: #4f46e5;
-      color: white;
-      font-size: 0.65rem;
-      font-weight: 800;
-      padding: 2px 6px;
-      border-radius: 99px;
-      flex-shrink: 0;
-      letter-spacing: 0.03em;
-    }
-    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
-    .whatsnew-card {
-      background-color: #ffffff;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
-      border-radius: 1.5rem;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    }
-    body.dark-server-theme .whatsnew-card {
-      background-color: #1e293b !important;
-      border-color: rgba(255, 255, 255, 0.1) !important;
-      color: #f8fafc !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    body.discord-dark-theme .whatsnew-card {
-      background-color: #2b2d31 !important;
-      border-color: #383a40 !important;
-      color: #f2f3f5 !important;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    }
-    .whatsnew-header {
-      padding: 1.25rem 1.5rem 1rem;
-      border-bottom: 1px solid #f1f5f9;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-header {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-header {
-      background-color: #242629 !important;
-      border-bottom-color: #1f2023 !important;
-    }
-    .whatsnew-body-box {
-      background-color: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 1.25rem;
-      font-size: 0.875rem;
-      line-height: 1.65;
-      color: #334155;
-    }
-    body.dark-server-theme .whatsnew-body-box {
-      background-color: rgba(15, 23, 42, 0.6) !important;
-      border-color: rgba(255, 255, 255, 0.06) !important;
-      color: #cbd5e1 !important;
-    }
-    body.discord-dark-theme .whatsnew-body-box {
-      background-color: #1e1f22 !important;
-      border-color: #1f2023 !important;
-      color: #dbdee1 !important;
-    }
-    .whatsnew-footer {
-      padding: 1rem 1.5rem;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background-color: #fafafa;
-    }
-    body.dark-server-theme .whatsnew-footer {
-      background-color: rgba(15, 23, 42, 0.4) !important;
-      border-top-color: rgba(255, 255, 255, 0.06) !important;
-    }
-    body.discord-dark-theme .whatsnew-footer {
-      background-color: #242629 !important;
-      border-top-color: #1f2023 !important;
-    }
-</file>
-
 <file path="public/js/utils.js">
 /**
  * ユーティリティ関数群 (utils.js)
@@ -2982,6 +2484,681 @@ goto MENU
 exit
 </file>
 
+<file path="public/css/modules/components.css">
+/* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
+    .flipped {
+      transform: scaleY(-1);
+    }
+    .message-bubble {
+      max-width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      margin-bottom: 0;
+      word-wrap: break-word;
+      -webkit-touch-callout: none;
+      /* iOS長押しメニュー防止 */
+      transition: background-color 0.8s ease-out, transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .msg-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #374151;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+      transition: opacity 0.15s;
+    }
+    .msg-avatar:hover {
+      opacity: 0.85;
+    }
+    .msg-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .my-message {
+      background-color: #e0e0e0;
+      /* 薄いグレー */
+      border-top-right-radius: 0.25rem;
+    }
+    .other-message {
+      background-color: #f0f0f0;
+      /* 非常に薄いグレー */
+      border-top-left-radius: 0.25rem;
+    }
+    .scrollable {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* === アップデートオーバーレイ（Covo専用スタイリッシュ＆シンプルデザイン） === */
+    #updateOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      flex-direction: column;
+    }
+    #updateOverlay.show {
+      display: flex;
+    }
+    .update-card {
+      position: relative;
+      background: #ffffff;
+      color: #1f2937;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 1.75rem;
+      padding: 2.75rem 2.25rem;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      animation: updateCardPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .update-close-btn {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      color: #6b7280;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .update-close-btn.hidden {
+      display: none !important;
+    }
+    .update-close-btn:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #111827;
+      transform: scale(1.05);
+    }
+    @keyframes updateCardPopIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .update-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      background: #4f46e5;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: white;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+    }
+    .update-title {
+      color: #111827;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .update-version {
+      color: #6b7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+    .update-body {
+      color: #4b5563;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      text-align: left;
+      padding: 1rem;
+      background: #f3f4f6;
+      border-radius: 1rem;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .update-btn {
+      width: 100%;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #4f46e5;
+      color: white;
+      box-shadow: 0 4px 16px rgba(79, 70, 229, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .update-btn:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    }
+    .update-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .update-progress {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .update-progress.show {
+      display: block;
+    }
+    .update-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e2e8f0;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    /* === 設定トグルスイッチ === */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+    .setting-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+    .setting-label i {
+      width: 18px;
+      text-align: center;
+      color: #6b7280;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background-color: #d1d5db;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background-color 0.25s;
+    }
+    .toggle-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .toggle-switch input:checked+.toggle-slider {
+      background-color: #374151;
+    }
+    .toggle-switch input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+    #updateErrorBox textarea {
+      width: 100%;
+      height: 80px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      font-size: 0.7rem;
+      background: #1e293b;
+      color: #fca5a5;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 8px;
+      white-space: pre;
+      overflow: auto;
+    }
+    #updateErrorBox button {
+      padding: 6px 12px;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #updateErrorBox button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    /* === モーダルアニメーション === */
+    /* modal-box はデフォルトでスタイルなし、JS から .modal-opening を付与してアニメーション */
+    /* .modal-box { placeholder } */
+    .modal-opening {
+      animation: scaleInFade 0.22s ease both;
+    }
+    /* === メッセージバブルフェードイン (クラス再付与時の再発火を防ぐため静的定義をクリーンアップ) === */
+    /* === ルームリストアイテムのフェード === */
+    .room-item-animate {
+      animation: fadeIn 0.15s ease both;
+    }
+    /* === ボタン全般のactiveフィードバック === */
+    button:not(.server-list-user-btn):active {
+      opacity: 0.8;
+    }
+    #backToServerListBtn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    /* サーバー設定モーダル内のタブ */
+    .ss-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .ss-tab.active {
+      background: #1f2937;
+      color: white;
+    }
+    .ss-tab:not(.active) {
+      background: transparent;
+      color: #6b7280;
+    }
+    .ss-tab:not(.active):hover {
+      background: #f3f4f6;
+    }
+    /* 招待コード表示 */
+    .invite-code-item {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .invite-code-text {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+      letter-spacing: 2px;
+    }
+    .invite-code-meta {
+      font-size: 0.7rem;
+      color: #9ca3af;
+    }
+    /* === サーバービュー用ニックネームヘッダー === */
+    #globalAppHeader {
+      display: none;
+      background: #374151;
+      color: white;
+      padding: 0.45rem 1rem;
+      padding-top: calc(0.45rem + var(--safe-top, env(safe-area-inset-top, 0px)));
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #globalAppHeader.server-mode {
+      display: flex;
+    }
+    /* DiscordUIモード時は上部のニックネームバーを完全撤去し、Discord本家同等の美しいフルスクリーン画面を実現 */
+    body.discord-ui-mode #globalAppHeader {
+      display: none !important;
+    }
+    #headerTitle {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0.88;
+    }
+    /* === カスタム確認ダイアログ === */
+    #customConfirmModal,
+    #customPromptModal,
+    #customAlertModal {
+      z-index: 130000 !important; /* スマホのボトムナビ、フルスクリーン画面、画面PINロック(120000)より確実に前に出す */
+    }
+    #customConfirmModal .confirm-box {
+      text-align: left;
+    }
+    /* === モーダル角丸崩れ防止 === */
+    .modal-dark-header {
+      border-radius: inherit;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    /* === メンションバッジ通知 === */
+    .mention-toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mention-toast-badge {
+      background: #4f46e5;
+      color: white;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 99px;
+      flex-shrink: 0;
+      letter-spacing: 0.03em;
+    }
+    /* === 全体お知らせ・What's New モーダル（ライト＆ダーク両対応） === */
+    .whatsnew-card {
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      border-radius: 1.5rem;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    body.dark-server-theme .whatsnew-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #f8fafc !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    body.discord-dark-theme .whatsnew-card {
+      background-color: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #f2f3f5 !important;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+    }
+    .whatsnew-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-header {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-header {
+      background-color: #242629 !important;
+      border-bottom-color: #1f2023 !important;
+    }
+    .whatsnew-body-box {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 1.25rem;
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: #334155;
+    }
+    body.dark-server-theme .whatsnew-body-box {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #cbd5e1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box {
+      background-color: #1e1f22 !important;
+      border-color: #1f2023 !important;
+      color: #dbdee1 !important;
+    }
+    .whatsnew-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+    body.dark-server-theme .whatsnew-footer {
+      background-color: rgba(15, 23, 42, 0.4) !important;
+      border-top-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme .whatsnew-footer {
+      background-color: #242629 !important;
+      border-top-color: #1f2023 !important;
+    }
+</file>
+
+<file path="public/js/ui_helpers.js">
+/**
+ * UI補助機能 (ui_helpers.js)
+ * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
+ */
+/**
+ * 画面上にトースト（通知ポップアップ）を表示
+ * @param {string} msg - 表示するメッセージ
+ * @param {string} type - "info", "success", "error"
+ */
+export function alertMessage(msg, type = "info") {
+  const stack = document.getElementById("notifStack");
+  if (!stack) return;
+  const box = document.createElement("div");
+  let colorClass = "bg-gray-800 text-white";
+  if (type === "error") colorClass = "bg-red-600 text-white";
+  else if (type === "success") colorClass = "bg-emerald-600 text-white";
+  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
+  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+  let icon = '<i class="fas fa-info-circle"></i>';
+  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
+  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
+  box.innerHTML = `${icon}<span>${msg}</span>`;
+  stack.appendChild(box);
+  setTimeout(() => {
+    box.style.animation = "fadeIn 0.2s ease reverse forwards";
+    setTimeout(() => box.remove(), 200);
+  }, 2800);
+}
+/**
+ * アバター高解像度拡大表示（Discord風ライトボックス）
+ * @param {string} url - アバター画像のURL
+ * @param {string} nickname - ユーザーニックネーム
+ * @param {string} tag - ユーザータグ (#1234)
+ */
+export function openAvatarLightbox(url, nickname = '', tag = '') {
+  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
+  if (isUsable && typeof window.openPhotoSwipeModal === 'function') {
+    window.openPhotoSwipeModal(url, nickname ? `${nickname} のアバター` : 'アバター');
+    return;
+  }
+  const lb = document.getElementById("avatarLightbox");
+  const img = document.getElementById("avatarLightboxImg");
+  const initialEl = document.getElementById("avatarLightboxInitial");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const tagEl = document.getElementById("avatarLightboxUserTag");
+  if (!lb) return;
+  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
+  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
+  if (isUsable) {
+    if (img) {
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (initialEl) initialEl.style.display = 'none';
+  } else {
+    if (img) img.style.display = 'none';
+    if (initialEl) {
+      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
+      initialEl.style.display = 'block';
+    }
+  }
+  lb.style.display = "flex";
+  lb.classList.remove("hidden");
+}
+export function closeAvatarLightbox() {
+  const lb = document.getElementById("avatarLightbox");
+  if (lb) {
+    lb.style.display = "none";
+    lb.classList.add("hidden");
+  }
+}
+export function downloadAvatarLightboxImage() {
+  const img = document.getElementById("avatarLightboxImg");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const url = img?.src;
+  if (url && url.startsWith('http')) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+if (typeof window !== 'undefined') {
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.closeAvatarLightbox = closeAvatarLightbox;
+  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
+}
+/**
+ * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
+ */
+let audioCtx = null;
+export function playNotificationSound() {
+  try {
+    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    if (!soundEnabled || !notifEnabled) return;
+    if (!audioCtx || audioCtx.state === 'closed') {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const play = () => {
+      const now = audioCtx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.5);
+      });
+    };
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
+  } catch (e) { }
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.alertMessage = alertMessage;
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.playNotificationSound = playNotificationSound;
+}
+</file>
+
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
+}
+</file>
+
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -3047,31 +3224,33 @@ exit
     select {
       font-size: 16px !important;
     }
-    /* スタンプ用（今まで通りの回転付きポップな揺れ） */
+    /* スタンプ用（LINE準拠の軽快で上品なポップバウンス） */
     .stamp-jump-anim {
-      animation: stampWiggle 0.8s ease-in-out !important;
+      animation: stampWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
     @keyframes stampWiggle {
-      0%, 100% { transform: translateX(0); }
-      15% { transform: translateX(-10px) rotate(-5deg); }
-      30% { transform: translateX(8px) rotate(3deg); }
-      45% { transform: translateX(-6px) rotate(-2deg); }
-      60% { transform: translateX(4px) rotate(1deg); }
-      75% { transform: translateX(-2px); }
+      0% { transform: scale(1) rotate(0deg); }
+      20% { transform: scale(1.08) rotate(-2.5deg); }
+      40% { transform: scale(1.04) rotate(2deg); }
+      60% { transform: scale(1.02) rotate(-1deg); }
+      80% { transform: scale(1.005) rotate(0.5deg); }
+      100% { transform: scale(1) rotate(0deg); }
     }
-    /* 通常メッセージ用 LINE完全準拠の上品な微小シェイク */
+    /* 通常メッセージ用 LINE完全準拠の上品なパルス＆微小シェイク */
     .message-jump-anim,
     .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.5s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      animation: messageWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
     @keyframes messageWiggle {
-      0%, 100% { transform: translateX(0); }
-      20% { transform: translateX(-5px); }
-      40% { transform: translateX(4px); }
-      60% { transform: translateX(-2px); }
-      80% { transform: translateX(1px); }
+      0% { transform: scale(1) translateX(0); }
+      15% { transform: scale(1.035) translateX(-5px); }
+      30% { transform: scale(1.025) translateX(4px); }
+      45% { transform: scale(1.015) translateX(-3px); }
+      65% { transform: scale(1.008) translateX(2px); }
+      80% { transform: scale(1.002) translateX(-1px); }
+      100% { transform: scale(1) translateX(0); }
     }
     /* Reactions */
     .reaction-picker-bar {
@@ -3309,6 +3488,97 @@ exit
     }
 </file>
 
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+/**
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
+    return false;
+  }
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
 <file path="public/js/local_store.js">
 /**
  * Covo Local-first Storage Engine (local_store.js)
@@ -3405,6 +3675,10 @@ export async function putMessage(msg) {
       if (cleanMsg._originalText) {
         cleanMsg.text = cleanMsg._originalText;
       }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
       cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
@@ -3436,6 +3710,10 @@ export async function upsertMessagesBatch(msgs) {
         // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
         if (cleanMsg._originalText) {
           cleanMsg.text = cleanMsg._originalText;
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
         }
         cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
         store.put(cleanMsg);
@@ -3892,276 +4170,6 @@ if (typeof window !== 'undefined') {
     restoreAllLocalData,
     clearAllLocalData
   };
-}
-</file>
-
-<file path="public/js/ui_helpers.js">
-/**
- * UI補助機能 (ui_helpers.js)
- * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
- */
-/**
- * 画面上にトースト（通知ポップアップ）を表示
- * @param {string} msg - 表示するメッセージ
- * @param {string} type - "info", "success", "error"
- */
-export function alertMessage(msg, type = "info") {
-  const stack = document.getElementById("notifStack");
-  if (!stack) return;
-  const box = document.createElement("div");
-  let colorClass = "bg-gray-800 text-white";
-  if (type === "error") colorClass = "bg-red-600 text-white";
-  else if (type === "success") colorClass = "bg-emerald-600 text-white";
-  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
-  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  let icon = '<i class="fas fa-info-circle"></i>';
-  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
-  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
-  box.innerHTML = `${icon}<span>${msg}</span>`;
-  stack.appendChild(box);
-  setTimeout(() => {
-    box.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => box.remove(), 200);
-  }, 2800);
-}
-/**
- * アバター高解像度拡大表示（Discord風ライトボックス）
- * @param {string} url - アバター画像のURL
- * @param {string} nickname - ユーザーニックネーム
- * @param {string} tag - ユーザータグ (#1234)
- */
-export function openAvatarLightbox(url, nickname = '', tag = '') {
-  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
-  if (isUsable && typeof window.openPhotoSwipeModal === 'function') {
-    window.openPhotoSwipeModal(url, nickname ? `${nickname} のアバター` : 'アバター');
-    return;
-  }
-  const lb = document.getElementById("avatarLightbox");
-  const img = document.getElementById("avatarLightboxImg");
-  const initialEl = document.getElementById("avatarLightboxInitial");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const tagEl = document.getElementById("avatarLightboxUserTag");
-  if (!lb) return;
-  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
-  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
-  if (isUsable) {
-    if (img) {
-      img.src = url;
-      img.style.display = 'block';
-    }
-    if (initialEl) initialEl.style.display = 'none';
-  } else {
-    if (img) img.style.display = 'none';
-    if (initialEl) {
-      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
-      initialEl.style.display = 'block';
-    }
-  }
-  lb.style.display = "flex";
-  lb.classList.remove("hidden");
-}
-export function closeAvatarLightbox() {
-  const lb = document.getElementById("avatarLightbox");
-  if (lb) {
-    lb.style.display = "none";
-    lb.classList.add("hidden");
-  }
-}
-export function downloadAvatarLightboxImage() {
-  const img = document.getElementById("avatarLightboxImg");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const url = img?.src;
-  if (url && url.startsWith('http')) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-}
-if (typeof window !== 'undefined') {
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.closeAvatarLightbox = closeAvatarLightbox;
-  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
-}
-/**
- * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
- */
-let audioCtx = null;
-export function playNotificationSound() {
-  try {
-    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (!soundEnabled || !notifEnabled) return;
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const play = () => {
-      const now = audioCtx.currentTime;
-      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
-      notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + i * 0.09);
-        gain.gain.setValueAtTime(0, now + i * 0.09);
-        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(now + i * 0.09);
-        osc.stop(now + i * 0.09 + 0.5);
-      });
-    };
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(play).catch(() => {});
-    } else {
-      play();
-    }
-  } catch (e) { }
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.alertMessage = alertMessage;
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.playNotificationSound = playNotificationSound;
-}
-</file>
-
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
 }
 </file>
 
@@ -5533,6 +5541,222 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     }
 </file>
 
+<file path="public/auth-desktop.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Covo - デスクトップ認証</title>
+    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .auth-card {
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+        }
+        p {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            line-height: 1.6;
+            margin-bottom: 1.75rem;
+        }
+        .btn-google {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s;
+        }
+        .btn-google:hover:not(:disabled) {
+            background: #f1f5f9;
+            transform: translateY(-1px);
+        }
+        .btn-google:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status-box {
+            margin-top: 1.25rem;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.5);
+            color: #cbd5e1;
+        }
+        .status-box.error {
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .status-box.success {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.1);
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        const firebaseConfig = {
+            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+            authDomain: "simplechat-65a0d.firebaseapp.com",
+            projectId: "simplechat-65a0d",
+            storageBucket: "simplechat-65a0d.firebasestorage.app",
+            messagingSenderId: "611067360180",
+            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        auth.languageCode = 'ja';
+        const params = new URLSearchParams(window.location.search);
+        const callbackUrl = params.get('callback');
+        const state = params.get('state') || '';
+        // 🔒 セキュリティ: callbackUrl をローカルループバックのみに制限（オープンリダイレクト防止）
+        function isAllowedCallback(urlStr) {
+            if (!urlStr) return false;
+            try {
+                const u = new URL(urlStr);
+                const host = u.hostname.toLowerCase();
+                return (u.protocol === 'http:') && (host === '127.0.0.1' || host === 'localhost');
+            } catch {
+                return false;
+            }
+        }
+        if (callbackUrl && !isAllowedCallback(callbackUrl)) {
+            window.addEventListener('load', () => {
+                const status = document.getElementById('status');
+                if (status) {
+                    status.className = 'status-box error';
+                    status.textContent = 'エラー: 不正なコールバックURLが指定されています。ローカルアプリからのみ認証できます。';
+                }
+                const btn = document.getElementById('googleBtn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        window.doGoogleLogin = async function (isAuto = false) {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('googleBtn');
+            btn.disabled = true;
+            status.className = 'status-box';
+            status.textContent = 'Google 認証ウィンドウを起動中...';
+            try {
+                const provider = new GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+                const result = await signInWithPopup(auth, provider);
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                const idToken = credential?.idToken || (await result.user.getIdToken());
+                const accessToken = credential?.accessToken || '';
+                status.className = 'status-box success';
+                status.textContent = '認証成功！Covo アプリへ転送しています...';
+                if (callbackUrl && isAllowedCallback(callbackUrl)) {
+                    const target = new URL(callbackUrl);
+                    target.searchParams.set('idToken', idToken);
+                    if (accessToken) target.searchParams.set('accessToken', accessToken);
+                    if (state) target.searchParams.set('state', state);
+                    // 🔒 ローカルループバックサーバーへのみリダイレクト
+                    window.location.href = target.toString();
+                } else {
+                    btn.disabled = false;
+                    status.className = 'status-box error';
+                    status.textContent = 'コールバックURLが指定されていません。';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                if (err.code === 'auth/popup-blocked' || isAuto) {
+                    status.className = 'status-box';
+                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
+                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                    status.className = 'status-box';
+                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
+                } else {
+                    console.error('Desktop Auth Error:', err);
+                    status.className = 'status-box error';
+                    status.textContent = '認証エラー: ' + (err.message || err);
+                }
+            }
+        };
+        window.addEventListener('load', () => {
+            const status = document.getElementById('status');
+            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
+            setTimeout(() => {
+                if (typeof window.doGoogleLogin === 'function') {
+                    window.doGoogleLogin(true);
+                }
+            }, 300);
+        });
+    </script>
+</head>
+<body>
+    <div class="auth-card">
+        <div class="logo">💬</div>
+        <h1>Covo デスクトップ版のログイン</h1>
+        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
+        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
+            <svg width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            <span>Google でログイン</span>
+        </button>
+        <div id="status" class="status-box">認証の準備中...</div>
+    </div>
+</body>
+</html>
+</file>
+
 <file path="public/js/text_formatter.js">
 /**
  * テキストフォーマット・パース処理 (text_formatter.js)
@@ -5757,220 +5981,296 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/auth-desktop.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex, nofollow" />
-    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-    <meta name="referrer" content="no-referrer" />
-    <title>Covo - デスクトップ認証</title>
-    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+self._notifEnabled  = true; // 通知トグル状態
+// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+const _recentNotifs = new Map();
+function _isDuplicate(key) {
+  const now = Date.now();
+  for (const [k, time] of _recentNotifs.entries()) {
+    if (now - time > 15000) _recentNotifs.delete(k);
+  }
+  if (_recentNotifs.has(key)) return true;
+  _recentNotifs.set(key, now);
+  return false;
+}
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+  switch (event.data.type) {
+    case 'SET_NOTIF_ENABLED':
+      self._notifEnabled = event.data.enabled !== false;
+      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
+      break;
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      if (typeof event.data.notifEnabled === 'boolean') {
+        self._notifEnabled = event.data.notifEnabled;
+      }
+      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      break;
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+    case 'CACHE_AUTH_TOKEN':
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
+    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
+    if (clientList.length === 0) {
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage((payload) => {
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::') || body.includes(':enc::')) {
+        const senderPart = body.split(/:\s*enc::/)[0];
+        body = `${senderPart}: 新着メッセージがあります`;
+      } else {
+        body = '新着メッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string') {
+    if (title.includes('enc::v') || title.startsWith('enc::')) {
+      title = 'Covo';
+    } else if (title.startsWith('ダイレクトメッセージ › @')) {
+      title = title.replace('ダイレクトメッセージ › @', '');
+    }
+  }
+  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
+  if (typeof body === 'string') {
+    function _swFormatContent(s) {
+      if (!s || typeof s !== 'string') return '新着メッセージがあります';
+      const trimmed = s.trim();
+      if (
+        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
+        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
+        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
+      ) {
+        return '[スタンプ]';
+      }
+      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
+        return '📷 [写真]';
+      }
+      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
+        return '🎥 [動画]';
+      }
+      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
+        return '🎤 [ボイスメッセージ]';
+      }
+      if (
+        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
+        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
+        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
+      ) {
+        return '📎 [ファイル]';
+      }
+      return trimmed;
+    }
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      body = `${senderPart}: ${_swFormatContent(rest)}`;
+    } else {
+      body = _swFormatContent(body);
+    }
+  }
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+  // 通知設定がオフならスキップ
+  if (self._notifEnabled === false) {
+    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
+    return;
+  }
+  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
+  const dedupKey = (data.type === 'incoming_call' && data.callId)
+    ? `call-${data.callId}`
+    : (data.messageId
+      ? `msg-${data.messageId}`
+      : `${data.roomId || 'covo'}_${title}_${body}`);
+  if (_isDuplicate(dedupKey)) {
+    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
+    return;
+  }
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
+    const tag = data.messageId
+      ? `msg-${data.messageId}`
+      : `chat-${data.roomId || 'covo'}`;
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+  return self.registration.showNotification(title, notificationOptions);
+});
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/';
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
         }
-        body {
-            background: #0f172a;
-            color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 1rem;
+      })
+    );
+    return;
+  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
         }
-        .auth-card {
-            background: #1e293b;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 1.5rem;
-            padding: 2.5rem 2rem;
-            max-width: 420px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-        }
-        .logo {
-            font-size: 2.5rem;
-            margin-bottom: 0.75rem;
-        }
-        h1 {
-            font-size: 1.35rem;
-            font-weight: 800;
-            margin-bottom: 0.5rem;
-            color: #f8fafc;
-        }
-        p {
-            font-size: 0.875rem;
-            color: #94a3b8;
-            line-height: 1.6;
-            margin-bottom: 1.75rem;
-        }
-        .btn-google {
-            width: 100%;
-            padding: 0.85rem 1rem;
-            border: none;
-            border-radius: 0.75rem;
-            font-size: 0.95rem;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            background: #ffffff;
-            color: #0f172a;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s;
-        }
-        .btn-google:hover:not(:disabled) {
-            background: #f1f5f9;
-            transform: translateY(-1px);
-        }
-        .btn-google:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .status-box {
-            margin-top: 1.25rem;
-            padding: 0.75rem;
-            border-radius: 0.75rem;
-            font-size: 0.8rem;
-            font-weight: 600;
-            min-height: 2.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(15, 23, 42, 0.5);
-            color: #cbd5e1;
-        }
-        .status-box.error {
-            color: #f87171;
-            background: rgba(239, 68, 68, 0.1);
-        }
-        .status-box.success {
-            color: #34d399;
-            background: rgba(16, 185, 129, 0.1);
-        }
-    </style>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        const firebaseConfig = {
-            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-            authDomain: "simplechat-65a0d.firebaseapp.com",
-            projectId: "simplechat-65a0d",
-            storageBucket: "simplechat-65a0d.firebasestorage.app",
-            messagingSenderId: "611067360180",
-            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-        };
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        auth.languageCode = 'ja';
-        const params = new URLSearchParams(window.location.search);
-        const callbackUrl = params.get('callback');
-        const state = params.get('state') || '';
-        // 🔒 セキュリティ: callbackUrl をローカルループバックのみに制限（オープンリダイレクト防止）
-        function isAllowedCallback(urlStr) {
-            if (!urlStr) return false;
-            try {
-                const u = new URL(urlStr);
-                const host = u.hostname.toLowerCase();
-                return (u.protocol === 'http:') && (host === '127.0.0.1' || host === 'localhost');
-            } catch {
-                return false;
-            }
-        }
-        if (callbackUrl && !isAllowedCallback(callbackUrl)) {
-            window.addEventListener('load', () => {
-                const status = document.getElementById('status');
-                if (status) {
-                    status.className = 'status-box error';
-                    status.textContent = 'エラー: 不正なコールバックURLが指定されています。ローカルアプリからのみ認証できます。';
-                }
-                const btn = document.getElementById('googleBtn');
-                if (btn) btn.disabled = true;
-            });
-        }
-        window.doGoogleLogin = async function (isAuto = false) {
-            const status = document.getElementById('status');
-            const btn = document.getElementById('googleBtn');
-            btn.disabled = true;
-            status.className = 'status-box';
-            status.textContent = 'Google 認証ウィンドウを起動中...';
-            try {
-                const provider = new GoogleAuthProvider();
-                provider.setCustomParameters({ prompt: 'select_account' });
-                const result = await signInWithPopup(auth, provider);
-                const credential = GoogleAuthProvider.credentialFromResult(result);
-                const idToken = credential?.idToken || (await result.user.getIdToken());
-                const accessToken = credential?.accessToken || '';
-                status.className = 'status-box success';
-                status.textContent = '認証成功！Covo アプリへ転送しています...';
-                if (callbackUrl && isAllowedCallback(callbackUrl)) {
-                    const target = new URL(callbackUrl);
-                    target.searchParams.set('idToken', idToken);
-                    if (accessToken) target.searchParams.set('accessToken', accessToken);
-                    if (state) target.searchParams.set('state', state);
-                    // 🔒 ローカルループバックサーバーへのみリダイレクト
-                    window.location.href = target.toString();
-                } else {
-                    btn.disabled = false;
-                    status.className = 'status-box error';
-                    status.textContent = 'コールバックURLが指定されていません。';
-                }
-            } catch (err) {
-                btn.disabled = false;
-                if (err.code === 'auth/popup-blocked' || isAuto) {
-                    status.className = 'status-box';
-                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
-                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-                    status.className = 'status-box';
-                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
-                } else {
-                    console.error('Desktop Auth Error:', err);
-                    status.className = 'status-box error';
-                    status.textContent = '認証エラー: ' + (err.message || err);
-                }
-            }
-        };
-        window.addEventListener('load', () => {
-            const status = document.getElementById('status');
-            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
-            setTimeout(() => {
-                if (typeof window.doGoogleLogin === 'function') {
-                    window.doGoogleLogin(true);
-                }
-            }, 300);
+      }
+      // なければ新しく開く
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
         });
-    </script>
-</head>
-<body>
-    <div class="auth-card">
-        <div class="logo">💬</div>
-        <h1>Covo デスクトップ版のログイン</h1>
-        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
-        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
-            <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Google でログイン</span>
-        </button>
-        <div id="status" class="status-box">認証の準備中...</div>
-    </div>
-</body>
-</html>
+      }
+    })
+  );
+});
 </file>
 
 <file path="patch.js">
@@ -6380,298 +6680,6 @@ function run() {
   console.log('============================================================');
 }
 run();
-</file>
-
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-self._notifEnabled  = true; // 通知トグル状態
-// 重複通知防止キャッシュ (iOS PWA多重受信防止)
-const _recentNotifs = new Map();
-function _isDuplicate(key) {
-  const now = Date.now();
-  for (const [k, time] of _recentNotifs.entries()) {
-    if (now - time > 15000) _recentNotifs.delete(k);
-  }
-  if (_recentNotifs.has(key)) return true;
-  _recentNotifs.set(key, now);
-  return false;
-}
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  switch (event.data.type) {
-    case 'SET_NOTIF_ENABLED':
-      self._notifEnabled = event.data.enabled !== false;
-      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
-      break;
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
-      if (typeof event.data.notifEnabled === 'boolean') {
-        self._notifEnabled = event.data.notifEnabled;
-      }
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
-      break;
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-    case 'CACHE_AUTH_TOKEN':
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
-}
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
-    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
-    if (clientList.length === 0) {
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
-  if (typeof body === 'string') {
-    if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::') || body.includes(':enc::')) {
-        const senderPart = body.split(/:\s*enc::/)[0];
-        body = `${senderPart}: 新着メッセージがあります`;
-      } else {
-        body = '新着メッセージがあります';
-      }
-    }
-  }
-  if (typeof title === 'string') {
-    if (title.includes('enc::v') || title.startsWith('enc::')) {
-      title = 'Covo';
-    } else if (title.startsWith('ダイレクトメッセージ › @')) {
-      title = title.replace('ダイレクトメッセージ › @', '');
-    }
-  }
-  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
-  if (typeof body === 'string') {
-    function _swFormatContent(s) {
-      if (!s || typeof s !== 'string') return '新着メッセージがあります';
-      const trimmed = s.trim();
-      if (
-        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
-        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
-        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
-      ) {
-        return '[スタンプ]';
-      }
-      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
-        return '📷 [写真]';
-      }
-      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
-        return '🎥 [動画]';
-      }
-      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
-        return '🎤 [ボイスメッセージ]';
-      }
-      if (
-        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
-        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
-        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
-      ) {
-        return '📎 [ファイル]';
-      }
-      return trimmed;
-    }
-    const colonIdx = body.indexOf(': ');
-    if (colonIdx !== -1) {
-      const senderPart = body.substring(0, colonIdx);
-      const rest = body.substring(colonIdx + 2);
-      body = `${senderPart}: ${_swFormatContent(rest)}`;
-    } else {
-      body = _swFormatContent(body);
-    }
-  }
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-  // 通知設定がオフならスキップ
-  if (self._notifEnabled === false) {
-    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
-    return;
-  }
-  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
-  const dedupKey = (data.type === 'incoming_call' && data.callId)
-    ? `call-${data.callId}`
-    : (data.messageId
-      ? `msg-${data.messageId}`
-      : `${data.roomId || 'covo'}_${title}_${body}`);
-  if (_isDuplicate(dedupKey)) {
-    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
-    return;
-  }
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-  return self.registration.showNotification(title, notificationOptions);
-});
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/';
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -12003,12 +12011,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch (_) {}
         }
         if (typeof m.text !== "string") return;
-        if (m._decrypted) return;            
+        if (m._decrypted && !m._decryptedErrorText && typeof m.text === 'string' && !m.text.startsWith('enc::') && !_isEncrypted(m.text)) return;            
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
         }
         const textToDecrypt = m._originalText || m.text;
-        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; } 
+        if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
@@ -12476,7 +12484,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch (_) {}
         }
         if (typeof m.text !== "string") return;
-        if (m._decrypted && !m._decryptedErrorText) return;
+        if (m._decrypted && !m._decryptedErrorText && typeof m.text === 'string' && !m.text.startsWith('enc::') && !_isEncrypted(m.text)) return;
         if (!m._originalText && _isEncrypted(m.text)) {
           m._originalText = m.text;
         }
@@ -12946,6 +12954,361 @@ service cloud.firestore {
 }
 </file>
 
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        "latestMessage": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('senderId').val() === auth.uid"
+        },
+        "latestPin": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('pinnedBy').val() === auth.uid"
+        },
+        "latestReaction": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('reactedBy').val() === auth.uid"
+        },
+        "latestDelete": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('deletedBy').val() === auth.uid"
+        },
+        "typing": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "webrtc": {
+      "$id": {
+        ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
+        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
+      }
+    },
+    "voiceStates": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $userId"
+          }
+        }
+      }
+    },
+    "voiceStatesConfig": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()"
+        }
+      }
+    },
+    "userAffinity": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+          "adminList": {
+            "admins": {
+              "$adminUid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "announcements": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "allowedEmails": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
+        },
+        "server_stamps": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "inviteIndex": {
+          "$code": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "feedbacks": {
+          "$docId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "error_reports": {
+          ".read": "auth != null",
+          "$docId": {
+            ".write": true
+          }
+        },
+        "userAffinity": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "recovery_vault": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "recovery_index": {
+          "$emailHash": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          }
+        },
+        "admin_recovery_requests": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "admin_recovery_index": {
+          "$emailHash": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "private": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "readStates": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$roomId": {
+                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "relationships": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$targetUid": {
+                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_channels": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "keys": {
+              "$keyUserId": {
+                ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".indexOn": [
+              "timestamp"
+            ],
+            "$messageId": {
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                }
+              }
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
+            }
+          }
+        },
+        "device_transfers": {
+          "$sessionCode": {
+            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "sender_candidates": {
+              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
+            },
+            "receiver_candidates": {
+              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
+            }
+          }
+        },
+        "p2p_log_sync": {
+          "$syncId": {
+            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "requesterCandidates": {
+              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
+            },
+            "targetCandidates": {
+              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
+            }
+          }
+        },
+        "calls": {
+          "$callId": {
+            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "callerCandidates": {
+              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
+            },
+            "calleeCandidates": {
+              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('calleeUid').val() === auth.uid"
+            }
+          }
+        },
+        "fileshares": {
+          "$shareId": {
+            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "senderCandidates": {
+              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
+            },
+            "receiverCandidates": {
+              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
+            }
+          }
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            "members": {
+              "$uid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
+              }
+            },
+            "secrets": {
+              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "profiles": {
+              "$profileUid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "stamps": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "stampGroups": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "inviteCodes": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "rooms": {
+              "$roomId": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                "roomKeys": {
+                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  "$keyId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "rescueRequests": {
+                  ".read": "auth != null",
+                  "$reqUid": {
+                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "messages": {
+                  ".indexOn": [
+                    "timestamp"
+                  ],
+                  "$messageId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                      }
+                    }
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</file>
+
 <file path="server/src/index.js">
 // 🔒 セキュリティ: appId および ID パラメータの厳格な検証関数
 function isValidAppId(appId, env) {
@@ -13023,8 +13386,11 @@ const BLOCKED_EXTENSIONS = new Set([
 function isFileExtensionBlocked(fileName) {
   if (!fileName || typeof fileName !== 'string') return false;
   const cleanName = fileName.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  return BLOCKED_EXTENSIONS.has(ext);
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) return true;
+  }
+  return false;
 }
 export default {
   async fetch(request, env, ctx) {
@@ -14808,6 +15174,9 @@ async function handleAdminDeleteMessage(request, env) {
     if (!appId || !messageId || (!dmId && (!serverId || !roomId))) {
       return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -15792,361 +16161,6 @@ async function handleD1Api(request, env, url) {
   } catch (err) {
     console.error("D1 API Error:", err);
     return new Response(JSON.stringify({ error: "D1 API Internal Error", details: err.toString() }), { status: 200, headers: d1Cors });
-  }
-}
-</file>
-
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-      }
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-      }
-    },
-    "rooms": {
-      "$roomId": {
-        "latestMessage": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('senderId').val() === auth.uid"
-        },
-        "latestPin": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('pinnedBy').val() === auth.uid"
-        },
-        "latestReaction": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('reactedBy').val() === auth.uid"
-        },
-        "latestDelete": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('deletedBy').val() === auth.uid"
-        },
-        "typing": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    },
-    "webrtc": {
-      "$id": {
-        ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
-        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
-      }
-    },
-    "voiceStates": {
-      "$serverId": {
-        "$channelId": {
-          ".read": "auth != null",
-          "$userId": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $userId"
-          }
-        }
-      }
-    },
-    "voiceStatesConfig": {
-      "$serverId": {
-        "$channelId": {
-          ".read": "auth != null",
-          ".write": "auth != null && root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()"
-        }
-      }
-    },
-    "userAffinity": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-          "adminList": {
-            "admins": {
-              "$adminUid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "announcements": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "allowedEmails": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
-        },
-        "server_stamps": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "inviteIndex": {
-          "$code": {
-            ".read": "auth != null",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "feedbacks": {
-          "$docId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "error_reports": {
-          ".read": "auth != null",
-          "$docId": {
-            ".write": true
-          }
-        },
-        "userAffinity": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        },
-        "recovery_vault": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "recovery_index": {
-          "$emailHash": {
-            ".read": "auth != null",
-            ".write": "auth != null"
-          }
-        },
-        "admin_recovery_requests": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "admin_recovery_index": {
-          "$emailHash": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "private": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "readStates": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$roomId": {
-                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "relationships": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$targetUid": {
-                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_channels": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "keys": {
-              "$keyUserId": {
-                ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".indexOn": [
-              "timestamp"
-            ],
-            "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || (newData.child('reactions').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()) || (newData.child('isPinned').exists() && data.child('text').val() === newData.child('text').val() && data.child('fileData').val() === newData.child('fileData').val()))))))",
-              "reactions": {
-                "$reactUid": {
-                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                }
-              }
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
-            }
-          }
-        },
-        "device_transfers": {
-          "$sessionCode": {
-            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "sender_candidates": {
-              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
-            },
-            "receiver_candidates": {
-              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
-            }
-          }
-        },
-        "p2p_log_sync": {
-          "$syncId": {
-            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "requesterCandidates": {
-              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
-            },
-            "targetCandidates": {
-              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
-            }
-          }
-        },
-        "calls": {
-          "$callId": {
-            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "callerCandidates": {
-              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
-            },
-            "calleeCandidates": {
-              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('calleeUid').val() === auth.uid"
-            }
-          }
-        },
-        "fileshares": {
-          "$shareId": {
-            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "senderCandidates": {
-              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
-            },
-            "receiverCandidates": {
-              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
-            }
-          }
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
-            "members": {
-              "$uid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
-              }
-            },
-            "secrets": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "profiles": {
-              "$profileUid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "stamps": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "stampGroups": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "inviteCodes": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "rooms": {
-              "$roomId": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                "roomKeys": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                  "$keyId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "rescueRequests": {
-                  ".read": "auth != null",
-                  "$reqUid": {
-                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "messages": {
-                  ".indexOn": [
-                    "timestamp"
-                  ],
-                  "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
-                    "reactions": {
-                      "$reactUid": {
-                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                      }
-                    }
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
   }
 }
 </file>
@@ -18553,13 +18567,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.192" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.194" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.192" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.194" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -21811,7 +21825,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.192"></script>
+  <script type="module" src="js/main.js?v=1.1.194"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -23268,8 +23282,15 @@ import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from '
 import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
-// === コンソールログの自動収集 & 確実なネイティブコンソール出力 ===
-window._covoLogs = window._covoLogs || [];
+// === コンソールログの自動収集 & 確実なネイティブコンソール出力 (リロード間引き継ぎ対応) ===
+window._covoLogs = (() => {
+  try {
+    const saved = sessionStorage.getItem('covo_recent_logs');
+    return saved ? JSON.parse(saved) : (window._covoLogs || []);
+  } catch (_) {
+    return window._covoLogs || [];
+  }
+})();
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 // テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
@@ -23295,10 +23316,24 @@ function isTransientTelemetryError(args) {
   }
 }
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
-let _cachedTelemetryErrors = window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
+let _cachedTelemetryErrors = window._cachedTelemetryErrors = (() => {
+  try {
+    const saved = localStorage.getItem('covo_cached_telemetry_errors');
+    return saved ? JSON.parse(saved) : (window._cachedTelemetryErrors || []);
+  } catch (_) {
+    return window._cachedTelemetryErrors || [];
+  }
+})();
 const _reportedSignaturesRecently = new Map();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
+function _saveTelemetryErrorsToStorage() {
+  try {
+    if (Array.isArray(_cachedTelemetryErrors)) {
+      localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(_cachedTelemetryErrors.slice(0, 100)));
+    }
+  } catch (_) {}
+}
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
   const normMsg = String(message || '').substring(0, 250).replace(/\s+/g, ' ').trim();
@@ -23360,11 +23395,12 @@ function _reportTelemetryError(type, message, stack) {
         badgeEl.textContent = window._cachedTelemetryErrors.length;
         badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
+      _saveTelemetryErrorsToStorage();
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
         renderTelemetryErrorsList();
       }
-    }
-    // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+      }
+      // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
     if (typeof _getOrInitRTDB === 'function') {
       _getOrInitRTDB().then(rtdb => {
         if (rtdb) {
@@ -23504,6 +23540,9 @@ const _pushLog = (type, args) => {
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
     if (window._covoLogs.length > 300) window._covoLogs.shift();
+    try {
+      sessionStorage.setItem('covo_recent_logs', JSON.stringify(window._covoLogs.slice(-150)));
+    } catch (_) {}
     // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
     const panel = document.getElementById('devConsolePanel');
     if (panel && panel.style.display === 'flex') {
@@ -25915,6 +25954,7 @@ window.loadErrorTelemetry = async function () {
       return timeB - timeA;
     });
     window._cachedTelemetryErrors = result;
+    _saveTelemetryErrorsToStorage();
     if (badgeEl) {
       badgeEl.textContent = result.length;
       badgeEl.classList.toggle('hidden', result.length === 0);
@@ -37841,6 +37881,35 @@ function createMessageElement(message, messageId, readByCount = 0) {
     if (textToDisplay === null || (typeof textToDisplay === 'string' && textToDisplay.startsWith('enc::'))) {
       messageTextSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
       messageElement.appendChild(messageTextSpan);
+      // オンデマンド自動復号トリガー（過去ログ・キャッシュ展開時に即時復号して伏字を解消）
+      const rawEnc = message._originalText || message.text;
+      if (typeof rawEnc === 'string' && rawEnc.startsWith('enc::')) {
+        (async () => {
+          try {
+            let dec = null;
+            if (snapDmId) {
+              const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 1500);
+              dec = await _decryptDmText(rawEnc, dmKey);
+            } else if (snapServerId && snapRoomId) {
+              dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
+            }
+            if (dec && !dec.startsWith('（復号化エラー：')) {
+              message.text = dec;
+              message._decrypted = true;
+              message._decryptedErrorText = null;
+              if (messageTextSpan && messageTextSpan.parentElement) {
+                messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(dec);
+              }
+              LocalStore.putMessage(message).catch(() => {});
+            } else if (dec) {
+              message._decryptedErrorText = dec;
+              if (messageTextSpan && messageTextSpan.parentElement) {
+                messageTextSpan.innerHTML = escapeHtml(dec);
+              }
+            }
+          } catch (_) {}
+        })();
+      }
     } else {
       messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
       // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
@@ -38391,24 +38460,10 @@ async function jumpToUnloadedMessage(msgId) {
   setTimeout(() => {
     let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
     if (el2) {
-      el2.scrollIntoView({ behavior: 'auto', block: 'center' });
-      setTimeout(() => {
-        messagesDisplay.style.transition = 'opacity 0.3s ease';
-        messagesDisplay.style.opacity = '1';
-        allowPagination = true;
-        el2.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
-        const isStamp = el2.querySelector('img[alt^="stamp_"]') || el2.querySelector('.sticker-content');
-        if (isStamp) {
-          isStamp.classList.remove('stamp-jump-anim');
-          void isStamp.offsetWidth;
-          isStamp.classList.add('stamp-jump-anim');
-          setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
-        } else {
-          void el2.offsetWidth;
-          el2.classList.add('message-jump-anim', 'message-highlight');
-          setTimeout(() => el2.classList.remove('message-jump-anim', 'message-highlight'), 1200);
-        }
-      }, 50);
+      messagesDisplay.style.transition = 'opacity 0.3s ease';
+      messagesDisplay.style.opacity = '1';
+      allowPagination = true;
+      doJumpHighlight(el2);
     } else {
       alertMessage("ジャンプできませんでした。", "warning");
       messagesDisplay.style.transition = 'opacity 0.3s ease';
@@ -39359,6 +39414,7 @@ async function showUnloadedMessagePreview(msgId) {
   modal.classList.remove("hidden");
 }
 function doJumpHighlight(el) {
+  if (!el) return;
   const container = document.getElementById("messagesDisplay") || messagesDisplay;
   let didScroll = false;
   if (container) {
@@ -39384,11 +39440,20 @@ function doJumpHighlight(el) {
       isStamp.classList.remove('stamp-jump-anim');
       void isStamp.offsetWidth;
       isStamp.classList.add('stamp-jump-anim');
-      setTimeout(() => isStamp.classList.remove('stamp-jump-anim'), 1200);
+      setTimeout(() => {
+        isStamp.classList.remove('stamp-jump-anim');
+      }, 600);
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      setTimeout(() => el.classList.remove('message-jump-anim', 'message-highlight'), 1200);
+      // 揺れアニメーション（0.55s）終了後にシェイククラスのみ先に削除（下から浮き上がる再発火を防ぐ）
+      setTimeout(() => {
+        el.classList.remove('message-jump-anim');
+      }, 580);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.3s後）
+      setTimeout(() => {
+        el.classList.remove('message-highlight');
+      }, 1300);
     }
   }, didScroll ? 350 : 50);
 }
@@ -48029,7 +48094,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.192",
+  "version": "1.1.194",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48086,7 +48151,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.192",
+  "version": "1.1.194",
   "force": false
 }
 </file>

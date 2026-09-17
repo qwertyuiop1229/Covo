@@ -76,12 +76,14 @@ const BLOCKED_EXTENSIONS = new Set([
   'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
   'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
 ]);
-
 function isFileExtensionBlocked(fileName) {
   if (!fileName || typeof fileName !== 'string') return false;
   const cleanName = fileName.trim().replace(/\.+$/, '');
-  const ext = (cleanName.split('.').pop() || '').toLowerCase();
-  return BLOCKED_EXTENSIONS.has(ext);
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) return true;
+  }
+  return false;
 }
 
 export default {
@@ -2078,6 +2080,9 @@ async function handleAdminDeleteMessage(request, env) {
     const { appId, serverId, roomId, dmId, messageId } = await request.json();
     if (!appId || !messageId || (!dmId && (!serverId || !roomId))) {
       return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });

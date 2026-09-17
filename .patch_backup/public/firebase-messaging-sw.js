@@ -19,16 +19,37 @@ self._cachedUserId  = null;
 self._cachedAppId   = null;
 self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
 self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+self._notifEnabled  = true; // 通知トグル状態
+
+// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+const _recentNotifs = new Map();
+function _isDuplicate(key) {
+  const now = Date.now();
+  for (const [k, time] of _recentNotifs.entries()) {
+    if (now - time > 15000) _recentNotifs.delete(k);
+  }
+  if (_recentNotifs.has(key)) return true;
+  _recentNotifs.set(key, now);
+  return false;
+}
 
 // ─── postMessage受信 ────────────────────────────────────────────
 self.addEventListener('message', (event) => {
   if (!event.data) return;
 
   switch (event.data.type) {
+    case 'SET_NOTIF_ENABLED':
+      self._notifEnabled = event.data.enabled !== false;
+      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
+      break;
+
     case 'SET_USER_ID':
       self._cachedUserId  = event.data.userId  || null;
       self._cachedAppId   = event.data.appId   || null;
       self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      if (typeof event.data.notifEnabled === 'boolean') {
+        self._notifEnabled = event.data.notifEnabled;
+      }
       console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
       break;
 
@@ -128,50 +149,84 @@ messaging.onBackgroundMessage((payload) => {
   // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
   if (typeof body === 'string') {
     if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::')) {
-        const senderPart = body.split(': enc::')[0];
-        body = `${senderPart}: 新しいメッセージがあります`;
+      if (body.includes(': enc::') || body.includes(':enc::')) {
+        const senderPart = body.split(/:\s*enc::/)[0];
+        body = `${senderPart}: 新着メッセージがあります`;
       } else {
-        body = '新しいメッセージがあります';
+        body = '新着メッセージがあります';
       }
     }
   }
-  if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
-    title = 'Covo';
+  if (typeof title === 'string') {
+    if (title.includes('enc::v') || title.startsWith('enc::')) {
+      title = 'Covo';
+    } else if (title.startsWith('ダイレクトメッセージ › @')) {
+      title = title.replace('ダイレクトメッセージ › @', '');
+    }
   }
 
-  // スタンプ/添付ファイルのURLを可読テキストに変換（SW は復号・表示ができないため）
+  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
   if (typeof body === 'string') {
-    function _swIsStamp(s) {
-      return s.startsWith('[STAMP]') || s.includes('/stamps/') ||
-             s.startsWith('covo:') || s.startsWith('covonew:') || s.startsWith('serverstamp:');
+    function _swFormatContent(s) {
+      if (!s || typeof s !== 'string') return '新着メッセージがあります';
+      const trimmed = s.trim();
+      if (
+        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
+        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
+        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
+      ) {
+        return '[スタンプ]';
+      }
+      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
+        return '📷 [写真]';
+      }
+      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
+        return '🎥 [動画]';
+      }
+      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
+        return '🎤 [ボイスメッセージ]';
+      }
+      if (
+        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
+        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
+        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
+      ) {
+        return '📎 [ファイル]';
+      }
+      return trimmed;
     }
-    function _swIsFile(s) {
-      return s.includes('firebase-storage') || s.includes('cloudinary') ||
-             s.includes('r2.cloudflarestorage') || /\.(jpg|jpeg|png|gif|webp|mp4|mov)/i.test(s);
-    }
-    // "送信者: 本文" パターンの場合は送信者名を保持して本文だけ置換
+
     const colonIdx = body.indexOf(': ');
     if (colonIdx !== -1) {
       const senderPart = body.substring(0, colonIdx);
       const rest = body.substring(colonIdx + 2);
-      if (_swIsStamp(rest)) {
-        body = `${senderPart}: 🌟 スタンプ`;
-      } else if (_swIsFile(rest)) {
-        body = `${senderPart}: 📎 添付ファイル`;
-      }
+      body = `${senderPart}: ${_swFormatContent(rest)}`;
     } else {
-      if (_swIsStamp(body)) {
-        body = '🌟 スタンプ';
-      } else if (_swIsFile(body)) {
-        body = '📎 添付ファイル';
-      }
+      body = _swFormatContent(body);
     }
   }
 
   // 自分が送ったメッセージへの通知はスキップ
   if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
     console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+
+  // 通知設定がオフならスキップ
+  if (self._notifEnabled === false) {
+    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
+    return;
+  }
+
+  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
+  const dedupKey = (data.type === 'incoming_call' && data.callId)
+    ? `call-${data.callId}`
+    : (data.messageId
+      ? `msg-${data.messageId}`
+      : `${data.roomId || 'covo'}_${title}_${body}`);
+
+  if (_isDuplicate(dedupKey)) {
+    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
     return;
   }
 

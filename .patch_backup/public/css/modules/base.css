@@ -64,31 +64,33 @@
     select {
       font-size: 16px !important;
     }
-    /* スタンプ用（今まで通りの回転付きポップな揺れ） */
+    /* スタンプ用（LINE準拠の軽快で上品なポップバウンス） */
     .stamp-jump-anim {
-      animation: stampWiggle 0.8s ease-in-out !important;
+      animation: stampWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
     @keyframes stampWiggle {
-      0%, 100% { transform: translateX(0); }
-      15% { transform: translateX(-10px) rotate(-5deg); }
-      30% { transform: translateX(8px) rotate(3deg); }
-      45% { transform: translateX(-6px) rotate(-2deg); }
-      60% { transform: translateX(4px) rotate(1deg); }
-      75% { transform: translateX(-2px); }
+      0% { transform: scale(1) rotate(0deg); }
+      20% { transform: scale(1.08) rotate(-2.5deg); }
+      40% { transform: scale(1.04) rotate(2deg); }
+      60% { transform: scale(1.02) rotate(-1deg); }
+      80% { transform: scale(1.005) rotate(0.5deg); }
+      100% { transform: scale(1) rotate(0deg); }
     }
-    /* 通常メッセージ用 LINE完全準拠の上品な微小シェイク */
+    /* 通常メッセージ用 LINE完全準拠の上品なパルス＆微小シェイク */
     .message-jump-anim,
     .message-bubble.message-jump-anim {
-      animation: messageWiggle 0.5s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      animation: messageWiggle 0.55s cubic-bezier(0.25, 1, 0.5, 1) both !important;
       will-change: transform;
     }
     @keyframes messageWiggle {
-      0%, 100% { transform: translateX(0); }
-      20% { transform: translateX(-5px); }
-      40% { transform: translateX(4px); }
-      60% { transform: translateX(-2px); }
-      80% { transform: translateX(1px); }
+      0% { transform: scale(1) translateX(0); }
+      15% { transform: scale(1.035) translateX(-5px); }
+      30% { transform: scale(1.025) translateX(4px); }
+      45% { transform: scale(1.015) translateX(-3px); }
+      65% { transform: scale(1.008) translateX(2px); }
+      80% { transform: scale(1.002) translateX(-1px); }
+      100% { transform: scale(1) translateX(0); }
     }
     /* Reactions */
     .reaction-picker-bar {

@@ -75,8 +75,15 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 
 
-// === コンソールログの自動収集 & 確実なネイティブコンソール出力 ===
-window._covoLogs = window._covoLogs || [];
+// === コンソールログの自動収集 & 確実なネイティブコンソール出力 (リロード間引き継ぎ対応) ===
+window._covoLogs = (() => {
+  try {
+    const saved = sessionStorage.getItem('covo_recent_logs');
+    return saved ? JSON.parse(saved) : (window._covoLogs || []);
+  } catch (_) {
+    return window._covoLogs || [];
+  }
+})();
 const _orgLog = console.log, _orgWarn = console.warn, _orgErr = console.error;
 // テレメトリ送信用のノイズフィルタ（ユーザー自身による正常なキャンセル操作のみ除外）
 function isTransientTelemetryError(args) {
@@ -102,10 +109,24 @@ function isTransientTelemetryError(args) {
   }
 }
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
-let _cachedTelemetryErrors = window._cachedTelemetryErrors = window._cachedTelemetryErrors || [];
+let _cachedTelemetryErrors = window._cachedTelemetryErrors = (() => {
+  try {
+    const saved = localStorage.getItem('covo_cached_telemetry_errors');
+    return saved ? JSON.parse(saved) : (window._cachedTelemetryErrors || []);
+  } catch (_) {
+    return window._cachedTelemetryErrors || [];
+  }
+})();
 const _reportedSignaturesRecently = new Map();
 const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
+function _saveTelemetryErrorsToStorage() {
+  try {
+    if (Array.isArray(_cachedTelemetryErrors)) {
+      localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(_cachedTelemetryErrors.slice(0, 100)));
+    }
+  } catch (_) {}
+}
 function _createErrorSignature(type, message, stack) {
   const normType = String(type || 'error').toLowerCase();
   const normMsg = String(message || '').substring(0, 250).replace(/\s+/g, ' ').trim();
@@ -169,12 +190,12 @@ function _reportTelemetryError(type, message, stack) {
         badgeEl.textContent = window._cachedTelemetryErrors.length;
         badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
       }
+      _saveTelemetryErrorsToStorage();
       if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
         renderTelemetryErrorsList();
       }
-    }
-
-    // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
+      }
+      // 1. RTDB へ即時プッシュ（最速・リアルタイム集約）
     if (typeof _getOrInitRTDB === 'function') {
       _getOrInitRTDB().then(rtdb => {
         if (rtdb) {
@@ -322,6 +343,9 @@ const _pushLog = (type, args) => {
     const line = `[${type}] ${msg}`;
     window._covoLogs.push(line);
     if (window._covoLogs.length > 300) window._covoLogs.shift();
+    try {
+      sessionStorage.setItem('covo_recent_logs', JSON.stringify(window._covoLogs.slice(-150)));
+    } catch (_) {}
     // 開発者コンソール (#devConsolePanel) が開いている場合は即時行追加
     const panel = document.getElementById('devConsolePanel');
     if (panel && panel.style.display === 'flex') {
@@ -2978,6 +3002,7 @@ window.loadErrorTelemetry = async function () {
     });
 
     window._cachedTelemetryErrors = result;
+    _saveTelemetryErrorsToStorage();
     if (badgeEl) {
       badgeEl.textContent = result.length;
       badgeEl.classList.toggle('hidden', result.length === 0);
@@ -15995,6 +16020,35 @@ function createMessageElement(message, messageId, readByCount = 0) {
     if (textToDisplay === null || (typeof textToDisplay === 'string' && textToDisplay.startsWith('enc::'))) {
       messageTextSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
       messageElement.appendChild(messageTextSpan);
+      // オンデマンド自動復号トリガー（過去ログ・キャッシュ展開時に即時復号して伏字を解消）
+      const rawEnc = message._originalText || message.text;
+      if (typeof rawEnc === 'string' && rawEnc.startsWith('enc::')) {
+        (async () => {
+          try {
+            let dec = null;
+            if (snapDmId) {
+              const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 1500);
+              dec = await _decryptDmText(rawEnc, dmKey);
+            } else if (snapServerId && snapRoomId) {
+              dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
+            }
+            if (dec && !dec.startsWith('（復号化エラー：')) {
+              message.text = dec;
+              message._decrypted = true;
+              message._decryptedErrorText = null;
+              if (messageTextSpan && messageTextSpan.parentElement) {
+                messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(dec);
+              }
+              LocalStore.putMessage(message).catch(() => {});
+            } else if (dec) {
+              message._decryptedErrorText = dec;
+              if (messageTextSpan && messageTextSpan.parentElement) {
+                messageTextSpan.innerHTML = escapeHtml(dec);
+              }
+            }
+          } catch (_) {}
+        })();
+      }
     } else {
       messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
       // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
