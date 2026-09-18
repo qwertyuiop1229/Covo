@@ -1499,9 +1499,15 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       /* モバイル時のピル左端密着調整 */
       body.discord-ui-mode .discord-server-pill {
         left: -11px !important;
+        transition: height 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
+                    transform 0.22s cubic-bezier(0.25, 1, 0.5, 1),
+                    opacity 0.2s ease-out !important;
+        will-change: height, transform, opacity;
       }
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 38px !important;
+        transform: translateX(0) !important;
+        opacity: 1 !important;
       }
       /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
       body.discord-ui-mode #sidebar {

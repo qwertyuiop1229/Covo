@@ -5866,6 +5866,16 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   if (mutualServersCountText) {
     mutualServersCountText.textContent = `${mutualServersCount}個の共通サーバー`;
   }
+  // 共通の友だち数の非同期反映 (ポップアウト対応)
+  if (!isSelf && typeof getMutualFriends === 'function') {
+    getMutualFriends(targetUid).then(mFriends => {
+      if (_currentProfileTargetUser?.uid !== targetUid) return;
+      if (mutualServersCountText) {
+        const mCount = mFriends.length;
+        mutualServersCountText.textContent = `${mCount > 0 ? `${mCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー`;
+      }
+    }).catch(() => {});
+  }
   // クイックメッセージ入力欄
   if (quickMsgArea) {
     if (isSelf) {
@@ -5984,12 +5994,56 @@ window.submitQuickDmMessage = async function () {
 window.getMutualFriends = async function (targetUid) {
   if (!userId || !targetUid || targetUid === userId) return [];
   try {
-    const snap = await getDocs(
-      query(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`), where('status', '==', 'friends'))
-    );
-    const targetFriendUids = new Set(snap.docs.map(d => d.id));
-    const myFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends');
-    return myFriends.filter(f => targetFriendUids.has(f.targetUid));
+    // 1. 相手のフレンド一覧を取得（whereクエリのインデックス不整合を回避し全件取得してJS側でstatus === 'friends'を判定）
+    const snap = await getDocs(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`)).catch(err => {
+      console.warn('[getMutualFriends] remote fetch warning:', err);
+      return { docs: [] };
+    });
+    const targetFriendUids = new Set();
+    snap.docs.forEach(d => {
+      const data = d.data() || {};
+      if (data.status === 'friends') {
+        const friendId = data.targetUid || d.id;
+        if (friendId && friendId !== userId && friendId !== targetUid) {
+          targetFriendUids.add(friendId);
+        }
+      }
+    });
+
+    // 2. 自分のフレンド一覧を取得（メモリキャッシュ ＋ LocalStore ＋ Firestore直接取得の多層フォールバック）
+    let myFriendsMap = { ...(friendRelationships || {}) };
+    if (Object.keys(myFriendsMap).length === 0 && typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
+      try {
+        const localFriends = await LocalStore.getAllFriends();
+        if (Array.isArray(localFriends)) {
+          localFriends.forEach(lf => {
+            const uid = lf.targetUid || lf.id || lf.uid;
+            if (uid) myFriendsMap[uid] = lf;
+          });
+        }
+      } catch (_) {}
+    }
+    if (Object.keys(myFriendsMap).length === 0) {
+      try {
+        const mySnap = await getDocs(collection(db, `artifacts/${appId}/users/${userId}/relationships`));
+        mySnap.docs.forEach(d => {
+          myFriendsMap[d.id] = { id: d.id, ...d.data() };
+        });
+      } catch (_) {}
+    }
+
+    const myFriends = Object.values(myFriendsMap).filter(r => r.status === 'friends');
+    const mutual = [];
+    myFriends.forEach(f => {
+      const fUid = f.targetUid || f.id;
+      if (fUid && fUid !== userId && fUid !== targetUid && targetFriendUids.has(fUid)) {
+        mutual.push({
+          ...f,
+          targetUid: fUid
+        });
+      }
+    });
+    return mutual;
   } catch (err) {
     console.warn('[getMutualFriends] error:', err);
     return [];
@@ -6030,7 +6084,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   getMutualFriends(targetUid).then(mFriends => {
     if (_fullProfileTargetUser?.uid !== targetUid) return;
     if (tabFriendsBtn) tabFriendsBtn.textContent = `${mFriends.length}人の共通の友だち`;
-  });
+  }).catch(() => {});
 
   if (nameEl) nameEl.textContent = safeName;
   if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
@@ -6220,7 +6274,8 @@ window.switchFullProfileTab = function (tab) {
           friendsListEl.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通の友だちはまだいません</div>`;
         } else {
           friendsListEl.innerHTML = mutualFriends.map(f => {
-            const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+            const fUid = f.targetUid || f.id;
+            const uInfo = (cachedUsers || []).find(cu => cu.id === fUid) || {};
             const status = uInfo.computedState || uInfo.state || 'offline';
             const isOnline = status === 'online' || status === 'away';
             const fNick = f.targetNickname || uInfo.nickname || 'ユーザー';
@@ -6231,7 +6286,7 @@ window.switchFullProfileTab = function (tab) {
               ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
               : escapeHtml(fNick.charAt(0).toUpperCase());
             return `
-              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${f.targetUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${fUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
                 <div class="relative w-10 h-10 flex-shrink-0">
                   <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
                     ${avatarHtml}
@@ -7865,6 +7920,11 @@ window.enterServer = async function enterServer(serverId, serverData) {
 
 // DM / フレンド画面を開く
 window.openDmHomeView = function (showFriendsOnMobile = false) {
+  // 🌟 楽観的アクティブ切替: コチャピルのアニメーションを即座に開始
+  document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+  const homeBtn = document.getElementById("discordHomeBtn");
+  if (homeBtn) homeBtn.classList.add('active');
+
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -9073,7 +9133,8 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       if (stackEl && mCount > 0) {
         const stackSlice = mFriends.slice(0, 3);
         stackEl.innerHTML = stackSlice.map((f, i) => {
-          const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+          const fUid = f.targetUid || f.id;
+          const uInfo = (cachedUsers || []).find(cu => cu.id === fUid) || {};
           const avUrl = f.targetAvatarUrl || uInfo.avatarUrl;
           const fNick = f.targetNickname || uInfo.nickname || 'U';
           if (isUsableAvatarUrl(avUrl)) {
@@ -9545,6 +9606,11 @@ window.initiateMigrationSend = async function() {
 
 // 探索・発見画面を開く
 window.openDiscoverView = function () {
+  // 🌟 楽観的アクティブ切替: 探索ピルのアニメーションを即座に開始
+  document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+  const discoverBtn = document.getElementById("discordDiscoverBtn");
+  if (discoverBtn) discoverBtn.classList.add('active');
+
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -12316,6 +12382,15 @@ window.renderDiscordServerNav = function () {
             enterServer(server.id, server);
           }
         });
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (currentServerId !== server.id) {
+            // 🌟 楽観的アクティブ切替: クリックした瞬間にピルがスッと伸びるアニメーションを開始
+            document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            enterServer(server.id, server);
+          }
+        });
         navList.appendChild(item);
       };
       joinedServers.forEach(server => renderNavItem(server));
@@ -12326,38 +12401,10 @@ window.renderDiscordServerNav = function () {
         unjoinedServers.forEach(server => renderNavItem(server));
       }
     }
-    // 🌟 ディスカバリー探索画面 (homeGrid) の描画（ナビの差分更新時でもスキップされずに確実に実行）
-    if (homeGrid) homeGrid.innerHTML = "";
-    const renderServer = (server) => {
-      const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
-      const hasUnread = globalItems.some(it => it.serverId === server.id);
-      const isActive = currentServerId === server.id;
-      // 1. 左側サーバーナビゲーションへの追加 (data-server-id 属性でDOM再利用を可能に)
-      const item = document.createElement("div");
-      item.dataset.serverId = server.id;
-      item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
-      item.title = server.name || server.id;
-      const pill = document.createElement("div");
-      pill.className = "discord-server-pill";
-      item.appendChild(pill);
-      const icon = document.createElement("div");
-      icon.className = "discord-server-icon";
-      if (server.iconUrl) {
-        icon.className += " custom-bg";
-        icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-      } else {
-        icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-      }
-      item.appendChild(icon);
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (currentServerId !== server.id) {
-          enterServer(server.id, server);
-        }
-      });
-      navList.appendChild(item);
-      // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
-      if (homeGrid) {
+    // 🌟 2. ディスカバリー探索画面 (homeGrid) の描画（navListへの2重追加を完全排除！）
+    if (homeGrid) {
+      homeGrid.innerHTML = "";
+      const renderHomeCard = (server) => {
         const card = document.createElement("div");
         card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
         const cardIcon = document.createElement("div");

@@ -188,20 +188,32 @@ service cloud.firestore {
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
             (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
           ))
         );
         allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
       }
 
-      // ダイレクトメッセージ (DM) チャンネル
+      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
       match /dm_channels/{dmId} {
-        allow read: if isAuthenticated();
+        allow read: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+          dmId.matches('^' + request.auth.uid + '_.*') ||
+          dmId.matches('^.*_' + request.auth.uid + '$')
+        );
         allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
         allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
         match /keys/{keyUserId} {
-          allow read: if isAuthenticated();
+          allow read: if isAuthenticated() && (
+            isGlobalAdmin(appId) ||
+            request.auth.uid == keyUserId ||
+            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+            dmId.matches('^' + request.auth.uid + '_.*') ||
+            dmId.matches('^.*_' + request.auth.uid + '$')
+          );
           allow write: if isAuthenticated() &&
             (isGlobalAdmin(appId) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
@@ -211,22 +223,30 @@ service cloud.firestore {
         }
       }
 
-      // 端末間データ移行 (P2P Device Transfers)
+      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
       match /device_transfers/{sessionCode} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
+        );
         allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
         match /{subcollection}/{docId} {
           allow read, write: if isAuthenticated();
         }
       }
 
-      // P2P 過去ログ分散補完 (P2P Log Sync)
+      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定)
       match /p2p_log_sync/{syncId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
            (request.resource.data.requesterUid == request.auth.uid &&
             (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == null ||
              request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
              request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
         allow update: if isAuthenticated();
@@ -241,9 +261,14 @@ service cloud.firestore {
         allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // 4. P2P音声通話シグナリング (Calls)
+      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
       match /calls/{callId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
+        );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
@@ -259,9 +284,13 @@ service cloud.firestore {
         }
       }
 
-      // 4b. P2Pファイル共有シグナリング (File Shares)
+      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
       match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
+        );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
@@ -325,11 +354,14 @@ service cloud.firestore {
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
           );
 
-          // ルーム内メッセージ (Messages)
+          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
           match /messages/{messageId} {
             allow read: if isAuthenticated();
             allow create: if isAuthenticated() &&
-              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
+              (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
+               (request.resource.data.senderId == request.auth.uid &&
+                exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+                request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
               (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
 
             allow update: if isAuthenticated() && (
@@ -361,14 +393,23 @@ service cloud.firestore {
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
+          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
           match /roomKeys/{keyId} {
-            allow read, write: if isAuthenticated();
+            allow read, write: if isAuthenticated() && (
+              isGlobalAdmin(appId) ||
+              isServerAdmin(appId, serverId) ||
+              (exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+            );
           }
 
-          // E2EE 救済リクエスト (Rescue Requests)
+          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
           match /rescueRequests/{reqUserId} {
-            allow read, delete: if isAuthenticated();
+            allow read, delete: if isAuthenticated() && (
+              request.auth.uid == reqUserId ||
+              isServerAdmin(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
             allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
           }
 

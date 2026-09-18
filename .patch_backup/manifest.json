@@ -1,9 +1,11 @@
 {
-  "date": "2026-09-18T13:49:22.637Z",
+  "date": "2026-09-18T16:05:05.428Z",
   "files": [
-    "server/src/index.js",
     "public/js/main.js",
-    "public/js/crypto_helpers.js",
-    "database.rules.json"
+    "public/css/modules/sidebar.css",
+    "firestore.rules",
+    "public/version.json",
+    "src-tauri/tauri.conf.json",
+    "public/index.html"
   ]
 }
