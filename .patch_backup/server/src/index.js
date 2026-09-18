@@ -248,7 +248,7 @@ async function handleEmergencyPasswordReset(request, env) {
         return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       }
 
-      // recovery_vault に監査ログを更新
+      // recovery_vault に監査ログを更新（新規・未作成時でもNOT_FOUNDにならず安全にupsert保存）
       const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
       await fetch(commitUrl, {
         method: "POST",
@@ -258,11 +258,12 @@ async function handleEmergencyPasswordReset(request, env) {
             update: {
               name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
               fields: {
+                userId: { stringValue: targetUid },
+                email: { stringValue: cleanEmail },
                 lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
                 recoveryStatus: { stringValue: 'verified' }
               }
-            },
-            updateMask: { fieldPaths: ["lastRecoveryAttempt", "recoveryStatus"] }
+            }
           }]
         })
       }).catch(() => {});

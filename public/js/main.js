@@ -5767,8 +5767,9 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
       }
     };
     img.onerror = fallback;
-    // SafariのCORSキャッシュ汚染防止用クエリを付与して安全にロード
-    const fetchUrl = avatarUrl.includes('?') ? `${avatarUrl}&_covo_cb=1` : `${avatarUrl}?_covo_cb=1`;
+    // SafariのCORSキャッシュ汚染防止用クエリを付与して安全にロード（blob: や data: はそのまま読み込む）
+    const isLocalUri = typeof avatarUrl === 'string' && (avatarUrl.startsWith('blob:') || avatarUrl.startsWith('data:'));
+    const fetchUrl = isLocalUri ? avatarUrl : (avatarUrl.includes('?') ? `${avatarUrl}&_covo_cb=1` : `${avatarUrl}?_covo_cb=1`);
     img.src = fetchUrl;
   });
 }
@@ -7289,13 +7290,18 @@ function subscribeToUserStatus() {
             const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
             const fallbackLc = existing.last_changed || cachedProf.last_changed || lastSeenNum || null;
             usersMap.set(uid, {
-              id: uid,
-              state: 'offline',
               ...existing,
               ...cachedProf,
+              id: uid,
+              state: 'offline',
+              computedState: 'offline',
               last_changed: fallbackLc,
               lastSeen: fallbackLc
             });
+            if (cachedProf) {
+              cachedProf.status = 'offline';
+              cachedProf.state = 'offline';
+            }
           }
           cachedUsers = Array.from(usersMap.values());
           requestRenderMembersList();
@@ -7304,21 +7310,15 @@ function subscribeToUserStatus() {
           if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
             renderDmActiveNowPanel();
           }
-        };
-        onValue(statusRef, callback);
-        unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
-      });
-    });
-  }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
-}
-
-※ 【第1回（前半）終了】
-残りのコード修正（修正5: リカバリーキーのクライアント側処理、修正6: アバターアクセントカラー抽出のキャッシュ汚染防止、修正7: エラーテレメトリの
-RTDB リアルタイム集約、修正8: 相手と自分の双方のフレンド関係に基づいた真の共通フレンド計算、修正9:
-サーバーナビ差分更新によるピルアニメーション完全再生）および**【第3部:
-
-function renderMembersList(users) {
-  if (!membersList) return;
+          };
+          onValue(statusRef, callback);
+          unsubscribeStatusArray.push(() => off(statusRef, 'value', callback));
+          });
+          });
+          }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
+          }
+          function renderMembersList(users) {
+          if (!membersList) return;
   membersList.innerHTML = "";
   // サーバーメンバーのみ表示（currentServerData がない場合は全員）
   const serverMemberIds = currentServerData?.joinedUsers || null;
@@ -7344,10 +7344,12 @@ function renderMembersList(users) {
         computedState = 'offline';
       }
     }
-    // update own UI status indicator here
+    // update own UI status indicator here (自分が最前面アクティブ時は常にオンラインを維持)
     if (u.id === userId) {
+      const isSelfActive = (document.visibilityState === 'visible') && document.hasFocus();
+      const myDisplayState = isSelfActive ? 'online' : computedState;
       const statusElement = document.getElementById('userPanelStatus');
-      if (statusElement) statusElement.className = `status-indicator status-${computedState}`;
+      if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
     }
     return { ...u, computedState };
   });
@@ -11671,7 +11673,7 @@ setTimeout(() => {
         URL.revokeObjectURL(finalUrl);
         const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
         const stampFile = new File([blob], "stamp.png", { type: "image/png" });
-        return await uploadToExternalService(stampFile, () => { }, 'stamps');
+        return await uploadToExternalService(stampFile, () => { }, 'stamps', targetServerId);
       };
 
       btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>アイコンを処理中...';
@@ -11743,7 +11745,7 @@ setTimeout(() => {
         URL.revokeObjectURL(finalUrl);
         const blob = await new Promise(res => canvas.toBlob(res, "image/png", 0.9));
         const stampFile = new File([blob], "stamp.png", { type: "image/png" });
-        const url = await uploadToExternalService(stampFile, () => { }, 'stamps');
+        const url = await uploadToExternalService(stampFile, () => { }, 'stamps', targetServerId);
         const sName = stampFiles[i].name.replace(/\.[^/.]+$/, "");
         uploadedStamps.push({ name: sName, url });
       }
@@ -16707,13 +16709,13 @@ function renderMessagesWithReadReceipts() {
 
   // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
   const reversedMessages = [...filteredMessages].reverse();
-
   const getDayString = (ts) => {
-    if (!ts) return "";
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const ms = parseTimestampToMs(ts);
+    if (!ms || ms <= 0) return "";
+    const d = new Date(ms);
     const today = new Date();
     const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-    if (isToday) return null;
+    if (isToday) return "今日";
     const yday = new Date(today); yday.setDate(today.getDate() - 1);
     const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
     if (isYday) return "昨日";
@@ -18037,6 +18039,9 @@ async function deleteRoomCascade(serverId, roomId) {
       localStorage.removeItem('covo_last_room_' + serverId);
     }
   } catch (_) {}
+  if (window.__globalRoomsCache && window.__globalRoomsCache[serverId]) {
+    delete window.__globalRoomsCache[serverId][roomId];
+  }
 }
 // サーバーと配下の全データ（全ルーム添付ファイル、rooms, messages, readReceipts, profiles, inviteCodes, secrets, LocalStore）を削除
 async function deleteServerCascade(serverId) {

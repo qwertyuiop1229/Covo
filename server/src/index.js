@@ -2229,25 +2229,27 @@ async function handleAdminDeleteMessage(request, env) {
     await fetch(rtdbUrl, {
       method: "DELETE"
     });
-    try {
-      const auditUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/audit_logs`;
-      await fetch(auditUrl, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: {
-            action: { stringValue: "delete_message" },
-            operatorUid: { stringValue: verifiedUser.uid },
-            operatorEmail: { stringValue: verifiedUser.email || "" },
-            serverId: { stringValue: serverId },
-            roomId: { stringValue: roomId },
-            messageId: { stringValue: messageId },
-            timestamp: { integerValue: String(Date.now()) }
-          }
-        })
-      });
-    } catch (auditErr) {
-      console.warn("Audit log creation error:", auditErr);
+    if (isGlobal || isSvAdmin) {
+      try {
+        const auditUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/audit_logs`;
+        await fetch(auditUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              action: { stringValue: "delete_message" },
+              operatorUid: { stringValue: verifiedUser.uid },
+              operatorEmail: { stringValue: verifiedUser.email || "" },
+              serverId: { stringValue: serverId },
+              roomId: { stringValue: roomId },
+              messageId: { stringValue: messageId },
+              timestamp: { integerValue: String(Date.now()) }
+            }
+          })
+        });
+      } catch (auditErr) {
+        console.warn("Audit log creation error:", auditErr);
+      }
     }
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
   } catch (err) {
@@ -3371,13 +3373,15 @@ async function handleD1Api(request, env, url) {
               return tA - tB;
             });
             const MAX_ALLOWED = 100;
-            if (msgsList.length <= MAX_ALLOWED) {
+            // ピン留め（アナウンス）メッセージは自動プルーニングから保護し、通常メッセージのみを対象とする
+            const unpinnedMsgs = msgsList.filter(m => !m.isPinned);
+            if (unpinnedMsgs.length <= MAX_ALLOWED) {
               return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
               });
             }
-            const excessCount = msgsList.length - MAX_ALLOWED;
-            const excessMsgs = msgsList.slice(0, excessCount);
+            const excessCount = unpinnedMsgs.length - MAX_ALLOWED;
+            const excessMsgs = unpinnedMsgs.slice(0, excessCount);
             let deletedFiles = 0;
             let prunedCount = 0;
             for (const msg of excessMsgs) {

@@ -5876,6 +5876,18 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       }
     }
   }
+  // 前のユーザーのカスタムステータス残留を完全防止（キャッシュがあれば即時適用、なければ非表示に初期化）
+  if (customStatusWrap) {
+    const cachedTarget = cachedUsers.find(u => u.id === targetUid) || window._userProfileCache?.get(targetUid);
+    if (cachedTarget?.customStatus?.text) {
+      customStatusWrap.classList.remove("hidden");
+      if (statusEmojiEl) statusEmojiEl.textContent = cachedTarget.customStatus.emoji || "💬";
+      if (statusTextEl) statusTextEl.textContent = cachedTarget.customStatus.text;
+    } else {
+      customStatusWrap.classList.add("hidden");
+      if (statusTextEl) statusTextEl.textContent = "";
+    }
+  }
   // 🚀 タップ直後に0msで即座にモーダルを表示（通信待ちによるタップ無反応バグを完全解消）
   openModal(modal);
   // バックグラウンドで非同期に最新ユーザー詳細（ステメ等）を取得して反映
@@ -7829,7 +7841,14 @@ window.enterServer = async function enterServer(serverId, serverData) {
       return;
     }
     const data = snap.data();
+    const prevJoined = currentServerData?.joinedUsers || [];
     currentServerData = { id: snap.id, ...data };
+    // メンバーの出入り（構成変化）を検知した場合はステータス購読を自動再同期
+    const nextJoined = data.joinedUsers || [];
+    const isMemberChanged = prevJoined.length !== nextJoined.length || !prevJoined.every((u, i) => u === nextJoined[i]);
+    if (isMemberChanged && typeof subscribeToUserStatus === 'function') {
+      subscribeToUserStatus();
+    }
     // 自身がキックまたはBANされた場合、即座に画面を閉じて切断
     if (!isAdmin && data.joinedUsers && !data.joinedUsers.includes(userId)) {
       if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
@@ -12253,6 +12272,7 @@ window.renderDiscordServerNav = function () {
     const currentIds = allDisplayServers.map(s => s.id);
     const isSameStructure = existingIds.length === currentIds.length && existingIds.every((id, idx) => id === currentIds[idx]);
     if (isSameStructure && existingDomItems.length > 0) {
+      // 🌟 ピルアニメーション保護: サーバーナビ要素を破棄せずクラスのみ差分更新
       existingDomItems.forEach(item => {
         const sid = item.dataset.serverId;
         const isActive = currentServerId === sid;
@@ -12260,9 +12280,44 @@ window.renderDiscordServerNav = function () {
         item.classList.toggle('active', isActive);
         item.classList.toggle('has-unread', hasUnread);
       });
-      return;
+    } else {
+      navList.innerHTML = "";
+      const renderNavItem = (server) => {
+        const hasUnread = globalItems.some(it => it.serverId === server.id);
+        const isActive = currentServerId === server.id;
+        const item = document.createElement("div");
+        item.dataset.serverId = server.id;
+        item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
+        item.title = server.name || server.id;
+        const pill = document.createElement("div");
+        pill.className = "discord-server-pill";
+        item.appendChild(pill);
+        const icon = document.createElement("div");
+        icon.className = "discord-server-icon";
+        if (server.iconUrl) {
+          icon.className += " custom-bg";
+          icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
+        } else {
+          icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
+        }
+        item.appendChild(icon);
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (currentServerId !== server.id) {
+            enterServer(server.id, server);
+          }
+        });
+        navList.appendChild(item);
+      };
+      joinedServers.forEach(server => renderNavItem(server));
+      if (isAdmin && unjoinedServers.length > 0) {
+        const navSep = document.createElement("div");
+        navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
+        navList.appendChild(navSep);
+        unjoinedServers.forEach(server => renderNavItem(server));
+      }
     }
-    navList.innerHTML = "";
+    // 🌟 ディスカバリー探索画面 (homeGrid) の描画（ナビの差分更新時でもスキップされずに確実に実行）
     if (homeGrid) homeGrid.innerHTML = "";
     const renderServer = (server) => {
       const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
@@ -17909,22 +17964,29 @@ function openPdfLightbox(url, fileName) {
 // Firestore ルール制限（1バッチ内の get() 最大20回評価制限）に完全準拠した安全な小分けバッチ削除
 async function batchDeleteCollection(colRef) {
   let hasMore = true;
-  let safetyLoopLimit = 100;
+  let safetyLoopLimit = 50;
   while (hasMore && safetyLoopLimit > 0) {
     safetyLoopLimit--;
     const snap = await getDocs(query(colRef, limit(10)));
     if (snap.empty) break;
+    let deletedCount = 0;
     try {
       const batch = writeBatch(db);
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
+      deletedCount = snap.docs.length;
     } catch (batchErr) {
       console.warn('[batchDeleteCollection] Batch failed, falling back to individual deleteDoc:', batchErr);
       // バッチ失敗時の個別 deleteDoc 安全フォールバック
       for (const d of snap.docs) {
-        await deleteDoc(d.ref).catch(() => {});
+        try {
+          await deleteDoc(d.ref);
+          deletedCount++;
+        } catch (_) {}
       }
     }
+    // 権限不足等で1件も削除できなかった場合は即座にループを抜けてフリーズを防止
+    if (deletedCount === 0) break;
     hasMore = snap.docs.length === 10;
   }
 }
@@ -17966,6 +18028,13 @@ async function deleteRoomCascade(serverId, roomId) {
   try {
     if (typeof LocalStore !== 'undefined' && LocalStore.clearMessagesForChannel) {
       await LocalStore.clearMessagesForChannel(`${serverId}_${roomId}`);
+    }
+  } catch (_) {}
+  // 5. 削除されたルームへのゾンビ再入室・鍵警告（roomKey未存在エラー）を確実に防止
+  try {
+    const savedLastRoom = localStorage.getItem('covo_last_room_' + serverId);
+    if (savedLastRoom === roomId) {
+      localStorage.removeItem('covo_last_room_' + serverId);
     }
   } catch (_) {}
 }
