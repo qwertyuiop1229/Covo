@@ -1666,12 +1666,14 @@ async function handleDeleteFile(request, env, url) {
     });
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';
-
     let isPrivilegedAdmin = false;
     if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
       isPrivilegedAdmin = true;
     } else {
       const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+      if (!isValidAppId(appId, env)) {
+        return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
@@ -1861,10 +1863,9 @@ async function handleStorageCategoryFiles(request, env, url) {
     if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-
     const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
     const category = url.searchParams.get("category") || "images";
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    if (!isValidAppId(appId, env)) return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
@@ -2194,24 +2195,28 @@ async function handleAdminDeleteMessage(request, env) {
     // --- サーバーメッセージの削除処理 ---
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
     let isOwner = false;
-    if (!isGlobal && !isSvAdmin) {
-      // 🔒 一般メンバーでも自分が送信したメッセージであれば削除を許可する（クライアント直接削除失敗時の安全なフォールバック）
-      const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
-      const msgCheckRes = await fetch(msgCheckUrl);
-      const msgCheckData = await msgCheckRes.json().catch(() => null);
-      if (msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid)) {
-        isOwner = true;
-      } else {
-        const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
-        const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
-        const fsCheckData = await fsCheckRes.json().catch(() => null);
-        if (fsCheckData && fsCheckData.fields && (fsCheckData.fields.senderId?.stringValue === verifiedUser.uid || fsCheckData.fields.userId?.stringValue === verifiedUser.uid)) {
-          isOwner = true;
-        }
+    let targetSenderId = null;
+
+    // メッセージの送信者情報を事前に取得して本人確認
+    const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
+    const msgCheckRes = await fetch(msgCheckUrl);
+    const msgCheckData = await msgCheckRes.json().catch(() => null);
+    if (msgCheckData) {
+      targetSenderId = msgCheckData.senderId || msgCheckData.userId || null;
+      if (targetSenderId === verifiedUser.uid) isOwner = true;
+    }
+    if (!isOwner) {
+      const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
+      const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+      const fsCheckData = await fsCheckRes.json().catch(() => null);
+      if (fsCheckData && fsCheckData.fields) {
+        targetSenderId = fsCheckData.fields.senderId?.stringValue || fsCheckData.fields.userId?.stringValue || targetSenderId;
+        if (targetSenderId === verifiedUser.uid) isOwner = true;
       }
-      if (!isOwner) {
-        return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-      }
+    }
+
+    if (!isGlobal && !isSvAdmin && !isOwner) {
+      return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (env.DB) {
       try {
@@ -2229,7 +2234,8 @@ async function handleAdminDeleteMessage(request, env) {
     await fetch(rtdbUrl, {
       method: "DELETE"
     });
-    if (isGlobal || isSvAdmin) {
+    // 管理者による他者メッセージのモデレーション削除時のみ監査ログに記録（自分自身の通常削除は除外）
+    if ((isGlobal || isSvAdmin) && !isOwner) {
       try {
         const auditUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/audit_logs`;
         await fetch(auditUrl, {
@@ -2243,6 +2249,7 @@ async function handleAdminDeleteMessage(request, env) {
               serverId: { stringValue: serverId },
               roomId: { stringValue: roomId },
               messageId: { stringValue: messageId },
+              targetSenderId: targetSenderId ? { stringValue: targetSenderId } : { nullValue: null },
               timestamp: { integerValue: String(Date.now()) }
             }
           })
@@ -3346,10 +3353,8 @@ async function handleD1Api(request, env, url) {
             const rtdbPath = dmId
               ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?${authQuery}`
               : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?${authQuery}`;
-
             const rtdbRes = await fetch(rtdbPath, {
               headers: {
-                "Authorization": `Bearer ${rtdbToken}`,
                 "Accept": "application/json"
               }
             });
@@ -3407,7 +3412,7 @@ async function handleD1Api(request, env, url) {
               const delMsgRtdbUrl = dmId
                 ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
                 : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
-              await fetch(delMsgRtdbUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${rtdbToken}` } }).catch(() => {});
+              await fetch(delMsgRtdbUrl, { method: "DELETE" }).catch(() => {});
               if (!dmId && serverId && roomId && adminToken) {
                 const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
                 await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});

@@ -702,6 +702,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m._decryptedErrorText = null;
             m._decrypted = true;
             if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              if (!m.channelId && serverId && roomId) m.channelId = `${serverId}_${roomId}`;
               LocalStore.putMessage(m).catch(() => {});
             }
           }
@@ -1203,6 +1204,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             m._decryptedErrorText = null;
             m._decrypted = true;
             if (typeof LocalStore !== 'undefined' && LocalStore.putMessage) {
+              if (!m.channelId && dmId) m.channelId = dmId.startsWith('dm_') ? dmId : `dm_${dmId}`;
               LocalStore.putMessage(m).catch(() => {});
             }
           }

@@ -7144,9 +7144,7 @@ let _renderMembersDebounceTimer = null;
 
 function getTimestampMs(obj) {
   if (!obj || !obj.last_changed) return 0;
-  if (typeof obj.last_changed === 'number') return obj.last_changed; // RTDB
-  if (obj.last_changed.toDate) return obj.last_changed.toDate().getTime(); // Firestore
-  return 0;
+  return parseTimestampToMs(obj.last_changed);
 }
 
 function requestRenderMembersList() {
@@ -9086,9 +9084,8 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       }
       if (aboutMeEl) aboutMeEl.textContent = prof.aboutMe || '自己紹介はまだ設定されていません。';
       if (joinedEl && (prof.lastSeen || prof.createdAt)) {
-        const rawDate = prof.createdAt || prof.lastSeen;
-        const d = new Date(rawDate.toDate ? rawDate.toDate() : rawDate);
-        if (!isNaN(d.getTime())) joinedEl.textContent = d.toLocaleDateString('ja-JP');
+        const ms = parseTimestampToMs(prof.createdAt || prof.lastSeen);
+        if (ms > 0) joinedEl.textContent = new Date(ms).toLocaleDateString('ja-JP');
       }
     }
     if (friendBtn && typeof friendRelationships === 'object') {
@@ -10892,7 +10889,8 @@ window.openInviteModal = async function() {
     let validCode = null;
     snap.forEach(d => {
       const inv = d.data();
-      if (!inv.disabled && (!inv.expiresAt || inv.expiresAt.toDate().getTime() > Date.now())) {
+      const expMs = parseTimestampToMs(inv.expiresAt);
+      if (!inv.disabled && (!expMs || expMs > Date.now())) {
         if (!validCode) validCode = d.id;
       }
     });
@@ -11174,7 +11172,8 @@ async function loadInviteCodes() {
     item.className = "invite-code-item";
     const uses = Number.isFinite(inv.uses) ? inv.uses : 0;
     const maxUsesLabel = inv.maxUses > 0 ? inv.maxUses : '∞';
-    const expLabel = inv.expiresAt ? '・' + new Date(inv.expiresAt.toDate()).toLocaleDateString() + 'まで' : '';
+    const expMs = parseTimestampToMs(inv.expiresAt);
+    const expLabel = expMs > 0 ? '・' + new Date(expMs).toLocaleDateString('ja-JP') + 'まで' : '';
     item.innerHTML = `
             <div class="flex-1">
               <div class="invite-code-text">${escapeHtml(d.id)}</div>
@@ -12379,12 +12378,6 @@ window.renderDiscordServerNav = function () {
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           if (currentServerId !== server.id) {
-            enterServer(server.id, server);
-          }
-        });
-        item.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (currentServerId !== server.id) {
             // 🌟 楽観的アクティブ切替: クリックした瞬間にピルがスッと伸びるアニメーションを開始
             document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
             item.classList.add('active');
@@ -12401,7 +12394,7 @@ window.renderDiscordServerNav = function () {
         unjoinedServers.forEach(server => renderNavItem(server));
       }
     }
-    // 🌟 2. ディスカバリー探索画面 (homeGrid) の描画（navListへの2重追加を完全排除！）
+    // 🌟 2. ディスカバリー探索画面 (homeGrid) の描画
     if (homeGrid) {
       homeGrid.innerHTML = "";
       const renderHomeCard = (server) => {
@@ -12436,23 +12429,18 @@ window.renderDiscordServerNav = function () {
           }
         });
         homeGrid.appendChild(card);
-      }
-    };
-    joinedServers.forEach(server => renderServer(server));
-    if (isAdmin && unjoinedServers.length > 0) {
-      const navSep = document.createElement("div");
-      navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
-      navList.appendChild(navSep);
-      if (homeGrid) {
+      };
+      joinedServers.forEach(server => renderHomeCard(server));
+      if (isAdmin && unjoinedServers.length > 0) {
         const homeSep = document.createElement("div");
         homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
         homeSep.innerHTML = `<span class="bg-gray-50 dark:bg-gray-900 px-4 text-xs font-bold text-gray-400 -mt-2">未参加のサーバー</span>`;
         homeGrid.appendChild(homeSep);
+        unjoinedServers.forEach(server => renderHomeCard(server));
       }
-      unjoinedServers.forEach(server => renderServer(server));
-    }
-    if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
-      homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
+      if (joinedServers.length === 0 && unjoinedServers.length === 0) {
+        homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
+      }
     }
     // ホーム画面右側の全体メンバーリスト描画
     const homeMembersSidebar = document.getElementById("discordHomeMembers");
@@ -18207,7 +18195,7 @@ async function notifyNewMessage({
   isDm = false,
   targetUid = null,
   targetAvatarUrl = null
-}) {
+} = {}) {
   const notifKey = messageId || `${channelId}_${text}_${senderName}`;
   if (_notifiedMessageIds.has(notifKey)) return;
   _notifiedMessageIds.add(notifKey);

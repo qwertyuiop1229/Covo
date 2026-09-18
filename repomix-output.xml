@@ -10357,9 +10357,15 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       /* モバイル時のピル左端密着調整 */
       body.discord-ui-mode .discord-server-pill {
         left: -11px !important;
+        transition: height 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
+                    transform 0.22s cubic-bezier(0.25, 1, 0.5, 1),
+                    opacity 0.2s ease-out !important;
+        will-change: height, transform, opacity;
       }
       body.discord-ui-mode .discord-server-item.active .discord-server-pill {
         height: 38px !important;
+        transform: translateX(0) !important;
+        opacity: 1 !important;
       }
       /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
       body.discord-ui-mode #sidebar {
@@ -12727,20 +12733,32 @@ service cloud.firestore {
           request.auth.uid == userId ||
           (request.auth.uid == targetUserId && (
             (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && resource.data.status == 'pending_sent')
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
           ))
         );
         allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
       }
 
-      // ダイレクトメッセージ (DM) チャンネル
+      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
       match /dm_channels/{dmId} {
-        allow read: if isAuthenticated();
+        allow read: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+          dmId.matches('^' + request.auth.uid + '_.*') ||
+          dmId.matches('^.*_' + request.auth.uid + '$')
+        );
         allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
         allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
         match /keys/{keyUserId} {
-          allow read: if isAuthenticated();
+          allow read: if isAuthenticated() && (
+            isGlobalAdmin(appId) ||
+            request.auth.uid == keyUserId ||
+            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+            dmId.matches('^' + request.auth.uid + '_.*') ||
+            dmId.matches('^.*_' + request.auth.uid + '$')
+          );
           allow write: if isAuthenticated() &&
             (isGlobalAdmin(appId) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
@@ -12750,18 +12768,25 @@ service cloud.firestore {
         }
       }
 
-      // 端末間データ移行 (P2P Device Transfers)
+      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
       match /device_transfers/{sessionCode} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
+        );
         allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
         match /{subcollection}/{docId} {
           allow read, write: if isAuthenticated();
         }
       }
 
-      // P2P 過去ログ分散補完 (P2P Log Sync)
+      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定)
       match /p2p_log_sync/{syncId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
            (request.resource.data.requesterUid == request.auth.uid &&
@@ -12781,9 +12806,14 @@ service cloud.firestore {
         allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
       }
 
-      // 4. P2P音声通話シグナリング (Calls)
+      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
       match /calls/{callId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
+        );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
@@ -12799,9 +12829,13 @@ service cloud.firestore {
         }
       }
 
-      // 4b. P2Pファイル共有シグナリング (File Shares)
+      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
       match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated();
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
+        );
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
@@ -12865,11 +12899,14 @@ service cloud.firestore {
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
           );
 
-          // ルーム内メッセージ (Messages)
+          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
           match /messages/{messageId} {
             allow read: if isAuthenticated();
             allow create: if isAuthenticated() &&
-              (request.resource.data.senderId == request.auth.uid || isGlobalAdmin(appId)) &&
+              (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
+               (request.resource.data.senderId == request.auth.uid &&
+                exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+                request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
               (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
 
             allow update: if isAuthenticated() && (
@@ -12901,14 +12938,23 @@ service cloud.firestore {
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }
 
-          // E2EE ルーム暗号鍵 (Room Keys: 全メンバーの自動バックフィル・救済配布を許可)
+          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
           match /roomKeys/{keyId} {
-            allow read, write: if isAuthenticated();
+            allow read, write: if isAuthenticated() && (
+              isGlobalAdmin(appId) ||
+              isServerAdmin(appId, serverId) ||
+              (exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+            );
           }
 
-          // E2EE 救済リクエスト (Rescue Requests)
+          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
           match /rescueRequests/{reqUserId} {
-            allow read, delete: if isAuthenticated();
+            allow read, delete: if isAuthenticated() && (
+              request.auth.uid == reqUserId ||
+              isServerAdmin(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
             allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
           }
 
@@ -18871,13 +18917,13 @@ async function handleD1Api(request, env, url) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.202" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.204" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.202" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.204" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -22267,7 +22313,7 @@ async function handleD1Api(request, env, url) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.202"></script>
+  <script type="module" src="js/main.js?v=1.1.204"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -29066,6 +29112,16 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   if (mutualServersCountText) {
     mutualServersCountText.textContent = `${mutualServersCount}個の共通サーバー`;
   }
+  // 共通の友だち数の非同期反映 (ポップアウト対応)
+  if (!isSelf && typeof getMutualFriends === 'function') {
+    getMutualFriends(targetUid).then(mFriends => {
+      if (_currentProfileTargetUser?.uid !== targetUid) return;
+      if (mutualServersCountText) {
+        const mCount = mFriends.length;
+        mutualServersCountText.textContent = `${mCount > 0 ? `${mCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー`;
+      }
+    }).catch(() => {});
+  }
   // クイックメッセージ入力欄
   if (quickMsgArea) {
     if (isSelf) {
@@ -29181,12 +29237,54 @@ window.submitQuickDmMessage = async function () {
 window.getMutualFriends = async function (targetUid) {
   if (!userId || !targetUid || targetUid === userId) return [];
   try {
-    const snap = await getDocs(
-      query(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`), where('status', '==', 'friends'))
-    );
-    const targetFriendUids = new Set(snap.docs.map(d => d.id));
-    const myFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends');
-    return myFriends.filter(f => targetFriendUids.has(f.targetUid));
+    // 1. 相手のフレンド一覧を取得（whereクエリのインデックス不整合を回避し全件取得してJS側でstatus === 'friends'を判定）
+    const snap = await getDocs(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`)).catch(err => {
+      console.warn('[getMutualFriends] remote fetch warning:', err);
+      return { docs: [] };
+    });
+    const targetFriendUids = new Set();
+    snap.docs.forEach(d => {
+      const data = d.data() || {};
+      if (data.status === 'friends') {
+        const friendId = data.targetUid || d.id;
+        if (friendId && friendId !== userId && friendId !== targetUid) {
+          targetFriendUids.add(friendId);
+        }
+      }
+    });
+    // 2. 自分のフレンド一覧を取得（メモリキャッシュ ＋ LocalStore ＋ Firestore直接取得の多層フォールバック）
+    let myFriendsMap = { ...(friendRelationships || {}) };
+    if (Object.keys(myFriendsMap).length === 0 && typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
+      try {
+        const localFriends = await LocalStore.getAllFriends();
+        if (Array.isArray(localFriends)) {
+          localFriends.forEach(lf => {
+            const uid = lf.targetUid || lf.id || lf.uid;
+            if (uid) myFriendsMap[uid] = lf;
+          });
+        }
+      } catch (_) {}
+    }
+    if (Object.keys(myFriendsMap).length === 0) {
+      try {
+        const mySnap = await getDocs(collection(db, `artifacts/${appId}/users/${userId}/relationships`));
+        mySnap.docs.forEach(d => {
+          myFriendsMap[d.id] = { id: d.id, ...d.data() };
+        });
+      } catch (_) {}
+    }
+    const myFriends = Object.values(myFriendsMap).filter(r => r.status === 'friends');
+    const mutual = [];
+    myFriends.forEach(f => {
+      const fUid = f.targetUid || f.id;
+      if (fUid && fUid !== userId && fUid !== targetUid && targetFriendUids.has(fUid)) {
+        mutual.push({
+          ...f,
+          targetUid: fUid
+        });
+      }
+    });
+    return mutual;
   } catch (err) {
     console.warn('[getMutualFriends] error:', err);
     return [];
@@ -29227,7 +29325,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   getMutualFriends(targetUid).then(mFriends => {
     if (_fullProfileTargetUser?.uid !== targetUid) return;
     if (tabFriendsBtn) tabFriendsBtn.textContent = `${mFriends.length}人の共通の友だち`;
-  });
+  }).catch(() => {});
   if (nameEl) nameEl.textContent = safeName;
   if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
   if (avatarEl) {
@@ -29416,7 +29514,8 @@ window.switchFullProfileTab = function (tab) {
           friendsListEl.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通の友だちはまだいません</div>`;
         } else {
           friendsListEl.innerHTML = mutualFriends.map(f => {
-            const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+            const fUid = f.targetUid || f.id;
+            const uInfo = (cachedUsers || []).find(cu => cu.id === fUid) || {};
             const status = uInfo.computedState || uInfo.state || 'offline';
             const isOnline = status === 'online' || status === 'away';
             const fNick = f.targetNickname || uInfo.nickname || 'ユーザー';
@@ -29427,7 +29526,7 @@ window.switchFullProfileTab = function (tab) {
               ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
               : escapeHtml(fNick.charAt(0).toUpperCase());
             return `
-              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${f.targetUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${fUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
                 <div class="relative w-10 h-10 flex-shrink-0">
                   <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
                     ${avatarHtml}
@@ -30914,6 +31013,10 @@ window.enterServer = async function enterServer(serverId, serverData) {
 }
 // DM / フレンド画面を開く
 window.openDmHomeView = function (showFriendsOnMobile = false) {
+  // 🌟 楽観的アクティブ切替: コチャピルのアニメーションを即座に開始
+  document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+  const homeBtn = document.getElementById("discordHomeBtn");
+  if (homeBtn) homeBtn.classList.add('active');
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -32033,7 +32136,8 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       if (stackEl && mCount > 0) {
         const stackSlice = mFriends.slice(0, 3);
         stackEl.innerHTML = stackSlice.map((f, i) => {
-          const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+          const fUid = f.targetUid || f.id;
+          const uInfo = (cachedUsers || []).find(cu => cu.id === fUid) || {};
           const avUrl = f.targetAvatarUrl || uInfo.avatarUrl;
           const fNick = f.targetNickname || uInfo.nickname || 'U';
           if (isUsableAvatarUrl(avUrl)) {
@@ -32467,6 +32571,10 @@ window.initiateMigrationSend = async function() {
 };
 // 探索・発見画面を開く
 window.openDiscoverView = function () {
+  // 🌟 楽観的アクティブ切替: 探索ピルのアニメーションを即座に開始
+  document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+  const discoverBtn = document.getElementById("discordDiscoverBtn");
+  if (discoverBtn) discoverBtn.classList.add('active');
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -34990,6 +35098,15 @@ window.renderDiscordServerNav = function () {
             enterServer(server.id, server);
           }
         });
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (currentServerId !== server.id) {
+            // 🌟 楽観的アクティブ切替: クリックした瞬間にピルがスッと伸びるアニメーションを開始
+            document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            enterServer(server.id, server);
+          }
+        });
         navList.appendChild(item);
       };
       joinedServers.forEach(server => renderNavItem(server));
@@ -35000,38 +35117,10 @@ window.renderDiscordServerNav = function () {
         unjoinedServers.forEach(server => renderNavItem(server));
       }
     }
-    // 🌟 ディスカバリー探索画面 (homeGrid) の描画（ナビの差分更新時でもスキップされずに確実に実行）
-    if (homeGrid) homeGrid.innerHTML = "";
-    const renderServer = (server) => {
-      const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
-      const hasUnread = globalItems.some(it => it.serverId === server.id);
-      const isActive = currentServerId === server.id;
-      // 1. 左側サーバーナビゲーションへの追加 (data-server-id 属性でDOM再利用を可能に)
-      const item = document.createElement("div");
-      item.dataset.serverId = server.id;
-      item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
-      item.title = server.name || server.id;
-      const pill = document.createElement("div");
-      pill.className = "discord-server-pill";
-      item.appendChild(pill);
-      const icon = document.createElement("div");
-      icon.className = "discord-server-icon";
-      if (server.iconUrl) {
-        icon.className += " custom-bg";
-        icon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-      } else {
-        icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-      }
-      item.appendChild(icon);
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (currentServerId !== server.id) {
-          enterServer(server.id, server);
-        }
-      });
-      navList.appendChild(item);
-      // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
-      if (homeGrid) {
+    // 🌟 2. ディスカバリー探索画面 (homeGrid) の描画（navListへの2重追加を完全排除！）
+    if (homeGrid) {
+      homeGrid.innerHTML = "";
+      const renderHomeCard = (server) => {
         const card = document.createElement("div");
         card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
         const cardIcon = document.createElement("div");
@@ -48749,7 +48838,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.202",
+  "version": "1.1.204",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48806,7 +48895,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.202",
+  "version": "1.1.204",
   "force": false
 }
 </file>

@@ -1666,12 +1666,14 @@ async function handleDeleteFile(request, env, url) {
     });
     const forceDelete = url.searchParams.get('forceDelete') === '1';
     const adminKey = url.searchParams.get('adminKey') || '';
-
     let isPrivilegedAdmin = false;
     if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
       isPrivilegedAdmin = true;
     } else {
       const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+      if (!isValidAppId(appId, env)) {
+        return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
       isPrivilegedAdmin = await isAppAdmin(appId, verifiedUser, env);
       if (!isPrivilegedAdmin) {
         const serverId = url.searchParams.get("serverId");
@@ -1789,9 +1791,8 @@ async function handleStorageStats(request, env) {
     if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-
     const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    if (!isValidAppId(appId, env)) return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
@@ -1861,10 +1862,9 @@ async function handleStorageCategoryFiles(request, env, url) {
     if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-
     const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
     const category = url.searchParams.get("category") || "images";
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    if (!isValidAppId(appId, env)) return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
@@ -1925,10 +1925,8 @@ async function handleBulkDeleteFiles(request, env) {
     if (!verifiedUser) {
       return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
-
     const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
-    if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
-    
+    if (!isValidAppId(appId, env)) return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
