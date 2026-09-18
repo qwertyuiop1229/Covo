@@ -174,14 +174,14 @@ export default {
 async function handleEmergencyPasswordReset(request, env) {
   const cors = getCorsHeaders(request);
   try {
-    const { email, code, newPassword, appId } = await request.json();
-    if (!email || !code || !newPassword || !appId) {
+    const body = await request.json();
+    const { email, code, recoveryKey, newPassword, appId } = body;
+    if (!email || (!code && !recoveryKey) || !newPassword || !appId) {
       return new Response(JSON.stringify({ success: false, error: "必須項目が不足しています" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (!isValidAppId(appId, env)) {
       return new Response(JSON.stringify({ success: false, error: "不正なappIdが指定されました" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     if (newPassword.length < 6) {
       return new Response(JSON.stringify({ success: false, error: "新しいパスワードは6文字以上で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -189,55 +189,121 @@ async function handleEmergencyPasswordReset(request, env) {
       return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
     const cleanEmail = email.trim().toLowerCase();
-    const cleanCode = code.trim().replace(/[^0-9A-Za-z]/g, '');
-    if (!/^[0-9A-Za-z]{6}$/.test(cleanCode)) {
-      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードは6桁の英数字で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-
+    const isRecoveryKeyMode = Boolean(recoveryKey);
     // 1. メールアドレスのSHA-256ハッシュを計算
     const enc = new TextEncoder();
     const emailBuf = await crypto.subtle.digest('SHA-256', enc.encode(cleanEmail));
     const emailHash = Array.from(new Uint8Array(emailBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
     const projectId = env.FIREBASE_PROJECT_ID;
 
-    // 2. Firestore から admin_recovery_index ドキュメントを取得
+    // --- A. リカバリーキー (COVO-XXXX-XXXX-XXXX-XXXX) による復旧 ---
+    if (isRecoveryKeyMode) {
+      const cleanKey = String(recoveryKey).trim().toUpperCase().replace(/[ー－―–—]/g, '-').replace(/\s+/g, '');
+      const keyIndexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_index/${emailHash}`;
+      const keyIndexRes = await fetch(keyIndexUrl, {
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      });
+      const keyIndexData = await keyIndexRes.json();
+      if (keyIndexData.error || !keyIndexData.fields) {
+        return new Response(JSON.stringify({ success: false, error: "該当するアカウントのリカバリーキーが見つかりません。通常のメール再設定をお試しください。" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+      const kFields = keyIndexData.fields;
+      const salt = kFields.salt?.stringValue || '';
+      const storedKeyHash = kFields.keyHash?.stringValue || '';
+      const storedUserId = kFields.userId?.stringValue || '';
+
+      const keyBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanKey));
+      const computedHash = Array.from(new Uint8Array(keyBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      if (computedHash !== storedKeyHash) {
+        return new Response(JSON.stringify({ success: false, error: "リカバリーキーが一致しません。大文字・ハイフンを含めて正しく入力されているかご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+
+      let targetUid = storedUserId;
+      if (!targetUid) {
+        const lookupUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:lookup`;
+        const lookupRes = await fetch(lookupUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: [cleanEmail] })
+        });
+        const lookupData = await lookupRes.json();
+        if (lookupData.users && lookupData.users.length > 0) {
+          targetUid = lookupData.users[0].localId;
+        }
+      }
+      if (!targetUid) {
+        return new Response(JSON.stringify({ success: false, error: "対象のアカウントが見つかりませんでした" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+
+      const updateUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`;
+      const updateRes = await fetch(updateUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ localId: targetUid, password: newPassword })
+      });
+      const updateResult = await updateRes.json();
+      if (updateResult.error) {
+        console.error("Identity Toolkit update password error (recovery key):", updateResult.error);
+        return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      }
+
+      // recovery_vault に監査ログを更新
+      const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+      await fetch(commitUrl, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          writes: [{
+            update: {
+              name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
+              fields: {
+                lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
+                recoveryStatus: { stringValue: 'verified' }
+              }
+            },
+            updateMask: { fieldPaths: ["lastRecoveryAttempt", "recoveryStatus"] }
+          }]
+        })
+      }).catch(() => {});
+
+      return new Response(JSON.stringify({ success: true, message: "パスワードを正常に変更しました" }), {
+        status: 200,
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+
+    // --- B. 管理者エマージェンシーコード (6桁) による復旧 ---
+    const cleanCode = code.trim().replace(/[^0-9A-Za-z]/g, '');
+    if (!/^[0-9A-Za-z]{6}$/.test(cleanCode)) {
+      return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードは6桁の英数字で入力してください" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     const indexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/admin_recovery_index/${emailHash}`;
     const indexRes = await fetch(indexUrl, {
       headers: { "Authorization": `Bearer ${adminToken}` }
     });
     const indexData = await indexRes.json();
-
     if (indexData.error || !indexData.fields) {
       return new Response(JSON.stringify({ success: false, error: "このメールアドレスに対する有効なエマージェンシーコードが見つかりません" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     const fields = indexData.fields;
     const isUsed = fields.used?.booleanValue || false;
     const expiresAt = fields.expiresAt?.integerValue ? parseInt(fields.expiresAt.integerValue, 10) : (fields.expiresAt?.timestampValue ? new Date(fields.expiresAt.timestampValue).getTime() : 0);
     const salt = fields.salt?.stringValue || '';
     const storedPinHash = fields.pinHash?.stringValue || '';
     const storedUserId = fields.userId?.stringValue || '';
-
     if (isUsed) {
       return new Response(JSON.stringify({ success: false, error: "このエマージェンシーコードは既に使用済みです。新しいコードの発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     if (expiresAt > 0 && Date.now() > expiresAt) {
       return new Response(JSON.stringify({ success: false, error: "エマージェンシーコードの有効期限（10分間）が切れています。再発行を依頼してください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    // 3. コードのハッシュを照合
     const codeBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanCode));
     const computedHash = Array.from(new Uint8Array(codeBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
     if (computedHash !== storedPinHash) {
-      // 🔒 レートリミット: 失敗回数をインクリメントし、5回で自動無効化
       const currentFailCount = fields.failCount?.integerValue ? parseInt(fields.failCount.integerValue, 10) : 0;
       const newFailCount = currentFailCount + 1;
       const shouldInvalidate = newFailCount >= 5;
-
       const failUpdateUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
       const failUpdateFields = {
         ...fields,
@@ -259,15 +325,12 @@ async function handleEmergencyPasswordReset(request, env) {
           }]
         })
       });
-
       const remainingAttempts = Math.max(0, 5 - newFailCount);
       const errorMsg = shouldInvalidate
         ? "試行回数の上限（5回）に達しました。このエマージェンシーコードは無効化されました。新しいコードの発行を依頼してください。"
         : `エマージェンシーコードが一致しません。残り${remainingAttempts}回試行できます。`;
       return new Response(JSON.stringify({ success: false, error: errorMsg }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    // 4. Firebase Identity Toolkit API でユーザーのUIDを特定
     let targetUid = storedUserId;
     if (!targetUid) {
       const lookupUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:lookup`;
@@ -284,12 +347,9 @@ async function handleEmergencyPasswordReset(request, env) {
         targetUid = lookupData.users[0].localId;
       }
     }
-
     if (!targetUid) {
       return new Response(JSON.stringify({ success: false, error: "対象のアカウントが見つかりませんでした" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    // 5. Firebase Identity Toolkit API でパスワードを直接更新！
     const updateUrl = `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`;
     const updateRes = await fetch(updateUrl, {
       method: "POST",
@@ -303,13 +363,10 @@ async function handleEmergencyPasswordReset(request, env) {
       })
     });
     const updateResult = await updateRes.json();
-
     if (updateResult.error) {
       console.error("Identity Toolkit update password error:", updateResult.error);
       return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
-    // 6. コードを使用済みに更新 (admin_recovery_index & admin_recovery_requests)
     const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
     const writes = [
       {
@@ -323,7 +380,6 @@ async function handleEmergencyPasswordReset(request, env) {
         }
       }
     ];
-
     if (targetUid) {
       writes.push({
         update: {
@@ -336,18 +392,15 @@ async function handleEmergencyPasswordReset(request, env) {
         updateMask: { fieldPaths: ["used", "usedAt"] }
       });
     }
-
     await fetch(commitUrl, {
       method: "POST",
       headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({ writes })
     });
-
     return new Response(JSON.stringify({ success: true, message: "パスワードを正常に変更しました" }), {
       status: 200,
       headers: { ...cors, "Content-Type": "application/json" }
     });
-
   } catch (err) {
     console.error("handleEmergencyPasswordReset error:", err);
     return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
@@ -1347,7 +1400,7 @@ async function getFCMToken(serviceAccountJsonStr) {
 
 // RTDB REST API用 OAuth2トークン
 async function getRTDBToken(serviceAccountJsonStr) {
-  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.database');
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email');
 }
 
 // 共通: サービスアカウントJWTからGoogle OAuth2トークンを取得
@@ -3221,127 +3274,154 @@ async function handleD1Api(request, env, url) {
         // 100件超過メッセージ自動プルーニング & Cloudflare KV ファイル自動完全消去
         // -------------------------------------------------------------
         async function handlePruneChannelMessages(request, env) {
-        const cors = getCorsHeaders(request);
-        try {
-        const authHeader = request.headers.get("Authorization") || "";
-        const idToken = authHeader.replace("Bearer ", "").trim();
-        if (!idToken) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-        if (!verifiedUser) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const { appId, serverId, roomId, dmId } = await request.json();
-        if (!appId || (!dmId && (!serverId || !roomId))) {
-        return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        if (!isValidAppId(appId, env)) {
-        return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        if (!env.SERVICE_ACCOUNT_JSON) {
-        return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const isGlobal = await isAppAdmin(appId, verifiedUser, env);
-        if (dmId) {
-        const parts = dmId.split('_');
-        if (!isGlobal && !parts.includes(verifiedUser.uid)) {
-        return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        } else {
-        if (!isGlobal) {
-        const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
-        if (!isMember) {
-          return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        }
-        }
-
-        const projectId = env.FIREBASE_PROJECT_ID;
-        const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-        const [adminToken, rtdbToken] = await Promise.all([
-        getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
-        getRTDBToken(env.SERVICE_ACCOUNT_JSON)
-        ]);
-
-        const rtdbPath = dmId
-        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?access_token=${rtdbToken}`
-        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?access_token=${rtdbToken}`;
-
-        const rtdbRes = await fetch(rtdbPath);
-        if (!rtdbRes.ok) {
-        return new Response(JSON.stringify({ error: "Failed to fetch messages from RTDB" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const rtdbData = await rtdbRes.json();
-        if (!rtdbData || typeof rtdbData !== 'object') {
-        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-
-        const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
-        msgsList.sort((a, b) => {
-        const tA = a.timestamp || a.createdAt || 0;
-        const tB = b.timestamp || b.createdAt || 0;
-        return tA - tB;
-        });
-
-        const MAX_ALLOWED = 100;
-        if (msgsList.length <= MAX_ALLOWED) {
-        return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-
-        const excessCount = msgsList.length - MAX_ALLOWED;
-        const excessMsgs = msgsList.slice(0, excessCount);
-
-        let deletedFiles = 0;
-        let prunedCount = 0;
-
-        for (const msg of excessMsgs) {
-        const fileUrls = [];
-        if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
-        if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
-        if (msg.text) {
-        const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
-        matches.forEach(m => fileUrls.push(m[0]));
-        }
-
-        for (const u of fileUrls) {
-        const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-        if (m && env.FILES) {
-          const fileKey = m[1];
+          const cors = getCorsHeaders(request);
           try {
-            await env.FILES.delete(fileKey);
-            deletedFiles++;
-          } catch (delErr) {
-            console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
+            const authHeader = request.headers.get("Authorization") || "";
+            const idToken = authHeader.replace("Bearer ", "").trim();
+            if (!idToken) {
+              return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+            if (!verifiedUser) {
+              return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const { appId, serverId, roomId, dmId } = await request.json();
+            if (!appId || (!dmId && (!serverId || !roomId))) {
+              return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (!isValidAppId(appId, env)) {
+              return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+            if (dmId) {
+              const parts = dmId.split('_');
+              if (!isGlobal && !parts.includes(verifiedUser.uid)) {
+                return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+              }
+            } else {
+              if (!isGlobal) {
+                const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+                if (!isMember) {
+                  return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+                }
+              }
+            }
+            const projectId = env.FIREBASE_PROJECT_ID;
+            const rtdbBase = env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+
+            // サービスアカウント優先、フォールバックでWorker認証トークンまたはユーザーIDトークンを使用
+            let adminToken = null;
+            let rtdbToken = null;
+            let isOAuth = false;
+            if (env.SERVICE_ACCOUNT_JSON) {
+              try {
+                const [aTok, rTok] = await Promise.all([
+                  getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),
+                  getRTDBToken(env.SERVICE_ACCOUNT_JSON)
+                ]);
+                adminToken = aTok;
+                rtdbToken = rTok;
+                isOAuth = true;
+              } catch (tokErr) {
+                console.warn("[Prune] Service account token error, falling back:", tokErr);
+              }
+            }
+            if (!adminToken || !rtdbToken) {
+              const workerToken = await getWorkerAuthToken(env);
+              if (workerToken) {
+                adminToken = adminToken || workerToken;
+                rtdbToken = workerToken;
+                isOAuth = false;
+              } else {
+                adminToken = adminToken || idToken;
+                rtdbToken = idToken;
+                isOAuth = false;
+              }
+            }
+
+            const authQuery = isOAuth ? `access_token=${rtdbToken}` : `auth=${rtdbToken}`;
+            const rtdbPath = dmId
+              ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?${authQuery}`
+              : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?${authQuery}`;
+
+            const rtdbRes = await fetch(rtdbPath, {
+              headers: {
+                "Authorization": `Bearer ${rtdbToken}`,
+                "Accept": "application/json"
+              }
+            });
+            if (!rtdbRes.ok) {
+              const errText = await rtdbRes.text().catch(() => "");
+              console.warn(`[Prune] RTDB fetch skipped (status ${rtdbRes.status}):`, errText);
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, skipped: true }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const rtdbData = await rtdbRes.json();
+            if (!rtdbData || typeof rtdbData !== 'object') {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
+            msgsList.sort((a, b) => {
+              const tA = a.timestamp || a.createdAt || 0;
+              const tB = b.timestamp || b.createdAt || 0;
+              return tA - tB;
+            });
+            const MAX_ALLOWED = 100;
+            if (msgsList.length <= MAX_ALLOWED) {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+            const excessCount = msgsList.length - MAX_ALLOWED;
+            const excessMsgs = msgsList.slice(0, excessCount);
+            let deletedFiles = 0;
+            let prunedCount = 0;
+            for (const msg of excessMsgs) {
+              const fileUrls = [];
+              if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
+              if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
+              if (msg.text) {
+                const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
+                matches.forEach(m => fileUrls.push(m[0]));
+              }
+              for (const u of fileUrls) {
+                const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+                if (m && env.FILES) {
+                  const fileKey = m[1];
+                  try {
+                    await env.FILES.delete(fileKey);
+                    deletedFiles++;
+                  } catch (delErr) {
+                    console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
+                  }
+                }
+              }
+              const delMsgRtdbUrl = dmId
+                ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
+                : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
+              await fetch(delMsgRtdbUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${rtdbToken}` } }).catch(() => {});
+              if (!dmId && serverId && roomId && adminToken) {
+                const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
+                await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
+              }
+              if (env.DB) {
+                try {
+                  const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
+                  await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
+                } catch (_) {}
+              }
+              prunedCount++;
+            }
+            return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
+              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+            });
+          } catch (err) {
+            console.error("handlePruneChannelMessages error:", err);
+            return new Response(JSON.stringify({ success: false, error: err.toString(), skipped: true }), {
+              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+            });
           }
-        }
-        }
-
-        const delMsgRtdbUrl = dmId
-        ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?access_token=${rtdbToken}`
-        : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?access_token=${rtdbToken}`;
-        await fetch(delMsgRtdbUrl, { method: "DELETE" }).catch(() => {});
-
-        if (!dmId && serverId && roomId) {
-        const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
-        await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
-        }
-
-        if (env.DB) {
-        try {
-          const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
-          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
-        } catch (_) {}
-        }
-
-        prunedCount++;
-        }
-
-        return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
-        status: 200, headers: { ...cors, "Content-Type": "application/json" }
-        });
-        } catch (err) {
-        console.error("handlePruneChannelMessages error:", err);
-        return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
         }

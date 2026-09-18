@@ -230,7 +230,7 @@ function _reportTelemetryError(type, message, stack) {
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
     if (isRapidDuplicate) return;
-    // 2. 🛡️ RTDB REST API への即時送信（Firebase SDK の初期化状態や app の有無に依存せず 100% 確実に即時到達）
+    // 2. 🛡️ RTDB への確実な即時保存（SDK接続時は即座に同期、未接続時はREST APIフォールバック）
     const rtdbPayload = {
       id: signature,
       signature: signature,
@@ -242,13 +242,24 @@ function _reportTelemetryError(type, message, stack) {
       affectedEmails: affectedList,
       environment: envInfo
     };
-    const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
-    fetch(rtdbUrl, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(rtdbPayload),
-      keepalive: true
-    }).catch(() => {});
+    (async () => {
+      try {
+        const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        if (rtdb) {
+          await set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload);
+          return;
+        }
+      } catch (_) {}
+      const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+      const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
+      fetch(rtdbUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rtdbPayload),
+        keepalive: true
+      }).catch(() => {});
+    })();
     // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
       const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
@@ -1798,83 +1809,60 @@ window.submitEmergencyKeyReset = async function () {
   const newPwdInput = document.getElementById('resetKeyNewPassword');
   const msg = document.getElementById('resetKeyMessage');
   const btn = document.getElementById('submitKeyResetBtn');
-
   const email = (emailInput?.value || '').trim().toLowerCase();
   let key = (keyInput?.value || '').trim().toUpperCase();
   const newPwd = (newPwdInput?.value || '').trim();
-
   if (!email) {
-    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = 'メールアドレスを入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   const keyValidation = normalizeAndValidateRecoveryKey(key);
   if (!keyValidation.valid) {
-    if (msg) { msg.textContent = keyValidation.error; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = keyValidation.error; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
   key = keyValidation.key;
   if (!newPwd || newPwd.length < 6) {
-    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400'; }
+    if (msg) { msg.textContent = '新しいパスワードは6文字以上で入力してください。'; msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold'; }
     return;
   }
-
   try {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> リカバリーキーを検証中...'; }
-    
-    const emailHash = await _sha256Hash(email);
-    const indexDocRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
-    const indexSnap = await getDoc(indexDocRef);
-
-    if (!indexSnap.exists()) {
+    // 🔒 Worker API経由で安全に特権検証＆パスワード直接更新（未認証クライアント直接アクセスによるパーミッション拒否を完全根絶）
+    const res = await fetch(`${WORKER_BASE_URL}/api/emergencyPasswordReset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, recoveryKey: key, newPassword: newPwd, appId })
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
       if (msg) {
-        msg.textContent = '該当するアカウントの緊急リカバリーキーが見つかりません。通常のメール再設定をお試しください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+        msg.textContent = result.error || 'リカバリーキーの認証に失敗しました。';
+        msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
       }
       return;
     }
-
-    const indexData = indexSnap.data();
-    const computedHash = await _sha256Hash(indexData.salt + ':' + key);
-
-    if (computedHash !== indexData.keyHash) {
-      if (msg) {
-        msg.textContent = '緊急リカバリーキーが一致しません。大文字・ハイフンを含めて正しく入力されているかご確認ください。';
-        msg.className = 'text-xs text-rose-600 dark:text-rose-400';
-      }
-      return;
-    }
-
-    // キー検証成功！バックグラウンドでメールリンクをトリガーしつつ、復旧成功を通知
-    auth.languageCode = 'ja';
-    sendPasswordResetEmail(auth, email).catch(() => {});
-
-    // Firestoreの復旧監査ログを記録
-    if (indexData.userId) {
-      const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, indexData.userId);
-      setDoc(vaultRef, {
-        lastRecoveryAttempt: serverTimestamp(),
-        recoveryStatus: 'verified'
-      }, { merge: true }).catch(() => {});
-    }
-
     if (msg) {
-      msg.textContent = 'リカバリーキーの認証に成功しました！アカウントのセキュリティ保護のため、安全な再設定完了URLも発行されました。まもなくログイン画面に戻ります。';
+      msg.textContent = 'パスワードを正常に変更しました！新しいパスワードでログインできます。';
       msg.className = 'text-xs text-emerald-600 dark:text-emerald-400 font-bold';
     }
-
+    // ログインフォームにメアドと新パスワードを自動セット
+    const loginEmailInp = document.getElementById('emailInput');
+    const loginPwdInp = document.getElementById('passwordInput');
+    if (loginEmailInp) loginEmailInp.value = email;
+    if (loginPwdInp) loginPwdInp.value = newPwd;
     setTimeout(() => {
       closePasswordResetModal();
-      alertMessage('リカバリーキーで本人確認が完了しました。', 'success');
-    }, 2200);
-
+      alertMessage('パスワードを変更しました！そのままログインできます。', 'success');
+    }, 1500);
   } catch (err) {
     console.error('[Recovery] Emergency key reset error:', err);
     if (msg) {
-      msg.textContent = `復旧処理エラー: ${err.message}`;
-      msg.className = 'text-xs text-rose-600 dark:text-rose-400';
+      msg.textContent = `通信エラー: ${err.message || err}`;
+      msg.className = 'text-xs text-rose-600 dark:text-rose-400 font-bold';
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-key text-xs"></i> リカバリーキーでパスワードを復旧'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span>パスワードを再設定</span>'; }
   }
 };
 
@@ -2835,125 +2823,93 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
+  // 初期表示（ローカルキャッシュがあれば即時描画）
   renderTelemetryErrorsList();
-
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
-
     const mergedMap = new Map();
-
-    // 1. 既存のローカルキャッシュを取り込む
-    (window._cachedTelemetryErrors || []).forEach(item => {
-      if (item && item.id) mergedMap.set(item.id, item);
-    });
-
-    // 2. ブラウザのコンソールログストリーム (window._covoLogs) から [ERR] 行を即時抽出
-    (window._covoLogs || []).forEach(line => {
-      if (line && line.startsWith('[ERR]')) {
-        const cleanMsg = line.slice(5).trim();
-        if (cleanMsg) {
-          const sig = _createErrorSignature('error', cleanMsg, '');
-          if (!mergedMap.has(sig)) {
-            mergedMap.set(sig, {
-              id: sig,
-              signature: sig,
-              type: 'error',
-              message: cleanMsg,
-              stack: '',
-              firstOccurredAt: new Date(),
-              lastOccurredAt: new Date(),
-              count: 1,
-              affectedEmails: [userAuthEmail || '自分']
-            });
-          }
-        }
-      }
-    });
-
-    // 3. RTDB (artifacts/${appId}/error_reports) から全件高速取得
+    // 1. 🛡️ RTDB (artifacts/${appId}/error_reports) をマスターとして全件取得
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const snap = await get(ref(rtdb, `artifacts/${appId}/error_reports`));
-      if (snap.exists()) {
-        const val = snap.val() || {};
-        Object.keys(val).forEach(k => {
-          const remoteItem = val[k];
-          if (remoteItem) {
-            mergedMap.set(k, { id: k, ...remoteItem });
-          }
-        });
+      if (rtdb) {
+        const snap = await get(ref(rtdb, `artifacts/${appId}/error_reports`));
+        if (snap.exists()) {
+          const val = snap.val() || {};
+          Object.keys(val).forEach(k => {
+            const remoteItem = val[k];
+            if (remoteItem && remoteItem.message) {
+              mergedMap.set(k, { id: k, ...remoteItem });
+            }
+          });
+        }
       }
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB read warning:', rtdbErr);
     }
-
-    // 4. Firestore (artifacts/${appId}/error_reports) からも取得してマージ
+    // 2. Firestore バックアップからも取得して補完
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
       fsSnap.forEach(d => {
         const data = d.data();
-        mergedMap.set(d.id, { id: d.id, ...data });
+        if (data && data.message && !mergedMap.has(d.id)) {
+          mergedMap.set(d.id, { id: d.id, ...data });
+        }
       });
     } catch (fsErr) {
       console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
     }
-
-    // 時系列（最新順）にソート
-    const result = Array.from(mergedMap.values());
-    result.sort((a, b) => {
-      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-      return timeB - timeA;
-    });
-
-    window._cachedTelemetryErrors = result;
-    _saveTelemetryErrorsToStorage();
+    // 3. RTDBから取得できた場合、ローカルストレージの偽装・過去ログをクラウドデータで完全同期
+    if (mergedMap.size > 0 || (window._cachedTelemetryErrors && window._cachedTelemetryErrors.length === 0)) {
+      const result = Array.from(mergedMap.values());
+      result.sort((a, b) => {
+        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+        return timeB - timeA;
+      });
+      window._cachedTelemetryErrors = result;
+      _saveTelemetryErrorsToStorage();
+    }
     if (badgeEl) {
-      badgeEl.textContent = result.length;
-      badgeEl.classList.toggle('hidden', result.length === 0);
+      const totalCount = (window._cachedTelemetryErrors || []).length;
+      badgeEl.textContent = totalCount;
+      badgeEl.classList.toggle('hidden', totalCount === 0);
     }
     renderTelemetryErrorsList();
-
-    // 5. RTDB リアルタイムリスナーを開始（他ユーザーのエラー発生も即時画面に反映）
+    // 4. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
-      const onVal = (snapshot) => {
-        if (!snapshot.exists()) return;
-        const liveVal = snapshot.val() || {};
-        let updated = false;
-        Object.keys(liveVal).forEach(k => {
-          const item = liveVal[k];
-          if (item) {
-            const idx = window._cachedTelemetryErrors.findIndex(e => e.id === k);
-            if (idx >= 0) {
-              window._cachedTelemetryErrors[idx] = { id: k, ...item };
-            } else {
-              window._cachedTelemetryErrors.unshift({ id: k, ...item });
-            }
-            updated = true;
+      if (rtdb) {
+        const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
+        const onVal = (snapshot) => {
+          if (!snapshot.exists()) {
+            window._cachedTelemetryErrors = [];
+            _saveTelemetryErrorsToStorage();
+            renderTelemetryErrorsList();
+            return;
           }
-        });
-        if (updated) {
-          window._cachedTelemetryErrors.sort((a, b) => {
+          const liveVal = snapshot.val() || {};
+          const liveList = Object.keys(liveVal).map(k => ({ id: k, ...liveVal[k] })).filter(e => e.message);
+          liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
             return timeB - timeA;
           });
+          window._cachedTelemetryErrors = liveList;
+          _saveTelemetryErrorsToStorage();
           if (badgeEl) {
-            badgeEl.textContent = window._cachedTelemetryErrors.length;
-            badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
+            badgeEl.textContent = liveList.length;
+            badgeEl.classList.toggle('hidden', liveList.length === 0);
           }
           renderTelemetryErrorsList();
-        }
-      };
-      onValue(errsRef, onVal);
-      _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
+        };
+        onValue(errsRef, onVal);
+        _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
+      }
     } catch (_) {}
   } catch (err) {
     console.warn("[Telemetry loadErrorTelemetry notice]", err?.message || err);
@@ -5697,21 +5653,22 @@ function getHashColor(str) {
 }
 function getInstantAccentColor(avatarUrl, seedId = '') {
   if (avatarUrl && _avatarColorCache.has(avatarUrl)) {
-    return _avatarColorCache.get(avatarUrl);
+    const cached = _avatarColorCache.get(avatarUrl);
+    if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
   }
   if (seedId && _avatarColorCache.has('uid_' + seedId)) {
-    return _avatarColorCache.get('uid_' + seedId);
+    const cached = _avatarColorCache.get('uid_' + seedId);
+    if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
   }
   if (seedId && window._userProfileCache?.has(seedId)) {
     const prof = window._userProfileCache.get(seedId);
     if (prof.avatarUrl && _avatarColorCache.has(prof.avatarUrl)) {
-      return _avatarColorCache.get(prof.avatarUrl);
+      const cached = _avatarColorCache.get(prof.avatarUrl);
+      if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
     }
   }
-  const fallbackCol = getHashColor(seedId || avatarUrl);
-  if (seedId) _avatarColorCache.set('uid_' + seedId, fallbackCol);
-  if (avatarUrl) _avatarColorCache.set(avatarUrl, fallbackCol);
-  return fallbackCol;
+  // 暫定色を返すのみとし、キャッシュをランダムプリセット色で汚染しない
+  return getHashColor(seedId || avatarUrl);
 }
 window.getInstantAccentColor = getInstantAccentColor;
 function hslToHex(h, s, l) {
@@ -5733,16 +5690,17 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
     return getHashColor(seedId);
   }
   if (_avatarColorCache.has(avatarUrl)) {
-    return _avatarColorCache.get(avatarUrl);
+    const cached = _avatarColorCache.get(avatarUrl);
+    // 過去に誤って保存されたランダムプリセット色を排除し、画像からの再抽出を保証
+    if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) {
+      return cached;
+    }
   }
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     const fallback = () => {
       const col = getHashColor(seedId || avatarUrl);
-      _avatarColorCache.set(avatarUrl, col);
-      if (seedId) _avatarColorCache.set('uid_' + seedId, col);
-      saveAvatarColorCache();
       resolve(col);
     };
     img.onload = () => {
@@ -5809,7 +5767,9 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
       }
     };
     img.onerror = fallback;
-    img.src = avatarUrl;
+    // SafariのCORSキャッシュ汚染防止用クエリを付与して安全にロード
+    const fetchUrl = avatarUrl.includes('?') ? `${avatarUrl}&_covo_cb=1` : `${avatarUrl}?_covo_cb=1`;
+    img.src = fetchUrl;
   });
 }
 window.getAvatarAccentColor = getAvatarAccentColor;
@@ -5916,31 +5876,34 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       }
     }
   }
-  // 非同期でユーザー詳細（ステメ）を取得
-  try {
-    const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
-    const snap = await getDoc(userDocRef);
-    if (snap.exists()) {
-      const uData = snap.data();
-      if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
-      if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
-        __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
-      }
-      if (uData.email && tagEl) {
-        tagEl.textContent = `@${uData.email.split('@')[0]}`;
-      }
-      if (uData.customStatus && uData.customStatus.text) {
-        if (customStatusWrap) customStatusWrap.classList.remove("hidden");
-        if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
-        if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
-      } else {
-        if (customStatusWrap) customStatusWrap.classList.add("hidden");
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to fetch popout user profile:", err);
-  }
+  // 🚀 タップ直後に0msで即座にモーダルを表示（通信待ちによるタップ無反応バグを完全解消）
   openModal(modal);
+  // バックグラウンドで非同期に最新ユーザー詳細（ステメ等）を取得して反映
+  (async () => {
+    try {
+      const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
+      const snap = await getDoc(userDocRef);
+      if (snap.exists() && _currentProfileTargetUser?.uid === targetUid) {
+        const uData = snap.data();
+        if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
+        if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
+          __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
+        }
+        if (uData.email && tagEl) {
+          tagEl.textContent = `@${uData.email.split('@')[0]}`;
+        }
+        if (uData.customStatus && uData.customStatus.text) {
+          if (customStatusWrap) customStatusWrap.classList.remove("hidden");
+          if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
+          if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
+        } else {
+          if (customStatusWrap) customStatusWrap.classList.add("hidden");
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch popout user profile:", err);
+    }
+  })();
 };
 
 window.closeUserProfileModal = function () {
@@ -6003,6 +5966,21 @@ window.submitQuickDmMessage = async function () {
 // =========================================================================
 // 🌟 Discord準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様)
 // =========================================================================
+// 真の「共通の友だち」取得ヘルパー（自分と相手の双方がフレンド承認しているユーザーのみを厳密照合）
+window.getMutualFriends = async function (targetUid) {
+  if (!userId || !targetUid || targetUid === userId) return [];
+  try {
+    const snap = await getDocs(
+      query(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`), where('status', '==', 'friends'))
+    );
+    const targetFriendUids = new Set(snap.docs.map(d => d.id));
+    const myFriends = Object.values(friendRelationships || {}).filter(r => r.status === 'friends');
+    return myFriends.filter(f => targetFriendUids.has(f.targetUid));
+  } catch (err) {
+    console.warn('[getMutualFriends] error:', err);
+    return [];
+  }
+};
 let _fullProfileTargetUser = null;
 window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl, initialTab = 'activity') {
   if (!targetUid) return;
@@ -6026,33 +6004,19 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const msgBtn = document.getElementById("fullProfileMsgBtn");
   const friendBtn = document.getElementById("fullProfileFriendBtn");
   const safeName = targetNickname || targetUid.substring(0, 8);
-
-  // 共通サーバー & 共通フレンドの事前件数算出
+  // 共通サーバー数の算出
   const mutualServers = Array.isArray(allServersCache)
     ? allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId))
     : [];
-  const sharedServerUids = new Set();
-  mutualServers.forEach(s => {
-    (s.joinedUsers || []).forEach(u => {
-      if (u && u !== userId && u !== targetUid) sharedServerUids.add(u);
-    });
-  });
-  let mutualFriends = [];
-  if (typeof friendRelationships === 'object') {
-    mutualFriends = Object.values(friendRelationships).filter(r => {
-      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
-      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
-    });
-    if (mutualFriends.length === 0 && Object.keys(friendRelationships).length > 0) {
-      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
-    }
-  }
-
-  // input_file_4.png 準拠: タブのタイトルを動的に件数付きで初期化
-  const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
-  if (tabFriendsBtn) tabFriendsBtn.textContent = `${mutualFriends.length}人の共通の友だち`;
   const tabServersBtn = document.getElementById('fpTabServersBtn');
   if (tabServersBtn) tabServersBtn.textContent = `${mutualServers.length}個の共通サーバー`;
+  // 真の「共通の友だち」件数を相手のフレンド関係から安全に非同期取得
+  const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
+  if (tabFriendsBtn) tabFriendsBtn.textContent = '共通の友だち';
+  getMutualFriends(targetUid).then(mFriends => {
+    if (_fullProfileTargetUser?.uid !== targetUid) return;
+    if (tabFriendsBtn) tabFriendsBtn.textContent = `${mFriends.length}人の共通の友だち`;
+  });
 
   if (nameEl) nameEl.textContent = safeName;
   if (handleEl) handleEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
@@ -6229,59 +6193,51 @@ window.switchFullProfileTab = function (tab) {
   else if (tab === 'friends') {
     const friendsListEl = document.getElementById('fpMutualFriendsList');
     const friendsLabel = document.getElementById('fpMutualFriendsCountLabel');
-    const mutualServers = (allServersCache || []).filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId));
-    const sharedServerUids = new Set();
-    mutualServers.forEach(s => {
-      (s.joinedUsers || []).forEach(u => {
-        if (u && u !== userId && u !== targetUid) sharedServerUids.add(u);
-      });
-    });
-    let mutualFriends = Object.values(friendRelationships || {}).filter(r => {
-      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
-      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
-    });
-    if (mutualFriends.length === 0 && Object.keys(friendRelationships || {}).length > 0) {
-      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
-    }
-    const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
-    if (tabFriendsBtn) tabFriendsBtn.textContent = `${mutualFriends.length}人の共通の友だち`;
-    if (friendsLabel) friendsLabel.textContent = `${mutualFriends.length}人の共通の友だち`;
     if (friendsListEl) {
-      if (mutualFriends.length === 0) {
-        friendsListEl.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通の友だちはまだいません</div>`;
-      } else {
-        friendsListEl.innerHTML = mutualFriends.map(f => {
-          const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
-          const status = uInfo.computedState || uInfo.state || 'offline';
-          const isOnline = status === 'online' || status === 'away';
-          const fNick = f.targetNickname || uInfo.nickname || 'ユーザー';
-          const avUrl = f.targetAvatarUrl || uInfo.avatarUrl || '';
-          const customStatusText = uInfo.customStatus?.text || '';
-          const statusDesc = customStatusText ? escapeHtml(customStatusText) : (isOnline ? 'オンライン' : 'オフライン');
-          const avatarHtml = isUsableAvatarUrl(avUrl)
-            ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
-            : escapeHtml(fNick.charAt(0).toUpperCase());
-          return `
-            <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${f.targetUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
-              <div class="relative w-10 h-10 flex-shrink-0">
-                <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
-                  ${avatarHtml}
-                </div>
-                <div class="status-indicator status-${status}"></div>
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 leading-snug">
-                  <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${escapeHtml(fNick)}</span>
-                </div>
-                <div class="text-xs text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">
-                  <span>${statusDesc}</span>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
+      friendsListEl.innerHTML = '<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-1.5"></i>共通の友だちを取得中...</div>';
     }
+    getMutualFriends(targetUid).then(mutualFriends => {
+      if (_fullProfileTargetUser?.uid !== targetUid) return;
+      const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
+      if (tabFriendsBtn) tabFriendsBtn.textContent = `${mutualFriends.length}人の共通の友だち`;
+      if (friendsLabel) friendsLabel.textContent = `${mutualFriends.length}人の共通の友だち`;
+      if (friendsListEl) {
+        if (mutualFriends.length === 0) {
+          friendsListEl.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通の友だちはまだいません</div>`;
+        } else {
+          friendsListEl.innerHTML = mutualFriends.map(f => {
+            const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+            const status = uInfo.computedState || uInfo.state || 'offline';
+            const isOnline = status === 'online' || status === 'away';
+            const fNick = f.targetNickname || uInfo.nickname || 'ユーザー';
+            const avUrl = f.targetAvatarUrl || uInfo.avatarUrl || '';
+            const customStatusText = uInfo.customStatus?.text || '';
+            const statusDesc = customStatusText ? escapeHtml(customStatusText) : (isOnline ? 'オンライン' : 'オフライン');
+            const avatarHtml = isUsableAvatarUrl(avUrl)
+              ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
+              : escapeHtml(fNick.charAt(0).toUpperCase());
+            return `
+              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${f.targetUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+                <div class="relative w-10 h-10 flex-shrink-0">
+                  <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
+                    ${avatarHtml}
+                  </div>
+                  <div class="status-indicator status-${status}"></div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5 leading-snug">
+                    <span class="text-sm font-bold text-gray-900 dark:text-white truncate">${escapeHtml(fNick)}</span>
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">
+                    <span>${statusDesc}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+    });
   }
   // 3. 共通サーバー
   else if (tab === 'servers') {
@@ -7199,13 +7155,14 @@ function calculateUserAffinity(targetUid) {
   return score;
 }
 
+let _presenceSubscriptionGeneration = 0;
 function subscribeToUserStatus() {
+  const thisStatusGen = ++_presenceSubscriptionGeneration;
   // 旧リスナーを即座に同期クリーンアップ（メモリリーク防止）
   if (unsubscribeUserStatus) { unsubscribeUserStatus(); unsubscribeUserStatus = null; }
   const oldUnsubs = unsubscribeStatusArray;
   unsubscribeStatusArray = [];
   oldUnsubs.forEach(unsub => { try { unsub(); } catch (_) { } });
-
   // サーバーメンバーに加え、DM参加者、全フレンド、自分を網羅してステータスとプロファイルを同期
   const targetUidsSet = new Set();
   if (currentServerData?.joinedUsers) {
@@ -7229,14 +7186,12 @@ function subscribeToUserStatus() {
     renderMembersList(cachedUsers);
     return;
   }
-
   const usersMap = new Map();
   memberIds.forEach(uid => {
     let cachedProf = window._userProfileCache?.get(uid);
     const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
     const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
     const initialLastChanged = cachedProf?.last_changed || cachedProf?.lastSeen || lastSeenNum || null;
-
     usersMap.set(uid, {
       id: uid,
       state: cachedProf?.status || cachedProf?.state || 'offline',
@@ -7244,9 +7199,9 @@ function subscribeToUserStatus() {
       last_changed: initialLastChanged,
       lastSeen: initialLastChanged
     });
-
     if (!cachedProf || !cachedProf.nickname) {
       window.getUserProfile(uid).then(prof => {
+        if (thisStatusGen !== _presenceSubscriptionGeneration) return;
         if (prof) {
           const cur = usersMap.get(uid) || { id: uid };
           // プロファイル取得結果で RTDB やキャッシュ済みの last_changed / state を null で破壊しない
@@ -7280,16 +7235,17 @@ function subscribeToUserStatus() {
       }).catch(() => {});
     }
   });
-
   cachedUsers = Array.from(usersMap.values());
   requestRenderMembersList();
-
   // RTDBでメンバーのリアルタイムステータスを一元監視
   import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
+    if (thisStatusGen !== _presenceSubscriptionGeneration) return;
     _getOrInitRTDB().then(rtdb => {
+      if (thisStatusGen !== _presenceSubscriptionGeneration) return;
       memberIds.forEach(uid => {
         const statusRef = ref(rtdb, `status/${uid}`);
         const callback = (snapshot) => {
+          if (thisStatusGen !== _presenceSubscriptionGeneration) return;
           const data = snapshot.val();
           const existing = usersMap.get(uid) || { id: uid };
           let cachedProf = window._userProfileCache?.get(uid);
@@ -7297,7 +7253,6 @@ function subscribeToUserStatus() {
             cachedProf = { id: uid, uid: uid };
             window._userProfileCache.set(uid, cachedProf);
           }
-
           if (data) {
             const rawLc = data.last_changed || data.lastSeen || existing.last_changed || cachedProf.last_changed;
             if (rawLc) {
@@ -7344,6 +7299,11 @@ function subscribeToUserStatus() {
     });
   }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
 }
+
+※ 【第1回（前半）終了】
+残りのコード修正（修正5: リカバリーキーのクライアント側処理、修正6: アバターアクセントカラー抽出のキャッシュ汚染防止、修正7: エラーテレメトリの
+RTDB リアルタイム集約、修正8: 相手と自分の双方のフレンド関係に基づいた真の共通フレンド計算、修正9:
+サーバーナビ差分更新によるピルアニメーション完全再生）および**【第3部:
 
 function renderMembersList(users) {
   if (!membersList) return;
@@ -7822,11 +7782,12 @@ window.enterServer = async function enterServer(serverId, serverData) {
   // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
   try {
     const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
+    if (thisGen !== _serverSwitchGeneration || currentServerId !== serverId) return;
     currentServerNickname = (profileSnap.exists() && profileSnap.data().nickname)
       ? profileSnap.data().nickname
       : null;
   } catch (e) { currentServerNickname = null; }
-
+  if (thisGen !== _serverSwitchGeneration || currentServerId !== serverId) return;
   // カスタムスタンプを読み込む
   if (typeof loadCurrentServerStamps === 'function') {
     loadCurrentServerStamps();
@@ -8867,7 +8828,6 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
     requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
-  pruneExcessMessages(null, null, dmId);
   };
 
   // =========================================================================
@@ -8903,33 +8863,9 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     });
   });
 
-  // 共通の友だち: 共通サーバーにいて、かつ自分ともフレンドであるユーザー（または全フレンド）
-  let mutualFriends = [];
-  if (typeof friendRelationships === 'object') {
-    mutualFriends = Object.values(friendRelationships).filter(r => {
-      if (r.status !== 'friends' || r.targetUid === targetUid) return false;
-      return sharedServerUids.size === 0 || sharedServerUids.has(r.targetUid);
-    });
-    if (mutualFriends.length === 0 && Object.keys(friendRelationships).length > 0) {
-      mutualFriends = Object.values(friendRelationships).filter(r => r.status === 'friends' && r.targetUid !== targetUid);
-    }
-  }
-  const mutualFriendsCount = mutualFriends.length;
-
-  // input_file_3.png 準拠: アバタースタック (最大3人分)
+  // 共通サーバーアイコンスタック (初期暫定表示)
   let mutualAvatarStackHtml = '';
-  if (mutualFriendsCount > 0) {
-    const stackSlice = mutualFriends.slice(0, 3);
-    mutualAvatarStackHtml = stackSlice.map((f, i) => {
-      const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
-      const avUrl = f.targetAvatarUrl || uInfo.avatarUrl;
-      const fNick = f.targetNickname || uInfo.nickname || 'U';
-      if (isUsableAvatarUrl(avUrl)) {
-        return `<img src="${escapeHtml(avUrl)}" class="w-4 h-4 rounded-full border-2 border-white dark:border-[#2b2d31] object-cover inline-block flex-shrink-0" style="z-index: ${4 - i};">`;
-      }
-      return `<span class="w-4 h-4 rounded-full bg-slate-600 border-2 border-white dark:border-[#2b2d31] text-white text-[8px] font-bold inline-flex items-center justify-center flex-shrink-0" style="z-index: ${4 - i};">${escapeHtml(fNick.charAt(0).toUpperCase())}</span>`;
-    }).join('');
-  } else if (mutualServersCount > 0) {
+  if (mutualServersCount > 0) {
     const serverSlice = mutualServers.slice(0, 3);
     mutualAvatarStackHtml = serverSlice.map((s, i) => {
       if (s.iconUrl) {
@@ -8943,7 +8879,6 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       <span class="w-4 h-4 rounded-full bg-amber-500 inline-block border-2 border-white dark:border-[#2b2d31]"></span>
     `;
   }
-
   // Discord本家完全準拠 (input_file_1.png / input_file_3.png 仕様)
   panel.innerHTML = `
     <div class="dm-profile-banner relative z-0 flex-shrink-0" style="height: 110px; min-height: 110px; background-color: var(--user-banner-color, #322c3b);">
@@ -8993,11 +8928,11 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
             ${handleTag}
           </div>
         </div>
-        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}', '${mutualFriendsCount > 0 ? 'friends' : 'servers'}')" title="共通の友だち・共通サーバーを表示">
-          <span class="inline-flex -space-x-1.5 mr-1 flex-shrink-0">
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}', 'friends')" title="共通の友だち・共通サーバーを表示">
+          <span class="inline-flex -space-x-1.5 mr-1 flex-shrink-0" id="dmPanelMutualsStack">
             ${mutualAvatarStackHtml}
           </span>
-          <span class="hover:underline">${mutualFriendsCount > 0 ? `${mutualFriendsCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー</span>
+          <span class="hover:underline" id="dmPanelMutualsCountLabel">${mutualServersCount}個の共通サーバー</span>
         </div>
         <div class="dm-profile-divider"></div>
         <div class="my-3">
@@ -9103,6 +9038,29 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
         };
       }
     }
+    // 相手の実フレンド一覧に基づいた真の「共通の友だち」スタック・件数を非同期反映
+    getMutualFriends(targetUid).then(mFriends => {
+      const currentExpectedDmId = [userId, targetUid].sort().join('_');
+      if (currentDmId !== currentExpectedDmId) return;
+      const mCount = mFriends.length;
+      const stackEl = document.getElementById('dmPanelMutualsStack');
+      const labelEl = document.getElementById('dmPanelMutualsCountLabel');
+      if (labelEl) {
+        labelEl.textContent = `${mCount > 0 ? `${mCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー`;
+      }
+      if (stackEl && mCount > 0) {
+        const stackSlice = mFriends.slice(0, 3);
+        stackEl.innerHTML = stackSlice.map((f, i) => {
+          const uInfo = (cachedUsers || []).find(cu => cu.id === f.targetUid) || {};
+          const avUrl = f.targetAvatarUrl || uInfo.avatarUrl;
+          const fNick = f.targetNickname || uInfo.nickname || 'U';
+          if (isUsableAvatarUrl(avUrl)) {
+            return `<img src="${escapeHtml(avUrl)}" class="w-4 h-4 rounded-full border-2 border-white dark:border-[#2b2d31] object-cover inline-block flex-shrink-0" style="z-index: ${4 - i};">`;
+          }
+          return `<span class="w-4 h-4 rounded-full bg-slate-600 border-2 border-white dark:border-[#2b2d31] text-white text-[8px] font-bold inline-flex items-center justify-center flex-shrink-0" style="z-index: ${4 - i};">${escapeHtml(fNick.charAt(0).toUpperCase())}</span>`;
+        }).join('');
+      }
+    });
   } catch (err) {
     console.warn('[renderDmProfilePanel] profile load error:', err);
   }
@@ -12265,9 +12223,7 @@ window.renderDiscordServerNav = function () {
   const homeBtn = document.getElementById("discordHomeBtn") || document.querySelector(".discord-home-btn");
   const discoverBtn = document.getElementById("discordDiscoverBtn");
   if (!navList) return;
-  navList.innerHTML = "";
-  if (homeGrid) homeGrid.innerHTML = "";
-
+  // コチャ・探索ボタンのアクティブ状態更新（静的DOM要素のクラス切替によりCSSアニメーションが完璧に発火）
   if (!currentServerId) {
     if (currentHomeViewMode === 'discover') {
       if (homeBtn) homeBtn.classList.remove("active");
@@ -12280,35 +12236,46 @@ window.renderDiscordServerNav = function () {
     if (homeBtn) homeBtn.classList.remove("active");
     if (discoverBtn) discoverBtn.classList.remove("active");
   }
-
   if (typeof allServersCache !== 'undefined' && allServersCache) {
     const servers = [...allServersCache];
-    // 順序を一定に固定するため、過去のアクセス順ソート処理を完全排除
-
-    // 未読情報の取得
     let globalItems = [];
     try { globalItems = JSON.parse(localStorage.getItem('covo_global_items') || '[]'); } catch (e) { }
-
     const joinedServers = servers.filter(server => {
       if (!isAdmin) return (server.joinedUsers || []).includes(userId);
       return (server.joinedUsers || []).includes(userId);
     });
     const unjoinedServers = isAdmin ? servers.filter(server => !(server.joinedUsers || []).includes(userId)) : [];
-
+    const allDisplayServers = [...joinedServers, ...unjoinedServers];
+    // 🌟 ピルアニメーション保護差分更新（Reconciliation）
+    // サーバー一覧の順序・構成に変更がない場合は DOM の再生成を完全スキップし、クラスの toggle のみ行う
+    const existingDomItems = Array.from(navList.querySelectorAll('.discord-server-item[data-server-id]'));
+    const existingIds = existingDomItems.map(el => el.dataset.serverId);
+    const currentIds = allDisplayServers.map(s => s.id);
+    const isSameStructure = existingIds.length === currentIds.length && existingIds.every((id, idx) => id === currentIds[idx]);
+    if (isSameStructure && existingDomItems.length > 0) {
+      existingDomItems.forEach(item => {
+        const sid = item.dataset.serverId;
+        const isActive = currentServerId === sid;
+        const hasUnread = globalItems.some(it => it.serverId === sid);
+        item.classList.toggle('active', isActive);
+        item.classList.toggle('has-unread', hasUnread);
+      });
+      return;
+    }
+    navList.innerHTML = "";
+    if (homeGrid) homeGrid.innerHTML = "";
     const renderServer = (server) => {
       const isMine = server.serverAdmins && server.serverAdmins.includes(userId);
       const hasUnread = globalItems.some(it => it.serverId === server.id);
       const isActive = currentServerId === server.id;
-
-      // 1. 左側サーバーナビゲーションへの追加
+      // 1. 左側サーバーナビゲーションへの追加 (data-server-id 属性でDOM再利用を可能に)
       const item = document.createElement("div");
+      item.dataset.serverId = server.id;
       item.className = `discord-server-item group ${isActive ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}`;
       item.title = server.name || server.id;
-
       const pill = document.createElement("div");
       pill.className = "discord-server-pill";
       item.appendChild(pill);
-
       const icon = document.createElement("div");
       icon.className = "discord-server-icon";
       if (server.iconUrl) {
@@ -12318,7 +12285,6 @@ window.renderDiscordServerNav = function () {
         icon.textContent = (server.name || server.id).charAt(0).toUpperCase();
       }
       item.appendChild(icon);
-
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         if (currentServerId !== server.id) {
@@ -12326,12 +12292,10 @@ window.renderDiscordServerNav = function () {
         }
       });
       navList.appendChild(item);
-
       // 2. ディスカバリー画面 (homeGrid) への美しいカード追加
       if (homeGrid) {
         const card = document.createElement("div");
         card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
-
         const cardIcon = document.createElement("div");
         cardIcon.className = "discord-card-icon w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden transition-all duration-300 group-hover:rounded-2xl";
         if (server.iconUrl) {
@@ -12340,7 +12304,6 @@ window.renderDiscordServerNav = function () {
           cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
         }
         card.appendChild(cardIcon);
-
         const cardInfo = document.createElement("div");
         cardInfo.className = "flex-1 min-w-0";
         cardInfo.innerHTML = `
@@ -12351,12 +12314,10 @@ window.renderDiscordServerNav = function () {
               </div>
             `;
         card.appendChild(cardInfo);
-
         const enterBtn = document.createElement("button");
         enterBtn.className = "discord-card-btn font-bold px-5 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
         enterBtn.textContent = "開く";
         card.appendChild(enterBtn);
-
         card.addEventListener("click", (e) => {
           e.stopPropagation();
           if (currentServerId !== server.id) {
@@ -12366,16 +12327,11 @@ window.renderDiscordServerNav = function () {
         homeGrid.appendChild(card);
       }
     };
-
     joinedServers.forEach(server => renderServer(server));
-
     if (isAdmin && unjoinedServers.length > 0) {
-      // nav separator
       const navSep = document.createElement("div");
       navSep.className = "w-8 h-0.5 bg-gray-700/50 my-2 mx-auto rounded-full";
       navList.appendChild(navSep);
-
-      // home grid separator
       if (homeGrid) {
         const homeSep = document.createElement("div");
         homeSep.className = "col-span-full border-t border-gray-200 dark:border-gray-800 my-4 flex justify-center";
@@ -12384,17 +12340,14 @@ window.renderDiscordServerNav = function () {
       }
       unjoinedServers.forEach(server => renderServer(server));
     }
-
     if (joinedServers.length === 0 && unjoinedServers.length === 0 && homeGrid) {
       homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
     }
-
-    // ホーム画面右側の全体メンバーリスト描画 (画像完全準拠)
+    // ホーム画面右側の全体メンバーリスト描画
     const homeMembersSidebar = document.getElementById("discordHomeMembers");
     if (homeMembersSidebar && typeof cachedUsers !== 'undefined' && cachedUsers && cachedUsers.length > 0) {
       const onlines = cachedUsers.filter(u => u.status === 'online' || u.status === 'away');
       const offlines = cachedUsers.filter(u => !u.status || u.status === 'offline');
-      
       const formatLastSeen = (u) => {
         if (u.status === 'online' || u.computedState === 'online') return 'オンライン';
         if (u.status === 'away' || u.computedState === 'away') return '離席中';
@@ -12406,7 +12359,6 @@ window.renderDiscordServerNav = function () {
         }
         return 'オフライン';
       };
-
       const createMemberEl = (u) => {
         const row = document.createElement('div');
         row.className = 'flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-gray-200/50 dark:hover:bg-white/5 cursor-pointer transition-colors';
@@ -12416,7 +12368,6 @@ window.renderDiscordServerNav = function () {
         const stat = document.createElement('div');
         stat.className = `status-indicator ${u.status === 'away' ? 'status-away' : (u.status === 'online' ? 'status-online' : 'status-offline')}`;
         av.appendChild(stat);
-        
         const nameDiv = document.createElement('div');
         nameDiv.className = 'flex-1 min-w-0 leading-tight';
         nameDiv.innerHTML = `
@@ -12427,14 +12378,12 @@ window.renderDiscordServerNav = function () {
         row.appendChild(nameDiv);
         return row;
       };
-
       homeMembersSidebar.innerHTML = `
         <div class="p-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">ONLINE — ${onlines.length}</div>
         <div id="discordHomeOnlineList" class="space-y-0.5 px-2 pb-3"></div>
         <div class="p-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider">OFFLINE — ${offlines.length}</div>
         <div id="discordHomeOfflineList" class="space-y-0.5 px-2 pb-6"></div>
       `;
-
       const onlineList = document.getElementById("discordHomeOnlineList");
       const offlineList = document.getElementById("discordHomeOfflineList");
       if (onlineList) onlines.forEach(u => onlineList.appendChild(createMemberEl(u)));
@@ -13634,7 +13583,6 @@ function selectRoom(roomId, roomName) {
       requestP2PLogBackfill('server', roomId, oldestTs);
     }).catch(() => {});
   } catch (e) { }
-  pruneExcessMessages(currentServerId, roomId, null);
 }
 
 let floatingDateTimer = null;
@@ -17958,18 +17906,28 @@ function openPdfLightbox(url, fileName) {
 // =========================================================================
 
 // コレクション内の全ドキュメントをバッチ削除（500件制限をページングで回避）
+// Firestore ルール制限（1バッチ内の get() 最大20回評価制限）に完全準拠した安全な小分けバッチ削除
 async function batchDeleteCollection(colRef) {
   let hasMore = true;
-  while (hasMore) {
-    const snap = await getDocs(query(colRef, limit(490)));
+  let safetyLoopLimit = 100;
+  while (hasMore && safetyLoopLimit > 0) {
+    safetyLoopLimit--;
+    const snap = await getDocs(query(colRef, limit(10)));
     if (snap.empty) break;
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-    hasMore = snap.docs.length === 490;
+    try {
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    } catch (batchErr) {
+      console.warn('[batchDeleteCollection] Batch failed, falling back to individual deleteDoc:', batchErr);
+      // バッチ失敗時の個別 deleteDoc 安全フォールバック
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
+    hasMore = snap.docs.length === 10;
   }
 }
-
 // ルームと配下の全データ（添付ファイル、messages, readReceipts, roomKeys, rescueRequests, LocalStore）を完全削除
 async function deleteRoomCascade(serverId, roomId) {
   const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
@@ -17990,18 +17948,20 @@ async function deleteRoomCascade(serverId, roomId) {
       }
     }
   } catch (_) {}
-  // 2. Firestore サブコレクションのページングバッチ削除
-  await batchDeleteCollection(collection(db, `${base}/messages`));
-  await batchDeleteCollection(collection(db, `${base}/readReceipts`));
-  await batchDeleteCollection(collection(db, `${base}/roomKeys`));
-  await batchDeleteCollection(collection(db, `${base}/rescueRequests`));
+  // 2. Firestore サブコレクションの安全な個別例外保護付きバッチ削除
+  try { await batchDeleteCollection(collection(db, `${base}/messages`)); } catch (e) { console.warn('messages delete warning:', e); }
+  try { await batchDeleteCollection(collection(db, `${base}/readReceipts`)); } catch (e) { console.warn('readReceipts delete warning:', e); }
+  try { await batchDeleteCollection(collection(db, `${base}/roomKeys`)); } catch (e) { console.warn('roomKeys delete warning:', e); }
+  try { await batchDeleteCollection(collection(db, `${base}/rescueRequests`)); } catch (e) { console.warn('rescueRequests delete warning:', e); }
   await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
   // 3. RTDB パスの削除
   try {
     const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`));
-  } catch (err) { console.error("RTDB Room Delete Failed", err); }
+    if (rtdb) {
+      await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`)).catch(() => {});
+    }
+  } catch (err) { console.warn("RTDB Room Delete warning (handled safely):", err); }
   // 4. クライアント側ローカル IndexedDB のメッセージ履歴も完全消去
   try {
     if (typeof LocalStore !== 'undefined' && LocalStore.clearMessagesForChannel) {
