@@ -544,7 +544,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
         }, { merge: true }
-      ));
+      ).catch(() => {}));
     } catch (e) {}
   }
   const escrowPub = await __getEscrowPublicKey();
@@ -1160,7 +1160,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
           }
         }
-        delete _e2ee.dmKeyCache[dmId];
         delete _e2ee._dmKeyPromises[dmId];
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {

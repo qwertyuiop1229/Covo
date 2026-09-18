@@ -5240,7 +5240,8 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
       const fileUrl = await uploadToExternalService(
         new File([blob], 'avatar.jpg', { type: 'image/jpeg' }),
         (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
-        'simplechat/avatars'
+        'simplechat/avatars',
+        ''
       );
       pendingAvatarUrl = fileUrl;
       settingsAvatarPreview.src = fileUrl;
@@ -6827,8 +6828,7 @@ async function resyncActiveRoomMessages() {
         updateReadReceiptForCurrentUser();
       }
     } else if (allLoadedMessages.length > 0) {
-      // サーバー上に1件もメッセージが存在しない場合（全件削除された場合）
-      allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
+      // サーバー上に1件もメッセージが存在しない場合（画面表示のみクリアし、ローカルIndexedDBの永続データは消去しない）
       allLoadedMessages = [];
       lastMessagesData = [];
       messagesIndexMap = {};
@@ -7206,9 +7206,10 @@ function subscribeToUserStatus() {
     const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
     const initialLastChanged = cachedProf?.last_changed || cachedProf?.lastSeen || lastSeenNum || null;
     usersMap.set(uid, {
+      ...(cachedProf || {}),
       id: uid,
       state: cachedProf?.status || cachedProf?.state || 'offline',
-      ...(cachedProf || {}),
+      computedState: cachedProf?.status || cachedProf?.state || 'offline',
       last_changed: initialLastChanged,
       lastSeen: initialLastChanged
     });
@@ -9625,7 +9626,8 @@ async function createServer(name, customId, password) {
       iconUrl = await uploadToExternalService(
         new File([window.pendingNewServerIconBlob], 'server_icon.jpg', { type: 'image/jpeg' }),
         (pct) => { },
-        'simplechat/servericons'
+        'simplechat/servericons',
+        customId
       );
     } catch (e) { console.error(e); }
     window.pendingNewServerIconBlob = null;
@@ -10773,6 +10775,11 @@ window.submitCreateChannel = async function() {
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const rawKey = await window.crypto.subtle.exportKey("raw", key);
         await _distributeRoomKeyVersion(currentServerId, newRoomRef.id, rawKey, members, 1);
+        _e2ee.roomKeyCache[newRoomRef.id] = {
+          "1": key,
+          latest: key,
+          latestVersion: "1"
+        };
       } catch (e) { console.error("E2EE key gen failed", e); }
     }
 
@@ -13198,9 +13205,8 @@ async function subscribeToMessagesRTDB() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       } else {
-        // サーバー上に1件もメッセージがない場合はローカルキャッシュをクリア
+        // サーバー上に1件もメッセージがない場合は画面表示キャッシュのみをクリア（ローカルIndexedDBの永続データは保護）
         if (allLoadedMessages.length > 0) {
-          allLoadedMessages.forEach(m => LocalStore.deleteMessage(m.id).catch(() => {}));
           allLoadedMessages = [];
           lastMessagesData = [];
           messagesIndexMap = {};
@@ -16778,9 +16784,8 @@ function renderMessagesWithReadReceipts() {
       row = createMessageElement(msg, msg.id, readCount);
     }
     expectedElements.push(row);
-
-    const currentDay = getDayString(msg.timestamp);
-    const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(reversedMessages[i + 1].timestamp) : null;
+    const currentDay = getDayString(getMsgTimestamp(msg));
+    const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(getMsgTimestamp(reversedMessages[i + 1])) : null;
     if (currentDay && currentDay !== nextMsgDay) {
       let div = existingDividersMap.get(currentDay);
       if (div) {
@@ -20895,13 +20900,17 @@ function renderParticipantTiles() {
   if (!grid) return;
   const participants = [];
   // 自分
+  const hasLocalVideo = Boolean(
+    _isVideoEnabled || _isScreenSharing ||
+    (window._voiceEngine && window._voiceEngine.isActive && (window._voiceEngine._isVideoOn || window._voiceEngine._isScreenOn))
+  );
   participants.push({
     uid: userId,
     isLocal: true,
     name: currentServerNickname || userNickname || 'あなた',
     avatarUrl: userAvatarUrl || '',
     isMuted: _isAudioMuted,
-    hasVideo: _isVideoEnabled || _isScreenSharing,
+    hasVideo: hasLocalVideo,
     videoContainerId: 'local-video-container'
   });
   // 相手（リモート参加者）
@@ -20919,7 +20928,11 @@ function renderParticipantTiles() {
     if (!remoteUser && _remoteUsers.size > 0) {
       remoteUser = _remoteUsers.values().next().value;
     }
-    const hasRemoteVideo = Boolean(remoteUser?.hasVideo && remoteUser?.videoTrack);
+    const hasRemoteVideo = Boolean(
+      (remoteUser?.hasVideo && remoteUser?.videoTrack) ||
+      (window._voiceEngine?._voiceStates?.[remoteUid]?.hasVideo) ||
+      (window._voiceEngine?._voiceStates?.[remoteUid]?.hasScreen)
+    );
     participants.push({
       uid: remoteUid,
       isLocal: false,
@@ -20954,8 +20967,16 @@ function renderParticipantTiles() {
       </div>
     `;
   }).join('');
-  // ローカル映像の再マウント
-  if ((_isVideoEnabled && _localVideoTrack) || (_isScreenSharing && _localScreenTrack)) {
+  // ローカル映像の再マウント (Agora & P2P 両対応)
+  const ve = window._voiceEngine;
+  if (ve && ve.isActive && (ve._isVideoOn || ve._isScreenOn)) {
+    const activeStream = (ve._isScreenOn && ve._localScreenStream) ? ve._localScreenStream : ve._localVideoStream;
+    if (activeStream) {
+      setTimeout(() => {
+        ve._mountVideoTrack(userId, activeStream, true);
+      }, 40);
+    }
+  } else if ((_isVideoEnabled && _localVideoTrack) || (_isScreenSharing && _localScreenTrack)) {
     const activeLocalTrack = _isScreenSharing ? _localScreenTrack : _localVideoTrack;
     setTimeout(() => {
       const localCont = document.getElementById('local-video-container');
@@ -20964,12 +20985,20 @@ function renderParticipantTiles() {
       }
     }, 40);
   }
-  // リモート映像の再マウント
-  participants.filter(p => !p.isLocal && p.hasVideo && p.videoTrack).forEach(p => {
+  // リモート映像の再マウント (Agora & P2P 両対応)
+  participants.filter(p => !p.isLocal && p.hasVideo).forEach(p => {
     setTimeout(() => {
-      const remCont = document.getElementById(p.videoContainerId);
-      if (remCont && p.videoTrack) {
-        try { p.videoTrack.play(p.videoContainerId); } catch (_) {}
+      if (p.videoTrack) {
+        const remCont = document.getElementById(p.videoContainerId);
+        if (remCont) {
+          try { p.videoTrack.play(p.videoContainerId); } catch (_) {}
+        }
+      } else if (ve && ve.isActive && ve._peers.has(p.uid)) {
+        const peerInfo = ve._peers.get(p.uid);
+        const remoteStream = peerInfo?.pc?.getRemoteStreams?.()?.[0];
+        if (remoteStream) {
+          ve._mountVideoTrack(p.uid, remoteStream, false);
+        }
       }
     }, 40);
   });
