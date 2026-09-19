@@ -256,7 +256,7 @@ function _reportTelemetryError(type, message, stack) {
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
     if (isRapidDuplicate) return;
-    // 2. 🛡️ RTDB への確実な即時保存（SDK接続時は即座に同期、未接続時はREST APIフォールバック）
+    // 2. 🛡️ RTDB への確実な即時保存（Worker API特権送信 ＋ RTDB SDK ＋ REST APIフォールバックの3重送信）
     const rtdbPayload = {
       id: signature,
       signature: signature,
@@ -265,26 +265,47 @@ function _reportTelemetryError(type, message, stack) {
       stack: String(stack || '').substring(0, 6000),
       lastOccurredAt: Date.now(),
       count: currentCount,
-      affectedEmails: affectedList,
-      environment: envInfo
+      affectedEmails: Array.from(new Set(affectedList)),
+      environment: {
+        userAgent: envInfo.userAgent || 'unknown',
+        appVersion: envInfo.appVersion || 'web',
+        screenSize: envInfo.screenSize || '0x0',
+        isElectron: !!envInfo.isElectron
+      }
     };
     (async () => {
+      // 経路A: Worker API 経由で特権書き込み (CORS/認証不要・100%確実に届く)
+      try {
+        fetch(`${WORKER_BASE_URL}/api/reportError`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ appId, signature, payload: rtdbPayload }),
+          keepalive: true
+        }).catch(() => {});
+      } catch (_) {}
+      // 経路B: RTDB SDK による即時書き込み (3秒タイムアウト制御)
       try {
         const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
         if (rtdb) {
-          await set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload);
+          await Promise.race([
+            set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ]);
           return;
         }
       } catch (_) {}
-      const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
-      const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
-      fetch(rtdbUrl, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rtdbPayload),
-        keepalive: true
-      }).catch(() => {});
+      // 経路C: RTDB REST API (PUT) へ直接送信
+      try {
+        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+        const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
+        fetch(rtdbUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rtdbPayload),
+          keepalive: true
+        }).catch(() => {});
+      } catch (_) {}
     })();
     // 3. Firestore へもバックアップ永続化
     if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
@@ -2822,7 +2843,7 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  // 読み込み中はスピナーを表示（古いローカルキャッシュで画面を汚染しない）
+  // 読み込み中はスピナーを表示（他端末のローカル空キャッシュに惑わされず常にRTDBから直接取得）
   listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBから最新エラーを読み込み中...</div>';
   try {
     if (_telemetryErrorsUnsub) {
@@ -2836,8 +2857,11 @@ window.loadErrorTelemetry = async function () {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       if (rtdb) {
-        const snap = await get(ref(rtdb, `artifacts/${appId}/error_reports`));
-        if (snap.exists()) {
+        const snap = await Promise.race([
+          get(ref(rtdb, `artifacts/${appId}/error_reports`)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+        ]);
+        if (snap && snap.exists()) {
           const val = snap.val() || {};
           Object.keys(val).forEach(k => {
             const remoteItem = val[k];
@@ -2851,8 +2875,33 @@ window.loadErrorTelemetry = async function () {
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
     }
-    // RTDB SDK が初期化前または接続失敗した場合は REST API でフォールバック取得
-    if (!rtdbSuccess) {
+    // 2. Worker 特権 API (/api/getErrors) から直接取得 (SDK未接続・CORS問題時の確実なフェイルセーフ)
+    if (!rtdbSuccess || mergedMap.size === 0) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+        if (idToken) {
+          const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
+            headers: { "Authorization": `Bearer ${idToken}` }
+          });
+          if (wRes.ok) {
+            const wJson = await wRes.json();
+            if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
+              Object.keys(wJson.data).forEach(k => {
+                const remoteItem = wJson.data[k];
+                if (remoteItem && remoteItem.message) {
+                  mergedMap.set(k, { id: k, ...remoteItem });
+                }
+              });
+              rtdbSuccess = true;
+            }
+          }
+        }
+      } catch (workerErr) {
+        console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
+      }
+    }
+    // 3. RTDB REST API からのフォールバック取得
+    if (!rtdbSuccess || mergedMap.size === 0) {
       try {
         const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
         const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
@@ -2866,14 +2915,14 @@ window.loadErrorTelemetry = async function () {
                 mergedMap.set(k, { id: k, ...remoteItem });
               }
             });
+            rtdbSuccess = true;
           }
-          rtdbSuccess = true;
         }
       } catch (restErr) {
         console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
       }
     }
-    // 2. Firestore バックアップからも取得して補完
+    // 4. Firestore バックアップからも取得して完全マージ
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
       fsSnap.forEach(d => {
@@ -2885,7 +2934,7 @@ window.loadErrorTelemetry = async function () {
     } catch (fsErr) {
       console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
     }
-    // 3. RTDBを真実のデータ（Source of Truth）としてローカルストレージと同期
+    // 5. RTDBのクラウドデータを最優先真実（Single Source of Truth）としてローカルストレージへ同期
     const result = Array.from(mergedMap.values());
     result.sort((a, b) => {
       const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
@@ -2899,7 +2948,7 @@ window.loadErrorTelemetry = async function () {
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 4. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
+    // 6. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2907,13 +2956,16 @@ window.loadErrorTelemetry = async function () {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
           if (!snapshot.exists()) {
-            window._cachedTelemetryErrors = [];
-            _saveTelemetryErrorsToStorage();
-            if (badgeEl) {
-              badgeEl.textContent = '0';
-              badgeEl.classList.add('hidden');
+            // リモートが完全に空（全件削除された場合など）の時のみクリア
+            if (rtdbSuccess) {
+              window._cachedTelemetryErrors = [];
+              _saveTelemetryErrorsToStorage();
+              if (badgeEl) {
+                badgeEl.textContent = '0';
+                badgeEl.classList.add('hidden');
+              }
+              renderTelemetryErrorsList();
             }
-            renderTelemetryErrorsList();
             return;
           }
           const liveVal = snapshot.val() || {};
@@ -6015,128 +6067,217 @@ window.submitQuickDmMessage = async function () {
 // 🌟 Discord準拠 フルプロフィールモーダル (#userFullProfileModal - input_file_2.png仕様)
 // =========================================================================
 // 真の「共通の友だち」取得ヘルパー（自分と相手の双方がフレンド承認しているユーザーのみを厳密照合）
+// 共通フレンド用短時間インフライトキャッシュ
+window._mutualFriendsCache = window._mutualFriendsCache || new Map();
+window._mutualFriendsInFlight = window._mutualFriendsInFlight || new Map();
 window.getMutualFriends = async function (targetUid) {
-  if (!userId || !targetUid || targetUid === userId) return [];
-  try {
-    // 1. 相手のフレンド一覧を取得（whereクエリのインデックス不整合を回避し全件取得してJS側でstatus === 'friends'を判定）
-    const snap = await getDocs(collection(db, `artifacts/${appId}/users/${targetUid}/relationships`)).catch(err => {
-      console.warn('[getMutualFriends] remote fetch warning:', err);
-      return { docs: [] };
-    });
-    const targetFriendUids = new Set();
-    snap.docs.forEach(d => {
-      const data = d.data() || {};
-      const st = String(data.status || '').toLowerCase().trim();
-      if (st === 'friends') {
-        const friendId = data.targetUid || d.id;
-        if (friendId && friendId !== userId && friendId !== targetUid) {
-          targetFriendUids.add(friendId);
-        }
-      }
-    });
-
-    // 2. 自分のフレンド一覧を取得（メモリキャッシュ ＋ LocalStore ＋ Firestore直接取得の多層フォールバック）
-    let myFriendsMap = { ...(friendRelationships || {}) };
-    if (Object.keys(myFriendsMap).length === 0 && typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
-      try {
-        const localFriends = await LocalStore.getAllFriends();
-        if (Array.isArray(localFriends)) {
-          localFriends.forEach(lf => {
-            const uid = lf.targetUid || lf.id || lf.uid;
-            if (uid) myFriendsMap[uid] = lf;
-          });
-        }
-      } catch (_) {}
-    }
-    if (Object.keys(myFriendsMap).length === 0) {
-      try {
-        const mySnap = await getDocs(collection(db, `artifacts/${appId}/users/${userId}/relationships`));
-        mySnap.docs.forEach(d => {
-          myFriendsMap[d.id] = { id: d.id, ...d.data() };
-        });
-      } catch (_) {}
-    }
-
-    const myFriends = Object.values(myFriendsMap).filter(r => String(r.status || '').toLowerCase().trim() === 'friends');
-    const mutualMap = new Map();
-
-    // 3. 相手のサブコレクションから一致したフレンドを追加
-    for (const f of myFriends) {
-      const fUid = f.targetUid || f.id;
-      if (fUid && fUid !== userId && fUid !== targetUid && targetFriendUids.has(fUid)) {
-        mutualMap.set(fUid, {
-          ...f,
-          targetUid: fUid
-        });
-      }
-    }
-
-    // 4. 双方向クロス探索: 相手のサブコレクションが取得できない、または未登録の場合でも、
-    // 自分のフレンド側（fUid）の relationships/${targetUid} を直接検証
-    const checkPromises = [];
-    for (const f of myFriends) {
-      const fUid = f.targetUid || f.id;
-      if (!fUid || fUid === userId || fUid === targetUid || mutualMap.has(fUid)) continue;
-      checkPromises.push(
-        getDoc(doc(db, `artifacts/${appId}/users/${fUid}/relationships/${targetUid}`)).then(relSnap => {
-          if (relSnap.exists()) {
-            const rData = relSnap.data() || {};
-            if (String(rData.status || '').toLowerCase().trim() === 'friends') {
-              mutualMap.set(fUid, {
-                ...f,
-                targetUid: fUid
-              });
-            }
-          }
-        }).catch(() => {})
-      );
-    }
-    if (checkPromises.length > 0) {
-      await Promise.all(checkPromises);
-    }
-
-    // 5. 共通サーバー内のフレンド補完
-    if (Array.isArray(allServersCache)) {
-      const mutualServers = allServersCache.filter(s =>
-        (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)
-      );
-      for (const s of mutualServers) {
-        for (const mUid of (s.joinedUsers || [])) {
-          if (!mUid || mUid === userId || mUid === targetUid || mutualMap.has(mUid)) continue;
-          if (myFriendsMap[mUid] && String(myFriendsMap[mUid].status || '').toLowerCase().trim() === 'friends') {
-            const relSnap = await getDoc(doc(db, `artifacts/${appId}/users/${mUid}/relationships/${targetUid}`)).catch(() => null);
-            if (relSnap && relSnap.exists() && String(relSnap.data()?.status || '').toLowerCase().trim() === 'friends') {
-              mutualMap.set(mUid, {
-                ...myFriendsMap[mUid],
-                targetUid: mUid
-              });
-            }
-          }
-        }
-      }
-    }
-
-    // 6. プロファイル情報の安全な補完
-    const mutualList = Array.from(mutualMap.values());
-    const enrichPromises = mutualList.map(async (f) => {
-      const fUid = f.targetUid || f.id;
-      if (!f.targetNickname || !f.targetAvatarUrl) {
-        const p = await window.getUserProfile(fUid).catch(() => null);
-        if (p) {
-          f.targetNickname = f.targetNickname || p.nickname;
-          f.targetAvatarUrl = f.targetAvatarUrl || p.avatarUrl;
-        }
-      }
-    });
-    if (enrichPromises.length > 0) {
-      await Promise.all(enrichPromises);
-    }
-
-    return mutualList;
-  } catch (err) {
-    console.warn('[getMutualFriends] error:', err);
-    return [];
+  const me = (userId || '').trim();
+  const other = (targetUid || '').trim();
+  if (!me || !other || me === other) return [];
+  // 1. 同一相手への直近キャッシュ（10秒間有効）があれば即座に応答
+  const cacheKey = `${me}__${other}`;
+  const cachedEntry = window._mutualFriendsCache.get(cacheKey);
+  if (cachedEntry && (Date.now() - cachedEntry.time < 10000)) {
+    return cachedEntry.data;
   }
+  // 2. 既に同じ相手に対する探索が進行中なら Promise を合流させて重複通信を完全に抑止
+  if (window._mutualFriendsInFlight.has(cacheKey)) {
+    return await window._mutualFriendsInFlight.get(cacheKey);
+  }
+  const taskPromise = (async () => {
+    try {
+      // 肯定的なフレンドステータス判定（大文字小文字・表記の揺らぎ・未指定を全網羅）
+      const isFriendStatus = (st) => {
+        if (st === undefined || st === null || st === '') return true;
+        if (typeof st === 'boolean') return st;
+        const s = String(st).toLowerCase().trim();
+        return s === 'friends' || s === 'friend' || s === 'accepted' || s === 'mutual' || s === 'true';
+      };
+      const isBlockedOrPending = (st) => {
+        const s = String(st || '').toLowerCase().trim();
+        return s === 'blocked' || s === 'pending_sent' || s === 'pending_received' || s === 'rejected';
+      };
+
+      // ─── ステップ A: 自分のフレンド候補リスト（ユーザーC）の完全収集 ───
+      const myCandidateFriends = new Map(); // uid -> friendObj
+      // A-1: オンメモリ friendRelationships
+      if (typeof friendRelationships === 'object' && friendRelationships) {
+        Object.values(friendRelationships).forEach(r => {
+          const uId = r.targetUid || r.id;
+          if (uId && uId !== me && uId !== other && !isBlockedOrPending(r.status) && isFriendStatus(r.status)) {
+            myCandidateFriends.set(uId, { id: uId, targetUid: uId, ...r });
+          }
+        });
+      }
+      // A-2: IndexedDB (LocalStore)
+      if (typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
+        try {
+          const lFriends = await LocalStore.getAllFriends();
+          if (Array.isArray(lFriends)) {
+            lFriends.forEach(lf => {
+              const uId = lf.targetUid || lf.id || lf.uid;
+              if (uId && uId !== me && uId !== other && !myCandidateFriends.has(uId) && !isBlockedOrPending(lf.status) && isFriendStatus(lf.status)) {
+                myCandidateFriends.set(uId, { id: uId, targetUid: uId, ...lf });
+              }
+            });
+          }
+        } catch (_) {}
+      }
+      // A-3: Firestore 直接取得
+      try {
+        const mySnap = await getDocs(collection(db, `artifacts/${appId}/users/${me}/relationships`));
+        mySnap.docs.forEach(d => {
+          const data = d.data() || {};
+          const uId = data.targetUid || d.id;
+          if (uId && uId !== me && uId !== other && !myCandidateFriends.has(uId) && !isBlockedOrPending(data.status) && isFriendStatus(data.status)) {
+            myCandidateFriends.set(uId, { id: uId, targetUid: uId, ...data });
+          }
+        });
+      } catch (_) {}
+      // A-4: 自分がやり取りしている DM 会話相手（dmConversations）も候補に合流
+      if (typeof dmConversations === 'object' && dmConversations) {
+        Object.values(dmConversations).forEach(dm => {
+          const participants = dm.participants || [];
+          participants.forEach(pUid => {
+            if (pUid && pUid !== me && pUid !== other && !myCandidateFriends.has(pUid)) {
+              myCandidateFriends.set(pUid, { id: pUid, targetUid: pUid, status: 'friends' });
+            }
+          });
+        });
+      }
+
+      // ─── ステップ B: 相手（other）のフレンド候補の完全収集 ───
+      const otherConfirmedFriendUids = new Set();
+      // B-1: 相手の relationships コレクション全件取得
+      try {
+        const otherRelSnap = await getDocs(collection(db, `artifacts/${appId}/users/${other}/relationships`));
+        otherRelSnap.docs.forEach(d => {
+          const data = d.data() || {};
+          if (!isBlockedOrPending(data.status) && isFriendStatus(data.status)) {
+            if (d.id && d.id !== me && d.id !== other) otherConfirmedFriendUids.add(d.id);
+            if (data.targetUid && data.targetUid !== me && data.targetUid !== other) otherConfirmedFriendUids.add(data.targetUid);
+            if (data.uid && data.uid !== me && data.uid !== other) otherConfirmedFriendUids.add(data.uid);
+            if (data.userId && data.userId !== me && data.userId !== other) otherConfirmedFriendUids.add(data.userId);
+            if (data.friendId && data.friendId !== me && data.friendId !== other) otherConfirmedFriendUids.add(data.friendId);
+          }
+        });
+      } catch (err) {
+        console.warn('[getMutualFriends] other relationships collection fetch notice:', err);
+      }
+      // B-2: 相手が参加している dm_channels からの相互フレンド検出
+      try {
+        const otherDmSnap = await getDocs(query(collection(db, `artifacts/${appId}/dm_channels`), where('participants', 'array-contains', other)));
+        otherDmSnap.docs.forEach(d => {
+          const pList = d.data()?.participants || [];
+          pList.forEach(pUid => {
+            if (pUid && pUid !== me && pUid !== other) {
+              otherConfirmedFriendUids.add(pUid);
+            }
+          });
+        });
+      } catch (_) {}
+
+      // ─── ステップ C: 共通フレンドの判定 & 双方向ダイレクト並列検証 ───
+      const mutualMap = new Map(); // cUid -> friendObj
+      // C-1: 相手の確認済みフレンドと自分のフレンドが一致しているものを即時追加
+      for (const [cUid, fObj] of myCandidateFriends) {
+        if (otherConfirmedFriendUids.has(cUid)) {
+          mutualMap.set(cUid, fObj);
+        }
+      }
+
+      // C-2: まだ確定していない自分のフレンド候補について、双方向ドキュメント＆DMを並列（Promise.all）チェック
+      const unconfirmedCandidates = Array.from(myCandidateFriends.entries()).filter(([cUid]) => !mutualMap.has(cUid));
+      if (unconfirmedCandidates.length > 0) {
+        const candidateCheckPromises = unconfirmedCandidates.map(async ([cUid, fObj]) => {
+          try {
+            // 3つのパス（相手→C、C→相手、相手とCのDMチャンネル）を並列で取得
+            const dmDocId = [other, cUid].sort().join('_');
+            const [relFromOtherSnap, relFromCandidateSnap, dmSnap] = await Promise.all([
+              getDoc(doc(db, `artifacts/${appId}/users/${other}/relationships/${cUid}`)).catch(() => null),
+              getDoc(doc(db, `artifacts/${appId}/users/${cUid}/relationships/${other}`)).catch(() => null),
+              getDoc(doc(db, `artifacts/${appId}/dm_channels/${dmDocId}`)).catch(() => null)
+            ]);
+            let isMutual = false;
+            if (relFromOtherSnap && relFromOtherSnap.exists()) {
+              const st = relFromOtherSnap.data()?.status;
+              if (!isBlockedOrPending(st) && isFriendStatus(st)) isMutual = true;
+            }
+            if (!isMutual && relFromCandidateSnap && relFromCandidateSnap.exists()) {
+              const st = relFromCandidateSnap.data()?.status;
+              if (!isBlockedOrPending(st) && isFriendStatus(st)) isMutual = true;
+            }
+            if (!isMutual && dmSnap && dmSnap.exists()) {
+              isMutual = true; // 相手とCの間にDMチャンネルが存在する＝フレンド
+            }
+            if (isMutual) {
+              mutualMap.set(cUid, fObj);
+            }
+          } catch (_) {}
+        });
+        await Promise.all(candidateCheckPromises);
+      }
+
+      // ─── ステップ D: 共通サーバーメンバーシップからの相互関係並列補完 ───
+      if (Array.isArray(allServersCache)) {
+        const mutualServers = allServersCache.filter(s =>
+          (s.joinedUsers || []).includes(other) && (s.joinedUsers || []).includes(me)
+        );
+        const serverCandidateUids = new Set();
+        mutualServers.forEach(s => {
+          (s.joinedUsers || []).forEach(mUid => {
+            if (mUid && mUid !== me && mUid !== other && !mutualMap.has(mUid)) {
+              serverCandidateUids.add(mUid);
+            }
+          });
+        });
+        if (serverCandidateUids.size > 0) {
+          const serverCheckPromises = Array.from(serverCandidateUids).map(async (mUid) => {
+            try {
+              // 自分が mUid とフレンド関係にあるか
+              const myRelSnap = await getDoc(doc(db, `artifacts/${appId}/users/${me}/relationships/${mUid}`)).catch(() => null);
+              if (myRelSnap && myRelSnap.exists() && !isBlockedOrPending(myRelSnap.data()?.status) && isFriendStatus(myRelSnap.data()?.status)) {
+                // さらに 相手が mUid とフレンドまたはDM関係にあるか
+                const otherRelSnap = await getDoc(doc(db, `artifacts/${appId}/users/${other}/relationships/${mUid}`)).catch(() => null);
+                if (otherRelSnap && otherRelSnap.exists() && !isBlockedOrPending(otherRelSnap.data()?.status) && isFriendStatus(otherRelSnap.data()?.status)) {
+                  mutualMap.set(mUid, { id: mUid, targetUid: mUid, status: 'friends' });
+                }
+              }
+            } catch (_) {}
+          });
+          await Promise.all(serverCheckPromises);
+        }
+      }
+
+      // ─── ステップ E: プロファイル情報（名前・アイコン・ステータス）の完全解決 ───
+      const mutualList = Array.from(mutualMap.values());
+      const enrichPromises = mutualList.map(async (f) => {
+        const fUid = f.targetUid || f.id;
+        if (!f.targetNickname || !f.targetAvatarUrl || f.targetNickname === 'ユーザー') {
+          const p = await window.getUserProfile(fUid).catch(() => null);
+          if (p) {
+            f.targetNickname = p.nickname || f.targetNickname || 'ユーザー';
+            f.targetAvatarUrl = p.avatarUrl || f.targetAvatarUrl || '';
+            f.computedState = p.status || p.state || 'offline';
+            f.customStatus = p.customStatus || null;
+          }
+        }
+      });
+      if (enrichPromises.length > 0) {
+        await Promise.all(enrichPromises);
+      }
+      // キャッシュに保存して返却
+      window._mutualFriendsCache.set(cacheKey, { time: Date.now(), data: mutualList });
+      return mutualList;
+    } catch (err) {
+      console.warn('[getMutualFriends] error:', err);
+      return [];
+    } finally {
+      window._mutualFriendsInFlight.delete(cacheKey);
+    }
+  })();
+  window._mutualFriendsInFlight.set(cacheKey, taskPromise);
+  return await taskPromise;
 };
 let _fullProfileTargetUser = null;
 window.openUserFullProfileModal = async function (targetUid, targetNickname, targetAvatarUrl, initialTab = 'activity') {
@@ -7123,9 +7264,14 @@ let _rtdbOnDisconnect = null;
 
 async function _getOrInitRTDB() {
   if (_rtdb) return _rtdb;
+  if (!app) {
+    try {
+      app = initializeApp(firebaseConfig);
+    } catch (_) {}
+  }
   if (!app) return null;
   const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-  _rtdb = getDatabase(app);
+  _rtdb = getDatabase(app, firebaseConfig.databaseURL);
   return _rtdb;
 }
 

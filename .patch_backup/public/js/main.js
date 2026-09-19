@@ -73,8 +73,30 @@ import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from '
 import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
-
-
+// ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
+const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1",
+  measurementId: "G-2JMHWNMG4R",
+  databaseURL: "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app",
+};
+const appId = "simplechat-65a0d";
+let _cachedIdToken = null;
+let _appVersion = null;
+fetch('/version.json', { cache: 'default' })
+  .then(r => r.json())
+  .then(d => { _appVersion = d.version || null; })
+  .catch(() => { _appVersion = null; });
+// 古いコードやキャッシュからの renderServer 呼び出しを安全に処理するフォールバック
+window.renderServer = function (server) {
+  if (typeof window.renderDiscordServerNav === 'function') window.renderDiscordServerNav();
+  else if (typeof window.renderServerList === 'function') window.renderServerList();
+};
 // === コンソールログの自動収集 & 二重出力完全防止システム ===
 window._covoLogs = window._covoLogs || [];
 // 削除済みエラーシグネチャの追跡セット（未定義エラーを完全根絶）
@@ -93,7 +115,11 @@ function isTransientTelemetryError(args) {
     // 認証ポップアップのユーザー自身による手動キャンセルのみ除外（エラー以外の正常動作）
     if (
       str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request')
+      str.includes('auth/cancelled-popup-request') ||
+      str.includes('disconnected port') ||
+      str.includes('attempting to use a disconnected port') ||
+      str.includes('cross-origin-opener-policy') ||
+      (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
     }
@@ -306,30 +332,6 @@ _flushPendingTelemetryErrors();
 // オンライン復帰時および定期的なフラッシュ
 window.addEventListener('online', _flushPendingTelemetryErrors);
 setInterval(_flushPendingTelemetryErrors, 15000);
-
-// ========= Cloudflare Worker ベースURL =========
-const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
-
-// ========= バージョン管理 =========
-let _appVersion = null;
-fetch('/version.json', { cache: 'default' })
-  .then(r => r.json())
-  .then(d => { _appVersion = d.version || null; })
-  .catch(() => { _appVersion = null; });
-
-// Firebase設定 (authDomain を firebaseapp.com に統一して Google OAuth redirect_uri_mismatch を解消)
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1",
-  measurementId: "G-2JMHWNMG4R",
-  databaseURL: "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app",
-};
-
-const appId = "simplechat-65a0d";
 window._devConsoleLog = [];
 // 🔒 安全なJSONパース（破損データや空文字列によるSyntaxErrorクラッシュを防止）
 function safeJsonParse(str, fallback = null) {
@@ -741,8 +743,6 @@ let unsubscribePinnedMessages = null;
 let currentPinnedMessages = [];
 let _authHandlerBusy = false;
 let _lastAuthUserId = null;
-let _cachedIdToken = null;
-
 // ===== 統一権限判定ヘルパー (Discord準拠: #53) =====
 function isCurrentUserServerOwner(serverData = currentServerData) {
   if (!serverData || !userId) return false;
@@ -2818,20 +2818,20 @@ window.filterErrorTelemetry = function (filter) {
 };
 
 let _telemetryErrorsUnsub = null;
-
 window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  // 初期表示（ローカルキャッシュがあれば即時描画）
-  renderTelemetryErrorsList();
+  // 読み込み中はスピナーを表示（古いローカルキャッシュで画面を汚染しない）
+  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBから最新エラーを読み込み中...</div>';
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
     const mergedMap = new Map();
-    // 1. 🛡️ RTDB (artifacts/${appId}/error_reports) をマスターとして全件取得
+    // 1. 🛡️ RTDB (artifacts/${appId}/error_reports) を最優先マスターとして全件取得
+    let rtdbSuccess = false;
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2846,9 +2846,32 @@ window.loadErrorTelemetry = async function () {
             }
           });
         }
+        rtdbSuccess = true;
       }
     } catch (rtdbErr) {
-      console.warn('[loadErrorTelemetry] RTDB read warning:', rtdbErr);
+      console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
+    }
+    // RTDB SDK が初期化前または接続失敗した場合は REST API でフォールバック取得
+    if (!rtdbSuccess) {
+      try {
+        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+        const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
+        const res = await fetch(rtdbUrl);
+        if (res.ok) {
+          const val = await res.json();
+          if (val && typeof val === 'object') {
+            Object.keys(val).forEach(k => {
+              const remoteItem = val[k];
+              if (remoteItem && remoteItem.message) {
+                mergedMap.set(k, { id: k, ...remoteItem });
+              }
+            });
+          }
+          rtdbSuccess = true;
+        }
+      } catch (restErr) {
+        console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
+      }
     }
     // 2. Firestore バックアップからも取得して補完
     try {
@@ -2862,21 +2885,18 @@ window.loadErrorTelemetry = async function () {
     } catch (fsErr) {
       console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
     }
-    // 3. RTDBから取得できた場合、ローカルストレージの偽装・過去ログをクラウドデータで完全同期
-    if (mergedMap.size > 0 || (window._cachedTelemetryErrors && window._cachedTelemetryErrors.length === 0)) {
-      const result = Array.from(mergedMap.values());
-      result.sort((a, b) => {
-        const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
-        const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
-        return timeB - timeA;
-      });
-      window._cachedTelemetryErrors = result;
-      _saveTelemetryErrorsToStorage();
-    }
+    // 3. RTDBを真実のデータ（Source of Truth）としてローカルストレージと同期
+    const result = Array.from(mergedMap.values());
+    result.sort((a, b) => {
+      const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
+      const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
+      return timeB - timeA;
+    });
+    window._cachedTelemetryErrors = result;
+    _saveTelemetryErrorsToStorage();
     if (badgeEl) {
-      const totalCount = (window._cachedTelemetryErrors || []).length;
-      badgeEl.textContent = totalCount;
-      badgeEl.classList.toggle('hidden', totalCount === 0);
+      badgeEl.textContent = result.length;
+      badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
     // 4. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
@@ -2889,6 +2909,10 @@ window.loadErrorTelemetry = async function () {
           if (!snapshot.exists()) {
             window._cachedTelemetryErrors = [];
             _saveTelemetryErrorsToStorage();
+            if (badgeEl) {
+              badgeEl.textContent = '0';
+              badgeEl.classList.add('hidden');
+            }
             renderTelemetryErrorsList();
             return;
           }
@@ -6002,7 +6026,8 @@ window.getMutualFriends = async function (targetUid) {
     const targetFriendUids = new Set();
     snap.docs.forEach(d => {
       const data = d.data() || {};
-      if (data.status === 'friends') {
+      const st = String(data.status || '').toLowerCase().trim();
+      if (st === 'friends') {
         const friendId = data.targetUid || d.id;
         if (friendId && friendId !== userId && friendId !== targetUid) {
           targetFriendUids.add(friendId);
@@ -6032,18 +6057,82 @@ window.getMutualFriends = async function (targetUid) {
       } catch (_) {}
     }
 
-    const myFriends = Object.values(myFriendsMap).filter(r => r.status === 'friends');
-    const mutual = [];
-    myFriends.forEach(f => {
+    const myFriends = Object.values(myFriendsMap).filter(r => String(r.status || '').toLowerCase().trim() === 'friends');
+    const mutualMap = new Map();
+
+    // 3. 相手のサブコレクションから一致したフレンドを追加
+    for (const f of myFriends) {
       const fUid = f.targetUid || f.id;
       if (fUid && fUid !== userId && fUid !== targetUid && targetFriendUids.has(fUid)) {
-        mutual.push({
+        mutualMap.set(fUid, {
           ...f,
           targetUid: fUid
         });
       }
+    }
+
+    // 4. 双方向クロス探索: 相手のサブコレクションが取得できない、または未登録の場合でも、
+    // 自分のフレンド側（fUid）の relationships/${targetUid} を直接検証
+    const checkPromises = [];
+    for (const f of myFriends) {
+      const fUid = f.targetUid || f.id;
+      if (!fUid || fUid === userId || fUid === targetUid || mutualMap.has(fUid)) continue;
+      checkPromises.push(
+        getDoc(doc(db, `artifacts/${appId}/users/${fUid}/relationships/${targetUid}`)).then(relSnap => {
+          if (relSnap.exists()) {
+            const rData = relSnap.data() || {};
+            if (String(rData.status || '').toLowerCase().trim() === 'friends') {
+              mutualMap.set(fUid, {
+                ...f,
+                targetUid: fUid
+              });
+            }
+          }
+        }).catch(() => {})
+      );
+    }
+    if (checkPromises.length > 0) {
+      await Promise.all(checkPromises);
+    }
+
+    // 5. 共通サーバー内のフレンド補完
+    if (Array.isArray(allServersCache)) {
+      const mutualServers = allServersCache.filter(s =>
+        (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)
+      );
+      for (const s of mutualServers) {
+        for (const mUid of (s.joinedUsers || [])) {
+          if (!mUid || mUid === userId || mUid === targetUid || mutualMap.has(mUid)) continue;
+          if (myFriendsMap[mUid] && String(myFriendsMap[mUid].status || '').toLowerCase().trim() === 'friends') {
+            const relSnap = await getDoc(doc(db, `artifacts/${appId}/users/${mUid}/relationships/${targetUid}`)).catch(() => null);
+            if (relSnap && relSnap.exists() && String(relSnap.data()?.status || '').toLowerCase().trim() === 'friends') {
+              mutualMap.set(mUid, {
+                ...myFriendsMap[mUid],
+                targetUid: mUid
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 6. プロファイル情報の安全な補完
+    const mutualList = Array.from(mutualMap.values());
+    const enrichPromises = mutualList.map(async (f) => {
+      const fUid = f.targetUid || f.id;
+      if (!f.targetNickname || !f.targetAvatarUrl) {
+        const p = await window.getUserProfile(fUid).catch(() => null);
+        if (p) {
+          f.targetNickname = f.targetNickname || p.nickname;
+          f.targetAvatarUrl = f.targetAvatarUrl || p.avatarUrl;
+        }
+      }
     });
-    return mutual;
+    if (enrichPromises.length > 0) {
+      await Promise.all(enrichPromises);
+    }
+
+    return mutualList;
   } catch (err) {
     console.warn('[getMutualFriends] error:', err);
     return [];

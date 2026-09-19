@@ -113,7 +113,9 @@
         },
         "error_reports": {
           ".read": "auth != null",
+          ".write": true,
           "$docId": {
+            ".read": "auth != null",
             ".write": true
           }
         },

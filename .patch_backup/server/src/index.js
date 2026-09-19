@@ -540,9 +540,8 @@ async function signUpWithFirebase(email, password, env) {
 // ルーム参加処理 (Deprecated / Broken) -> サーバー参加処理に変更
 // -------------------------------------------------------------
 async function getFirestoreAdminToken(serviceAccountJsonStr) {
-  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform');
+  return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/firebase');
 }
-
 // -------------------------------------------------------------
 // サーバー参加処理
 // -------------------------------------------------------------
