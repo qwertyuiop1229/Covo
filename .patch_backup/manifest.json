@@ -1,8 +1,9 @@
 {
-  "date": "2026-09-18T16:25:01.637Z",
+  "date": "2026-09-19T09:18:06.983Z",
   "files": [
     "server/src/index.js",
-    "public/js/main.js",
-    "public/js/crypto_helpers.js"
+    "public/index.html",
+    "public/js/local_store.js",
+    "public/js/main.js"
   ]
 }

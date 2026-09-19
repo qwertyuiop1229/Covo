@@ -603,9 +603,11 @@ export async function restoreAllLocalData(bundle) {
  * @returns {Promise<boolean>}
  */
 export async function clearAllLocalData() {
+  if (typeof caches !== 'undefined' && caches.delete) {
+    caches.delete('covo_media_cache_v1').catch(() => {});
+  }
   const db = await initLocalDB();
   if (!db) return false;
-
   return new Promise((resolve) => {
     try {
       const stores = ["messages", "channels", "friends", "settings"];

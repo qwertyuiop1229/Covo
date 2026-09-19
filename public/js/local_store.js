@@ -393,14 +393,15 @@ export async function getAllChannels() {
  * @param {Object} friend
  */
 export async function putFriend(friend) {
-  if (!friend || !friend.uid) return;
+  if (!friend) return;
+  const uid = friend.uid || friend.targetUid || friend.id;
+  if (!uid) return;
   const db = await initLocalDB();
   if (!db) return;
-
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put(friend);
+      tx.objectStore("friends").put({ ...friend, uid });
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
     } catch (e) {
@@ -408,7 +409,6 @@ export async function putFriend(friend) {
     }
   });
 }
-
 /**
  * フレンド一覧の一括保存
  * @param {Array<Object>} friends
@@ -417,13 +417,14 @@ export async function putFriendsBatch(friends) {
   if (!Array.isArray(friends) || friends.length === 0) return;
   const db = await initLocalDB();
   if (!db) return;
-
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("friends", "readwrite");
       const store = tx.objectStore("friends");
       for (const f of friends) {
-        if (f && f.uid) store.put(f);
+        if (!f) continue;
+        const uid = f.uid || f.targetUid || f.id;
+        if (uid) store.put({ ...f, uid });
       }
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
