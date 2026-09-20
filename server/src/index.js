@@ -548,6 +548,24 @@ async function signUpWithFirebase(email, password, env) {
 async function getFirestoreAdminToken(serviceAccountJsonStr) {
   return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/firebase');
 }
+// 🔒 セキュリティ: クライアント入力の rtdbUrl を検証し公式RTDBドメインのみ許可 (SSRF & トークン漏洩防止)
+function getRtdbBaseUrl(env, clientRtdbUrl) {
+  const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
+  const defaultRtdb = (env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`).replace(/\/+$/, '');
+  if (clientRtdbUrl && typeof clientRtdbUrl === 'string') {
+    try {
+      const u = new URL(clientRtdbUrl);
+      const host = u.hostname.toLowerCase();
+      if (
+        (host.endsWith('.firebasedatabase.app') || host.endsWith('.firebaseio.com')) &&
+        (host.startsWith(projectId) || host.includes(projectId))
+      ) {
+        return clientRtdbUrl.replace(/\/+$/, '');
+      }
+    } catch (_) {}
+  }
+  return defaultRtdb;
+}
 // -------------------------------------------------------------
 // サーバー参加処理
 // -------------------------------------------------------------
@@ -588,7 +606,7 @@ async function handleJoinServer(request, env) {
       // 既にサーバーに参加済みなので、RTDBのみ同期して終了
       if (rtdbUrl) {
         try {
-          const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+          const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
           const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
           await fetch(rtdbTargetUrl, {
             method: 'PUT',
@@ -757,14 +775,13 @@ async function handleJoinServer(request, env) {
 
     if (rtdbUrl) {
       try {
-        const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+        const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
         const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
         await fetch(rtdbTargetUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(true)
         });
-
         // サーバー作成者(createdBy)および管理者リスト(serverAdmins)もRTDBへ同期
         if (srvData && srvData.fields) {
           if (srvData.fields.createdBy?.stringValue) {
@@ -841,7 +858,7 @@ async function handleSyncRtdb(request, env) {
 
     // RTDB に同期
     try {
-      const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+      const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
       const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
       await fetch(rtdbTargetUrl, {
         method: 'PUT',
@@ -1004,7 +1021,7 @@ async function handleSendCallNotification(request, env) {
     if (!calleeId || !callId || !appId || !callerId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId)) {
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId) || !/^[a-zA-Z0-9_\-]+$/.test(calleeId) || !/^[a-zA-Z0-9_\-]+$/.test(callerId)) {
       return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
@@ -1185,8 +1202,7 @@ async function handleSendNotification(request, env) {
 
     // 各受信者について処理
     for (const rid of receiverIds) {
-        if (!rid || rid === senderId) continue; // 自分や空IDには送らない
-
+        if (!rid || typeof rid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(rid) || rid === senderId) continue; // 自分や空ID、不正文字はスキップ
         let shouldSend = true;
         try {
             // 1. 相手のステータスをRTDBから取得
@@ -2155,6 +2171,18 @@ async function handleAdminDeleteMessage(request, env) {
     if (!isValidAppId(appId, env)) {
       return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(messageId)) {
+      return new Response(JSON.stringify({ error: "Invalid messageId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ error: "Invalid serverId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (roomId && !/^[a-zA-Z0-9_\-]+$/.test(roomId)) {
+      return new Response(JSON.stringify({ error: "Invalid roomId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (dmId && (!/^[a-zA-Z0-9_\-]+$/.test(dmId) || dmId.split('_').length !== 2)) {
+      return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -3040,8 +3068,14 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, serverId, roomId, messageId, type, data, isPinned, reactionUserId, reactionEmoji } = body;
-        
         if (type === "add") {
+          if (serverId) {
+            const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (!isMember && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: d1Cors });
+            }
+          }
           const text = data.text || "";
           const created_at = data.createdAt || Date.now();
           const senderId = verifiedUser.uid; // 強制的に認証済みUIDに設定（なりすまし防止）
@@ -3089,6 +3123,13 @@ async function handleSetOffline(request, env) {
         }
 
         if (type === "pin") {
+          const isSvAdmin = serverId ? await isServerAdminCheck(appId, serverId, verifiedUser, env) : false;
+          const isGlobal = await isD1Admin(appId, verifiedUser, env);
+          const msgCheck = await env.DB.prepare("SELECT sender_id FROM messages WHERE message_id = ? AND app_id = ?").bind(messageId, appId).first();
+          const isMsgSender = msgCheck && msgCheck.sender_id === verifiedUser.uid;
+          if (!isGlobal && !isSvAdmin && !isMsgSender && !roomId?.startsWith('dm_')) {
+            return new Response(JSON.stringify({ error: "Forbidden: Pin permission denied" }), { status: 403, headers: d1Cors });
+          }
           await env.DB.prepare("UPDATE messages SET is_pinned = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(isPinned ? 1 : 0, messageId, roomId, appId).run();
           // ピン留め変更もRTDBへ通知
           if (env.SERVICE_ACCOUNT_JSON) {
@@ -3491,6 +3532,15 @@ async function handleSetOffline(request, env) {
             }
             if (!isValidAppId(appId, env)) {
               return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+              return new Response(JSON.stringify({ error: "Invalid serverId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (roomId && !/^[a-zA-Z0-9_\-]+$/.test(roomId)) {
+              return new Response(JSON.stringify({ error: "Invalid roomId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (dmId && (!/^[a-zA-Z0-9_\-]+$/.test(dmId) || dmId.split('_').length !== 2)) {
+              return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
             }
             const isGlobal = await isAppAdmin(appId, verifiedUser, env);
             if (dmId) {

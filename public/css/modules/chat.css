@@ -1511,6 +1511,9 @@
       max-height: none !important;
       overflow: visible !important;
     }
+    .message-collapsible-wrapper.expanded .collapse-fade {
+      display: none !important;
+    }
     .message-collapsible-wrapper .collapse-fade {
       position: absolute;
       bottom: 0;

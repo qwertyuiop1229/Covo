@@ -16398,15 +16398,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
         toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
         toggleBtn.onclick = (e) => {
           e.stopPropagation();
-          const isExp = collWrapper.classList.contains("expanded");
+          const isExp = collWrapper.classList.toggle("expanded");
           if (isExp) {
-            collWrapper.classList.remove("expanded");
-            fadeDiv.style.display = "block";
-            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
-          } else {
-            collWrapper.classList.add("expanded");
-            fadeDiv.style.display = "none";
             toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i> 折りたたむ';
+          } else {
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
           }
         };
         messageElement.appendChild(collWrapper);
@@ -16485,13 +16481,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 }
                 const buf = await res.arrayBuffer();
                 if (!buf || buf.byteLength < 29) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
+                  const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
                   element.replaceWith(expiredCard);
                   return;
                 }
-                const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+                const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
                 const blob = new Blob([dec], { type: message.fileType });
                 message._decryptedFileUrl = URL.createObjectURL(blob);
                 if (propName) element[propName] = message._decryptedFileUrl;
@@ -16630,30 +16624,28 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   }
                   if (!key) return;
                   const res = await fetchWithMediaCache(message.fileData);
-                  if (res.status === 404 || res.status === 410 || !res.ok) {
+                  if (res.status === 404 || res.status === 410) {
                     markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                     message._fileExpired = true;
                     const expiredCard = createExpiredFileCard(message.fileName);
                     pdfWrapper.replaceWith(expiredCard);
                     return;
                   }
+                  if (!res.ok) return;
                   const buf = await res.arrayBuffer();
                   if (!buf || buf.byteLength < 29) {
-                    markFileAsMissing(message.fileData);
-                    message._fileExpired = true;
-                    const expiredCard = createExpiredFileCard(message.fileName);
+                    const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
                     pdfWrapper.replaceWith(expiredCard);
                     return;
                   }
-                  const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+                  const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
                   const blob = new Blob([dec], { type: 'application/pdf' });
                   message._decryptedFileUrl = URL.createObjectURL(blob);
                   window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
                 } catch (e) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  pdfWrapper.replaceWith(expiredCard);
+                  message._decryptionFailed = true;
+                  const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                  try { pdfWrapper.replaceWith(errCard); } catch (_) {}
                 }
               })();
             }
@@ -16693,7 +16685,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               }
               if (!key) throw new Error("鍵が見つかりません");
               const res = await fetchWithMediaCache(message.fileData);
-              if (res.status === 404 || res.status === 410 || !res.ok) {
+              if (res.status === 404 || res.status === 410) {
                 markFileAsMissing(message.fileData);
                 message._fileExpired = true;
                 alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
@@ -16701,24 +16693,16 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 fileAttachmentDiv.replaceWith(expiredCard);
                 return;
               }
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const buf = await res.arrayBuffer();
               if (!buf || buf.byteLength < 29) {
-                markFileAsMissing(message.fileData);
-                message._fileExpired = true;
-                alertMessage("保存期間（100件制限）が終了したか、ファイルが破損しています。", "info");
-                const expiredCard = createExpiredFileCard(message.fileName);
-                fileAttachmentDiv.replaceWith(expiredCard);
-                return;
+                throw new Error("ファイルが破損しているか読み込めません");
               }
-              const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+              const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
               const blob = new Blob([dec], { type: message.fileType });
               message._decryptedFileUrl = URL.createObjectURL(blob);
             } catch (e) {
-              markFileAsMissing(message.fileData);
-              message._fileExpired = true;
-              alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
-              const expiredCard = createExpiredFileCard(message.fileName);
-              fileAttachmentDiv.replaceWith(expiredCard);
+              alertMessage("ファイルの復号または読み込みに失敗しました: " + (e.message || ''), "error");
               return;
             }
           }
