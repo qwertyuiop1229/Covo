@@ -2427,38 +2427,33 @@ async function handleSetOffline(request, env) {
             }
           } catch (_) {}
         }
-        // RTDB へ書き込み (.write: true なので認証なしでも確実に保存)
-        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json`;
+        // RTDB へ書き込み (.write: true なので認証なしでも確実に保存、authParam があれば特権書き込み)
+        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`;
         let res = await fetch(writeUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalPayload)
         });
-        // 2. Firestore へもバックアップ書き込み
+        // 2. Firestore へもバックアップ書き込み (PATCH メソッドにより新規作成・上書き upsert を 100% 成功させる)
         (async () => {
           try {
             const adminToken = await getAdminTokenForFirestore(env);
             if (adminToken) {
-              const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
-              await fetch(commitUrl, {
-                method: "POST",
+              const patchUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`;
+              await fetch(patchUrl, {
+                method: "PATCH",
                 headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  writes: [{
-                    update: {
-                      name: `projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`,
-                      fields: {
-                        id: { stringValue: signature },
-                        signature: { stringValue: signature },
-                        type: { stringValue: finalPayload.type || 'error' },
-                        message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
-                        stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
-                        lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
-                        count: { integerValue: String(finalPayload.count || 1) },
-                        affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
-                      }
-                    }
-                  }]
+                  fields: {
+                    id: { stringValue: signature },
+                    signature: { stringValue: signature },
+                    type: { stringValue: finalPayload.type || 'error' },
+                    message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
+                    stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
+                    lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
+                    count: { integerValue: String(finalPayload.count || 1) },
+                    affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
+                  }
                 })
               });
             }

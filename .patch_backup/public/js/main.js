@@ -2982,6 +2982,41 @@ window.loadErrorTelemetry = async function () {
     renderTelemetryErrorsList();
   }
 };
+// === 動作確認テスト機能 (管理者・ユーザー用) ===
+window.triggerTestTelemetryError = function(type = 'warn') {
+  const timeStr = new Date().toLocaleTimeString('ja-JP');
+  if (type === 'error') {
+    console.error(`[動作確認テスト ${timeStr}] システムレポートのエラー収集テストです（正常に検知されました）`);
+  } else {
+    console.warn(`[動作確認テスト ${timeStr}] システムレポートの警告収集テストです（正常に検知されました）`);
+  }
+  setTimeout(() => {
+    if (typeof loadErrorTelemetry === 'function') {
+      loadErrorTelemetry();
+    }
+  }, 80);
+  alertMessage(`${type === 'error' ? 'エラー' : '警告'}のテストログを発行しました。一覧をご確認ください`, 'success');
+};
+
+window.sendTestNotification = async function() {
+  if (!('Notification' in window)) {
+    alertMessage('お使いのブラウザはデスクトップ通知に対応していません', 'warning');
+    return;
+  }
+  if (Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      alertMessage('通知権限が許可されませんでした。ブラウザのアドレスバー横から通知を許可してください', 'warning');
+      return;
+    }
+  } else if (Notification.permission === 'denied') {
+    alertMessage('通知がブロックされています。ブラウザ設定から通知を「許可」に変更してください', 'error');
+    return;
+  }
+  alertMessage('Windowsへテスト通知を送信しました！', 'success');
+  showNotification('Covo テスト通知', 'Windowsのデスクトップ通知が正常に動作しています！', null, true);
+};
+
 function renderTelemetryErrorsList() {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
@@ -21869,11 +21904,11 @@ function handleCallDeclinedFromNotification(data) {
 }
 
 // --- 統合通知関数 ---
-async function showNotification(title, body, roomId) {
+async function showNotification(title, body, roomId, forceOs = false) {
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-  if (!notifEnabled) return;
-  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない
-  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+  if (!notifEnabled && !forceOs) return;
+  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
+  if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
 
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);

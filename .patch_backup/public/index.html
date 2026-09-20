@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.214" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.215" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.214" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.215" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -1475,8 +1475,16 @@
                     <label class="toggle-switch"><input type="checkbox" id="toggleNotifSound" checked><span class="toggle-slider"></span></label>
                   </div>
                   <div class="setting-row" id="browserNotifRow">
-                    <div class="setting-label"><i class="fas fa-bell"></i> プッシュ通知 / デスクトップ通知</div>
-                    <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
+                    <div class="flex-1">
+                      <div class="setting-label"><i class="fas fa-bell"></i> プッシュ通知 / デスクトップ通知</div>
+                      <div class="text-[11px] text-gray-400 dark:text-slate-400 mt-0.5">メッセージ着信時にWindows通知を発行します</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <button type="button" onclick="sendTestNotification()" class="px-2.5 py-1 rounded-lg bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 text-xs font-bold transition shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer" title="Windows通知をテスト">
+                        <i class="fas fa-paper-plane text-[10px]"></i><span>テスト通知</span>
+                      </button>
+                      <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotif" checked><span class="toggle-slider"></span></label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1916,13 +1924,16 @@
           <button id="errFilterWarns" onclick="filterErrorTelemetry('warn')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition">警告のみ</button>
         </div>
         <div class="flex items-center gap-1.5">
-          <button onclick="copyAllTelemetryErrors()" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 text-xs font-bold rounded-lg transition flex items-center gap-1">
+          <button onclick="triggerTestTelemetryError('warn')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-600 dark:text-amber-300 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer" title="エラー収集機能の動作確認用テスト警告を発行">
+            <i class="fas fa-vial text-[10px]"></i> 動作テスト
+          </button>
+          <button onclick="copyAllTelemetryErrors()" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer">
             <i class="fas fa-copy"></i> 全エラーを一括コピー
           </button>
-          <button onclick="loadErrorTelemetry()" class="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition">
+          <button onclick="loadErrorTelemetry()" class="px-2.5 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-gray-200 text-xs font-semibold rounded-lg transition cursor-pointer">
             <i class="fas fa-sync-alt"></i>
           </button>
-          <button onclick="clearAllTelemetryErrors()" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg transition" title="全エラーを解決済みにする">
+          <button onclick="clearAllTelemetryErrors()" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg transition cursor-pointer" title="全エラーを解決済みにする">
             <i class="fas fa-trash"></i>
           </button>
         </div>
@@ -3620,7 +3631,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.214"></script>
+  <script type="module" src="js/main.js?v=1.1.215"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4585,7 +4596,10 @@
         <div class="mobile-settings-row" id="mobileBrowserNotifRow">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-bell"></i></div>
           <span class="mobile-settings-row-text">通知</span>
-          <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotifMobile"><span class="toggle-slider"></span></label>
+          <div class="flex items-center gap-2" onclick="event.stopPropagation()">
+            <button type="button" onclick="sendTestNotification()" class="px-2 py-1 rounded-lg bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-gray-200 text-[11px] font-bold transition cursor-pointer">テスト</button>
+            <label class="toggle-switch"><input type="checkbox" id="toggleBrowserNotifMobile"><span class="toggle-slider"></span></label>
+          </div>
         </div>
       </div>
     </div>
