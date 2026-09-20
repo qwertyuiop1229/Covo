@@ -861,6 +861,7 @@ function initializeFirebase() {
       try {
         cleanupGlobalNotificationListeners();
         if (typeof window._activeDmKeyUnsub === 'function') { window._activeDmKeyUnsub(); window._activeDmKeyUnsub = null; }
+        if (typeof window._activeDmUserDocUnsub === 'function') { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
         if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
@@ -7602,6 +7603,16 @@ function subscribeToUserStatus() {
             usersMap.set(uid, merged);
             Object.assign(cachedProf, data);
             if (rawLc) cachedProf.last_changed = rawLc;
+            // 🌟 相手のニックネームやアイコンがRTDB経由で届いた場合も即座にDM画面へ反映
+            if (data.nickname || data.avatarUrl) {
+              if (typeof window.refreshCurrentDmParticipantUI === 'function') {
+                window.refreshCurrentDmParticipantUI(uid, {
+                  nickname: data.nickname,
+                  avatarUrl: data.avatarUrl,
+                  customStatus: data.customStatus
+                });
+              }
+            }
           } else {
             const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
             const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
@@ -7838,7 +7849,15 @@ function isFileMissing(url) {
   if (!url) return false;
   return _missingFilesSet.has(url);
 }
-
+// 🔒 自己治癒: サーバー上で実在が確認されたURLは欠落リストから解除
+function unmarkFileAsMissing(url) {
+  if (!url || typeof url !== 'string') return;
+  _missingFilesSet.delete(url);
+  try {
+    const list = Array.from(_missingFilesSet);
+    localStorage.setItem('covo_missing_files_v2', JSON.stringify(list));
+  } catch (_) {}
+}
 function __setAvatarImg(container, url, name, opts) {
   if (!container) return;
   opts = opts || {};
@@ -8029,6 +8048,7 @@ let _serverSwitchGeneration = 0;
 window.enterServer = async function enterServer(serverId, serverData) {
   _serverSwitchGeneration++;
   const thisGen = _serverSwitchGeneration;
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
@@ -8185,7 +8205,7 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
   const homeBtn = document.getElementById("discordHomeBtn");
   if (homeBtn) homeBtn.classList.add('active');
-
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -8986,9 +9006,107 @@ function renderDmConversationsList() {
     const oldBadge = homeBtn.querySelector('.discord-home-unread-dot');
     if (oldBadge) oldBadge.remove();
   }
-}
+  }
 
-window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
+  // 🌟 個チャ (DM) 相手のアイコン・名前・ステータス変更を画面全体へ即座に反映するリアクティブ同期関数
+  window.refreshCurrentDmParticipantUI = function(targetUid, updatedData = {}) {
+  if (!targetUid) return;
+  const existingProf = window._userProfileCache?.get(targetUid) || { id: targetUid, uid: targetUid };
+  const newNickname = updatedData.nickname || existingProf.nickname || 'ユーザー';
+  const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
+  const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
+  const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
+
+  const merged = {
+    ...existingProf,
+    id: targetUid,
+    uid: targetUid,
+    nickname: newNickname,
+    avatarUrl: newAvatarUrl,
+    aboutMe: newAboutMe,
+    customStatus: newCustomStatus
+  };
+  window._userProfileCache?.set(targetUid, merged);
+
+  if (Array.isArray(cachedUsers)) {
+    const uIdx = cachedUsers.findIndex(u => u.id === targetUid);
+    if (uIdx >= 0) {
+      cachedUsers[uIdx] = { ...cachedUsers[uIdx], ...merged };
+    }
+  }
+
+  // 現在この相手との個チャ (DM) を開いている場合、アクティブUIを瞬時に即座反映
+  if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
+    currentDmParticipant = {
+      ...currentDmParticipant,
+      nickname: newNickname,
+      avatarUrl: newAvatarUrl,
+      aboutMe: newAboutMe,
+      customStatus: newCustomStatus
+    };
+
+    // 1. チャット上部ヘッダー
+    const title = document.getElementById("currentRoomTitleText");
+    if (title) title.textContent = newNickname;
+
+    // 2. 入力欄プレースホルダー
+    const mi = document.getElementById("messageInput");
+    if (mi) mi.placeholder = `@${newNickname} へのメッセージ`;
+
+    // 3. ウィンドウ最上部タイトルバー
+    if (typeof updateTitleBarContext === 'function') {
+      updateTitleBarContext('dm', currentDmParticipant);
+    }
+
+    // 4. 右側プロフィールパネルの再描画
+    if (typeof renderDmProfilePanel === 'function') {
+      renderDmProfilePanel(targetUid, newNickname, newAvatarUrl);
+    }
+
+    // 5. チャット内メッセージの相手アバター・名前の即時更新
+    const container = document.getElementById('messagesDisplay');
+    if (container) {
+      container.querySelectorAll(`.msg-avatar[data-user-id="${targetUid}"]`).forEach(av => {
+        __setAvatarImg(av, newAvatarUrl, newNickname, { style: '' });
+      });
+      container.querySelectorAll(`.msg-sender-name[data-sender-id="${targetUid}"]`).forEach(nm => {
+        nm.textContent = newNickname;
+      });
+    }
+
+    // 6. DMウェルカムバナーの更新
+    const hero = document.getElementById('dmHeroWelcomeBanner');
+    if (hero) {
+      const heroAvatar = hero.querySelector('.dm-hero-avatar');
+      const heroTitle = hero.querySelector('h2');
+      if (heroAvatar) {
+        if (isUsableAvatarUrl(newAvatarUrl)) {
+          heroAvatar.innerHTML = `<img src="${escapeHtml(newAvatarUrl)}" class="w-20 h-20 rounded-full object-cover shadow-lg border-2 border-indigo-500/20">`;
+        } else {
+          heroAvatar.innerHTML = `<div class="w-20 h-20 rounded-full bg-slate-700 text-white font-bold text-3xl flex items-center justify-center shadow-lg">${escapeHtml(newNickname.charAt(0))}</div>`;
+        }
+      }
+      if (heroTitle) heroTitle.textContent = newNickname;
+    }
+
+    // 7. メッセージキャッシュ内の送信者名・アバターも同期
+    if (Array.isArray(allLoadedMessages)) {
+      allLoadedMessages.forEach(m => {
+        if (m && m.senderId === targetUid) {
+          m.senderNickname = newNickname;
+          if (newAvatarUrl !== undefined) m.senderAvatarUrl = newAvatarUrl;
+        }
+      });
+    }
+  }
+
+  // 8. 左側サイドバー（DM会話一覧）とフレンド一覧の更新
+  if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+  if (typeof renderFriendTabs === 'function') renderFriendTabs();
+  if (typeof renderMembersList === 'function' && cachedUsers) renderMembersList(cachedUsers);
+  };
+
+  window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
   currentDmId = dmId;
@@ -9109,6 +9227,10 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     window._activeDmKeyUnsub();
     window._activeDmKeyUnsub = null;
   }
+  if (window._activeDmUserDocUnsub) {
+    window._activeDmUserDocUnsub();
+    window._activeDmUserDocUnsub = null;
+  }
   // チャット購読を即座に開始（鍵の取得待ちでメッセージ一覧をブロックしない）
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -9164,6 +9286,25 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       }
     }, (err) => {
       console.warn('[DM Key onSnapshot] notice:', err?.message || err);
+    });
+  } catch (_) {}
+  // 相手のプロファイル（名前・アイコン・ステメ・AboutMe）リアルタイム監視リスナー（変更即時自動反映）
+  try {
+    const { doc: uDoc, onSnapshot: uOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const targetUserRef = uDoc(db, `artifacts/${appId}/users`, targetUid);
+    window._activeDmUserDocUnsub = uOnSnapshot(targetUserRef, (snap) => {
+      if (currentDmId !== dmId || !snap.exists()) return;
+      const uData = snap.data();
+      const updatedNick = uData.nickname || uData.displayName;
+      const updatedAvatar = uData.avatarUrl || uData.photoURL;
+      window.refreshCurrentDmParticipantUI(targetUid, {
+        nickname: updatedNick,
+        avatarUrl: updatedAvatar,
+        aboutMe: uData.aboutMe,
+        customStatus: uData.customStatus
+      });
+    }, (err) => {
+      console.warn('[ActiveDmUser onSnapshot] notice:', err?.message || err);
     });
   } catch (_) {}
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
@@ -13764,6 +13905,7 @@ async function subscribeToMessagesRTDB() {
 
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   if (currentServerId && roomId) {
     try {
       localStorage.setItem('covo_last_room_' + currentServerId, roomId);
@@ -14305,11 +14447,11 @@ if (searchInput) {
 // --- スマホ用戻るボタン ---
 if (mobileBackButton) {
   mobileBackButton.addEventListener("click", () => {
+    if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
     const currentRoomHeader = document.getElementById("currentRoomHeader");
     if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
     document.body.classList.remove('in-chat-view');
     if (typeof updateMetaThemeColor === 'function') updateMetaThemeColor();
-
     const wasDm = Boolean(currentDmId);
     currentRoomId = null;
     currentDmId = null;
@@ -16310,10 +16452,9 @@ function createMessageElement(message, messageId, readByCount = 0) {
   messageElement.style.touchAction = "pan-y";
   messageElement.style.maxWidth = "100%"; // 75% max-width override
   messageElement.dataset.messageId = messageId;
-
-
   const senderNicknameSpan = document.createElement("span");
-  senderNicknameSpan.className = `text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
+  senderNicknameSpan.className = `msg-sender-name text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
+  senderNicknameSpan.dataset.senderId = message.senderId;
   senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
   senderNicknameSpan.addEventListener("click", (e) => {
     e.stopPropagation();

@@ -371,9 +371,8 @@ initCryptoContext({
 window._userProfileCache = window._userProfileCache || new Map();
 const _userProfilePromises = new Map();
 
-window.getUserProfile = async function (uid, fallback = {}) {
+window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false) {
   if (!uid) return { id: uid, uid: uid, nickname: 'ユーザー', avatarUrl: '', email: '' };
-
   if (uid === userId) {
     return {
       id: userId,
@@ -384,34 +383,29 @@ window.getUserProfile = async function (uid, fallback = {}) {
       customStatus: window._currentUserCustomStatus || null
     };
   }
-
-  if (window._userProfileCache.has(uid)) {
+  if (!forceRefresh && window._userProfileCache.has(uid)) {
     const cached = window._userProfileCache.get(uid);
     if (cached && (cached.nickname || cached.avatarUrl || cached.email)) {
       return cached;
     }
   }
-
-  if (_userProfilePromises.has(uid)) {
+  if (!forceRefresh && _userProfilePromises.has(uid)) {
     return await _userProfilePromises.get(uid);
   }
-
   const fetchPromise = (async () => {
     try {
       const cu = (cachedUsers || []).find(u => u.id === uid);
       const uSnap = await getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null);
       let data = uSnap && uSnap.exists() ? uSnap.data() : null;
-
       if (!data || !data.nickname) {
         const pSnap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null);
         if (pSnap && pSnap.exists()) {
           data = { ...(data || {}), ...pSnap.data() };
         }
       }
-
       const rel = friendRelationships && friendRelationships[uid];
-      const nickname = data?.nickname || data?.displayName || cu?.nickname || rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`);
-      const avatarUrl = data?.avatarUrl || data?.photoURL || cu?.avatarUrl || rel?.targetAvatarUrl || fallback.avatarUrl || '';
+      const nickname = data?.nickname || data?.displayName || cu?.nickname || (fallback.nickname && fallback.nickname !== 'ユーザー' ? fallback.nickname : (rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`)));
+      const avatarUrl = data?.avatarUrl !== undefined ? (data.avatarUrl || '') : (data?.photoURL !== undefined ? (data.photoURL || '') : (cu?.avatarUrl !== undefined ? (cu.avatarUrl || '') : (fallback.avatarUrl !== undefined ? (fallback.avatarUrl || '') : (rel?.targetAvatarUrl || ''))));
       const email = data?.email || cu?.email || rel?.targetEmail || fallback.email || '';
       const customStatus = data?.customStatus || cu?.customStatus || null;
       const aboutMe = data?.aboutMe || '';
@@ -7604,7 +7598,7 @@ function subscribeToUserStatus() {
             Object.assign(cachedProf, data);
             if (rawLc) cachedProf.last_changed = rawLc;
             // 🌟 相手のニックネームやアイコンがRTDB経由で届いた場合も即座にDM画面へ反映
-            if (data.nickname || data.avatarUrl) {
+            if (data.nickname !== undefined || data.avatarUrl !== undefined || data.customStatus !== undefined) {
               if (typeof window.refreshCurrentDmParticipantUI === 'function') {
                 window.refreshCurrentDmParticipantUI(uid, {
                   nickname: data.nickname,
@@ -8599,14 +8593,18 @@ function renderFriendTabs() {
 }
 
 function createFriendCardHtml(friend, online) {
-  const safeName = escapeHtml(friend.targetNickname || 'ユーザー');
-  const safeAvatar = isUsableAvatarUrl(friend.targetAvatarUrl) ? `<img src="${friend.targetAvatarUrl}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
-  const customStatusHtml = (friend.customStatus && friend.customStatus.text)
-    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml(friend.customStatus.emoji || '💬')}</span><span class="truncate">${escapeHtml(friend.customStatus.text)}</span></div>`
+  const fUid = friend.targetUid || friend.id;
+  const targetUser = cachedUsers.find(u => u.id === fUid) || {};
+  const cachedProf = window._userProfileCache?.get(fUid);
+  const resolvedNick = cachedProf?.nickname || targetUser.nickname || friend.targetNickname || 'ユーザー';
+  const resolvedAvatar = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser.avatarUrl !== undefined ? targetUser.avatarUrl : (friend.targetAvatarUrl || ''));
+  const safeName = escapeHtml(resolvedNick);
+  const safeAvatar = isUsableAvatarUrl(resolvedAvatar) ? `<img src="${escapeHtml(resolvedAvatar)}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
+  const customStatusHtml = (cachedProf?.customStatus?.text || targetUser?.customStatus?.text || (friend.customStatus && friend.customStatus.text))
+    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).emoji || '💬')}</span><span class="truncate">${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
-
   return `
-    <div class="friend-card" onclick="openUserProfileModal('${friend.targetUid}', '${escapeHtml(friend.targetNickname || '')}', '${escapeHtml(friend.targetAvatarUrl || '')}')">
+    <div class="friend-card" onclick="openUserProfileModal('${friend.targetUid}', '${escapeHtml(resolvedNick).replace(/'/g, "\\'")}', '${escapeHtml(resolvedAvatar).replace(/'/g, "\\'")}')">
       <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
@@ -8620,7 +8618,7 @@ function createFriendCardHtml(friend, online) {
         </div>
       </div>
       <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
-        <button onclick="openDm('${friend.targetUid}', '${escapeHtml(friend.targetNickname || '')}', '${escapeHtml(friend.targetAvatarUrl || '')}')" class="friend-action-btn" title="メッセージを送る">
+        <button onclick="openDm('${friend.targetUid}', '${escapeHtml(resolvedNick).replace(/'/g, "\\'")}', '${escapeHtml(resolvedAvatar).replace(/'/g, "\\'")}')" class="friend-action-btn" title="メッセージを送る">
           <i class="fas fa-comment-dots"></i>
         </button>
         <button onclick="openCallPickerWithTarget('${friend.targetUid}')" class="friend-action-btn" title="通話">
@@ -8947,8 +8945,8 @@ function renderDmConversationsList() {
     const rel = friendRelationships[otherUid];
     const targetUser = cachedUsers.find(u => u.id === otherUid) || {};
     const cachedProf = window._userProfileCache?.get(otherUid);
-    const nickname = rel?.targetNickname || targetUser.nickname || cachedProf?.nickname || 'ユーザー';
-    const avatarUrl = rel?.targetAvatarUrl || targetUser.avatarUrl || cachedProf?.avatarUrl || '';
+    const nickname = cachedProf?.nickname || targetUser.nickname || rel?.targetNickname || 'ユーザー';
+    const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser?.avatarUrl !== undefined ? targetUser.avatarUrl : (rel?.targetAvatarUrl || ''));
     const isActive = currentDmId === dm.id;
     const isOnline = targetUser.computedState === 'online' || targetUser.state === 'online' || targetUser.status === 'online';
     if (!cachedProf) {
@@ -9016,7 +9014,6 @@ function renderDmConversationsList() {
   const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
   const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
   const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
-
   const merged = {
     ...existingProf,
     id: targetUid,
@@ -9027,14 +9024,19 @@ function renderDmConversationsList() {
     customStatus: newCustomStatus
   };
   window._userProfileCache?.set(targetUid, merged);
-
   if (Array.isArray(cachedUsers)) {
     const uIdx = cachedUsers.findIndex(u => u.id === targetUid);
     if (uIdx >= 0) {
       cachedUsers[uIdx] = { ...cachedUsers[uIdx], ...merged };
+    } else {
+      cachedUsers.push(merged);
     }
   }
-
+  if (friendRelationships && friendRelationships[targetUid]) {
+    friendRelationships[targetUid].targetNickname = newNickname;
+    friendRelationships[targetUid].targetAvatarUrl = newAvatarUrl;
+    if (newCustomStatus !== undefined) friendRelationships[targetUid].customStatus = newCustomStatus;
+  }
   // 現在この相手との個チャ (DM) を開いている場合、アクティブUIを瞬時に即座反映
   if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
     currentDmParticipant = {
@@ -9044,25 +9046,20 @@ function renderDmConversationsList() {
       aboutMe: newAboutMe,
       customStatus: newCustomStatus
     };
-
     // 1. チャット上部ヘッダー
     const title = document.getElementById("currentRoomTitleText");
     if (title) title.textContent = newNickname;
-
     // 2. 入力欄プレースホルダー
     const mi = document.getElementById("messageInput");
     if (mi) mi.placeholder = `@${newNickname} へのメッセージ`;
-
     // 3. ウィンドウ最上部タイトルバー
     if (typeof updateTitleBarContext === 'function') {
       updateTitleBarContext('dm', currentDmParticipant);
     }
-
     // 4. 右側プロフィールパネルの再描画
     if (typeof renderDmProfilePanel === 'function') {
       renderDmProfilePanel(targetUid, newNickname, newAvatarUrl);
     }
-
     // 5. チャット内メッセージの相手アバター・名前の即時更新
     const container = document.getElementById('messagesDisplay');
     if (container) {
@@ -9073,7 +9070,6 @@ function renderDmConversationsList() {
         nm.textContent = newNickname;
       });
     }
-
     // 6. DMウェルカムバナーの更新
     const hero = document.getElementById('dmHeroWelcomeBanner');
     if (hero) {
@@ -9088,8 +9084,7 @@ function renderDmConversationsList() {
       }
       if (heroTitle) heroTitle.textContent = newNickname;
     }
-
-    // 7. メッセージキャッシュ内の送信者名・アバターも同期
+    // 7. メッセージキャッシュ内の送信者名・アバターも同期 & 画面再描画
     if (Array.isArray(allLoadedMessages)) {
       allLoadedMessages.forEach(m => {
         if (m && m.senderId === targetUid) {
@@ -9098,43 +9093,36 @@ function renderDmConversationsList() {
         }
       });
     }
+    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
   }
-
   // 8. 左側サイドバー（DM会話一覧）とフレンド一覧の更新
   if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
   if (typeof renderFriendTabs === 'function') renderFriendTabs();
   if (typeof renderMembersList === 'function' && cachedUsers) renderMembersList(cachedUsers);
   };
-
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
   currentDmId = dmId;
   currentDmParticipants = [userId, targetUid].sort();
-  currentDmParticipant = { uid: targetUid, nickname: targetNickname || 'ユーザー', avatarUrl: targetAvatarUrl || '' };
+  const cachedProfInitial = window._userProfileCache?.get(targetUid);
+  const targetUserInitial = cachedUsers?.find(u => u.id === targetUid);
+  const effectiveNickname = cachedProfInitial?.nickname || targetUserInitial?.nickname || targetNickname || 'ユーザー';
+  const effectiveAvatarUrl = cachedProfInitial?.avatarUrl !== undefined ? cachedProfInitial.avatarUrl : (targetUserInitial?.avatarUrl !== undefined ? targetUserInitial.avatarUrl : (targetAvatarUrl || ''));
+  currentDmParticipant = { uid: targetUid, nickname: effectiveNickname, avatarUrl: effectiveAvatarUrl };
   currentServerId = null;
   currentRoomId = null;
   currentServerData = null;
   currentServerNickname = null;
   currentHomeViewMode = 'dm';
-
   if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
-
   try { localStorage.removeItem('covo_last_opened_server'); } catch (e) { }
-
   // サーバーのルーム監視リスナーを停止
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
-
   // 相手のプロファイルを非同期解決して最新のニックネーム・アイコンを即時反映
-  window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl }).then(p => {
-    if (currentDmId === dmId) {
-      currentDmParticipant = { uid: targetUid, nickname: p.nickname, avatarUrl: p.avatarUrl, email: p.email };
-      const title = document.getElementById("currentRoomTitleText");
-      if (title) title.textContent = p.nickname;
-      if (messageInput) messageInput.placeholder = `@${p.nickname} へのメッセージ`;
-      if (typeof updateTitleBarContext === 'function') {
-        updateTitleBarContext('dm', currentDmParticipant);
-      }
+  window.getUserProfile(targetUid, { nickname: effectiveNickname, avatarUrl: effectiveAvatarUrl }, true).then(p => {
+    if (currentDmId === dmId && p) {
+      window.refreshCurrentDmParticipantUI(targetUid, p);
     }
   }).catch(() => {});
 
@@ -16389,16 +16377,16 @@ function createMessageElement(message, messageId, readByCount = 0) {
   messageRow.appendChild(messageRowInner);
 
   // 相手メッセージ: アバター（左・上端揃え）＋バブル（右）を横並び
+  let resolvedNickname = message.senderNickname || "ユーザー";
+  let resolvedAvatarUrl = message.senderAvatarUrl || null;
   if (!isMyMessage) {
     const senderUser = cachedUsers.find(u => u.id === message.senderId);
     const cachedProf = window._userProfileCache?.get(message.senderId);
-    const resolvedAvatarUrl = message.senderAvatarUrl || senderUser?.avatarUrl || cachedProf?.avatarUrl || (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null);
-    const resolvedNickname = message.senderNickname || senderUser?.nickname || cachedProf?.nickname || (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.nickname : null) || "ユーザー";
-
+    resolvedNickname = (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || message.senderNickname || "ユーザー";
+    resolvedAvatarUrl = (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (message.senderAvatarUrl || null)));
     const avatarDiv = document.createElement("div");
     avatarDiv.className = "msg-avatar z-10 cursor-pointer";
     avatarDiv.dataset.userId = message.senderId;
-
     if (isUsableAvatarUrl(resolvedAvatarUrl)) {
       __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
     } else {
@@ -16418,20 +16406,16 @@ function createMessageElement(message, messageId, readByCount = 0) {
     });
     messageRowInner.appendChild(avatarDiv);
   }
-
   const bubbleContainer = document.createElement("div");
   bubbleContainer.className = `flex flex-col z-10 w-fit max-w-[85%] min-w-0 ${isMyMessage ? 'items-end' : 'items-start'}`;
-
   if (message.replyTo && message.replyTo.messageId) {
     const replyQuoteDiv = document.createElement("div");
     // reply-quote クラスを使って ::before の矢印アイコンをCSSで表示
     replyQuoteDiv.className = `reply-quote ${isMyMessage ? 'my-reply' : ''}`;
     replyQuoteDiv.dataset.replyToId = message.replyTo.messageId;
-
     const nicknameSpan = document.createElement('span');
     nicknameSpan.className = 'reply-quote-nickname';
     nicknameSpan.textContent = message.replyTo.senderNickname || '不明';
-
     const textSpan = document.createElement('span');
     textSpan.className = 'reply-quote-text';
     const replyRaw = message.replyTo._decryptedErrorText || message.replyTo.text || '（ファイル）';
@@ -16441,12 +16425,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
     } else {
       textSpan.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
     }
-
     replyQuoteDiv.appendChild(nicknameSpan);
     replyQuoteDiv.appendChild(textSpan);
     bubbleContainer.appendChild(replyQuoteDiv);
   }
-
   const messageElement = document.createElement("div");
   messageElement.className = `message-bubble ${isMyMessage ? "my-message" : "other-message"} flex flex-col w-fit relative`;
   messageElement.style.touchAction = "pan-y";
@@ -16455,7 +16437,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
   const senderNicknameSpan = document.createElement("span");
   senderNicknameSpan.className = `msg-sender-name text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
   senderNicknameSpan.dataset.senderId = message.senderId;
-  senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
+  senderNicknameSpan.textContent = isMyMessage ? (currentServerNickname || userNickname || "あなた") : resolvedNickname;
   senderNicknameSpan.addEventListener("click", (e) => {
     e.stopPropagation();
     const senderUser = cachedUsers.find(u => u.id === message.senderId);
@@ -17184,6 +17166,24 @@ function renderMessagesWithReadReceipts() {
           timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
         } else {
           timestampSpan.textContent = "送信中...";
+        }
+      }
+      if (!isMyMessage) {
+        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
+        const cachedProf = window._userProfileCache?.get(msg.senderId);
+        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
+        const resolvedAvatarUrl = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (msg.senderAvatarUrl || null)));
+        const avatarDiv = row.querySelector('.msg-avatar');
+        if (avatarDiv) {
+          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
+            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
+          } else {
+            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+          }
+        }
+        const nameSpan = row.querySelector('.msg-sender-name');
+        if (nameSpan) {
+          nameSpan.textContent = resolvedNickname;
         }
       }
       const textSpan = row.querySelector('.message-content');

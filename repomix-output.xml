@@ -12913,7 +12913,8 @@ service cloud.firestore {
                (request.resource.data.senderId == request.auth.uid &&
                 exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
                 request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
+              (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
 
             allow update: if isAuthenticated() && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
@@ -12922,7 +12923,8 @@ service cloud.firestore {
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
+                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
               || isGlobalAdmin(appId)
             );
 
@@ -14845,6 +14847,9 @@ service cloud.firestore {
       max-height: none !important;
       overflow: visible !important;
     }
+    .message-collapsible-wrapper.expanded .collapse-fade {
+      display: none !important;
+    }
     .message-collapsible-wrapper .collapse-fade {
       position: absolute;
       bottom: 0;
@@ -16269,6 +16274,24 @@ async function signUpWithFirebase(email, password, env) {
 async function getFirestoreAdminToken(serviceAccountJsonStr) {
   return _getGoogleOAuthToken(serviceAccountJsonStr, 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/firebase');
 }
+// 🔒 セキュリティ: クライアント入力の rtdbUrl を検証し公式RTDBドメインのみ許可 (SSRF & トークン漏洩防止)
+function getRtdbBaseUrl(env, clientRtdbUrl) {
+  const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
+  const defaultRtdb = (env.FIREBASE_DATABASE_URL || `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`).replace(/\/+$/, '');
+  if (clientRtdbUrl && typeof clientRtdbUrl === 'string') {
+    try {
+      const u = new URL(clientRtdbUrl);
+      const host = u.hostname.toLowerCase();
+      if (
+        (host.endsWith('.firebasedatabase.app') || host.endsWith('.firebaseio.com')) &&
+        (host.startsWith(projectId) || host.includes(projectId))
+      ) {
+        return clientRtdbUrl.replace(/\/+$/, '');
+      }
+    } catch (_) {}
+  }
+  return defaultRtdb;
+}
 // -------------------------------------------------------------
 // サーバー参加処理
 // -------------------------------------------------------------
@@ -16304,7 +16327,7 @@ async function handleJoinServer(request, env) {
       // 既にサーバーに参加済みなので、RTDBのみ同期して終了
       if (rtdbUrl) {
         try {
-          const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+          const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
           const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
           await fetch(rtdbTargetUrl, {
             method: 'PUT',
@@ -16453,7 +16476,7 @@ async function handleJoinServer(request, env) {
     }
     if (rtdbUrl) {
       try {
-        const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+        const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
         const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
         await fetch(rtdbTargetUrl, {
           method: 'PUT',
@@ -16527,7 +16550,7 @@ async function handleSyncRtdb(request, env) {
     }
     // RTDB に同期
     try {
-      const rtdbBase = rtdbUrl.endsWith('/') ? rtdbUrl.slice(0, -1) : rtdbUrl;
+      const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
       const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
       await fetch(rtdbTargetUrl, {
         method: 'PUT',
@@ -16677,7 +16700,7 @@ async function handleSendCallNotification(request, env) {
     if (!calleeId || !callId || !appId || !callerId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId)) {
+    if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(callId) || !/^[a-zA-Z0-9_\-]+$/.test(calleeId) || !/^[a-zA-Z0-9_\-]+$/.test(callerId)) {
       return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
@@ -16836,7 +16859,7 @@ async function handleSendNotification(request, env) {
     const results = [];
     // 各受信者について処理
     for (const rid of receiverIds) {
-        if (!rid || rid === senderId) continue; // 自分や空IDには送らない
+        if (!rid || typeof rid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(rid) || rid === senderId) continue; // 自分や空ID、不正文字はスキップ
         let shouldSend = true;
         try {
             // 1. 相手のステータスをRTDBから取得
@@ -17719,6 +17742,18 @@ async function handleAdminDeleteMessage(request, env) {
     if (!isValidAppId(appId, env)) {
       return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(messageId)) {
+      return new Response(JSON.stringify({ error: "Invalid messageId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ error: "Invalid serverId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (roomId && !/^[a-zA-Z0-9_\-]+$/.test(roomId)) {
+      return new Response(JSON.stringify({ error: "Invalid roomId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (dmId && (!/^[a-zA-Z0-9_\-]+$/.test(dmId) || dmId.split('_').length !== 2)) {
+      return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -18533,6 +18568,13 @@ async function handleSetOffline(request, env) {
         const body = await request.json();
         const { appId, serverId, roomId, messageId, type, data, isPinned, reactionUserId, reactionEmoji } = body;
         if (type === "add") {
+          if (serverId) {
+            const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+            const isGlobal = await isD1Admin(appId, verifiedUser, env);
+            if (!isMember && !isGlobal) {
+              return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: d1Cors });
+            }
+          }
           const text = data.text || "";
           const created_at = data.createdAt || Date.now();
           const senderId = verifiedUser.uid; // 強制的に認証済みUIDに設定（なりすまし防止）
@@ -18575,6 +18617,13 @@ async function handleSetOffline(request, env) {
           return new Response(JSON.stringify({ success: true, id: messageId }), { status: 200, headers: d1Cors });
         }
         if (type === "pin") {
+          const isSvAdmin = serverId ? await isServerAdminCheck(appId, serverId, verifiedUser, env) : false;
+          const isGlobal = await isD1Admin(appId, verifiedUser, env);
+          const msgCheck = await env.DB.prepare("SELECT sender_id FROM messages WHERE message_id = ? AND app_id = ?").bind(messageId, appId).first();
+          const isMsgSender = msgCheck && msgCheck.sender_id === verifiedUser.uid;
+          if (!isGlobal && !isSvAdmin && !isMsgSender && !roomId?.startsWith('dm_')) {
+            return new Response(JSON.stringify({ error: "Forbidden: Pin permission denied" }), { status: 403, headers: d1Cors });
+          }
           await env.DB.prepare("UPDATE messages SET is_pinned = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(isPinned ? 1 : 0, messageId, roomId, appId).run();
           // ピン留め変更もRTDBへ通知
           if (env.SERVICE_ACCOUNT_JSON) {
@@ -18949,6 +18998,15 @@ async function handleSetOffline(request, env) {
             if (!isValidAppId(appId, env)) {
               return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
             }
+            if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+              return new Response(JSON.stringify({ error: "Invalid serverId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (roomId && !/^[a-zA-Z0-9_\-]+$/.test(roomId)) {
+              return new Response(JSON.stringify({ error: "Invalid roomId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
+            if (dmId && (!/^[a-zA-Z0-9_\-]+$/.test(dmId) || dmId.split('_').length !== 2)) {
+              return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+            }
             const isGlobal = await isAppAdmin(appId, verifiedUser, env);
             if (dmId) {
               const parts = dmId.split('_');
@@ -19116,13 +19174,13 @@ async function handleSetOffline(request, env) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.209" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.210" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.209" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.210" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -22516,7 +22574,7 @@ async function handleSetOffline(request, env) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.209"></script>
+  <script type="module" src="js/main.js?v=1.1.210"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -24722,6 +24780,7 @@ function initializeFirebase() {
       try {
         cleanupGlobalNotificationListeners();
         if (typeof window._activeDmKeyUnsub === 'function') { window._activeDmKeyUnsub(); window._activeDmKeyUnsub = null; }
+        if (typeof window._activeDmUserDocUnsub === 'function') { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
         if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
         if (typeof currentServerStampsUnsub === 'function') { currentServerStampsUnsub(); currentServerStampsUnsub = null; }
         if (typeof currentServerStampGroupsUnsub === 'function') { currentServerStampGroupsUnsub(); currentServerStampGroupsUnsub = null; }
@@ -30956,6 +31015,16 @@ function subscribeToUserStatus() {
             usersMap.set(uid, merged);
             Object.assign(cachedProf, data);
             if (rawLc) cachedProf.last_changed = rawLc;
+            // 🌟 相手のニックネームやアイコンがRTDB経由で届いた場合も即座にDM画面へ反映
+            if (data.nickname || data.avatarUrl) {
+              if (typeof window.refreshCurrentDmParticipantUI === 'function') {
+                window.refreshCurrentDmParticipantUI(uid, {
+                  nickname: data.nickname,
+                  avatarUrl: data.avatarUrl,
+                  customStatus: data.customStatus
+                });
+              }
+            }
           } else {
             const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
             const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
@@ -31170,6 +31239,15 @@ function isFileMissing(url) {
   if (!url) return false;
   return _missingFilesSet.has(url);
 }
+// 🔒 自己治癒: サーバー上で実在が確認されたURLは欠落リストから解除
+function unmarkFileAsMissing(url) {
+  if (!url || typeof url !== 'string') return;
+  _missingFilesSet.delete(url);
+  try {
+    const list = Array.from(_missingFilesSet);
+    localStorage.setItem('covo_missing_files_v2', JSON.stringify(list));
+  } catch (_) {}
+}
 function __setAvatarImg(container, url, name, opts) {
   if (!container) return;
   opts = opts || {};
@@ -31342,6 +31420,7 @@ let _serverSwitchGeneration = 0;
 window.enterServer = async function enterServer(serverId, serverData) {
   _serverSwitchGeneration++;
   const thisGen = _serverSwitchGeneration;
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (unsubscribePinnedMessages) { unsubscribePinnedMessages(); unsubscribePinnedMessages = null; }
@@ -31484,6 +31563,7 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   document.querySelectorAll('#discordServerNav .discord-server-item').forEach(el => el.classList.remove('active'));
   const homeBtn = document.getElementById("discordHomeBtn");
   if (homeBtn) homeBtn.classList.add('active');
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   currentServerId = null;
   currentServerData = null;
   currentRoomId = null;
@@ -32214,8 +32294,94 @@ function renderDmConversationsList() {
     const oldBadge = homeBtn.querySelector('.discord-home-unread-dot');
     if (oldBadge) oldBadge.remove();
   }
-}
-window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
+  }
+  // 🌟 個チャ (DM) 相手のアイコン・名前・ステータス変更を画面全体へ即座に反映するリアクティブ同期関数
+  window.refreshCurrentDmParticipantUI = function(targetUid, updatedData = {}) {
+  if (!targetUid) return;
+  const existingProf = window._userProfileCache?.get(targetUid) || { id: targetUid, uid: targetUid };
+  const newNickname = updatedData.nickname || existingProf.nickname || 'ユーザー';
+  const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
+  const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
+  const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
+  const merged = {
+    ...existingProf,
+    id: targetUid,
+    uid: targetUid,
+    nickname: newNickname,
+    avatarUrl: newAvatarUrl,
+    aboutMe: newAboutMe,
+    customStatus: newCustomStatus
+  };
+  window._userProfileCache?.set(targetUid, merged);
+  if (Array.isArray(cachedUsers)) {
+    const uIdx = cachedUsers.findIndex(u => u.id === targetUid);
+    if (uIdx >= 0) {
+      cachedUsers[uIdx] = { ...cachedUsers[uIdx], ...merged };
+    }
+  }
+  // 現在この相手との個チャ (DM) を開いている場合、アクティブUIを瞬時に即座反映
+  if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
+    currentDmParticipant = {
+      ...currentDmParticipant,
+      nickname: newNickname,
+      avatarUrl: newAvatarUrl,
+      aboutMe: newAboutMe,
+      customStatus: newCustomStatus
+    };
+    // 1. チャット上部ヘッダー
+    const title = document.getElementById("currentRoomTitleText");
+    if (title) title.textContent = newNickname;
+    // 2. 入力欄プレースホルダー
+    const mi = document.getElementById("messageInput");
+    if (mi) mi.placeholder = `@${newNickname} へのメッセージ`;
+    // 3. ウィンドウ最上部タイトルバー
+    if (typeof updateTitleBarContext === 'function') {
+      updateTitleBarContext('dm', currentDmParticipant);
+    }
+    // 4. 右側プロフィールパネルの再描画
+    if (typeof renderDmProfilePanel === 'function') {
+      renderDmProfilePanel(targetUid, newNickname, newAvatarUrl);
+    }
+    // 5. チャット内メッセージの相手アバター・名前の即時更新
+    const container = document.getElementById('messagesDisplay');
+    if (container) {
+      container.querySelectorAll(`.msg-avatar[data-user-id="${targetUid}"]`).forEach(av => {
+        __setAvatarImg(av, newAvatarUrl, newNickname, { style: '' });
+      });
+      container.querySelectorAll(`.msg-sender-name[data-sender-id="${targetUid}"]`).forEach(nm => {
+        nm.textContent = newNickname;
+      });
+    }
+    // 6. DMウェルカムバナーの更新
+    const hero = document.getElementById('dmHeroWelcomeBanner');
+    if (hero) {
+      const heroAvatar = hero.querySelector('.dm-hero-avatar');
+      const heroTitle = hero.querySelector('h2');
+      if (heroAvatar) {
+        if (isUsableAvatarUrl(newAvatarUrl)) {
+          heroAvatar.innerHTML = `<img src="${escapeHtml(newAvatarUrl)}" class="w-20 h-20 rounded-full object-cover shadow-lg border-2 border-indigo-500/20">`;
+        } else {
+          heroAvatar.innerHTML = `<div class="w-20 h-20 rounded-full bg-slate-700 text-white font-bold text-3xl flex items-center justify-center shadow-lg">${escapeHtml(newNickname.charAt(0))}</div>`;
+        }
+      }
+      if (heroTitle) heroTitle.textContent = newNickname;
+    }
+    // 7. メッセージキャッシュ内の送信者名・アバターも同期
+    if (Array.isArray(allLoadedMessages)) {
+      allLoadedMessages.forEach(m => {
+        if (m && m.senderId === targetUid) {
+          m.senderNickname = newNickname;
+          if (newAvatarUrl !== undefined) m.senderAvatarUrl = newAvatarUrl;
+        }
+      });
+    }
+  }
+  // 8. 左側サイドバー（DM会話一覧）とフレンド一覧の更新
+  if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
+  if (typeof renderFriendTabs === 'function') renderFriendTabs();
+  if (typeof renderMembersList === 'function' && cachedUsers) renderMembersList(cachedUsers);
+  };
+  window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
   currentDmId = dmId;
@@ -32322,6 +32488,10 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
     window._activeDmKeyUnsub();
     window._activeDmKeyUnsub = null;
   }
+  if (window._activeDmUserDocUnsub) {
+    window._activeDmUserDocUnsub();
+    window._activeDmUserDocUnsub = null;
+  }
   // チャット購読を即座に開始（鍵の取得待ちでメッセージ一覧をブロックしない）
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
@@ -32377,6 +32547,25 @@ window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
       }
     }, (err) => {
       console.warn('[DM Key onSnapshot] notice:', err?.message || err);
+    });
+  } catch (_) {}
+  // 相手のプロファイル（名前・アイコン・ステメ・AboutMe）リアルタイム監視リスナー（変更即時自動反映）
+  try {
+    const { doc: uDoc, onSnapshot: uOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const targetUserRef = uDoc(db, `artifacts/${appId}/users`, targetUid);
+    window._activeDmUserDocUnsub = uOnSnapshot(targetUserRef, (snap) => {
+      if (currentDmId !== dmId || !snap.exists()) return;
+      const uData = snap.data();
+      const updatedNick = uData.nickname || uData.displayName;
+      const updatedAvatar = uData.avatarUrl || uData.photoURL;
+      window.refreshCurrentDmParticipantUI(targetUid, {
+        nickname: updatedNick,
+        avatarUrl: updatedAvatar,
+        aboutMe: uData.aboutMe,
+        customStatus: uData.customStatus
+      });
+    }, (err) => {
+      console.warn('[ActiveDmUser onSnapshot] notice:', err?.message || err);
     });
   } catch (_) {}
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
@@ -36596,6 +36785,7 @@ async function subscribeToMessagesRTDB() {
 }
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
+  if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   if (currentServerId && roomId) {
     try {
       localStorage.setItem('covo_last_room_' + currentServerId, roomId);
@@ -37091,6 +37281,7 @@ if (searchInput) {
 // --- スマホ用戻るボタン ---
 if (mobileBackButton) {
   mobileBackButton.addEventListener("click", () => {
+    if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
     const currentRoomHeader = document.getElementById("currentRoomHeader");
     if (currentRoomHeader) currentRoomHeader.classList.add("hidden");
     document.body.classList.remove('in-chat-view');
@@ -38942,7 +39133,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
   messageElement.style.maxWidth = "100%"; // 75% max-width override
   messageElement.dataset.messageId = messageId;
   const senderNicknameSpan = document.createElement("span");
-  senderNicknameSpan.className = `text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
+  senderNicknameSpan.className = `msg-sender-name text-xs text-gray-600 dark:text-gray-400 mb-1 cursor-pointer hover:underline ${isMyMessage ? "text-right" : "text-left font-semibold"}`;
+  senderNicknameSpan.dataset.senderId = message.senderId;
   senderNicknameSpan.textContent = message.senderNickname || "不明なユーザー";
   senderNicknameSpan.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -39026,15 +39218,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
         toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
         toggleBtn.onclick = (e) => {
           e.stopPropagation();
-          const isExp = collWrapper.classList.contains("expanded");
+          const isExp = collWrapper.classList.toggle("expanded");
           if (isExp) {
-            collWrapper.classList.remove("expanded");
-            fadeDiv.style.display = "block";
-            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
-          } else {
-            collWrapper.classList.add("expanded");
-            fadeDiv.style.display = "none";
             toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i> 折りたたむ';
+          } else {
+            toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i> もっと見る';
           }
         };
         messageElement.appendChild(collWrapper);
@@ -39110,13 +39298,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 }
                 const buf = await res.arrayBuffer();
                 if (!buf || buf.byteLength < 29) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
+                  const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
                   element.replaceWith(expiredCard);
                   return;
                 }
-                const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+                const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
                 const blob = new Blob([dec], { type: message.fileType });
                 message._decryptedFileUrl = URL.createObjectURL(blob);
                 if (propName) element[propName] = message._decryptedFileUrl;
@@ -39245,30 +39431,28 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   }
                   if (!key) return;
                   const res = await fetchWithMediaCache(message.fileData);
-                  if (res.status === 404 || res.status === 410 || !res.ok) {
+                  if (res.status === 404 || res.status === 410) {
                     markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
                     message._fileExpired = true;
                     const expiredCard = createExpiredFileCard(message.fileName);
                     pdfWrapper.replaceWith(expiredCard);
                     return;
                   }
+                  if (!res.ok) return;
                   const buf = await res.arrayBuffer();
                   if (!buf || buf.byteLength < 29) {
-                    markFileAsMissing(message.fileData);
-                    message._fileExpired = true;
-                    const expiredCard = createExpiredFileCard(message.fileName);
+                    const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
                     pdfWrapper.replaceWith(expiredCard);
                     return;
                   }
-                  const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+                  const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
                   const blob = new Blob([dec], { type: 'application/pdf' });
                   message._decryptedFileUrl = URL.createObjectURL(blob);
                   window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
                 } catch (e) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  pdfWrapper.replaceWith(expiredCard);
+                  message._decryptionFailed = true;
+                  const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                  try { pdfWrapper.replaceWith(errCard); } catch (_) {}
                 }
               })();
             }
@@ -39306,7 +39490,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               }
               if (!key) throw new Error("鍵が見つかりません");
               const res = await fetchWithMediaCache(message.fileData);
-              if (res.status === 404 || res.status === 410 || !res.ok) {
+              if (res.status === 404 || res.status === 410) {
                 markFileAsMissing(message.fileData);
                 message._fileExpired = true;
                 alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
@@ -39314,24 +39498,16 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 fileAttachmentDiv.replaceWith(expiredCard);
                 return;
               }
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const buf = await res.arrayBuffer();
               if (!buf || buf.byteLength < 29) {
-                markFileAsMissing(message.fileData);
-                message._fileExpired = true;
-                alertMessage("保存期間（100件制限）が終了したか、ファイルが破損しています。", "info");
-                const expiredCard = createExpiredFileCard(message.fileName);
-                fileAttachmentDiv.replaceWith(expiredCard);
-                return;
+                throw new Error("ファイルが破損しているか読み込めません");
               }
-              const dec = await decryptFileE2EE(buf, key, currentServerId, currentRoomId);
+              const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
               const blob = new Blob([dec], { type: message.fileType });
               message._decryptedFileUrl = URL.createObjectURL(blob);
             } catch (e) {
-              markFileAsMissing(message.fileData);
-              message._fileExpired = true;
-              alertMessage("保存期間（100件制限）が終了したか、ファイルの読み込みに失敗しました。", "info");
-              const expiredCard = createExpiredFileCard(message.fileName);
-              fileAttachmentDiv.replaceWith(expiredCard);
+              alertMessage("ファイルの復号または読み込みに失敗しました: " + (e.message || ''), "error");
               return;
             }
           }
@@ -49295,7 +49471,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.209",
+  "version": "1.1.210",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -49352,7 +49528,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.209",
+  "version": "1.1.210",
   "force": false
 }
 </file>
