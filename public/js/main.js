@@ -210,6 +210,23 @@ function _reportTelemetryError(type, message, stack) {
           window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
         }
         affectedList = window._cachedTelemetryErrors[existingIdx].affectedEmails;
+      } else {
+        window._cachedTelemetryErrors.unshift({
+          id: signature,
+          signature: signature,
+          type: type || 'error',
+          message: msgStr.substring(0, 3000),
+          stack: String(stack || '').substring(0, 6000),
+          lastOccurredAt: Date.now(),
+          firstOccurredAt: Date.now(),
+          count: 1,
+          affectedEmails: [email],
+          environment: envInfo
+        });
+      }
+      const reportsContainer = document.getElementById("telemetryErrorsList");
+      if (reportsContainer && reportsContainer.offsetParent !== null && typeof renderTelemetryErrorsList === 'function') {
+        renderTelemetryErrorsList();
       }
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制
@@ -2791,8 +2808,41 @@ window.loadErrorTelemetry = async function () {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
-    // 🔒 ローカルキャッシュを初期値にせず、純粋にサーバー(RTDB)から取得したデータのみで構築
     const mergedMap = new Map();
+    // 端末ローカルで既に収集されているインメモリキャッシュを初期値として保持
+    (_cachedTelemetryErrors || []).forEach(err => {
+      if (err && err.id && !_dismissedErrorSignatures.has(err.id)) {
+        mergedMap.set(err.id, { ...err });
+      }
+    });
+    // コンソールログ (window._covoLogs) から未反映の [ERR] / [WARN] もリアルタイムに抽出してマージ
+    if (Array.isArray(window._covoLogs)) {
+      window._covoLogs.forEach(line => {
+        if (typeof line !== 'string') return;
+        const isErr = line.startsWith('[ERR]');
+        const isWarn = line.startsWith('[WARN]');
+        if (isErr || isWarn) {
+          const type = isErr ? 'error' : 'warn';
+          const msg = line.substring(line.indexOf(']') + 1).trim();
+          if (msg && !isTransientTelemetryError([msg])) {
+            const sig = _createErrorSignature(type, msg, '');
+            if (!mergedMap.has(sig) && !_dismissedErrorSignatures.has(sig)) {
+              mergedMap.set(sig, {
+                id: sig,
+                signature: sig,
+                type: type,
+                message: msg,
+                stack: '',
+                lastOccurredAt: Date.now(),
+                count: 1,
+                affectedEmails: [auth?.currentUser?.email || (userId ? `uid:${userId.slice(0, 6)}` : '未ログイン')],
+                environment: { userAgent: navigator.userAgent || 'unknown', appVersion: _appVersion || 'web', screenSize: `${window.innerWidth}x${window.innerHeight}` }
+              });
+            }
+          }
+        }
+      });
+    }
     // 1. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -2902,16 +2952,15 @@ window.loadErrorTelemetry = async function () {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
           const liveVal = snapshot.val() || {};
-          const freshMap = new Map();
           if (snapshot.exists()) {
             Object.keys(liveVal).forEach(k => {
               const remoteItem = liveVal[k];
               if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
-                freshMap.set(k, { id: k, ...remoteItem });
+                mergedMap.set(k, { id: k, ...remoteItem });
               }
             });
           }
-          const liveList = Array.from(freshMap.values());
+          const liveList = Array.from(mergedMap.values());
           liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -2933,6 +2982,41 @@ window.loadErrorTelemetry = async function () {
     renderTelemetryErrorsList();
   }
 };
+// === 動作確認テスト機能 (管理者・ユーザー用) ===
+window.triggerTestTelemetryError = function(type = 'warn') {
+  const timeStr = new Date().toLocaleTimeString('ja-JP');
+  if (type === 'error') {
+    console.error(`[動作確認テスト ${timeStr}] システムレポートのエラー収集テストです（正常に検知されました）`);
+  } else {
+    console.warn(`[動作確認テスト ${timeStr}] システムレポートの警告収集テストです（正常に検知されました）`);
+  }
+  setTimeout(() => {
+    if (typeof loadErrorTelemetry === 'function') {
+      loadErrorTelemetry();
+    }
+  }, 80);
+  alertMessage(`${type === 'error' ? 'エラー' : '警告'}のテストログを発行しました。一覧をご確認ください`, 'success');
+};
+
+window.sendTestNotification = async function() {
+  if (!('Notification' in window)) {
+    alertMessage('お使いのブラウザはデスクトップ通知に対応していません', 'warning');
+    return;
+  }
+  if (Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      alertMessage('通知権限が許可されませんでした。ブラウザのアドレスバー横から通知を許可してください', 'warning');
+      return;
+    }
+  } else if (Notification.permission === 'denied') {
+    alertMessage('通知がブロックされています。ブラウザ設定から通知を「許可」に変更してください', 'error');
+    return;
+  }
+  alertMessage('Windowsへテスト通知を送信しました！', 'success');
+  showNotification('Covo テスト通知', 'Windowsのデスクトップ通知が正常に動作しています！', null, true);
+};
+
 function renderTelemetryErrorsList() {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
@@ -16313,7 +16397,14 @@ function createMessageElement(message, messageId, readByCount = 0) {
     const senderUser = cachedUsers.find(u => u.id === message.senderId);
     const cachedProf = window._userProfileCache?.get(message.senderId);
     resolvedNickname = (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || message.senderNickname || "ユーザー";
-    resolvedAvatarUrl = (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === message.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (message.senderAvatarUrl || null)));
+    const dmAvatar = (currentDmParticipant && currentDmParticipant.uid === message.senderId) ? currentDmParticipant.avatarUrl : null;
+    resolvedAvatarUrl = isUsableAvatarUrl(dmAvatar)
+      ? dmAvatar
+      : (isUsableAvatarUrl(cachedProf?.avatarUrl)
+          ? cachedProf.avatarUrl
+          : (isUsableAvatarUrl(senderUser?.avatarUrl)
+              ? senderUser.avatarUrl
+              : (isUsableAvatarUrl(message.senderAvatarUrl) ? message.senderAvatarUrl : null)));
     const avatarDiv = document.createElement("div");
     avatarDiv.className = "msg-avatar z-10 cursor-pointer";
     avatarDiv.dataset.userId = message.senderId;
@@ -17077,13 +17168,27 @@ function renderMessagesWithReadReceipts() {
         const senderUser = cachedUsers.find(u => u.id === msg.senderId);
         const cachedProf = window._userProfileCache?.get(msg.senderId);
         const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
-        const resolvedAvatarUrl = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (msg.senderAvatarUrl || null)));
+        const dmAvatar = (currentDmParticipant && currentDmParticipant.uid === msg.senderId) ? currentDmParticipant.avatarUrl : null;
+        const resolvedAvatarUrl = isUsableAvatarUrl(dmAvatar)
+          ? dmAvatar
+          : (isUsableAvatarUrl(cachedProf?.avatarUrl)
+              ? cachedProf.avatarUrl
+              : (isUsableAvatarUrl(senderUser?.avatarUrl)
+                  ? senderUser.avatarUrl
+                  : (isUsableAvatarUrl(msg.senderAvatarUrl) ? msg.senderAvatarUrl : null)));
         const avatarDiv = row.querySelector('.msg-avatar');
         if (avatarDiv) {
           if (isUsableAvatarUrl(resolvedAvatarUrl)) {
             __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
           } else {
             avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+            if (msg.senderId && window.getUserProfile) {
+              window.getUserProfile(msg.senderId).then(p => {
+                if (p && isUsableAvatarUrl(p.avatarUrl) && avatarDiv.parentElement) {
+                  __setAvatarImg(avatarDiv, p.avatarUrl, p.nickname || resolvedNickname, { style: '' });
+                }
+              }).catch(() => {});
+            }
           }
         }
         const nameSpan = row.querySelector('.msg-sender-name');
@@ -20260,23 +20365,22 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-
-    await updateDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
+    await setDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
       answer: { type: answer.type, sdp: answer.sdp },
       status: 'answered'
-    });
-
+    }, { merge: true });
     setTimeout(() => {
       if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
       try { pc.close(); } catch (e) {}
       deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }, 6000);
-
-  } catch (err) {
-    console.warn('[P2P LogSync] Responder error:', err);
+    } catch (err) {
+    if (err?.code !== 'not-found' && !String(err?.message || '').includes('No document to update')) {
+      console.warn('[P2P LogSync] Responder error:', err);
+    }
     if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
     deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
-  }
+    }
 }
 
 async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
@@ -21800,11 +21904,11 @@ function handleCallDeclinedFromNotification(data) {
 }
 
 // --- 統合通知関数 ---
-async function showNotification(title, body, roomId) {
+async function showNotification(title, body, roomId, forceOs = false) {
   const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-  if (!notifEnabled) return;
-  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない
-  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+  if (!notifEnabled && !forceOs) return;
+  // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
+  if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
 
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);
@@ -21857,22 +21961,48 @@ async function showNotification(title, body, roomId) {
       };
     }
   } else {
-    // Web/PWA版: Service Worker (FCM) が動かない環境のフォールバック
-    if (!currentFcmToken && "Notification" in window && Notification.permission === "granted") {
-      try {
-        const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
-        n.onclick = () => {
-          window.focus();
-          n.close();
-          if (roomId) {
-            if (typeof goToRoom === 'function') goToRoom(roomId);
-            else {
-              const roomItem = document.getElementById(`room-item-${roomId}`);
-              if (roomItem) roomItem.click();
-            }
-          }
+    // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
+    if ("Notification" in window && Notification.permission === "granted") {
+      const showWebNotif = () => {
+        const fallbackNative = () => {
+          try {
+            const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
+            n.onclick = () => {
+              window.focus();
+              n.close();
+              if (roomId) {
+                if (typeof goToRoom === 'function') goToRoom(roomId);
+                else {
+                  const roomItem = document.getElementById(`room-item-${roomId}`);
+                  if (roomItem) roomItem.click();
+                }
+              }
+            };
+          } catch (_) {}
         };
-      } catch (_) {}
+        try {
+          if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+            navigator.serviceWorker.ready.then(reg => {
+              if (reg && reg.showNotification) {
+                reg.showNotification(title, {
+                  body: displayBody,
+                  icon: '/img/icon-192x192.png?v=6',
+                  badge: '/img/icon-192x192.png?v=6',
+                  tag: roomId ? `chat-${roomId}` : 'covo-msg',
+                  data: { roomId }
+                }).catch(fallbackNative);
+              } else {
+                fallbackNative();
+              }
+            }).catch(fallbackNative);
+          } else {
+            fallbackNative();
+          }
+        } catch (_) {
+          fallbackNative();
+        }
+      };
+      showWebNotif();
     }
   }
 }

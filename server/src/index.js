@@ -1346,10 +1346,17 @@ async function handleSendNotification(request, env) {
                                         }
                                     }
                                 },
-                                // Web Push (Chrome/Firefox): SW の onBackgroundMessage を起動（二重表示を防ぐため data 駆動）
+                                // Web Push (Chrome/Firefox/Edge Windows): notification を含めることで Windows の通知アクションセンターが確実にポップアップ
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
+                                    },
+                                    notification: {
+                                        title: safeTitle,
+                                        body: safeBody,
+                                        icon: "/img/icon-192x192.png?v=6",
+                                        badge: "/img/icon-192x192.png?v=6",
+                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     },
                                     fcm_options: {
                                         link: "/"
