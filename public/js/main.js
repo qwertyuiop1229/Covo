@@ -129,35 +129,16 @@ function isTransientTelemetryError(args) {
   }
 }
 // === エラー & 警告自動集約テレメトリシステム (全ユーザー自動送信・重複排除・リアルタイム集約) ===
-let _cachedTelemetryErrors = window._cachedTelemetryErrors = (() => {
-  try {
-    const saved = localStorage.getItem('covo_cached_telemetry_errors');
-    return saved ? JSON.parse(saved) : (window._cachedTelemetryErrors || []);
-  } catch (_) {
-    return window._cachedTelemetryErrors || [];
-  }
-})();
+// 🔒 ローカルストレージキャッシュ依存を完全撤廃し、RTDBを唯一の情報源（Single Source of Truth）として管理
+let _cachedTelemetryErrors = window._cachedTelemetryErrors = [];
 const _reportedSignaturesRecently = new Map();
-const _pendingTelemetryErrors = (() => {
-  try {
-    const saved = localStorage.getItem('covo_pending_telemetry_queue');
-    return saved ? JSON.parse(saved) : [];
-  } catch (_) {
-    return [];
-  }
-})();
+const _pendingTelemetryErrors = [];
 let _isReportingTelemetry = false;
 function _saveTelemetryErrorsToStorage() {
-  try {
-    if (Array.isArray(_cachedTelemetryErrors)) {
-      localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(_cachedTelemetryErrors.slice(0, 100)));
-    }
-  } catch (_) {}
+  // 端末ローカルへの閉じたキャッシュ保存を廃止（RTDB一元化）
 }
 function _savePendingTelemetryQueue() {
-  try {
-    localStorage.setItem('covo_pending_telemetry_queue', JSON.stringify(_pendingTelemetryErrors.slice(0, 100)));
-  } catch (_) {}
+  // RTDB直接送信によりインメモリキューのみで管理
 }
 function _safeSerializeError(val) {
   if (val == null) return 'Unknown error';
@@ -219,44 +200,21 @@ function _reportTelemetryError(type, message, stack) {
     };
     let currentCount = 1;
     let affectedList = [email];
-    // 1. ローカル配列に即時反映
     if (window._cachedTelemetryErrors) {
       const existingIdx = window._cachedTelemetryErrors.findIndex(e => e.id === signature || e.signature === signature);
       if (existingIdx >= 0) {
         window._cachedTelemetryErrors[existingIdx].count = (window._cachedTelemetryErrors[existingIdx].count || 1) + 1;
-        window._cachedTelemetryErrors[existingIdx].lastOccurredAt = new Date();
+        window._cachedTelemetryErrors[existingIdx].lastOccurredAt = Date.now();
         currentCount = window._cachedTelemetryErrors[existingIdx].count;
         if (!window._cachedTelemetryErrors[existingIdx].affectedEmails.includes(email)) {
           window._cachedTelemetryErrors[existingIdx].affectedEmails.push(email);
         }
         affectedList = window._cachedTelemetryErrors[existingIdx].affectedEmails;
-      } else {
-        window._cachedTelemetryErrors.unshift({
-          id: signature,
-          signature: signature,
-          type: type || 'error',
-          message: msgStr.substring(0, 3000),
-          stack: String(stack || '').substring(0, 6000),
-          firstOccurredAt: new Date(),
-          lastOccurredAt: new Date(),
-          count: 1,
-          affectedEmails: [email],
-          environment: envInfo
-        });
-      }
-      const badgeEl = document.getElementById("telemetryCountBadge");
-      if (badgeEl) {
-        badgeEl.textContent = window._cachedTelemetryErrors.length;
-        badgeEl.classList.toggle('hidden', window._cachedTelemetryErrors.length === 0);
-      }
-      _saveTelemetryErrorsToStorage();
-      if (typeof renderTelemetryErrorsList === 'function' && document.getElementById("telemetryErrorsList")) {
-        renderTelemetryErrorsList();
       }
     }
-    // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
+    // 短時間の過剰同一エラーはリモート送信頻度を抑制
     if (isRapidDuplicate) return;
-    // 2. 🛡️ RTDB ＆ Firestore への確実な即時多重化保存 (4重冗長送信)
+    // 🛡️ RTDB ＆ Firestore への確実な即時多重化保存
     const rtdbPayload = {
       id: signature,
       signature: signature,
@@ -274,12 +232,13 @@ function _reportTelemetryError(type, message, stack) {
       }
     };
     (async () => {
-      // 経路1: Worker API 経由で特権書き込み (CORS/認証不要・100%確実に届く)
+      // 経路1: RTDB REST API (PUT) 直接送信 (.write: true なので失効トークンに邪魔されず100%確実に即座に保存)
       try {
-        fetch(`${WORKER_BASE_URL}/api/reportError`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ appId, signature, payload: rtdbPayload }),
+        const directRtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
+        fetch(directRtdbUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rtdbPayload),
           keepalive: true
         }).catch(() => {});
       } catch (_) {}
@@ -291,14 +250,12 @@ function _reportTelemetryError(type, message, stack) {
           set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload).catch(() => {});
         }
       } catch (_) {}
-      // 経路3: RTDB REST API (PUT) へ直接送信 (.write: true なので未認証でも確実に即座に保存可能)
+      // 経路3: Worker API 経由で特権書き込み
       try {
-        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
-        const directRtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
-        fetch(directRtdbUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rtdbPayload),
+        fetch(`${WORKER_BASE_URL}/api/reportError`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ appId, signature, payload: rtdbPayload }),
           keepalive: true
         }).catch(() => {});
       } catch (_) {}
@@ -317,12 +274,7 @@ function _reportTelemetryError(type, message, stack) {
             count: increment(1),
             affectedEmails: arrayUnion(email),
             environment: envInfo
-          }, { merge: true }).catch(err => {
-            if (_pendingTelemetryErrors.length < 100) {
-              _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-              _savePendingTelemetryQueue();
-            }
-          });
+          }, { merge: true }).catch(() => {});
         }
       } catch (_) {}
     })();
@@ -2833,21 +2785,15 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBおよびFirestoreから最新エラーを読み込み中...</div>';
+  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBから最新エラーを読み込み中...</div>';
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
+    // 🔒 ローカルキャッシュを初期値にせず、純粋にサーバー(RTDB)から取得したデータのみで構築
     const mergedMap = new Map();
-    // 0. ローカルストレージにキャッシュがあれば初期セット (オフライン時・サーバー未達時のフォールバック保護)
-    const localCached = window._cachedTelemetryErrors || [];
-    localCached.forEach(item => {
-      if (item && item.message && item.id) {
-        mergedMap.set(item.id, item);
-      }
-    });
-    // 1. 🛡️ RTDB SDK から取得 (artifacts/${appId}/error_reports)
+    // 1. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2860,7 +2806,7 @@ window.loadErrorTelemetry = async function () {
           const val = snap.val() || {};
           Object.keys(val).forEach(k => {
             const remoteItem = val[k];
-            if (remoteItem && remoteItem.message) {
+            if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
               mergedMap.set(k, { id: k, ...remoteItem });
             }
           });
@@ -2869,68 +2815,58 @@ window.loadErrorTelemetry = async function () {
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
     }
-    // 2. Worker 特権 API (/api/getErrors) から直接取得 (SDK未接続・CORS問題時の確実なフェイルセーフ)
-    try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
-      if (idToken) {
-        const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
-          headers: { "Authorization": `Bearer ${idToken}` }
-        });
-        if (wRes.ok) {
-          const wJson = await wRes.json();
-          if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
-            Object.keys(wJson.data).forEach(k => {
-              const remoteItem = wJson.data[k];
-              if (remoteItem && remoteItem.message) {
-                if (mergedMap.has(k)) {
-                  const cur = mergedMap.get(k);
-                  cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
-                  cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
-                  cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
-                } else {
-                  mergedMap.set(k, { id: k, ...remoteItem });
-                }
+    // 2. RTDB REST API からの取得フォールバック (SDK接続遅延時)
+    if (mergedMap.size === 0) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
+        const authParam = idToken ? `?auth=${idToken}` : '';
+        const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
+        const res = await fetch(rtdbUrl);
+        if (res.ok) {
+          const val = await res.json();
+          if (val && typeof val === 'object') {
+            Object.keys(val).forEach(k => {
+              const remoteItem = val[k];
+              if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
+                mergedMap.set(k, { id: k, ...remoteItem });
               }
             });
           }
         }
+      } catch (restErr) {
+        console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
       }
-    } catch (workerErr) {
-      console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
     }
-    // 3. RTDB REST API からのフォールバック取得
-    try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
-      const authParam = idToken ? `?auth=${idToken}` : '';
-      const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
-      const res = await fetch(rtdbUrl);
-      if (res.ok) {
-        const val = await res.json();
-        if (val && typeof val === 'object') {
-          Object.keys(val).forEach(k => {
-            const remoteItem = val[k];
-            if (remoteItem && remoteItem.message) {
-              if (mergedMap.has(k)) {
-                const cur = mergedMap.get(k);
-                cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
-                cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
-                cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
-              } else {
-                mergedMap.set(k, { id: k, ...remoteItem });
-              }
-            }
+    // 3. Worker 特権 API (/api/getErrors) から直接取得 (CORS/認証問題時の安全なフォールバック)
+    if (mergedMap.size === 0) {
+      try {
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
+        if (idToken) {
+          const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
+            headers: { "Authorization": `Bearer ${idToken}` }
           });
+          if (wRes.ok) {
+            const wJson = await wRes.json();
+            if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
+              Object.keys(wJson.data).forEach(k => {
+                const remoteItem = wJson.data[k];
+                if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
+                  mergedMap.set(k, { id: k, ...remoteItem });
+                }
+              });
+            }
+          }
         }
+      } catch (workerErr) {
+        console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
       }
-    } catch (restErr) {
-      console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
     }
-    // 4. Firestore バックアップからも取得して完全マージ
+    // 4. Firestore バックアップからも取得して補完
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
       fsSnap.forEach(d => {
         const data = d.data();
-        if (data && data.message) {
+        if (data && data.message && !_dismissedErrorSignatures.has(d.id)) {
           const k = d.id;
           if (mergedMap.has(k)) {
             const cur = mergedMap.get(k);
@@ -2953,13 +2889,12 @@ window.loadErrorTelemetry = async function () {
       return timeB - timeA;
     });
     window._cachedTelemetryErrors = result;
-    _saveTelemetryErrorsToStorage();
     if (badgeEl) {
       badgeEl.textContent = result.length;
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 6. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信・安全マージ）
+    // 5. 🛡️ RTDB リアルタイムリスナーを開始（他端末でエラーが発生した瞬間に管理画面へ即時反映）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2967,30 +2902,22 @@ window.loadErrorTelemetry = async function () {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
           const liveVal = snapshot.val() || {};
-          const currentMap = new Map((window._cachedTelemetryErrors || []).map(e => [e.id, e]));
+          const freshMap = new Map();
           if (snapshot.exists()) {
             Object.keys(liveVal).forEach(k => {
               const remoteItem = liveVal[k];
-              if (remoteItem && remoteItem.message) {
-                if (currentMap.has(k)) {
-                  const cur = currentMap.get(k);
-                  cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
-                  cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
-                  cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
-                } else {
-                  currentMap.set(k, { id: k, ...remoteItem });
-                }
+              if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
+                freshMap.set(k, { id: k, ...remoteItem });
               }
             });
           }
-          const liveList = Array.from(currentMap.values()).filter(item => item && item.message);
+          const liveList = Array.from(freshMap.values());
           liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
             return timeB - timeA;
           });
           window._cachedTelemetryErrors = liveList;
-          _saveTelemetryErrorsToStorage();
           if (badgeEl) {
             badgeEl.textContent = liveList.length;
             badgeEl.classList.toggle('hidden', liveList.length === 0);
@@ -3097,113 +3024,109 @@ function renderTelemetryErrorsList() {
     });
 
     item.querySelector(".err-del-item-btn").addEventListener("click", async () => {
+          try {
+            _dismissedErrorSignatures.add(err.id);
+            _reportedSignaturesRecently.delete(err.id);
+            // 1. RTDB から確実に削除
+            try {
+              const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+              const rtdb = await _getOrInitRTDB();
+              if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports/${err.id}`));
+            } catch (_) {}
+            // 2. Firestore からも削除
+            await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id)).catch(() => {});
+            // 3. ローカルキャッシュの消去
+            _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+            try { localStorage.removeItem('covo_cached_telemetry_errors'); } catch (_) {}
+            if (window._covoLogs && err.message) {
+              window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
+            }
+            const badgeEl = document.getElementById("telemetryCountBadge");
+            if (badgeEl) {
+              badgeEl.textContent = _cachedTelemetryErrors.length;
+              badgeEl.classList.toggle('hidden', _cachedTelemetryErrors.length === 0);
+            }
+            renderTelemetryErrorsList();
+            alertMessage("エラーログを削除しました", "success");
+          } catch (e) {
+            _dismissedErrorSignatures.delete(err.id);
+            console.error("Failed to delete error report:", e);
+            alertMessage("削除に失敗しました: " + (e.message || e), "error");
+          }
+        });
+        listEl.appendChild(item);
+      });
+    }
+    window.copyAllTelemetryErrors = function () {
+      if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) {
+        alertMessage("コピー対象のエラーがありません", "info");
+        return;
+      }
+      let out = `# Covo エラー・警告自動集約レポート\n生成日時: ${new Date().toLocaleString('ja-JP')}\n総件数: ${_cachedTelemetryErrors.length}件\n\n---\n\n`;
+      _cachedTelemetryErrors.forEach((err, idx) => {
+        const lastTime = err.lastOccurredAt && typeof err.lastOccurredAt.toDate === 'function' ? err.lastOccurredAt.toDate().toLocaleString('ja-JP') : (typeof err.lastOccurredAt === 'number' ? new Date(err.lastOccurredAt).toLocaleString('ja-JP') : '不明');
+        const emails = Array.isArray(err.affectedEmails) ? err.affectedEmails.join(', ') : (err.affectedEmails || '不明');
+        out += `## ${idx + 1}. [${err.type.toUpperCase()}] ${err.message}\n`;
+        out += `- **発生回数**: ${err.count || 1}回\n`;
+        out += `- **最新発生日時**: ${lastTime}\n`;
+        out += `- **影響を受けたメールアドレス**: ${emails}\n`;
+        out += `- **クライアント環境**: ${err.environment?.userAgent || '不明'}\n`;
+        if (err.stack) {
+          out += `\n\`\`\`text\n${err.stack}\n\`\`\`\n\n`;
+        }
+        out += `---\n\n`;
+      });
+      navigator.clipboard.writeText(out).then(() => {
+        alertMessage("全エラーの集約レポートを一括コピーしました", "success");
+      }).catch(() => {
+        alertMessage("コピーに失敗しました", "error");
+      });
+    };
+    window.clearAllTelemetryErrors = async function () {
+      if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
+      if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
       try {
-        _dismissedErrorSignatures.add(err.id);
-        _reportedSignaturesRecently.delete(err.id);
-        // 1. Firestore から削除
-        await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id));
-        // 2. RTDB からも確実に削除
+        const toDelete = [..._cachedTelemetryErrors];
+        // 1. RTDB から一括削除
         try {
           const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
-          if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports/${err.id}`));
+          if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
         } catch (_) {}
-        // 3. ローカル配列 & localStorage キャッシュから完全除去
-        _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
-        _saveTelemetryErrorsToStorage();
-        if (window._covoLogs && err.message) {
-          window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
+        // 2. Firestore 上の全エラードキュメントをバッチ削除
+        try {
+          for (let i = 0; i < toDelete.length; i += 450) {
+            const chunk = toDelete.slice(i, i + 450);
+            const batch = writeBatch(db);
+            chunk.forEach(err => {
+              batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+            });
+            await batch.commit();
+          }
+        } catch (_) {}
+        // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
+        _cachedTelemetryErrors = [];
+        try { localStorage.removeItem('covo_cached_telemetry_errors'); } catch (_) {}
+        _pendingTelemetryErrors.length = 0;
+        _reportedSignaturesRecently.clear();
+        _dismissedErrorSignatures.clear();
+        // 4. インメモリログからエラー・警告行を除去
+        if (window._covoLogs) {
+          window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
         }
+        // 5. バッジとリストUIを即座に更新
         const badgeEl = document.getElementById("telemetryCountBadge");
         if (badgeEl) {
-          badgeEl.textContent = _cachedTelemetryErrors.length;
-          badgeEl.classList.toggle('hidden', _cachedTelemetryErrors.length === 0);
+          badgeEl.textContent = '0';
+          badgeEl.classList.add('hidden');
         }
         renderTelemetryErrorsList();
-        alertMessage("エラーログを削除しました", "success");
-      } catch (e) {
-        _dismissedErrorSignatures.delete(err.id);
-        console.error("Failed to delete error report:", e);
-        alertMessage("削除に失敗しました: " + (e.message || e), "error");
+        alertMessage("全エラーログをクリアしました", "success");
+      } catch (err) {
+        console.error("Failed to clear all telemetry errors:", err);
+        alertMessage("クリアに失敗しました: " + (err.message || err), "error");
       }
-    });
-
-    listEl.appendChild(item);
-  });
-}
-
-window.copyAllTelemetryErrors = function () {
-  if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) {
-    alertMessage("コピー対象のエラーがありません", "info");
-    return;
-  }
-  let out = `# Covo エラー・警告自動集約レポート\n生成日時: ${new Date().toLocaleString('ja-JP')}\n総件数: ${_cachedTelemetryErrors.length}件\n\n---\n\n`;
-  _cachedTelemetryErrors.forEach((err, idx) => {
-    const lastTime = err.lastOccurredAt && typeof err.lastOccurredAt.toDate === 'function' ? err.lastOccurredAt.toDate().toLocaleString('ja-JP') : '不明';
-    const emails = Array.isArray(err.affectedEmails) ? err.affectedEmails.join(', ') : (err.affectedEmails || '不明');
-    out += `## ${idx + 1}. [${err.type.toUpperCase()}] ${err.message}\n`;
-    out += `- **発生回数**: ${err.count || 1}回\n`;
-    out += `- **最新発生日時**: ${lastTime}\n`;
-    out += `- **影響を受けたメールアドレス**: ${emails}\n`;
-    out += `- **クライアント環境**: ${err.environment?.userAgent || '不明'}\n`;
-    if (err.stack) {
-      out += `\n\`\`\`text\n${err.stack}\n\`\`\`\n\n`;
-    }
-    out += `---\n\n`;
-  });
-
-  navigator.clipboard.writeText(out).then(() => {
-    alertMessage("全エラーの集約レポートを一括コピーしました", "success");
-  }).catch(() => {
-    alertMessage("コピーに失敗しました", "error");
-  });
-};
-
-window.clearAllTelemetryErrors = async function () {
-  if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
-  if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
-  try {
-    const toDelete = [..._cachedTelemetryErrors];
-    // 1. RTDB から一括削除
-    try {
-      const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
-    } catch (_) {}
-    // 2. Firestore 上の全エラードキュメントをバッチ削除 (500件上限を安全に分割コミット)
-    try {
-      for (let i = 0; i < toDelete.length; i += 450) {
-        const chunk = toDelete.slice(i, i + 450);
-        const batch = writeBatch(db);
-        chunk.forEach(err => {
-          batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-        });
-        await batch.commit();
-      }
-    } catch (_) {}
-    // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
-    _cachedTelemetryErrors = [];
-    _saveTelemetryErrorsToStorage();
-    _pendingTelemetryErrors.length = 0;
-    _reportedSignaturesRecently.clear();
-    _dismissedErrorSignatures.clear();
-    // 4. インメモリログからエラー・警告行を除去
-    if (window._covoLogs) {
-      window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
-    }
-    // 5. バッジとリストUIを即座に更新
-    const badgeEl = document.getElementById("telemetryCountBadge");
-    if (badgeEl) {
-      badgeEl.textContent = '0';
-      badgeEl.classList.add('hidden');
-    }
-    renderTelemetryErrorsList();
-    alertMessage("全エラーログをクリアしました", "success");
-  } catch (err) {
-    console.error("Failed to clear all telemetry errors:", err);
-    alertMessage("クリアに失敗しました: " + (err.message || err), "error");
-  }
-};
+    };
 
 window.renderReportsConsoleStream = function () {
   const panel = document.getElementById("systemDiagSummaryPanel");

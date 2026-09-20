@@ -293,7 +293,8 @@ function _reportTelemetryError(type, message, stack) {
       } catch (_) {}
       // 経路3: RTDB REST API (PUT) へ直接送信 (.write: true なので未認証でも確実に即座に保存可能)
       try {
-        const directRtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
+        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+        const directRtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
         fetch(directRtdbUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -2839,7 +2840,13 @@ window.loadErrorTelemetry = async function () {
       _telemetryErrorsUnsub = null;
     }
     const mergedMap = new Map();
-
+    // 0. ローカルストレージにキャッシュがあれば初期セット (オフライン時・サーバー未達時のフォールバック保護)
+    const localCached = window._cachedTelemetryErrors || [];
+    localCached.forEach(item => {
+      if (item && item.message && item.id) {
+        mergedMap.set(item.id, item);
+      }
+    });
     // 1. 🛡️ RTDB SDK から取得 (artifacts/${appId}/error_reports)
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -2862,10 +2869,9 @@ window.loadErrorTelemetry = async function () {
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
     }
-
     // 2. Worker 特権 API (/api/getErrors) から直接取得 (SDK未接続・CORS問題時の確実なフェイルセーフ)
     try {
-      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
       if (idToken) {
         const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
           headers: { "Authorization": `Bearer ${idToken}` }
@@ -2892,10 +2898,10 @@ window.loadErrorTelemetry = async function () {
     } catch (workerErr) {
       console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
     }
-
     // 3. RTDB REST API からのフォールバック取得
     try {
-      const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
+      const authParam = idToken ? `?auth=${idToken}` : '';
       const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
       const res = await fetch(rtdbUrl);
       if (res.ok) {
@@ -2919,7 +2925,6 @@ window.loadErrorTelemetry = async function () {
     } catch (restErr) {
       console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
     }
-
     // 4. Firestore バックアップからも取得して完全マージ
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
@@ -2941,8 +2946,6 @@ window.loadErrorTelemetry = async function () {
     } catch (fsErr) {
       console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
     }
-    // 5. サーバー（RTDB最優先・Firestore補完）を真実のソース（Single Source of Truth）として確定
-    // ※ 自端末のローカルキャッシュのゴミデータは一切マージせず、サーバー上の実態を100%そのまま画面に反映
     const result = Array.from(mergedMap.values());
     result.sort((a, b) => {
       const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
@@ -2956,7 +2959,7 @@ window.loadErrorTelemetry = async function () {
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 6. RTDB & Firestore リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信・安全マージ）
+    // 6. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信・安全マージ）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -17188,24 +17191,6 @@ function renderMessagesWithReadReceipts() {
           timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
         } else {
           timestampSpan.textContent = "送信中...";
-        }
-      }
-      if (!isMyMessage) {
-        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
-        const cachedProf = window._userProfileCache?.get(msg.senderId);
-        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
-        const resolvedAvatarUrl = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (msg.senderAvatarUrl || null)));
-        const avatarDiv = row.querySelector('.msg-avatar');
-        if (avatarDiv) {
-          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
-            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
-          } else {
-            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
-          }
-        }
-        const nameSpan = row.querySelector('.msg-sender-name');
-        if (nameSpan) {
-          nameSpan.textContent = resolvedNickname;
         }
       }
       const textSpan = row.querySelector('.message-content');

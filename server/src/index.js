@@ -2384,9 +2384,7 @@ async function handleSetOffline(request, env) {
         const targetAppId = isValidAppId(appId, env) ? appId : (env.FIREBASE_APP_ID || "simplechat-65a0d");
         const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
         const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-
         // 1. RTDB 認証クエリパラメータの解決
-        // (SERVICE_ACCOUNT_JSONはOAuth2アクセストークンなので ?access_token=, WorkerのIDトークンなら ?auth=)
         let authParam = '';
         if (env.SERVICE_ACCOUNT_JSON) {
           try {
@@ -2400,46 +2398,36 @@ async function handleSetOffline(request, env) {
             if (idToken) authParam = `?auth=${idToken}`;
           } catch (_) {}
         }
-
         // 既存エラーの取得とカウント加算・影響メールアドレスのマージ
         let finalPayload = { ...payload };
-        try {
-          const getRes = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`);
-          if (getRes.ok) {
-            const existing = await getRes.json();
-            if (existing && typeof existing === 'object' && existing.message) {
-              const newCount = (existing.count || 1) + (payload.count || 1);
-              const mergedEmails = Array.from(new Set([...(existing.affectedEmails || []), ...(payload.affectedEmails || [])]));
-              finalPayload = {
-                ...existing,
-                ...payload,
-                count: newCount,
-                firstOccurredAt: existing.firstOccurredAt || payload.firstOccurredAt || existing.lastOccurredAt || payload.lastOccurredAt,
-                lastOccurredAt: payload.lastOccurredAt || Date.now(),
-                affectedEmails: mergedEmails
-              };
+        if (authParam) {
+          try {
+            const getRes = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`);
+            if (getRes.ok) {
+              const existing = await getRes.json();
+              if (existing && typeof existing === 'object' && existing.message) {
+                const newCount = (existing.count || 1) + (payload.count || 1);
+                const mergedEmails = Array.from(new Set([...(existing.affectedEmails || []), ...(payload.affectedEmails || [])]));
+                finalPayload = {
+                  ...existing,
+                  ...payload,
+                  count: newCount,
+                  firstOccurredAt: existing.firstOccurredAt || payload.firstOccurredAt || existing.lastOccurredAt || payload.lastOccurredAt,
+                  lastOccurredAt: payload.lastOccurredAt || Date.now(),
+                  affectedEmails: mergedEmails
+                };
+              }
             }
-          }
-        } catch (_) {}
-
-        // RTDB へ書き込み
-        // database.rules.json で error_reports は .write: true なので、トークンなしでも書き込み可能。
-        // もしトークン付きで401等の認証エラーになった場合はトークンなしで即時再試行
-        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`;
+          } catch (_) {}
+        }
+        // RTDB へ書き込み (.write: true なので認証なしでも確実に保存)
+        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json`;
         let res = await fetch(writeUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalPayload)
         });
-        if (!res.ok && authParam) {
-          res = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(finalPayload)
-          });
-        }
-
-        // 2. Firestore へもバックアップ書き込み (commit upsert を使用して 100% 確実に書き込み)
+        // 2. Firestore へもバックアップ書き込み
         (async () => {
           try {
             const adminToken = await getAdminTokenForFirestore(env);
@@ -2469,7 +2457,6 @@ async function handleSetOffline(request, env) {
             }
           } catch (_) {}
         })();
-
         if (!res.ok) {
           const errTxt = await res.text().catch(() => "");
           return new Response(JSON.stringify({ success: false, error: `RTDB write failed: ${res.status} ${errTxt}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
