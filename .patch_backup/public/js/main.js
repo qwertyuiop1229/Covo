@@ -200,7 +200,7 @@ function _reportTelemetryError(type, message, stack) {
   if (isTransientTelemetryError([message, stack])) return;
   _isReportingTelemetry = true;
   try {
-    const msgStr = _safeSerializeError(message);
+    const msgStr = _safeSerializeError(message) || 'Unknown error';
     if (!msgStr) return;
     const signature = _createErrorSignature(type, msgStr, stack);
     // 管理者が解決済みとして削除したエラーはセッション内での復活を抑制
@@ -210,7 +210,7 @@ function _reportTelemetryError(type, message, stack) {
     const isRapidDuplicate = (now - lastReported < 800);
     _reportedSignaturesRecently.set(signature, now);
     const currentUid = auth?.currentUser?.uid || (typeof userId !== 'undefined' ? userId : 'anonymous');
-    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
+    const email = (typeof userAuthEmail !== 'undefined' && userAuthEmail) || auth?.currentUser?.email || (currentUid && currentUid !== 'anonymous' ? `uid:${currentUid.substring(0, 6)}` : '未ログイン');
     const envInfo = {
       userAgent: navigator.userAgent || 'unknown',
       appVersion: _appVersion || 'web',
@@ -256,7 +256,7 @@ function _reportTelemetryError(type, message, stack) {
     }
     // 短時間の過剰同一エラーはリモート送信頻度を抑制（ローカルカウントのみ加算）
     if (isRapidDuplicate) return;
-    // 2. 🛡️ RTDB への確実な即時保存（Worker API特権送信 ＋ RTDB SDK ＋ REST APIフォールバックの3重送信）
+    // 2. 🛡️ RTDB ＆ Firestore への確実な即時多重化保存 (4重冗長送信)
     const rtdbPayload = {
       id: signature,
       signature: signature,
@@ -268,13 +268,13 @@ function _reportTelemetryError(type, message, stack) {
       affectedEmails: Array.from(new Set(affectedList)),
       environment: {
         userAgent: envInfo.userAgent || 'unknown',
-        appVersion: envInfo.appVersion || 'web',
+        appVersion: _appVersion || 'web',
         screenSize: envInfo.screenSize || '0x0',
         isElectron: !!envInfo.isElectron
       }
     };
     (async () => {
-      // 経路A: Worker API 経由で特権書き込み (CORS/認証不要・100%確実に届く)
+      // 経路1: Worker API 経由で特権書き込み (CORS/認証不要・100%確実に届く)
       try {
         fetch(`${WORKER_BASE_URL}/api/reportError`, {
           method: "POST",
@@ -283,54 +283,48 @@ function _reportTelemetryError(type, message, stack) {
           keepalive: true
         }).catch(() => {});
       } catch (_) {}
-      // 経路B: RTDB SDK による即時書き込み (3秒タイムアウト制御)
+      // 経路2: RTDB SDK による直接書き込み
       try {
         const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
         if (rtdb) {
-          await Promise.race([
-            set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-          ]);
-          return;
+          set(ref(rtdb, `artifacts/${appId}/error_reports/${signature}`), rtdbPayload).catch(() => {});
         }
       } catch (_) {}
-      // 経路C: RTDB REST API (PUT) へ直接送信
+      // 経路3: RTDB REST API (PUT) へ直接送信 (.write: true なので未認証でも確実に即座に保存可能)
       try {
-        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
-        const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json${authParam}`;
-        fetch(rtdbUrl, {
+        const directRtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports/${signature}.json`;
+        fetch(directRtdbUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(rtdbPayload),
           keepalive: true
         }).catch(() => {});
       } catch (_) {}
-    })();
-    // 3. Firestore へもバックアップ永続化
-    if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
-      const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
-      setDoc(errorDocRef, {
-        signature: signature,
-        type: type || 'error',
-        message: msgStr.substring(0, 3000),
-        stack: String(stack || '').substring(0, 6000),
-        firstOccurredAt: serverTimestamp(),
-        lastOccurredAt: serverTimestamp(),
-        createdBy: currentUid,
-        count: increment(1),
-        affectedEmails: arrayUnion(email),
-        environment: envInfo
-      }, { merge: true }).catch(err => {
-        if (_pendingTelemetryErrors.length < 100) {
-          _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-          _savePendingTelemetryQueue();
+      // 経路4: Firestore へのバックアップ永続化
+      try {
+        if (typeof db !== 'undefined' && db && typeof appId !== 'undefined' && appId) {
+          const errorDocRef = doc(db, `artifacts/${appId}/error_reports`, signature);
+          setDoc(errorDocRef, {
+            signature: signature,
+            type: type || 'error',
+            message: msgStr.substring(0, 3000),
+            stack: String(stack || '').substring(0, 6000),
+            firstOccurredAt: serverTimestamp(),
+            lastOccurredAt: serverTimestamp(),
+            createdBy: currentUid,
+            count: increment(1),
+            affectedEmails: arrayUnion(email),
+            environment: envInfo
+          }, { merge: true }).catch(err => {
+            if (_pendingTelemetryErrors.length < 100) {
+              _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
+              _savePendingTelemetryQueue();
+            }
+          });
         }
-      });
-    } else if (_pendingTelemetryErrors.length < 100) {
-      _pendingTelemetryErrors.push({ type, message: msgStr, stack: String(stack || '') });
-      _savePendingTelemetryQueue();
-    }
+      } catch (_) {}
+    })();
   } catch (e) {
   } finally {
     _isReportingTelemetry = false;
@@ -2843,16 +2837,15 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  // 読み込み中はスピナーを表示（他端末のローカル空キャッシュに惑わされず常にRTDBから直接取得）
-  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBから最新エラーを読み込み中...</div>';
+  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBおよびFirestoreから最新エラーを読み込み中...</div>';
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
     const mergedMap = new Map();
-    // 1. 🛡️ RTDB (artifacts/${appId}/error_reports) を最優先マスターとして全件取得
-    let rtdbSuccess = false;
+
+    // 1. 🛡️ RTDB SDK から取得 (artifacts/${appId}/error_reports)
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2870,71 +2863,91 @@ window.loadErrorTelemetry = async function () {
             }
           });
         }
-        rtdbSuccess = true;
       }
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
     }
+
     // 2. Worker 特権 API (/api/getErrors) から直接取得 (SDK未接続・CORS問題時の確実なフェイルセーフ)
-    if (!rtdbSuccess || mergedMap.size === 0) {
-      try {
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-        if (idToken) {
-          const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
-            headers: { "Authorization": `Bearer ${idToken}` }
-          });
-          if (wRes.ok) {
-            const wJson = await wRes.json();
-            if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
-              Object.keys(wJson.data).forEach(k => {
-                const remoteItem = wJson.data[k];
-                if (remoteItem && remoteItem.message) {
+    try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+      if (idToken) {
+        const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        if (wRes.ok) {
+          const wJson = await wRes.json();
+          if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
+            Object.keys(wJson.data).forEach(k => {
+              const remoteItem = wJson.data[k];
+              if (remoteItem && remoteItem.message) {
+                if (mergedMap.has(k)) {
+                  const cur = mergedMap.get(k);
+                  cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
+                  cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
+                  cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
+                } else {
                   mergedMap.set(k, { id: k, ...remoteItem });
                 }
-              });
-              rtdbSuccess = true;
-            }
-          }
-        }
-      } catch (workerErr) {
-        console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
-      }
-    }
-    // 3. RTDB REST API からのフォールバック取得
-    if (!rtdbSuccess || mergedMap.size === 0) {
-      try {
-        const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
-        const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
-        const res = await fetch(rtdbUrl);
-        if (res.ok) {
-          const val = await res.json();
-          if (val && typeof val === 'object') {
-            Object.keys(val).forEach(k => {
-              const remoteItem = val[k];
-              if (remoteItem && remoteItem.message) {
-                mergedMap.set(k, { id: k, ...remoteItem });
               }
             });
-            rtdbSuccess = true;
           }
         }
-      } catch (restErr) {
-        console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
       }
+    } catch (workerErr) {
+      console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
     }
+
+    // 3. RTDB REST API からのフォールバック取得
+    try {
+      const authParam = _cachedIdToken ? `?auth=${_cachedIdToken}` : '';
+      const rtdbUrl = `https://${firebaseConfig.projectId}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/error_reports.json${authParam}`;
+      const res = await fetch(rtdbUrl);
+      if (res.ok) {
+        const val = await res.json();
+        if (val && typeof val === 'object') {
+          Object.keys(val).forEach(k => {
+            const remoteItem = val[k];
+            if (remoteItem && remoteItem.message) {
+              if (mergedMap.has(k)) {
+                const cur = mergedMap.get(k);
+                cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
+                cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
+                cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
+              } else {
+                mergedMap.set(k, { id: k, ...remoteItem });
+              }
+            }
+          });
+        }
+      }
+    } catch (restErr) {
+      console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
+    }
+
     // 4. Firestore バックアップからも取得して完全マージ
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
       fsSnap.forEach(d => {
         const data = d.data();
-        if (data && data.message && !mergedMap.has(d.id)) {
-          mergedMap.set(d.id, { id: d.id, ...data });
+        if (data && data.message) {
+          const k = d.id;
+          if (mergedMap.has(k)) {
+            const cur = mergedMap.get(k);
+            cur.count = Math.max(cur.count || 1, data.count || 1);
+            const fsTime = data.lastOccurredAt?.toDate ? data.lastOccurredAt.toDate().getTime() : new Date(data.lastOccurredAt || 0).getTime();
+            cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), fsTime);
+            cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(data.affectedEmails || [])]));
+          } else {
+            mergedMap.set(k, { id: k, ...data });
+          }
         }
       });
     } catch (fsErr) {
       console.warn('[loadErrorTelemetry] Firestore read warning:', fsErr);
     }
-    // 5. RTDBのクラウドデータを最優先真実（Single Source of Truth）としてローカルストレージへ同期
+    // 5. サーバー（RTDB最優先・Firestore補完）を真実のソース（Single Source of Truth）として確定
+    // ※ 自端末のローカルキャッシュのゴミデータは一切マージせず、サーバー上の実態を100%そのまま画面に反映
     const result = Array.from(mergedMap.values());
     result.sort((a, b) => {
       const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
@@ -2956,20 +2969,19 @@ window.loadErrorTelemetry = async function () {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
           if (!snapshot.exists()) {
-            // リモートが完全に空（全件削除された場合など）の時のみクリア
-            if (rtdbSuccess) {
-              window._cachedTelemetryErrors = [];
-              _saveTelemetryErrorsToStorage();
-              if (badgeEl) {
-                badgeEl.textContent = '0';
-                badgeEl.classList.add('hidden');
-              }
-              renderTelemetryErrorsList();
+            window._cachedTelemetryErrors = [];
+            _saveTelemetryErrorsToStorage();
+            if (badgeEl) {
+              badgeEl.textContent = '0';
+              badgeEl.classList.add('hidden');
             }
+            renderTelemetryErrorsList();
             return;
           }
           const liveVal = snapshot.val() || {};
-          const liveList = Object.keys(liveVal).map(k => ({ id: k, ...liveVal[k] })).filter(e => e.message);
+          const liveList = Object.keys(liveVal)
+            .map(k => ({ id: k, ...liveVal[k] }))
+            .filter(item => item && item.message);
           liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -3279,24 +3291,40 @@ window.loadAdminFeedbacks = async function () {
             ${detailsHtml}
           `;
 
-      const markdownBody = `**投稿者**: ${fb.email || fb.createdBy}\n**日時**: ${dt}\n\n**内容**:\n${fb.content}\n\n---\n**環境情報**\n- Screen: ${fb.screenSize || '不明'}\n- UserAgent: ${fb.userAgent || '不明'}\n\n**Console Logs**\n\`\`\`text\n${fb.consoleLogs || 'ログなし'}\n\`\`\``;
-
+      const markdownBody = `**投稿者**: ${fb.email || fb.createdBy}\n**日時**: ${dt}\n**カテゴリ**: ${catLabel}\n\n**内容**:\n${fb.content}\n\n---\n**環境情報**\n- Screen: ${fb.screenSize || '不明'}\n- UserAgent: ${fb.userAgent || '不明'}\n\n**Console Logs**\n\`\`\`text\n${fb.consoleLogs || 'ログなし'}\n\`\`\``;
+      const toggleDetails = () => {
+        const area = item.querySelector(".fb-details-area");
+        if (!area) return;
+        const isCurrentlyOpen = !area.classList.contains("hidden");
+        area.classList.toggle("hidden");
+        const chevron = item.querySelector(".fb-chevron-icon");
+        const toggleLabel = item.querySelector(".fb-toggle-label");
+        const copyBtn = item.querySelector(".fb-copy-btn");
+        if (isCurrentlyOpen) {
+          if (chevron) chevron.style.transform = "rotate(0deg)";
+          if (toggleLabel) toggleLabel.textContent = "詳細・ログを表示";
+          if (copyBtn) copyBtn.title = "報告文章のみをコピー";
+        } else {
+          if (chevron) chevron.style.transform = "rotate(180deg)";
+          if (toggleLabel) toggleLabel.textContent = "詳細を閉じる";
+          if (copyBtn) copyBtn.title = "詳細状況・ログを含めてコピー";
+        }
+      };
       item.querySelectorAll(".fb-toggle-details").forEach(el => {
-        el.addEventListener("click", () => {
-          const area = item.querySelector(".fb-details-area");
-          area.classList.toggle("hidden");
-        });
+        el.addEventListener("click", toggleDetails);
       });
-
-      item.querySelector(".fb-copy-btn").addEventListener("click", () => {
-        navigator.clipboard.writeText(markdownBody).then(() => {
-          alertMessage("Markdown形式でコピーしました", "success");
+      item.querySelector(".fb-copy-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const area = item.querySelector(".fb-details-area");
+        const isDetailsOpen = area && !area.classList.contains("hidden");
+        const textToCopy = isDetailsOpen ? markdownBody : (fb.content || '');
+        safeCopy(textToCopy).then(() => {
+          alertMessage(isDetailsOpen ? "詳細情報を含むレポートをコピーしました" : "報告本文をコピーしました", "success");
         }).catch(err => {
           console.error("Copy failed", err);
           alertMessage("コピーに失敗しました", "error");
         });
       });
-
       item.querySelector(".fb-issue-btn").addEventListener("click", () => {
         const issueTitle = `[${catLabel}] ${titleEsc}...`;
         const url = `https://github.com/qwertyuiop1229/Covo/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(markdownBody)}`;

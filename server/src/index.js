@@ -2324,22 +2324,59 @@ async function handleSetOffline(request, env) {
         const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
         const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
 
-        let rtdbToken = null;
+        // 1. RTDB 認証クエリパラメータの解決
+        // (SERVICE_ACCOUNT_JSONはOAuth2アクセストークンなので ?access_token=, WorkerのIDトークンなら ?auth=)
+        let authParam = '';
         if (env.SERVICE_ACCOUNT_JSON) {
-          try { rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON); } catch (_) {}
+          try {
+            const token = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+            if (token) authParam = `?access_token=${token}`;
+          } catch (_) {}
         }
-        if (!rtdbToken) {
-          try { rtdbToken = await getWorkerAuthToken(env); } catch (_) {}
+        if (!authParam && env.WORKER_AUTH_EMAIL && env.WORKER_AUTH_PASSWORD) {
+          try {
+            const idToken = await getWorkerAuthToken(env);
+            if (idToken) authParam = `?auth=${idToken}`;
+          } catch (_) {}
         }
 
-        // 1. RTDB へ書き込み (database.rules.json で error_reports は .write: true なのでトークンなしでも書き込み可能)
-        const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : '';
-        const writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authQuery}`;
-        const res = await fetch(writeUrl, {
+        // 既存エラーの取得とカウント加算・影響メールアドレスのマージ
+        let finalPayload = { ...payload };
+        try {
+          const getRes = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`);
+          if (getRes.ok) {
+            const existing = await getRes.json();
+            if (existing && typeof existing === 'object' && existing.message) {
+              const newCount = (existing.count || 1) + (payload.count || 1);
+              const mergedEmails = Array.from(new Set([...(existing.affectedEmails || []), ...(payload.affectedEmails || [])]));
+              finalPayload = {
+                ...existing,
+                ...payload,
+                count: newCount,
+                firstOccurredAt: existing.firstOccurredAt || payload.firstOccurredAt || existing.lastOccurredAt || payload.lastOccurredAt,
+                lastOccurredAt: payload.lastOccurredAt || Date.now(),
+                affectedEmails: mergedEmails
+              };
+            }
+          }
+        } catch (_) {}
+
+        // RTDB へ書き込み
+        // database.rules.json で error_reports は .write: true なので、トークンなしでも書き込み可能。
+        // もしトークン付きで401等の認証エラーになった場合はトークンなしで即時再試行
+        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`;
+        let res = await fetch(writeUrl, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(finalPayload)
         });
+        if (!res.ok && authParam) {
+          res = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(finalPayload)
+          });
+        }
 
         // 2. Firestore へもバックアップ書き込み (非同期・多重冗長化)
         (async () => {
@@ -2354,11 +2391,12 @@ async function handleSetOffline(request, env) {
                   fields: {
                     id: { stringValue: signature },
                     signature: { stringValue: signature },
-                    type: { stringValue: payload.type || 'error' },
-                    message: { stringValue: String(payload.message || '').substring(0, 3000) },
-                    stack: { stringValue: String(payload.stack || '').substring(0, 6000) },
-                    lastOccurredAt: { timestampValue: new Date(payload.lastOccurredAt || Date.now()).toISOString() },
-                    count: { integerValue: String(payload.count || 1) }
+                    type: { stringValue: finalPayload.type || 'error' },
+                    message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
+                    stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
+                    lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
+                    count: { integerValue: String(finalPayload.count || 1) },
+                    affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
                   }
                 })
               });
@@ -2376,7 +2414,6 @@ async function handleSetOffline(request, env) {
         return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       }
     }
-
     async function handleGetErrors(request, env, url) {
       const cors = getCorsHeaders(request);
       try {
@@ -2397,21 +2434,30 @@ async function handleSetOffline(request, env) {
         const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
         const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
 
-        let rtdbToken = null;
+        // RTDB 読み取りクエリパラメータの構成
+        let authQuery = `?auth=${idToken}`;
         if (env.SERVICE_ACCOUNT_JSON) {
-          try { rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON); } catch (_) {}
+          try {
+            const token = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+            if (token) authQuery = `?access_token=${token}`;
+          } catch (_) {}
+        } else if (env.WORKER_AUTH_EMAIL && env.WORKER_AUTH_PASSWORD) {
+          try {
+            const wToken = await getWorkerAuthToken(env);
+            if (wToken) authQuery = `?auth=${wToken}`;
+          } catch (_) {}
         }
-        if (!rtdbToken) {
-          try { rtdbToken = await getWorkerAuthToken(env); } catch (_) {}
-        }
-        const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : `?auth=${idToken}`;
+
         const fetchUrl = `${rtdbUrl}/artifacts/${appId}/error_reports.json${authQuery}`;
-        const res = await fetch(fetchUrl);
+        let res = await fetch(fetchUrl);
+        // 認証失敗時のフォールバック (クライアントのトークンで再試行)
+        if (!res.ok && idToken && !authQuery.includes(idToken)) {
+          res = await fetch(`${rtdbUrl}/artifacts/${appId}/error_reports.json?auth=${idToken}`);
+        }
         let rtdbData = {};
         if (res.ok) {
           rtdbData = await res.json() || {};
         }
-
         // Firestore からもバックアップ取得してマージ
         try {
           const adminToken = await getAdminTokenForFirestore(env);
@@ -2423,9 +2469,9 @@ async function handleSetOffline(request, env) {
               if (fsJson.documents && Array.isArray(fsJson.documents)) {
                 for (const doc of fsJson.documents) {
                   const docId = doc.name.split('/').pop();
-                  if (docId && !rtdbData[docId]) {
+                  if (docId) {
                     const f = doc.fields || {};
-                    rtdbData[docId] = {
+                    const remoteItem = {
                       id: docId,
                       signature: f.signature?.stringValue || docId,
                       type: f.type?.stringValue || 'error',
@@ -2435,13 +2481,18 @@ async function handleSetOffline(request, env) {
                       lastOccurredAt: f.lastOccurredAt?.timestampValue ? new Date(f.lastOccurredAt.timestampValue).getTime() : Date.now(),
                       affectedEmails: f.affectedEmails?.arrayValue?.values ? f.affectedEmails.arrayValue.values.map(v => v.stringValue) : []
                     };
+                    if (!rtdbData[docId]) {
+                      rtdbData[docId] = remoteItem;
+                    } else {
+                      rtdbData[docId].count = Math.max(rtdbData[docId].count || 1, remoteItem.count || 1);
+                      rtdbData[docId].affectedEmails = Array.from(new Set([...(rtdbData[docId].affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
+                    }
                   }
                 }
               }
             }
           }
         } catch (_) {}
-
         return new Response(JSON.stringify({ success: true, data: rtdbData || {} }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });

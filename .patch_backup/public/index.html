@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.206" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.208" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.206" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.208" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -215,7 +215,7 @@
         s.includes('content.js') ||
         s.includes('globals-front.js') ||
         s.includes('adblock-picreplacement.js') ||
-        s.includes('usecache') ||
+        s.includes('usecache is not defined') ||
         s.includes('receiving end does not exist') ||
         s.includes('could not establish connection') ||
         s.includes('a listener indicated an asynchronous response') ||
@@ -293,6 +293,17 @@
           hash |= 0;
         }
         const signature = 'err_' + Math.abs(hash).toString(36);
+        const payload = {
+          id: signature,
+          signature: signature,
+          type: normType,
+          message: msgStr,
+          stack: stackStr,
+          lastOccurredAt: Date.now(),
+          count: 1,
+          affectedEmails: ['未初期化/起動前'],
+          environment: { userAgent: navigator.userAgent || 'unknown', appVersion: 'boot_early', screenSize: `${window.innerWidth}x${window.innerHeight}` }
+        };
         // localStorage の即時キャッシュ更新
         try {
           const rawCached = localStorage.getItem('covo_cached_telemetry_errors');
@@ -303,35 +314,24 @@
             existing.lastOccurredAt = new Date().toISOString();
           } else {
             list.unshift({
-              id: signature,
-              signature: signature,
-              type: normType,
-              message: msgStr,
-              stack: stackStr,
+              ...payload,
               firstOccurredAt: new Date().toISOString(),
-              lastOccurredAt: new Date().toISOString(),
-              count: 1,
-              affectedEmails: ['未初期化/起動前'],
-              environment: { userAgent: navigator.userAgent, appVersion: 'boot_early', screenSize: `${window.innerWidth}x${window.innerHeight}` }
+              lastOccurredAt: new Date().toISOString()
             });
           }
           localStorage.setItem('covo_cached_telemetry_errors', JSON.stringify(list.slice(0, 100)));
         } catch (_) {}
-        // RTDB は .write: true なのでトークンなしで直接書き込める
+        // 1. Worker API 経由で RTDB に特権書き込み (CORS/認証不要・100%確実に届く)
+        fetch('https://simplechat-api.astro-fray-server.workers.dev/api/reportError', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appId: 'simplechat-65a0d', signature, payload }),
+          keepalive: true
+        }).catch(() => {});
+        // 2. RTDB REST API (PUT) へも直接フォールバック送信
         const rtdbUrl = `https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/simplechat-65a0d/error_reports/${signature}.json`;
-        const payload = {
-          id: signature,
-          signature: signature,
-          type: normType,
-          message: msgStr,
-          stack: stackStr,
-          lastOccurredAt: Date.now(),
-          count: 1,
-          affectedEmails: ['未初期化/起動前'],
-          environment: { userAgent: navigator.userAgent, appVersion: 'boot_early', screenSize: `${window.innerWidth}x${window.innerHeight}` }
-        };
         fetch(rtdbUrl, {
-          method: 'PATCH',
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           keepalive: true
@@ -3637,7 +3637,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.206"></script>
+  <script type="module" src="js/main.js?v=1.1.208"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
