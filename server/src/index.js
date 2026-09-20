@@ -2313,70 +2313,139 @@ async function handleSetOffline(request, env) {
     // エラー・警告テレメトリのRTDB確実保存 & 一覧取得処理 (Worker特権経由)
     // -------------------------------------------------------------
     async function handleReportError(request, env) {
-    const cors = getCorsHeaders(request);
-    try {
-    const body = await request.json();
-    const { appId, signature, payload } = body;
-    if (!appId || !signature || !payload) {
-      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    const targetAppId = isValidAppId(appId, env) ? appId : (env.FIREBASE_APP_ID || "simplechat-65a0d");
-    if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    const projectId = env.FIREBASE_PROJECT_ID;
-    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-    const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
-    const writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json?access_token=${rtdbToken}`;
-    const res = await fetch(writeUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      const errTxt = await res.text().catch(() => "");
-      return new Response(JSON.stringify({ success: false, error: `RTDB write failed: ${res.status} ${errTxt}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-    } catch (err) {
-    console.error("handleReportError error:", err);
-    return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-    }
+      const cors = getCorsHeaders(request);
+      try {
+        const body = await request.json();
+        const { appId, signature, payload } = body;
+        if (!appId || !signature || !payload) {
+          return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        const targetAppId = isValidAppId(appId, env) ? appId : (env.FIREBASE_APP_ID || "simplechat-65a0d");
+        const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
+        const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+
+        let rtdbToken = null;
+        if (env.SERVICE_ACCOUNT_JSON) {
+          try { rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON); } catch (_) {}
+        }
+        if (!rtdbToken) {
+          try { rtdbToken = await getWorkerAuthToken(env); } catch (_) {}
+        }
+
+        // 1. RTDB へ書き込み (database.rules.json で error_reports は .write: true なのでトークンなしでも書き込み可能)
+        const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : '';
+        const writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authQuery}`;
+        const res = await fetch(writeUrl, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        // 2. Firestore へもバックアップ書き込み (非同期・多重冗長化)
+        (async () => {
+          try {
+            const adminToken = await getAdminTokenForFirestore(env);
+            if (adminToken) {
+              const fsDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`;
+              await fetch(fsDocUrl, {
+                method: "PATCH",
+                headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fields: {
+                    id: { stringValue: signature },
+                    signature: { stringValue: signature },
+                    type: { stringValue: payload.type || 'error' },
+                    message: { stringValue: String(payload.message || '').substring(0, 3000) },
+                    stack: { stringValue: String(payload.stack || '').substring(0, 6000) },
+                    lastOccurredAt: { timestampValue: new Date(payload.lastOccurredAt || Date.now()).toISOString() },
+                    count: { integerValue: String(payload.count || 1) }
+                  }
+                })
+              });
+            }
+          } catch (_) {}
+        })();
+
+        if (!res.ok) {
+          const errTxt = await res.text().catch(() => "");
+          return new Response(JSON.stringify({ success: false, error: `RTDB write failed: ${res.status} ${errTxt}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+      } catch (err) {
+        console.error("handleReportError error:", err);
+        return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      }
     }
 
     async function handleGetErrors(request, env, url) {
-    const cors = getCorsHeaders(request);
-    try {
-    const authHeader = request.headers.get("Authorization") || "";
-    const idToken = authHeader.replace("Bearer ", "").trim();
-    if (!idToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
-    if (!verifiedUser) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID || "simplechat-65a0d";
-    const isAdminUser = await isAppAdmin(appId, verifiedUser, env);
-    if (!isAdminUser) {
-      return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-    if (!env.SERVICE_ACCOUNT_JSON) {
-      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-    const projectId = env.FIREBASE_PROJECT_ID;
-    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-    const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
-    const fetchUrl = `${rtdbUrl}/artifacts/${appId}/error_reports.json?access_token=${rtdbToken}`;
-    const res = await fetch(fetchUrl);
-    if (!res.ok) {
-      return new Response(JSON.stringify({ error: `RTDB fetch failed: ${res.status}` }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
-    const data = await res.json();
-    return new Response(JSON.stringify({ success: true, data: data || {} }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
-    } catch (err) {
-    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
-    }
+      const cors = getCorsHeaders(request);
+      try {
+        const authHeader = request.headers.get("Authorization") || "";
+        const idToken = authHeader.replace("Bearer ", "").trim();
+        if (!idToken) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+        }
+        const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+        if (!verifiedUser) {
+          return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+        }
+        const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID || "simplechat-65a0d";
+        const isAdminUser = await isAppAdmin(appId, verifiedUser, env);
+        if (!isAdminUser) {
+          return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
+        }
+        const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
+        const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+
+        let rtdbToken = null;
+        if (env.SERVICE_ACCOUNT_JSON) {
+          try { rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON); } catch (_) {}
+        }
+        if (!rtdbToken) {
+          try { rtdbToken = await getWorkerAuthToken(env); } catch (_) {}
+        }
+        const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : `?auth=${idToken}`;
+        const fetchUrl = `${rtdbUrl}/artifacts/${appId}/error_reports.json${authQuery}`;
+        const res = await fetch(fetchUrl);
+        let rtdbData = {};
+        if (res.ok) {
+          rtdbData = await res.json() || {};
+        }
+
+        // Firestore からもバックアップ取得してマージ
+        try {
+          const adminToken = await getAdminTokenForFirestore(env);
+          if (adminToken) {
+            const fsListUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/error_reports?pageSize=100`;
+            const fsRes = await fetch(fsListUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+            if (fsRes.ok) {
+              const fsJson = await fsRes.json();
+              if (fsJson.documents && Array.isArray(fsJson.documents)) {
+                for (const doc of fsJson.documents) {
+                  const docId = doc.name.split('/').pop();
+                  if (docId && !rtdbData[docId]) {
+                    const f = doc.fields || {};
+                    rtdbData[docId] = {
+                      id: docId,
+                      signature: f.signature?.stringValue || docId,
+                      type: f.type?.stringValue || 'error',
+                      message: f.message?.stringValue || '',
+                      stack: f.stack?.stringValue || '',
+                      count: f.count?.integerValue ? parseInt(f.count.integerValue, 10) : 1,
+                      lastOccurredAt: f.lastOccurredAt?.timestampValue ? new Date(f.lastOccurredAt.timestampValue).getTime() : Date.now(),
+                      affectedEmails: f.affectedEmails?.arrayValue?.values ? f.affectedEmails.arrayValue.values.map(v => v.stringValue) : []
+                    };
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        return new Response(JSON.stringify({ success: true, data: rtdbData || {} }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
     }
     // -------------------------------------------------------------
     // Cloudflare D1 連携 API エンドポイント群

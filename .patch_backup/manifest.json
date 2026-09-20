@@ -1,9 +1,7 @@
 {
-  "date": "2026-09-19T09:38:28.006Z",
+  "date": "2026-09-20T01:32:44.510Z",
   "files": [
-    "database.rules.json",
     "server/src/index.js",
-    "public/index.html",
     "public/js/main.js"
   ]
 }

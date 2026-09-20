@@ -119,6 +119,12 @@ export default {
       if (url.pathname === "/api/setOffline" && request.method === "POST") {
         return await handleSetOffline(request, env);
       }
+      if (url.pathname === "/api/reportError" && request.method === "POST") {
+        return await handleReportError(request, env);
+      }
+      if (url.pathname === "/api/getErrors" && request.method === "GET") {
+        return await handleGetErrors(request, env, url);
+      }
       if (url.pathname === "/api/emergencyPasswordReset" && request.method === "POST") {
         return await handleEmergencyPasswordReset(request, env);
       }
@@ -2298,16 +2304,84 @@ async function handleSetOffline(request, env) {
     });
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsSetOffline });
-  } catch (error) {
+    } catch (error) {
     console.error("setOffline Error:", error);
     return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: corsSetOffline });
-  }
-}
+    }
+    }
+    // -------------------------------------------------------------
+    // エラー・警告テレメトリのRTDB確実保存 & 一覧取得処理 (Worker特権経由)
+    // -------------------------------------------------------------
+    async function handleReportError(request, env) {
+    const cors = getCorsHeaders(request);
+    try {
+    const body = await request.json();
+    const { appId, signature, payload } = body;
+    if (!appId || !signature || !payload) {
+      return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const targetAppId = isValidAppId(appId, env) ? appId : (env.FIREBASE_APP_ID || "simplechat-65a0d");
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON is not configured" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const projectId = env.FIREBASE_PROJECT_ID;
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+    const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+    const writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json?access_token=${rtdbToken}`;
+    const res = await fetch(writeUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      return new Response(JSON.stringify({ success: false, error: `RTDB write failed: ${res.status} ${errTxt}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+    } catch (err) {
+    console.error("handleReportError error:", err);
+    return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    }
 
-// -------------------------------------------------------------
-// Cloudflare D1 連携 API エンドポイント群
-// -------------------------------------------------------------
-async function handleD1Api(request, env, url) {
+    async function handleGetErrors(request, env, url) {
+    const cors = getCorsHeaders(request);
+    try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim();
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID || "simplechat-65a0d";
+    const isAdminUser = await isAppAdmin(appId, verifiedUser, env);
+    if (!isAdminUser) {
+      return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    if (!env.SERVICE_ACCOUNT_JSON) {
+      return new Response(JSON.stringify({ error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const projectId = env.FIREBASE_PROJECT_ID;
+    const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
+    const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+    const fetchUrl = `${rtdbUrl}/artifacts/${appId}/error_reports.json?access_token=${rtdbToken}`;
+    const res = await fetch(fetchUrl);
+    if (!res.ok) {
+      return new Response(JSON.stringify({ error: `RTDB fetch failed: ${res.status}` }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    const data = await res.json();
+    return new Response(JSON.stringify({ success: true, data: data || {} }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+    } catch (err) {
+    return new Response(JSON.stringify({ error: err.toString() }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+    }
+    // -------------------------------------------------------------
+    // Cloudflare D1 連携 API エンドポイント群
+    // -------------------------------------------------------------
+    async function handleD1Api(request, env, url) {
   const d1Cors = getCorsHeaders(request);
 
   if (request.method === "OPTIONS") {
