@@ -1,7 +1,8 @@
 {
-  "date": "2026-09-20T07:04:22.770Z",
+  "date": "2026-09-20T07:39:28.549Z",
   "files": [
     "public/js/main.js",
+    "public/index.html",
     "server/src/index.js"
   ]
 }

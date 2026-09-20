@@ -1685,7 +1685,16 @@ async function handleDeleteFile(request, env, url) {
     if (!value && !meta) return new Response(JSON.stringify({ success: true, message: 'ファイルは既に削除されています' }), {
       status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
     });
+    const folder = (meta?.folder || '').toLowerCase();
+    const isProtectedAsset = folder.includes('stamp') || folder.includes('avatar') || folder.includes('icon');
+    const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1';
     const forceDelete = url.searchParams.get('forceDelete') === '1';
+    // スタンプやアバターは専用の削除操作以外ではメッセージ連動削除から保護
+    if (isProtectedAsset && !isExplicitAssetDelete && !forceDelete) {
+      return new Response(JSON.stringify({ success: true, skipped: true, message: '保護されたアセットのため通常削除をスキップしました' }), {
+        status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+      });
+    }
     const adminKey = url.searchParams.get('adminKey') || '';
     let isPrivilegedAdmin = false;
     if (env.ADMIN_SECRET_KEY && adminKey === env.ADMIN_SECRET_KEY) {
@@ -3642,8 +3651,13 @@ async function handleSetOffline(request, env) {
                 if (m && env.FILES) {
                   const fileKey = m[1];
                   try {
-                    await env.FILES.delete(fileKey);
-                    deletedFiles++;
+                    const { metadata: fileMeta } = await env.FILES.getWithMetadata(fileKey, { type: 'arrayBuffer' });
+                    const fFolder = (fileMeta?.folder || '').toLowerCase();
+                    // スタンプやアイコン等の共有・永続アセットは自動プルーニングから保護
+                    if (!fFolder.includes('stamp') && !fFolder.includes('avatar') && !fFolder.includes('icon')) {
+                      await env.FILES.delete(fileKey);
+                      deletedFiles++;
+                    }
                   } catch (delErr) {
                     console.warn(`[Prune] Failed to delete KV file ${fileKey}:`, delErr);
                   }
