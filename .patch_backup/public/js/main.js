@@ -2956,27 +2956,31 @@ window.loadErrorTelemetry = async function () {
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 6. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
+    // 6. RTDB & Firestore リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信・安全マージ）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       if (rtdb) {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
-          if (!snapshot.exists()) {
-            window._cachedTelemetryErrors = [];
-            _saveTelemetryErrorsToStorage();
-            if (badgeEl) {
-              badgeEl.textContent = '0';
-              badgeEl.classList.add('hidden');
-            }
-            renderTelemetryErrorsList();
-            return;
-          }
           const liveVal = snapshot.val() || {};
-          const liveList = Object.keys(liveVal)
-            .map(k => ({ id: k, ...liveVal[k] }))
-            .filter(item => item && item.message);
+          const currentMap = new Map((window._cachedTelemetryErrors || []).map(e => [e.id, e]));
+          if (snapshot.exists()) {
+            Object.keys(liveVal).forEach(k => {
+              const remoteItem = liveVal[k];
+              if (remoteItem && remoteItem.message) {
+                if (currentMap.has(k)) {
+                  const cur = currentMap.get(k);
+                  cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
+                  cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
+                  cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
+                } else {
+                  currentMap.set(k, { id: k, ...remoteItem });
+                }
+              }
+            });
+          }
+          const liveList = Array.from(currentMap.values()).filter(item => item && item.message);
           liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -17140,9 +17144,27 @@ function renderMessagesWithReadReceipts() {
   reversedMessages.forEach((msg, i) => {
     const idx = messagesIndexMap[msg.id];
     const readCount = computeReadByCount(msg, idx);
-
+    const isMyMsg = (msg.senderId === userId || msg.userId === userId);
     let row = existingRowsMap.get(msg.id);
     if (row) {
+      if (!isMyMsg) {
+        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
+        const cachedProf = window._userProfileCache?.get(msg.senderId);
+        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
+        const resolvedAvatarUrl = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (msg.senderAvatarUrl || null)));
+        const avatarDiv = row.querySelector('.msg-avatar');
+        if (avatarDiv) {
+          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
+            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
+          } else {
+            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+          }
+        }
+        const nameSpan = row.querySelector('.msg-sender-name');
+        if (nameSpan) {
+          nameSpan.textContent = resolvedNickname;
+        }
+      }
       const readSpan = row.querySelector('.read-receipt');
       if (readSpan) {
         if (readCount > 0) {

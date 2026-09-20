@@ -2135,6 +2135,7 @@ async function isAppAdmin(appId, verifiedUser, env) {
     const d1Result = await isD1Admin(appId, verifiedUser, env);
     if (d1Result) return true;
   }
+  // 1. Firestore から判定
   try {
     const adminToken = await getAdminTokenForFirestore(env);
     if (adminToken) {
@@ -2153,7 +2154,30 @@ async function isAppAdmin(appId, verifiedUser, env) {
       }
     }
   } catch (e) {
-    console.error("isAppAdmin error:", e);
+    console.error("isAppAdmin Firestore error:", e);
+  }
+  // 2. RTDB からの管理者判定フォールバック (多重冗長化)
+  try {
+    const rtdbToken = env.SERVICE_ACCOUNT_JSON ? await getRTDBToken(env.SERVICE_ACCOUNT_JSON).catch(() => null) : null;
+    const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : '';
+    const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/settings/adminList.json${authQuery}`;
+    const rtdbRes = await fetch(rtdbUrl);
+    if (rtdbRes.ok) {
+      const rtdbData = await rtdbRes.json();
+      if (rtdbData) {
+        if (rtdbData.admins && verifiedUser.uid && (rtdbData.admins[verifiedUser.uid] === true || (Array.isArray(rtdbData.admins) && rtdbData.admins.includes(verifiedUser.uid)))) {
+          return true;
+        }
+        if (rtdbData.emails && verifiedUser.email) {
+          const em = verifiedUser.email.toLowerCase().trim();
+          if (Array.isArray(rtdbData.emails) && rtdbData.emails.some(e => String(e).toLowerCase().trim() === em)) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("isAppAdmin RTDB error:", e);
   }
   return false;
 }
@@ -2415,26 +2439,31 @@ async function handleSetOffline(request, env) {
           });
         }
 
-        // 2. Firestore へもバックアップ書き込み (非同期・多重冗長化)
+        // 2. Firestore へもバックアップ書き込み (commit upsert を使用して 100% 確実に書き込み)
         (async () => {
           try {
             const adminToken = await getAdminTokenForFirestore(env);
             if (adminToken) {
-              const fsDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`;
-              await fetch(fsDocUrl, {
-                method: "PATCH",
+              const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+              await fetch(commitUrl, {
+                method: "POST",
                 headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  fields: {
-                    id: { stringValue: signature },
-                    signature: { stringValue: signature },
-                    type: { stringValue: finalPayload.type || 'error' },
-                    message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
-                    stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
-                    lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
-                    count: { integerValue: String(finalPayload.count || 1) },
-                    affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
-                  }
+                  writes: [{
+                    update: {
+                      name: `projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`,
+                      fields: {
+                        id: { stringValue: signature },
+                        signature: { stringValue: signature },
+                        type: { stringValue: finalPayload.type || 'error' },
+                        message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
+                        stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
+                        lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
+                        count: { integerValue: String(finalPayload.count || 1) },
+                        affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
+                      }
+                    }
+                  }]
                 })
               });
             }

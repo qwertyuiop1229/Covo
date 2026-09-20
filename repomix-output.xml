@@ -19188,13 +19188,13 @@ async function handleSetOffline(request, env) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.211" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.212" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.211" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.212" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -19466,12 +19466,31 @@ async function handleSetOffline(request, env) {
           body: JSON.stringify({ appId: 'simplechat-65a0d', signature, payload }),
           keepalive: true
         }).catch(() => {});
-        // 2. RTDB REST API (PUT) へも直接フォールバック送信
+        // 2. RTDB REST API (PUT) へ直接送信
         const rtdbUrl = `https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/simplechat-65a0d/error_reports/${signature}.json`;
         fetch(rtdbUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(() => {});
+        // 3. Firestore REST API へのバックアップ直接書き込み
+        const fsUrl = `https://firestore.googleapis.com/v1/projects/simplechat-65a0d/databases/(default)/documents/artifacts/simplechat-65a0d/error_reports/${signature}`;
+        fetch(fsUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              id: { stringValue: signature },
+              signature: { stringValue: signature },
+              type: { stringValue: normType },
+              message: { stringValue: msgStr },
+              stack: { stringValue: stackStr },
+              lastOccurredAt: { timestampValue: new Date().toISOString() },
+              count: { integerValue: "1" },
+              affectedEmails: { arrayValue: { values: [{ stringValue: "未初期化/起動前" }] } }
+            }
+          }),
           keepalive: true
         }).catch(() => {});
       } catch (_) {}
@@ -22588,7 +22607,7 @@ async function handleSetOffline(request, env) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.211"></script>
+  <script type="module" src="js/main.js?v=1.1.212"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -26711,27 +26730,31 @@ window.loadErrorTelemetry = async function () {
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 6. RTDB リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信）
+    // 6. RTDB & Firestore リアルタイムリスナーを開始（他端末・他ユーザーのエラー発生を即時受信・安全マージ）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       if (rtdb) {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
         const onVal = (snapshot) => {
-          if (!snapshot.exists()) {
-            window._cachedTelemetryErrors = [];
-            _saveTelemetryErrorsToStorage();
-            if (badgeEl) {
-              badgeEl.textContent = '0';
-              badgeEl.classList.add('hidden');
-            }
-            renderTelemetryErrorsList();
-            return;
-          }
           const liveVal = snapshot.val() || {};
-          const liveList = Object.keys(liveVal)
-            .map(k => ({ id: k, ...liveVal[k] }))
-            .filter(item => item && item.message);
+          const currentMap = new Map((window._cachedTelemetryErrors || []).map(e => [e.id, e]));
+          if (snapshot.exists()) {
+            Object.keys(liveVal).forEach(k => {
+              const remoteItem = liveVal[k];
+              if (remoteItem && remoteItem.message) {
+                if (currentMap.has(k)) {
+                  const cur = currentMap.get(k);
+                  cur.count = Math.max(cur.count || 1, remoteItem.count || 1);
+                  cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), new Date(remoteItem.lastOccurredAt || 0).getTime());
+                  cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(remoteItem.affectedEmails || [])]));
+                } else {
+                  currentMap.set(k, { id: k, ...remoteItem });
+                }
+              }
+            });
+          }
+          const liveList = Array.from(currentMap.values()).filter(item => item && item.message);
           liveList.sort((a, b) => {
             const timeA = a.lastOccurredAt?.toDate ? a.lastOccurredAt.toDate().getTime() : (new Date(a.lastOccurredAt || 0)).getTime();
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
@@ -39813,8 +39836,27 @@ function renderMessagesWithReadReceipts() {
   reversedMessages.forEach((msg, i) => {
     const idx = messagesIndexMap[msg.id];
     const readCount = computeReadByCount(msg, idx);
+    const isMyMsg = (msg.senderId === userId || msg.userId === userId);
     let row = existingRowsMap.get(msg.id);
     if (row) {
+      if (!isMyMsg) {
+        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
+        const cachedProf = window._userProfileCache?.get(msg.senderId);
+        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
+        const resolvedAvatarUrl = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) !== undefined ? (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.avatarUrl : null) : (cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (senderUser?.avatarUrl !== undefined ? senderUser.avatarUrl : (msg.senderAvatarUrl || null)));
+        const avatarDiv = row.querySelector('.msg-avatar');
+        if (avatarDiv) {
+          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
+            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
+          } else {
+            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+          }
+        }
+        const nameSpan = row.querySelector('.msg-sender-name');
+        if (nameSpan) {
+          nameSpan.textContent = resolvedNickname;
+        }
+      }
       const readSpan = row.querySelector('.read-receipt');
       if (readSpan) {
         if (readCount > 0) {
@@ -49516,7 +49558,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.211",
+  "version": "1.1.212",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -49573,7 +49615,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.211",
+  "version": "1.1.212",
   "force": false
 }
 </file>
