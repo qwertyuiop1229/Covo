@@ -224,6 +224,7 @@ function _reportTelemetryError(type, message, stack) {
           environment: envInfo
         });
       }
+      _cachedTelemetryErrors = window._cachedTelemetryErrors;
       const reportsContainer = document.getElementById("telemetryErrorsList");
       if (reportsContainer && reportsContainer.offsetParent !== null && typeof renderTelemetryErrorsList === 'function') {
         renderTelemetryErrorsList();
@@ -2959,6 +2960,7 @@ window.loadErrorTelemetry = async function () {
       const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
       return timeB - timeA;
     });
+    _cachedTelemetryErrors = result;
     window._cachedTelemetryErrors = result;
     if (badgeEl) {
       badgeEl.textContent = result.length;
@@ -2993,6 +2995,7 @@ window.loadErrorTelemetry = async function () {
             const timeB = b.lastOccurredAt?.toDate ? b.lastOccurredAt.toDate().getTime() : (new Date(b.lastOccurredAt || 0)).getTime();
             return timeB - timeA;
           });
+          _cachedTelemetryErrors = liveList;
           window._cachedTelemetryErrors = liveList;
           if (badgeEl) {
             badgeEl.textContent = liveList.length;
@@ -3147,6 +3150,7 @@ function renderTelemetryErrorsList() {
             await deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id)).catch(() => {});
             // 3. ローカルキャッシュの消去
             _cachedTelemetryErrors = _cachedTelemetryErrors.filter(x => x.id !== err.id);
+            window._cachedTelemetryErrors = _cachedTelemetryErrors;
             try { localStorage.removeItem('covo_cached_telemetry_errors'); } catch (_) {}
             if (window._covoLogs && err.message) {
               window._covoLogs = window._covoLogs.filter(l => !l.includes(err.message));
@@ -3216,6 +3220,7 @@ function renderTelemetryErrorsList() {
         } catch (_) {}
         // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
         _cachedTelemetryErrors = [];
+        window._cachedTelemetryErrors = [];
         try { localStorage.removeItem('covo_cached_telemetry_errors'); } catch (_) {}
         _pendingTelemetryErrors.length = 0;
         _reportedSignaturesRecently.clear();

@@ -255,8 +255,7 @@ function _reportTelemetryError(type, message, stack) {
         fetch(directRtdbUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rtdbPayload),
-          keepalive: true
+          body: JSON.stringify(rtdbPayload)
         }).catch(() => {});
       } catch (_) {}
       // 経路2: RTDB SDK による直接書き込み
@@ -2802,20 +2801,23 @@ window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
   if (!listEl) return;
-  listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>RTDBから最新エラーを読み込み中...</div>';
+  // 手元にデータが1件もない初回のみスピナーを表示（既存データがある場合はチラつきなく背景で同期）
+  if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) {
+    listEl.innerHTML = '<div class="text-center py-8 text-xs text-gray-400 dark:text-gray-500"><i class="fas fa-spinner fa-spin mr-2 text-indigo-500"></i>最新エラーを読み込み中...</div>';
+  }
   try {
     if (_telemetryErrorsUnsub) {
       _telemetryErrorsUnsub();
       _telemetryErrorsUnsub = null;
     }
     const mergedMap = new Map();
-    // 端末ローカルで既に収集されているインメモリキャッシュを初期値として保持
+    // 1. 端末ローカルで既に収集されているインメモリキャッシュを初期値として保持
     (_cachedTelemetryErrors || []).forEach(err => {
       if (err && err.id && !_dismissedErrorSignatures.has(err.id)) {
         mergedMap.set(err.id, { ...err });
       }
     });
-    // コンソールログ (window._covoLogs) から未反映の [ERR] / [WARN] もリアルタイムに抽出してマージ
+    // 2. コンソールログ (window._covoLogs) から未反映の [ERR] / [WARN] も抽出してマージ
     if (Array.isArray(window._covoLogs)) {
       window._covoLogs.forEach(line => {
         if (typeof line !== 'string') return;
@@ -2843,30 +2845,38 @@ window.loadErrorTelemetry = async function () {
         }
       });
     }
-    // 1. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
+    // 3. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
+    let fetchedFromRtdbSdk = false;
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       if (rtdb) {
         const snap = await Promise.race([
           get(ref(rtdb, `artifacts/${appId}/error_reports`)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
         ]);
         if (snap && snap.exists()) {
           const val = snap.val() || {};
           Object.keys(val).forEach(k => {
             const remoteItem = val[k];
             if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
-              mergedMap.set(k, { id: k, ...remoteItem });
+              const existing = mergedMap.get(k);
+              mergedMap.set(k, {
+                ...existing,
+                ...remoteItem,
+                count: Math.max(existing?.count || 1, remoteItem.count || 1),
+                affectedEmails: Array.from(new Set([...(existing?.affectedEmails || []), ...(remoteItem.affectedEmails || [])]))
+              });
             }
           });
+          fetchedFromRtdbSdk = true;
         }
       }
     } catch (rtdbErr) {
       console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
     }
-    // 2. RTDB REST API からの取得フォールバック (SDK接続遅延時)
-    if (mergedMap.size === 0) {
+    // 4. RTDB REST API からの取得フォールバック (SDK接続遅延時)
+    if (!fetchedFromRtdbSdk) {
       try {
         const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
         const authParam = idToken ? `?auth=${idToken}` : '';
@@ -2878,7 +2888,13 @@ window.loadErrorTelemetry = async function () {
             Object.keys(val).forEach(k => {
               const remoteItem = val[k];
               if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
-                mergedMap.set(k, { id: k, ...remoteItem });
+                const existing = mergedMap.get(k);
+                mergedMap.set(k, {
+                  ...existing,
+                  ...remoteItem,
+                  count: Math.max(existing?.count || 1, remoteItem.count || 1),
+                  affectedEmails: Array.from(new Set([...(existing?.affectedEmails || []), ...(remoteItem.affectedEmails || [])]))
+                });
               }
             });
           }
@@ -2887,46 +2903,51 @@ window.loadErrorTelemetry = async function () {
         console.warn('[loadErrorTelemetry] RTDB REST read warning:', restErr);
       }
     }
-    // 3. Worker 特権 API (/api/getErrors) から直接取得 (CORS/認証問題時の安全なフォールバック)
-    if (mergedMap.size === 0) {
-      try {
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
-        if (idToken) {
-          const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
-            headers: { "Authorization": `Bearer ${idToken}` }
-          });
-          if (wRes.ok) {
-            const wJson = await wRes.json();
-            if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
-              Object.keys(wJson.data).forEach(k => {
-                const remoteItem = wJson.data[k];
-                if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
-                  mergedMap.set(k, { id: k, ...remoteItem });
-                }
-              });
-            }
+    // 5. Worker 特権 API (/api/getErrors) から取得 (CORS/認証問題時の安全なフォールバック)
+    try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
+      if (idToken) {
+        const wRes = await fetch(`${WORKER_BASE_URL}/api/getErrors?appId=${appId}`, {
+          headers: { "Authorization": `Bearer ${idToken}` }
+        });
+        if (wRes.ok) {
+          const wJson = await wRes.json();
+          if (wJson && wJson.success && wJson.data && typeof wJson.data === 'object') {
+            Object.keys(wJson.data).forEach(k => {
+              const remoteItem = wJson.data[k];
+              if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
+                const existing = mergedMap.get(k);
+                mergedMap.set(k, {
+                  ...existing,
+                  ...remoteItem,
+                  count: Math.max(existing?.count || 1, remoteItem.count || 1),
+                  affectedEmails: Array.from(new Set([...(existing?.affectedEmails || []), ...(remoteItem.affectedEmails || [])]))
+                });
+              }
+            });
           }
         }
-      } catch (workerErr) {
-        console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
       }
+    } catch (workerErr) {
+      console.warn('[loadErrorTelemetry] Worker API getErrors warning:', workerErr);
     }
-    // 4. Firestore バックアップからも取得して補完
+    // 6. Firestore バックアップからも取得して補完
     try {
       const fsSnap = await getDocs(query(collection(db, `artifacts/${appId}/error_reports`), limit(100)));
       fsSnap.forEach(d => {
         const data = d.data();
         if (data && data.message && !_dismissedErrorSignatures.has(d.id)) {
           const k = d.id;
-          if (mergedMap.has(k)) {
-            const cur = mergedMap.get(k);
-            cur.count = Math.max(cur.count || 1, data.count || 1);
-            const fsTime = data.lastOccurredAt?.toDate ? data.lastOccurredAt.toDate().getTime() : new Date(data.lastOccurredAt || 0).getTime();
-            cur.lastOccurredAt = Math.max(new Date(cur.lastOccurredAt || 0).getTime(), fsTime);
-            cur.affectedEmails = Array.from(new Set([...(cur.affectedEmails || []), ...(data.affectedEmails || [])]));
-          } else {
-            mergedMap.set(k, { id: k, ...data });
-          }
+          const existing = mergedMap.get(k);
+          const fsTime = data.lastOccurredAt?.toDate ? data.lastOccurredAt.toDate().getTime() : new Date(data.lastOccurredAt || 0).getTime();
+          mergedMap.set(k, {
+            ...existing,
+            ...data,
+            id: k,
+            count: Math.max(existing?.count || 1, data.count || 1),
+            lastOccurredAt: Math.max(new Date(existing?.lastOccurredAt || 0).getTime(), fsTime),
+            affectedEmails: Array.from(new Set([...(existing?.affectedEmails || []), ...(data.affectedEmails || [])]))
+          });
         }
       });
     } catch (fsErr) {
@@ -2944,7 +2965,7 @@ window.loadErrorTelemetry = async function () {
       badgeEl.classList.toggle('hidden', result.length === 0);
     }
     renderTelemetryErrorsList();
-    // 5. 🛡️ RTDB リアルタイムリスナーを開始（他端末でエラーが発生した瞬間に管理画面へ即時反映）
+    // 7. 🛡️ RTDB リアルタイムリスナーを開始（他端末でエラーが発生した瞬間に管理画面へ即時反映）
     try {
       const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
@@ -2956,7 +2977,13 @@ window.loadErrorTelemetry = async function () {
             Object.keys(liveVal).forEach(k => {
               const remoteItem = liveVal[k];
               if (remoteItem && remoteItem.message && !_dismissedErrorSignatures.has(k)) {
-                mergedMap.set(k, { id: k, ...remoteItem });
+                const existing = mergedMap.get(k);
+                mergedMap.set(k, {
+                  ...existing,
+                  ...remoteItem,
+                  count: Math.max(existing?.count || 1, remoteItem.count || 1),
+                  affectedEmails: Array.from(new Set([...(existing?.affectedEmails || []), ...(remoteItem.affectedEmails || [])]))
+                });
               }
             });
           }
@@ -2985,16 +3012,15 @@ window.loadErrorTelemetry = async function () {
 // === 動作確認テスト機能 (管理者・ユーザー用) ===
 window.triggerTestTelemetryError = function(type = 'warn') {
   const timeStr = new Date().toLocaleTimeString('ja-JP');
+  // フィルターを「すべて」にリセットして必ず画面に表示されるようにする
+  if (typeof filterErrorTelemetry === 'function') {
+    filterErrorTelemetry('all');
+  }
   if (type === 'error') {
     console.error(`[動作確認テスト ${timeStr}] システムレポートのエラー収集テストです（正常に検知されました）`);
   } else {
     console.warn(`[動作確認テスト ${timeStr}] システムレポートの警告収集テストです（正常に検知されました）`);
   }
-  setTimeout(() => {
-    if (typeof loadErrorTelemetry === 'function') {
-      loadErrorTelemetry();
-    }
-  }, 80);
   alertMessage(`${type === 'error' ? 'エラー' : '警告'}のテストログを発行しました。一覧をご確認ください`, 'success');
 };
 
@@ -21909,7 +21935,6 @@ async function showNotification(title, body, roomId, forceOs = false) {
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
   if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
-
   // 本文のスタンプ・添付ファイル整形
   let displayBody = formatNotificationBody(body);
   if (typeof displayBody === 'string' && (displayBody.includes('enc::v') || displayBody.startsWith('enc::'))) {
@@ -21923,26 +21948,22 @@ async function showNotification(title, body, roomId, forceOs = false) {
   if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
     title = 'Covo';
   }
-
   const now = Date.now();
   const notifKey = `${roomId || ''}_${displayBody}`;
-  if (now - lastNotificationTime < 2500 && notifKey === lastNotificationKey) return;
+  if (!forceOs && now - lastNotificationTime < 2500 && notifKey === lastNotificationKey) return;
   lastNotificationTime = now;
   lastNotificationKey = notifKey;
   lastNotificationBody = displayBody;
   lastNotificationRoomId = roomId || '';
-
   // 音声設定が有効な場合、Web Audio API で通知音を確実に再生（Windows OS 側の通知音無効時も確実に鳴らす）
   const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
   if (soundEnabled) {
     try { playNotificationSound(); } catch (_) {}
   }
-
   if (isTauri) {
     if (window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
     }
-
     if (window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
     } else if (Notification.permission === 'granted') {
@@ -21963,46 +21984,69 @@ async function showNotification(title, body, roomId, forceOs = false) {
   } else {
     // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
     if ("Notification" in window && Notification.permission === "granted") {
-      const showWebNotif = () => {
-        const fallbackNative = () => {
-          try {
-            const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
-            n.onclick = () => {
-              window.focus();
-              n.close();
-              if (roomId) {
-                if (typeof goToRoom === 'function') goToRoom(roomId);
-                else {
-                  const roomItem = document.getElementById(`room-item-${roomId}`);
-                  if (roomItem) roomItem.click();
-                }
-              }
-            };
-          } catch (_) {}
-        };
+      const showNativeDirect = () => {
         try {
-          if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-            navigator.serviceWorker.ready.then(reg => {
-              if (reg && reg.showNotification) {
-                reg.showNotification(title, {
-                  body: displayBody,
-                  icon: '/img/icon-192x192.png?v=6',
-                  badge: '/img/icon-192x192.png?v=6',
-                  tag: roomId ? `chat-${roomId}` : 'covo-msg',
-                  data: { roomId }
-                }).catch(fallbackNative);
-              } else {
-                fallbackNative();
+          const n = new Notification(title, {
+            body: displayBody,
+            icon: '/img/icon-192x192.png?v=6',
+            badge: '/img/icon-192x192.png?v=6',
+            tag: roomId ? `chat-${roomId}` : `covo-msg-${Date.now()}`
+          });
+          n.onclick = () => {
+            window.focus();
+            n.close();
+            if (roomId) {
+              if (typeof goToRoom === 'function') goToRoom(roomId);
+              else {
+                const roomItem = document.getElementById(`room-item-${roomId}`);
+                if (roomItem) roomItem.click();
               }
-            }).catch(fallbackNative);
-          } else {
-            fallbackNative();
-          }
-        } catch (_) {
-          fallbackNative();
-        }
+            }
+          };
+        } catch (_) {}
       };
-      showWebNotif();
+      // テスト通知 (forceOs = true) の場合は Service Worker の待機デッドロックを避けてネイティブ通知を直接即座に発行
+      if (forceOs) {
+        showNativeDirect();
+        return;
+      }
+      try {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+          let resolved = false;
+          const fallbackTimer = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              showNativeDirect();
+            }
+          }, 300);
+          navigator.serviceWorker.ready.then(reg => {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(fallbackTimer);
+            if (reg && reg.showNotification) {
+              reg.showNotification(title, {
+                body: displayBody,
+                icon: '/img/icon-192x192.png?v=6',
+                badge: '/img/icon-192x192.png?v=6',
+                tag: roomId ? `chat-${roomId}` : `covo-msg-${Date.now()}`,
+                data: { roomId }
+              }).catch(showNativeDirect);
+            } else {
+              showNativeDirect();
+            }
+          }).catch(() => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(fallbackTimer);
+              showNativeDirect();
+            }
+          });
+        } else {
+          showNativeDirect();
+        }
+      } catch (_) {
+        showNativeDirect();
+      }
     }
   }
 }
