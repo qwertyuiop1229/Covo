@@ -560,7 +560,8 @@ function getRtdbBaseUrl(env, clientRtdbUrl) {
         (host.endsWith('.firebasedatabase.app') || host.endsWith('.firebaseio.com')) &&
         (host.startsWith(projectId) || host.includes(projectId))
       ) {
-        return clientRtdbUrl.replace(/\/+$/, '');
+        // 🔒 クライアント指定URLは既定RTDBと同一オリジンの場合のみ採用（管理者トークンを別インスタンスへ送らない）
+        if (u.origin === new URL(defaultRtdb).origin) return clientRtdbUrl.replace(/\/+$/, '');
       }
     } catch (_) {}
   }
@@ -673,8 +674,12 @@ async function handleJoinServer(request, env) {
       valid = true;
     } else if (inviteCode) {
       // 招待コードの検証
+      // 🔒 inviteCode は Firestore のパス断片になるため、パス区切り・トラバーサル文字を拒否しエンコードする
+      if (typeof inviteCode !== 'string' || inviteCode.length > 200 || /[\/\\?#%]|\.\./.test(inviteCode)) {
+        return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+      }
       let success = false;
-      const docPath = `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${inviteCode}`;
+      const docPath = `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(inviteCode)}`;
       
       for (let attempt = 0; attempt < 3; attempt++) {
         let invRes = await fetch(`https://firestore.googleapis.com/v1/${docPath}`, {
@@ -1639,6 +1644,9 @@ async function handleDownloadProxy(request, env, url) {
     newHeaders.set('Content-Type', contentType);
     newHeaders.set('Content-Disposition', disposition);
     newHeaders.set('X-Content-Type-Options', 'nosniff');
+    if (!/^(image\/(png|jpe?g|gif|webp|avif|bmp)|video\/|audio\/|application\/pdf|application\/octet-stream)/i.test(contentType)) {
+      newHeaders.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    }
     newHeaders.set('Cache-Control', 'public, max-age=86400');
 
     const contentLength = response.headers.get('Content-Length');
@@ -1764,7 +1772,7 @@ async function handleServeFile(request, env, url) {
       'Cache-Control': 'public, max-age=86400',
     };
 
-    if (contentType === 'image/svg+xml' || contentType.includes('html')) {
+    if (!/^(image\/(png|jpe?g|gif|webp|avif|bmp)|video\/|audio\/|application\/pdf|application\/octet-stream|text\/plain)/i.test(contentType)) {
       headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
       headers['Content-Disposition'] = isPreview
         ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
@@ -2385,6 +2393,10 @@ async function handleSetOffline(request, env) {
       try {
         const body = await request.json();
         const { appId, signature, payload } = body;
+        // 🔒 signature は RTDB/Firestore のパス断片に使うため厳格に検証（../ によるパストラバーサル→特権トークンでの任意書き込みを防止）
+        if (typeof signature !== 'string' || !/^[A-Za-z0-9_\-]{1,128}$/.test(signature) || typeof payload !== 'object' || Array.isArray(payload) || JSON.stringify(payload).length > 40000) {
+          return new Response(JSON.stringify({ success: false, error: "Invalid signature or payload" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        }
         if (!appId || !signature || !payload) {
           return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
         }
@@ -2576,7 +2588,15 @@ async function handleSetOffline(request, env) {
   if (idToken) {
     verifiedUser = await verifyFirebaseIdToken(idToken, env);
   }
-
+  // 🔒 クライアントは /api/d1/* を使用していないレガシーAPI。鍵取得・影サーバー作成・エスクローレスキュー等のIDORを塞ぐため、アプリ管理者(または初期設定用シークレット保持者)のみに限定
+  if (!verifiedUser) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
+  }
+  const _d1Secret = request.headers.get("X-Admin-Secret") || "";
+  const _d1SecretOk = Boolean(env.ADMIN_SECRET_KEY) && _d1Secret === env.ADMIN_SECRET_KEY;
+  if (!_d1SecretOk && !(await isAppAdmin(env.FIREBASE_APP_ID, verifiedUser, env))) {
+    return new Response(JSON.stringify({ error: "Forbidden: D1 API is restricted to app admins" }), { status: 403, headers: d1Cors });
+  }
   try {
     const subpath = url.pathname.replace("/api/d1/", "");
     
@@ -3674,7 +3694,7 @@ async function handleSetOffline(request, env) {
                     const { metadata: fileMeta } = await env.FILES.getWithMetadata(fileKey, { type: 'arrayBuffer' });
                     const fFolder = (fileMeta?.folder || '').toLowerCase();
                     // スタンプやアイコン等の共有・永続アセットは自動プルーニングから保護
-                    if (!fFolder.includes('stamp') && !fFolder.includes('avatar') && !fFolder.includes('icon')) {
+                    if (!fFolder.includes('stamp') && !fFolder.includes('avatar') && !fFolder.includes('icon') && fileMeta?.uploaderId && fileMeta.uploaderId === (msg.senderId || msg.userId)) {
                       await env.FILES.delete(fileKey);
                       deletedFiles++;
                     }

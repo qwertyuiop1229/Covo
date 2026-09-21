@@ -362,7 +362,8 @@ service cloud.firestore {
                (request.resource.data.senderId == request.auth.uid &&
                 exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
                 request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000));
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
+              (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
 
             allow update: if isAuthenticated() && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
@@ -371,7 +372,8 @@ service cloud.firestore {
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
               || (resource.data.senderId == request.auth.uid
                   && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)))
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
+                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
               || isGlobalAdmin(appId)
             );
 

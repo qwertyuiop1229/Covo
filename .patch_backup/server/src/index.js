@@ -2413,7 +2413,9 @@ async function handleSetOffline(request, env) {
             if (getRes.ok) {
               const existing = await getRes.json();
               if (existing && typeof existing === 'object' && existing.message) {
-                const newCount = (existing.count || 1) + (payload.count || 1);
+                // payload.count は「今回の増分」ではなく、クライアントが数えた「その時点の累計値」。
+                // 足し算すると同じ 1 回の発生が二重に数えられるため、大きい方を採用する（複数経路から同じ値が届いても増えない）
+                const newCount = Math.max(Number(existing.count) || 1, Number(payload.count) || 1);
                 const mergedEmails = Array.from(new Set([...(existing.affectedEmails || []), ...(payload.affectedEmails || [])]));
                 finalPayload = {
                   ...existing,
