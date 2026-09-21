@@ -66,7 +66,7 @@ import {
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
 import * as LocalStore from './local_store.js';
 import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
@@ -154,6 +154,10 @@ function isTransientTelemetryError(args) {
       str.includes('not a member') ||
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request') ||
+      str.includes('share failed') ||
+      str.includes('permission denied') ||
+      str.includes('aborterror') ||
+      str.includes('notallowederror') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -1900,11 +1904,9 @@ async function _loadOrCreateUserRecoveryKey(user) {
       // ユーザー用の新規緊急リカバリーキーを自動生成
       key = _generateRandomRecoveryKey();
       localStorage.setItem(storageKey, key);
-
       const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
       const keyHash = await _sha256Hash(salt + ':' + key);
       const emailHash = await _sha256Hash(user.email.toLowerCase().trim());
-
       // Vault & Index 保存
       const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, user.uid);
       await setDoc(vaultRef, {
@@ -1914,12 +1916,13 @@ async function _loadOrCreateUserRecoveryKey(user) {
         keyHash: keyHash,
         updatedAt: serverTimestamp()
       }, { merge: true });
-
       const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
       await setDoc(indexRef, {
         userId: user.uid,
         salt: salt,
         keyHash: keyHash,
+        failCount: 0,
+        locked: false,
         updatedAt: serverTimestamp()
       }, { merge: true });
     }
@@ -2025,12 +2028,13 @@ window.generateNewRecoveryKey = async function (showPrompt = false) {
       keyHash: keyHash,
       updatedAt: serverTimestamp()
     }, { merge: true });
-
     const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
     await setDoc(indexRef, {
       userId: user.uid,
       salt: salt,
       keyHash: keyHash,
+      failCount: 0,
+      locked: false,
       updatedAt: serverTimestamp()
     }, { merge: true });
 
@@ -6635,7 +6639,7 @@ window.switchFullProfileTab = function (tab) {
               ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
               : escapeHtml(fNick.charAt(0).toUpperCase());
             return `
-              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${fUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${_jsq(fUid)}', '${_jsq(fNick)}', '${_jsq(avUrl)}')">
                 <div class="relative w-10 h-10 flex-shrink-0">
                   <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
                     ${avatarHtml}
@@ -8973,7 +8977,17 @@ function subscribeToDmChannels() {
     unsubscribeDmChannels = onSnapshot(dmQuery, (snap) => {
       dmConversations = {};
       snap.forEach(d => {
-        dmConversations[d.id] = { id: d.id, ...d.data() };
+        const dmData = d.data() || {};
+        dmConversations[d.id] = { id: d.id, ...dmData };
+        // 相手からの救済リクエスト（rescueRequests）を検知した場合、または相手宛て鍵がまだない場合に自動バックフィル
+        const otherUid = (dmData.participants || []).find(id => id !== userId);
+        if (otherUid && dmData.rescueRequests && dmData.rescueRequests[otherUid]) {
+          const cleanId = d.id.startsWith('dm_') ? d.id.slice(3) : d.id;
+          const cachedKey = _e2ee.dmKeyCache[cleanId] || _e2ee.dmKeyCache[d.id];
+          if (cachedKey) {
+            _backfillDmKeysForParticipant(cleanId, otherUid, true).catch(() => {});
+          }
+        }
       });
       renderDmConversationsList();
 
@@ -9037,7 +9051,19 @@ function subscribeToDmChannels() {
 function renderDmConversationsList() {
   const container = document.getElementById('dmConversationsList');
   if (!container) return;
-  const list = Object.values(dmConversations);
+  const hiddenMap = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
+  const list = Object.values(dmConversations).filter(dm => {
+    if (currentDmId === dm.id) return true;
+    const hiddenAt = hiddenMap[dm.id];
+    if (!hiddenAt) return true;
+    const lastMsgAt = typeof dm.lastMessageAt === 'number' ? dm.lastMessageAt : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
+    if (lastMsgAt > hiddenAt) {
+      delete hiddenMap[dm.id];
+      localStorage.setItem('covo_hidden_dms', JSON.stringify(hiddenMap));
+      return true;
+    }
+    return false;
+  });
   if (list.length === 0) {
     container.innerHTML = `
       <div class="p-4 text-center text-xs text-gray-400 dark:text-gray-500 bg-gray-50/50 dark:bg-[#1e1f22]/50 rounded-xl border border-gray-200/50 dark:border-gray-800/50 m-1">
@@ -9777,7 +9803,7 @@ window.renderDmActiveNowPanel = function () {
     }
 
     return `
-      <div class="active-now-item" onclick="openUserProfileModal('${u.id}', '${safeNick.replace(/'/g, "\\'")}', '${escapeHtml(u.avatarUrl).replace(/'/g, "\\'")}')">
+      <div class="active-now-item" onclick="openUserProfileModal('${_jsq(u.id)}', '${_jsq(u.nickname || safeNick)}', '${_jsq(u.avatarUrl)}')">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-xs">
             ${safeAv}
@@ -9814,6 +9840,10 @@ window.handleDmHeroFriendAction = async function (targetUid, targetNickname) {
 };
 
 window.hideDmConversation = async function(dmId) {
+  if (!dmId) return;
+  const hidden = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
+  hidden[dmId] = Date.now();
+  localStorage.setItem('covo_hidden_dms', JSON.stringify(hidden));
   delete dmConversations[dmId];
   renderDmConversationsList();
 };
@@ -13369,11 +13399,11 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     if (currentServerId === serverId && roomDocs.length > 0) {
       if (window.innerWidth >= 768) {
         const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
-        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
+        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId && (d.data().channelType || 'text') !== 'voice');
         if (!targetDoc) {
-          targetDoc = roomDocs[0];
+          targetDoc = roomDocs.find(d => (d.data().channelType || 'text') !== 'voice') || roomDocs[0];
         }
-        if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
+        if (targetDoc && (targetDoc.data().channelType || 'text') !== 'voice' && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
           selectRoom(targetDoc.id, targetDoc.data().name);
         }
       }
@@ -15609,7 +15639,11 @@ async function sendMessage() {
       } else {
         try {
           if (snapDmId) {
-            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            if (!dmKey) {
+              console.log('[E2EE] 相手鍵の到着を待機しましたが不在のため、送信継続のために新鍵バージョンを自律生成します');
+              dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
+            }
             if (!dmKey) {
               messageInput.value = previousInputText;
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
@@ -15679,7 +15713,10 @@ async function sendMessage() {
         let isFileEncrypted = false;
         if (_subtleOK) {
           if (snapDmId) {
-            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            if (!dmKey) {
+              dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
+            }
             if (dmKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
               fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
@@ -15916,7 +15953,10 @@ async function sendMessage() {
     let isFileEncrypted = false;
     if (_subtleOK) {
     if (snapDmId) {
-      const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+      let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+      if (!dmKey) {
+        dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
+      }
       if (dmKey) {
         const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
         fileToUpload = new File([encBlob], fileObj.name, { type: 'application/octet-stream' });
@@ -17363,7 +17403,16 @@ function renderMessagesWithReadReceipts() {
       }
       const bubbleElement = row.querySelector('.message-bubble');
       if (bubbleElement) updateReactionsUI(bubbleElement, msg);
-
+      const replyQuoteText = row.querySelector('.reply-quote-text');
+      if (replyQuoteText && msg.replyTo) {
+        const replyRaw = msg.replyTo._decryptedErrorText || msg.replyTo.text || '（ファイル）';
+        const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
+        if (isReplyEnc) {
+          replyQuoteText.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
+        } else {
+          replyQuoteText.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
+        }
+      }
       existingRowsMap.delete(msg.id);
     } else {
       row = createMessageElement(msg, msg.id, readCount);
@@ -17419,7 +17468,7 @@ function renderMessagesWithReadReceipts() {
           <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
           <span>${mutualServersCount}個の共通サーバー</span>
         </button>
-        <button onclick="window.handleDmHeroFriendAction('${escapeHtml(targetUid)}', '${safeNick}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
+        <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
           ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
         </button>
         <button onclick="window.blockUser('${escapeHtml(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
@@ -17907,10 +17956,10 @@ if (copyMsgBtn) {
               await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
               return;
             } catch (shareErr) {
-              if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
+              if (shareErr.name === 'AbortError' || shareErr.name === 'NotAllowedError' || shareErr.message?.toLowerCase().includes('cancel') || shareErr.message?.toLowerCase().includes('permission denied')) {
                 return;
               }
-              console.warn("Share failed with error:", shareErr);
+              console.debug("Share failed with error:", shareErr);
             }
           }
         }
@@ -18370,7 +18419,10 @@ function downloadFile(fileData, fileName, mimeType) {
           return;
         }
       } catch (e) {
-        console.warn("Share failed", e);
+        if (e.name === 'AbortError' || e.message?.toLowerCase().includes('cancel') || e.message?.toLowerCase().includes('abort')) {
+          return;
+        }
+        console.debug("Share failed fallback to download:", e);
       }
     }
     // Fallback: download
@@ -20713,9 +20765,19 @@ async function startFileShare(targetUid, targetName, file) {
 
     // 相手にプッシュ通知（任意・fire-and-forget）
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const fsDmId = [userId, targetUid].sort().join('_');
     fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId, idToken })
+      body: JSON.stringify({
+        receiverIds: [targetUid],
+        title: 'ファイル受信',
+        body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`,
+        roomId: fsDmId,
+        serverId: currentServerId || undefined,
+        appId,
+        senderId: userId,
+        idToken
+      })
     }).catch(() => { });
 
     _fsShowProgress('send', file.name, '相手の応答を待っています…');

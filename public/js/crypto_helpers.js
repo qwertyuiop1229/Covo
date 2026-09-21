@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
 
 let _getDb = () => null;
@@ -299,6 +299,31 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         delete _e2ee.roomKeyCache[roomId];
         delete _e2ee._roomKeyPromises[roomId];
       } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
+    }
+    // 【DM E2EE 自動治癒】DM鍵未到着・不一致時の救済リクエスト（デバウンス付き）
+    export async function _requestDmKeyRescue(dmId, otherUid) {
+      const uid = _getUserId();
+      if (!uid || !dmId || !otherUid) return;
+      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      _e2ee._dmRescueRequestFlags = _e2ee._dmRescueRequestFlags || {};
+      const now = Date.now();
+      if (_e2ee._dmRescueRequestFlags[cleanDmId] && (now - _e2ee._dmRescueRequestFlags[cleanDmId] < 30000)) {
+        return; // 30秒以内の重複リクエストは抑止
+      }
+      _e2ee._dmRescueRequestFlags[cleanDmId] = now;
+      try {
+        // Firestore: dm_channels ドキュメントに救済リクエストを記録 (新規作成時でもルールを通るよう participants を常時包含)
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+          participants: [uid, otherUid].sort(),
+          rescueRequests: {
+            [uid]: Date.now()
+          },
+          updatedAt: serverTimestamp()
+        }, { merge: true }).catch(() => {});
+        console.log(`[E2EE] DM鍵の救済リクエストを発行しました (dmId=${cleanDmId}, target=${otherUid})`);
+      } catch (e) {
+        console.warn("[E2EE] DM救済リクエスト発行警告:", e);
+      }
     }
 
     // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
@@ -850,17 +875,22 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      */
     export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
-      const cached = _e2ee.dmKeyCache[dmId];
+      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      let cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
+      if (!cached) {
+        // メモリキャッシュに鍵がない場合、自端末の鍵をFirestore/DBから復号ロードして自動取得
+        cached = await _getOrCreateDmKey(cleanDmId, [_getUserId(), targetUid]);
+      }
       if (!cached) return;
       _e2ee._lastBackfillTime = _e2ee._lastBackfillTime || new Map();
-      const throttleKey = `${dmId}_${targetUid}`;
+      const throttleKey = `${cleanDmId}_${targetUid}`;
       const lastTime = _e2ee._lastBackfillTime.get(throttleKey) || 0;
       if (!forceUpdate && Date.now() - lastTime < 5000) return;
       _e2ee._lastBackfillTime.set(throttleKey, Date.now());
       try {
         const targetPub = await __getUserPublicKey(targetUid, forceUpdate);
         if (!targetPub) return;
-        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`)).catch(() => null);
+        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${targetUid}`)).catch(() => null);
         const existingData = (targetWrapSnap && targetWrapSnap.exists()) ? targetWrapSnap.data() || {} : {};
         // 既存の versions から肥大化の原因となるエイリアスキー(_from_)を完全除外
         const cleanExistingVersions = {};
@@ -903,51 +933,63 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           prunedVersions[v] = versionsMap[v];
         });
         const hadJunkKeys = existingData.versions && Object.keys(existingData.versions).length > sortedVers.length;
-        if ((hasNewKeys || hadJunkKeys) && Object.keys(prunedVersions).length > 0) {
+        if ((hasNewKeys || hadJunkKeys || !targetWrapSnap || !targetWrapSnap.exists()) && Object.keys(prunedVersions).length > 0) {
           const latestVer = cached.latestVersion || existingData.latestVersion || sortedVers[0] || "1";
           const wrappedLatest = prunedVersions[latestVer] || Object.values(prunedVersions)[0];
           // 1MB超過した既存ドキュメントを完全修復・軽量化するため、余計なフィールドを排して上書き保存
-          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`), {
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${targetUid}`), {
             versions: prunedVersions,
             latestVersion: latestVer,
             wrappedKey: wrappedLatest,
             updatedAt: serverTimestamp()
           }, { merge: false });
-          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${dmId})`);
+          // バックフィル完了後、相手からの救済リクエストフラグを消去して完了
+          updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+            [`rescueRequests.${targetUid}`]: deleteField()
+          }).catch(() => {});
+          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${cleanDmId})`);
         }
       } catch (err) {
-        console.warn(`[E2EE] DM鍵バックフィル失敗 (target=${targetUid}):`, err);
+        console.warn(`[E2EE] DM鍵バックフィル警告 (target=${targetUid}):`, err);
       }
     }
-
-    export async function _getOrCreateDmKey(dmId, participants) {
+    export async function _getOrCreateDmKey(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
-      if (_e2ee._dmKeyPromises[dmId]) return _e2ee._dmKeyPromises[dmId];
-
-      _e2ee._dmKeyPromises[dmId] = (async () => {
-        const res = await __getOrCreateDmKeyImpl(dmId, participants);
-        if (!res) delete _e2ee._dmKeyPromises[dmId];
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      if (!forceGenerateNew && _e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
+      if (!forceGenerateNew && _e2ee._dmKeyPromises[cleanDmId]) return _e2ee._dmKeyPromises[cleanDmId];
+      const promise = (async () => {
+        const res = await __getOrCreateDmKeyImpl(cleanDmId, participants, forceGenerateNew);
+        if (!res) {
+          // 待機中またはキー未到着時: 2.5秒間ネガティブキャッシュを保持し、短時間のFirestore問い合わせ連打・ログスパムを完全防止
+          setTimeout(() => {
+            if (_e2ee._dmKeyPromises[cleanDmId] === promise) {
+              delete _e2ee._dmKeyPromises[cleanDmId];
+            }
+          }, 2500);
+        }
         return res;
       })();
-      return _e2ee._dmKeyPromises[dmId];
+      if (!forceGenerateNew) {
+        _e2ee._dmKeyPromises[cleanDmId] = promise;
+      }
+      return promise;
     }
-
-    export async function __getOrCreateDmKeyImpl(dmId, participants) {
+    export async function __getOrCreateDmKeyImpl(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
       const currentUid = _getUserId();
       if (!currentUid) return null;
       try {
         const ok = await _ensureE2EEKeys();
         if (!ok) return null;
-        const rawMembers = participants && participants.length ? participants : dmId.split('_');
+        const rawMembers = participants && participants.length ? participants : cleanDmId.split('_');
         const memberUids = Array.from(new Set(rawMembers.filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
         const otherUid = memberUids.find(uid => uid !== currentUid) || null;
-        const keysObj = { _dmId: dmId };
-
-        // 0) レガシー共有キー (dm_channels/${dmId} 直下に sharedKey がある初期形式) の確認
+        const keysObj = { _dmId: cleanDmId };
+        // 0) レガシー共有キー (dm_channels/${cleanDmId} 直下に sharedKey がある初期形式) の確認
         try {
-          const dmSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+          const dmSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
           const dmData = dmSnap && dmSnap.exists() ? dmSnap.data() : null;
           if (dmData && dmData.sharedKey) {
             try {
@@ -958,9 +1000,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             } catch (_) {}
           }
         } catch (_) {}
-
         // 1) Firestoreの自分宛て wrappedKey から復元を試行
-        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${currentUid}`));
+        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`));
         if (myWrapSnap.exists()) {
           const data = myWrapSnap.data() || {};
           const versionsMap = {};
@@ -998,39 +1039,46 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             const activeVer = (data.latestVersion && keysObj[data.latestVersion]) ? String(data.latestVersion) : sortedVers[0];
             keysObj.latest = keysObj[activeVer];
             keysObj.latestVersion = activeVer;
-            _e2ee.dmKeyCache[dmId] = keysObj;
+            _e2ee.dmKeyCache[cleanDmId] = keysObj;
             // 自分が鍵を持っている場合、相手にも確実に鍵をバックフィル（配布・相互同期）
             if (otherUid) {
-              _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
+              _backfillDmKeysForParticipant(cleanDmId, otherUid).catch(() => {});
             }
             return keysObj;
           }
         }
-
         // 2) 自分宛ての鍵が見つからない、または秘密鍵で復号できなかった場合
-        if (otherUid) {
-          const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${otherUid}`)).catch(() => null);
+        if (otherUid && !forceGenerateNew) {
+          const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${otherUid}`)).catch(() => null);
           if (otherWrapSnap && otherWrapSnap.exists()) {
-            console.warn(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${dmId})`);
+            // スロットル: 同一 dmId に対する待機案内ログは 60 秒に 1 回のみ出力
+            _e2ee._lastDmLogTime = _e2ee._lastDmLogTime || new Map();
+            const lastLog = _e2ee._lastDmLogTime.get(cleanDmId) || 0;
+            if (Date.now() - lastLog > 60000) {
+              _e2ee._lastDmLogTime.set(cleanDmId, Date.now());
+              console.log(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${cleanDmId})`);
+            }
+            // 相手に対して即座に鍵再暗号化（救済）リクエストを自動発行
+            _requestDmKeyRescue(cleanDmId, otherUid).catch(() => {});
             // レガシー共有キーがステップ0で取得できていればそれを返す
             if (keysObj["legacy_shared"]) {
               keysObj.latest = keysObj["legacy_shared"];
               keysObj.latestVersion = "1";
-              _e2ee.dmKeyCache[dmId] = keysObj;
+              _e2ee.dmKeyCache[cleanDmId] = keysObj;
               return keysObj;
             }
             // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
             // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
-            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
             const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
             if (hasExistingDmHistory) {
               return null;
             }
           }
         }
-        // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布
+        // 3) 完全新規DMの場合、または送信時の自律回復 (forceGenerateNew) の場合: 新しいDM鍵を生成して参加者両名に配布
         try {
-          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`), {
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
             participants: memberUids,
             updatedAt: serverTimestamp()
           }, { merge: true });
@@ -1040,16 +1088,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const newKey = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const rawKey = await window.crypto.subtle.exportKey("raw", newKey);
         const writePromises = [];
+        const newVerStr = forceGenerateNew ? String(Date.now()) : "1";
         for (const uid of memberUids) {
-          const pub = (uid === currentUid) ? _e2ee.publicKey : await __getUserPublicKey(uid);
+          const pub = (uid === currentUid) ? _e2ee.publicKey : await __getUserPublicKey(uid, true);
           if (pub) {
             try {
               const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
               const b64Wrapped = _abToB64(wrapped);
               writePromises.push(
-                setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${uid}`), {
-                  versions: { "1": b64Wrapped },
-                  latestVersion: "1",
+                setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${uid}`), {
+                  versions: { [newVerStr]: b64Wrapped },
+                  latestVersion: newVerStr,
                   wrappedKey: b64Wrapped,
                   updatedAt: serverTimestamp()
                 }, { merge: true }).catch(() => {})
@@ -1062,27 +1111,27 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (writePromises.length > 0) {
           await Promise.all(writePromises);
         }
-        keysObj["1"] = newKey;
+        keysObj[newVerStr] = newKey;
         keysObj.latest = newKey;
-        keysObj.latestVersion = "1";
-        _e2ee.dmKeyCache[dmId] = keysObj;
+        keysObj.latestVersion = newVerStr;
+        _e2ee.dmKeyCache[cleanDmId] = keysObj;
         return keysObj;
       } catch (e) {
-        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${dmId}):`, e);
+        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
         return null;
       }
     }
-
     export async function _getDmKeyWithWait(dmId, participants, maxWaitMs = 2000) {
       if (!_subtleOK || !dmId) return null;
-      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      if (_e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
-        const keyObj = await _getOrCreateDmKey(dmId, participants);
+        const keyObj = await _getOrCreateDmKey(cleanDmId, participants);
         if (keyObj) return keyObj;
         if (Date.now() >= deadline) return null;
-        const delay = Math.min(150 * Math.pow(2, attempt++), 500);
+        const delay = Math.min(250 * Math.pow(1.5, attempt++), 600);
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -1108,12 +1157,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           dmKeyObj = dmIdOrKey;
           dmId = dmKeyObj._dmId || null;
         } else if (typeof dmIdOrKey === 'string') {
-          dmId = dmIdOrKey;
-          dmKeyObj = _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmIdOrKey, participants, 2500);
+          dmId = dmIdOrKey.startsWith('dm_') ? dmIdOrKey.slice(3) : dmIdOrKey;
+          dmKeyObj = _e2ee.dmKeyCache[dmId] || _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmId, participants, 2500);
         }
         if (!dmId && typeof participants === 'object' && Array.isArray(participants) && participants.length === 2) {
           dmId = [...participants].sort().join('_');
         }
+        if (dmId && dmId.startsWith('dm_')) dmId = dmId.slice(3);
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
         const parts = text.split("::");
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
@@ -1166,12 +1216,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
           }
         }
-        if (dmId) delete _e2ee._dmKeyPromises[dmId];
+        if (dmId) {
+          delete _e2ee._dmKeyPromises[dmId];
+          // 鍵不一致時は相手に再暗号化（救済）リクエストを自動発行
+          const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
+          const otherUid = memberList.find(id => id !== _getUserId());
+          if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
+        }
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
         if (dmId) {
           delete _e2ee.dmKeyCache[dmId];
           delete _e2ee._dmKeyPromises[dmId];
+          const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
+          const otherUid = memberList.find(id => id !== _getUserId());
+          if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
         return "（復号化エラー：メッセージを解読できません）";
       }
@@ -1223,4 +1282,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           m._decrypted = false;
         }
       }));
+    }
+    if (typeof window !== 'undefined') {
+      window._requestDmKeyRescue = _requestDmKeyRescue;
+      window._getOrCreateDmKey = _getOrCreateDmKey;
+      window._getDmKeyWithWait = _getDmKeyWithWait;
+      window._backfillDmKeysForParticipant = _backfillDmKeysForParticipant;
+      window._encryptDmText = _encryptDmText;
+      window._decryptDmText = _decryptDmText;
+      window._decryptDmMessagesInPlace = _decryptDmMessagesInPlace;
     }

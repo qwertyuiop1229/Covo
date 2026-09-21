@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.221" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.223" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.221" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.223" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -357,31 +357,43 @@
       return { message: msgParts.join(' '), stack: stack || '' };
     }
     // コンソールの先行フック（二重フックを完全防止 & スタックトレース抽出）
+    // コンソールの先行フック（二重フックを完全防止 & スタックトレース抽出）
     if (!window.__covo_console_hooked__) {
       window.__covo_console_hooked__ = true;
+      function isAppScriptError(msg, stack, src) {
+        const str = `${msg || ''} ${stack || ''} ${src || ''}`.toLowerCase();
+        return str.includes('main.js') ||
+               str.includes('crypto_helpers.js') ||
+               str.includes('local_store.js') ||
+               str.includes('text_formatter.js') ||
+               str.includes('ui_helpers.js') ||
+               str.includes('debug_ui.js') ||
+               str.includes('file_uploader.js') ||
+               str.includes('index.html');
+      }
       console.warn = function(...args) {
         const { message: msg, stack } = _extractErrorDetails(args);
+        const isIgnored = _isIgnoredEarlyError(msg, '', stack) && !isAppScriptError(msg, stack, '');
+        if (isIgnored) return; // 拡張機能やAdBlockの外部ノイズは完全に消音
         window._pushCovoLog('WARN', msg);
-        if (!_isIgnoredEarlyError(msg, '', stack)) {
-          if (typeof window._reportTelemetryError === 'function') {
-            window._reportTelemetryError('warn', msg, stack);
-          } else {
-            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'warn', message: msg, stack, time: Date.now() });
-            window._sendEarlyTelemetry('warn', msg, stack);
-          }
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('warn', msg, stack);
+        } else {
+          if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'warn', message: msg, stack, time: Date.now() });
+          window._sendEarlyTelemetry('warn', msg, stack);
         }
         window.__covo_native_console__.warn.apply(console, args);
       };
       console.error = function(...args) {
         const { message: msg, stack } = _extractErrorDetails(args);
+        const isIgnored = _isIgnoredEarlyError(msg, '', stack) && !isAppScriptError(msg, stack, '');
+        if (isIgnored) return; // 拡張機能やAdBlockの外部ノイズは完全に消音
         window._pushCovoLog('ERR', msg);
-        if (!_isIgnoredEarlyError(msg, '', stack)) {
-          if (typeof window._reportTelemetryError === 'function') {
-            window._reportTelemetryError('error', msg, stack);
-          } else {
-            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack, time: Date.now() });
-            window._sendEarlyTelemetry('error', msg, stack);
-          }
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('error', msg, stack);
+        } else {
+          if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack, time: Date.now() });
+          window._sendEarlyTelemetry('error', msg, stack);
         }
         window.__covo_native_console__.error.apply(console, args);
       };
@@ -394,25 +406,35 @@
     // エラーリスナーの先行登録（二重登録を完全防止 & 100% 漏れなく即時収集）
     if (!window.__covo_error_listeners_attached__) {
       window.__covo_error_listeners_attached__ = true;
+      function isAppScriptError(msg, stack, src) {
+        const str = `${msg || ''} ${stack || ''} ${src || ''}`.toLowerCase();
+        return str.includes('main.js') ||
+               str.includes('crypto_helpers.js') ||
+               str.includes('local_store.js') ||
+               str.includes('text_formatter.js') ||
+               str.includes('ui_helpers.js') ||
+               str.includes('debug_ui.js') ||
+               str.includes('file_uploader.js') ||
+               str.includes('index.html');
+      }
       window.addEventListener('error', function(e) {
-        const isExt = _isIgnoredEarlyError(e.message, e.filename, e.error);
+        const isApp = isAppScriptError(e.message, e.error?.stack, e.filename);
+        const isExt = !isApp && _isIgnoredEarlyError(e.message, e.filename, e.error);
         if (isExt) {
-          try { e.preventDefault(); } catch (_) {}
+          try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+          return; // 拡張機能のエラーはコンソール・ログ・画面へ出さずに完全消音
         }
-        const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
         const msg = e.message || (e.error && e.error.message) || 'JavaScript 実行エラー';
         const stack = (e.error && e.error.stack) || `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}`;
-        const logLine = `${tag}${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
+        const logLine = `${msg} (${e.filename || 'unknown'}:${e.lineno || 0})`;
         window._pushCovoLog('ERR', logLine);
-        if (!isExt) {
-          if (typeof window._reportTelemetryError === 'function') {
-            window._reportTelemetryError('error', msg, stack);
-          } else {
-            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
-            window._sendEarlyTelemetry('error', msg, stack);
-          }
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('error', msg, stack);
+        } else {
+          if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'error', message: msg, stack: stack, time: Date.now() });
+          window._sendEarlyTelemetry('error', msg, stack);
         }
-        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
+        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
           showEmergencyRecoveryPanel(msg, e.error);
         }
       });
@@ -420,22 +442,21 @@
         const r = e.reason;
         const msg = (r && r.message) || String(r || '非同期処理エラー (Unhandled Rejection)');
         const stack = (r && r.stack) || '';
-        const isExt = _isIgnoredEarlyError(msg, '', r);
+        const isApp = isAppScriptError(msg, stack, '');
+        const isExt = !isApp && _isIgnoredEarlyError(msg, '', r);
         if (isExt) {
-          try { e.preventDefault(); } catch (_) {}
+          try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
+          return; // 拡張機能のエラーはコンソール・ログ・画面へ出さずに完全消音
         }
-        const tag = isExt ? '[ブラウザ拡張機能/AdBlock] ' : '';
-        const logLine = `${tag}Uncaught (in promise) ${msg}`;
+        const logLine = `Uncaught (in promise) ${msg}`;
         window._pushCovoLog('ERR', logLine);
-        if (!isExt) {
-          if (typeof window._reportTelemetryError === 'function') {
-            window._reportTelemetryError('unhandledrejection', msg, stack);
-          } else {
-            if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
-            window._sendEarlyTelemetry('unhandledrejection', msg, stack);
-          }
+        if (typeof window._reportTelemetryError === 'function') {
+          window._reportTelemetryError('unhandledrejection', msg, stack);
+        } else {
+          if (window._earlyErrors.length < 50) window._earlyErrors.push({ type: 'unhandledrejection', message: msg, stack: stack, time: Date.now() });
+          window._sendEarlyTelemetry('unhandledrejection', msg, stack);
         }
-        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isExt) {
+        if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
           showEmergencyRecoveryPanel(msg, e.reason);
         }
       });
@@ -3647,7 +3668,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.221"></script>
+  <script type="module" src="js/main.js?v=1.1.223"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

@@ -38,19 +38,19 @@ export function alertMessage(msg, type = "info") {
  * @param {string} tag - ユーザータグ (#1234)
  */
 export function openAvatarLightbox(url, nickname = '', tag = '') {
+  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
+  if (isUsable && typeof window.openPhotoSwipeModal === 'function') {
+    window.openPhotoSwipeModal(url, nickname ? `${nickname} のアバター` : 'アバター');
+    return;
+  }
   const lb = document.getElementById("avatarLightbox");
   const img = document.getElementById("avatarLightboxImg");
   const initialEl = document.getElementById("avatarLightboxInitial");
   const titleEl = document.getElementById("avatarLightboxTitle");
   const tagEl = document.getElementById("avatarLightboxUserTag");
-  
   if (!lb) return;
-
   if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
   if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
-
-  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
-
   if (isUsable) {
     if (img) {
       img.src = url;

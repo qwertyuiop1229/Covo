@@ -4837,937 +4837,6 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
 }
 </file>
 
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-let _dbInstance = null;
-let _dbInitPromise = null;
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
-  if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        _dbInstance.close();
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-    req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
-      resolve(null);
-    };
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-    };
-  });
-  return _dbInitPromise;
-}
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-function _extractMsgTimestamp(obj) {
-  if (!obj) return Date.now();
-  const ts = obj.timestamp ?? obj.createdAt;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = new Date(ts).getTime();
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (ts && typeof ts === 'object') {
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
-    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
-  }
-  return Date.now();
-}
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
-      if (cleanMsg._originalText) {
-        cleanMsg.text = cleanMsg._originalText;
-      }
-      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-        cleanMsg._decrypted = false;
-      }
-      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
-        if (cleanMsg._originalText) {
-          cleanMsg.text = cleanMsg._originalText;
-        }
-        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-          cleanMsg._decrypted = false;
-        }
-        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
-        resolve([]);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
-      resolve([]);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend) return;
-  const uid = friend.uid || friend.targetUid || friend.id;
-  if (!uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put({ ...friend, uid });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (!f) continue;
-        const uid = f.uid || f.targetUid || f.id;
-        if (uid) store.put({ ...f, uid });
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-/**
- * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
- * @returns {Promise<boolean>}
- */
-export async function clearAllLocalData() {
-  if (typeof caches !== 'undefined' && caches.delete) {
-    caches.delete('covo_media_cache_v1').catch(() => {});
-  }
-  const db = await initLocalDB();
-  if (!db) return false;
-  return new Promise((resolve) => {
-    try {
-      const stores = ["messages", "channels", "friends", "settings"];
-      const tx = db.transaction(stores, "readwrite");
-      for (const storeName of stores) {
-        if (db.objectStoreNames.contains(storeName)) {
-          tx.objectStore(storeName).clear();
-        }
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] clearAllLocalData exception:", e);
-      resolve(false);
-    }
-  });
-}
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData,
-    clearAllLocalData
-  };
-}
-</file>
-
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
-    .stamp-jump-anim {
-      animation: stampSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampSway {
-      0%   { transform: translateX(0); }
-      16%  { transform: translateX(8px); }
-      36%  { transform: translateX(-5px); }
-      58%  { transform: translateX(2.5px); }
-      78%  { transform: translateX(-1px); }
-      92%  { transform: translateX(0.3px); }
-      100% { transform: translateX(0); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageSway {
-      0%   { transform: translateX(0); }
-      16%  { transform: translateX(8px); }
-      36%  { transform: translateX(-5px); }
-      58%  { transform: translateX(2.5px); }
-      78%  { transform: translateX(-1px); }
-      92%  { transform: translateX(0.3px); }
-      100% { transform: translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -6781,6 +5850,613 @@ if (typeof window !== 'undefined') {
         background: rgba(255, 255, 255, 0.28) !important;
       }
     }
+</file>
+
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+let _dbInstance = null;
+let _dbInitPromise = null;
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) return _dbInstance;
+  if (_dbInitPromise) return _dbInitPromise;
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
+      }
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        _dbInstance.close();
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+    req.onerror = () => {
+      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      resolve(null);
+    };
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+    };
+  });
+  return _dbInitPromise;
+}
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
+      if (cleanMsg._originalText) {
+        cleanMsg.text = cleanMsg._originalText;
+      }
+      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+      }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] putMessage failed:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
+        if (cleanMsg._originalText) {
+          cleanMsg.text = cleanMsg._originalText;
+        }
+        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
+        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        console.warn("[LocalStore] getMessages failed:", req.error);
+        resolve([]);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] getMessages exception:", e);
+      resolve([]);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend) return;
+  const uid = friend.uid || friend.targetUid || friend.id;
+  if (!uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put({ ...friend, uid });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (!f) continue;
+        const uid = f.uid || f.targetUid || f.id;
+        if (uid) store.put({ ...f, uid });
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
+  }
+}
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  if (typeof caches !== 'undefined' && caches.delete) {
+    caches.delete('covo_media_cache_v1').catch(() => {});
+  }
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData,
+    clearAllLocalData
+  };
+}
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -8429,6 +8105,336 @@ function run() {
   console.log('============================================================');
 }
 run();
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
 </file>
 
 <file path="public/js/text_formatter.js">
@@ -11409,6 +11415,363 @@ html.dark .server-menu-item.text-rose-500:hover {
 }
 </file>
 
+<file path="database.rules.json">
+{
+  "rules": {
+    "status": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        "latestMessage": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('senderId').val() === auth.uid"
+        },
+        "latestPin": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('pinnedBy').val() === auth.uid"
+        },
+        "latestReaction": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('reactedBy').val() === auth.uid"
+        },
+        "latestDelete": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.child('deletedBy').val() === auth.uid"
+        },
+        "typing": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "webrtc": {
+      "$id": {
+        ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
+        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
+      }
+    },
+    "voiceStates": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $userId"
+          }
+        }
+      }
+    },
+    "voiceStatesConfig": {
+      "$serverId": {
+        "$channelId": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()"
+        }
+      }
+    },
+    "userAffinity": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "artifacts": {
+      "$appId": {
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+          "adminList": {
+            "admins": {
+              "$adminUid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "latestAnnouncement": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "announcements": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "allowedEmails": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
+        },
+        "server_stamps": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+        },
+        "inviteIndex": {
+          "$code": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "feedbacks": {
+          "$docId": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "error_reports": {
+          ".read": "auth != null",
+          ".write": true,
+          "$docId": {
+            ".read": "auth != null",
+            ".write": true
+          }
+        },
+        "userAffinity": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "recovery_vault": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "recovery_index": {
+          "$emailHash": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          }
+        },
+        "admin_recovery_requests": {
+          "$userDocId": {
+            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "admin_recovery_index": {
+          "$emailHash": {
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+          }
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth != null",
+            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "private": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "readStates": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$roomId": {
+                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "relationships": {
+              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              "$targetUid": {
+                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_channels": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "keys": {
+              "$keyUserId": {
+                ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            }
+          }
+        },
+        "dm_messages": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".indexOn": [
+              "timestamp"
+            ],
+            "$messageId": {
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || newData.child('reactions').exists() || newData.child('isPinned').exists())))))",
+              "reactions": {
+                "$reactUid": {
+                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                }
+              }
+            }
+          }
+        },
+        "dm_typing": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
+            }
+          }
+        },
+        "dm_readReceipts": {
+          "$dmId": {
+            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "$uid": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
+            }
+          }
+        },
+        "device_transfers": {
+          "$sessionCode": {
+            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "sender_candidates": {
+              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
+            },
+            "receiver_candidates": {
+              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
+            }
+          }
+        },
+        "p2p_log_sync": {
+          "$syncId": {
+            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "requesterCandidates": {
+              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
+            },
+            "targetCandidates": {
+              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
+            }
+          }
+        },
+        "calls": {
+          "$callId": {
+            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "callerCandidates": {
+              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
+            },
+            "calleeCandidates": {
+              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('calleeUid').val() === auth.uid"
+            }
+          }
+        },
+        "fileshares": {
+          "$shareId": {
+            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            "senderCandidates": {
+              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
+            },
+            "receiverCandidates": {
+              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
+              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
+            }
+          }
+        },
+        "servers": {
+          "$serverId": {
+            ".read": "auth != null",
+            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            "members": {
+              "$uid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
+              }
+            },
+            "secrets": {
+              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "profiles": {
+              "$profileUid": {
+                ".read": "auth != null",
+                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+              }
+            },
+            "stamps": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "stampGroups": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "inviteCodes": {
+              ".read": "auth != null",
+              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+            },
+            "rooms": {
+              "$roomId": {
+                ".read": "auth != null",
+                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                "roomKeys": {
+                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                  "$keyId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "rescueRequests": {
+                  ".read": "auth != null",
+                  "$reqUid": {
+                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  }
+                },
+                "messages": {
+                  ".indexOn": [
+                    "timestamp"
+                  ],
+                  "$messageId": {
+                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
+                    "reactions": {
+                      "$reactUid": {
+                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                      }
+                    }
+                  }
+                },
+                "typing": {
+                  "$uid": {
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
+                  }
+                },
+                "readReceipts": {
+                  "$uid": {
+                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+</file>
+
 <file path="public/js/crypto_helpers.js">
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
@@ -12032,6 +12395,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (!m) return;
             // リプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
+          if (!m.replyTo._originalText) {
+            m.replyTo._originalText = m.replyTo.text;
+          }
           try {
             const decReply = await _decryptText(m.replyTo.text, serverId, roomId, memberIds);
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
@@ -12518,6 +12884,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!m) return;
         // DMリプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
+          if (!m.replyTo._originalText) {
+            m.replyTo._originalText = m.replyTo.text;
+          }
           try {
             const decReply = await _decryptDmText(m.replyTo.text, dmKeyObj || dmId, participants);
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
@@ -12552,363 +12921,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
       }));
     }
-</file>
-
-<file path="database.rules.json">
-{
-  "rules": {
-    "status": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-      }
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-      }
-    },
-    "rooms": {
-      "$roomId": {
-        "latestMessage": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('senderId').val() === auth.uid"
-        },
-        "latestPin": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('pinnedBy').val() === auth.uid"
-        },
-        "latestReaction": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('reactedBy').val() === auth.uid"
-        },
-        "latestDelete": {
-          ".read": "auth != null",
-          ".write": "auth != null && newData.child('deletedBy').val() === auth.uid"
-        },
-        "typing": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    },
-    "webrtc": {
-      "$id": {
-        ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
-        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
-      }
-    },
-    "voiceStates": {
-      "$serverId": {
-        "$channelId": {
-          ".read": "auth != null",
-          "$userId": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $userId"
-          }
-        }
-      }
-    },
-    "voiceStatesConfig": {
-      "$serverId": {
-        "$channelId": {
-          ".read": "auth != null",
-          ".write": "auth != null && root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()"
-        }
-      }
-    },
-    "userAffinity": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "artifacts": {
-      "$appId": {
-        "settings": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-          "adminList": {
-            "admins": {
-              "$adminUid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "latestAnnouncement": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "announcements": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "allowedEmails": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('settings').child('listAdminList').child('admins').child(auth.uid).exists())"
-        },
-        "server_stamps": {
-          ".read": "auth != null",
-          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-        },
-        "inviteIndex": {
-          "$code": {
-            ".read": "auth != null",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "feedbacks": {
-          "$docId": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "error_reports": {
-          ".read": "auth != null",
-          ".write": true,
-          "$docId": {
-            ".read": "auth != null",
-            ".write": true
-          }
-        },
-        "userAffinity": {
-          "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        },
-        "recovery_vault": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "recovery_index": {
-          "$emailHash": {
-            ".read": "auth != null",
-            ".write": "auth != null"
-          }
-        },
-        "admin_recovery_requests": {
-          "$userDocId": {
-            ".read": "auth != null && (auth.uid === $userDocId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "admin_recovery_index": {
-          "$emailHash": {
-            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-          }
-        },
-        "users": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "private": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "readStates": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$roomId": {
-                ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "relationships": {
-              ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              "$targetUid": {
-                ".write": "auth != null && (auth.uid === $uid || auth.uid === $targetUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_channels": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "keys": {
-              "$keyUserId": {
-                ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || auth.uid === $keyUserId || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                ".write": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            }
-          }
-        },
-        "dm_messages": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".indexOn": [
-              "timestamp"
-            ],
-            "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || newData.child('reactions').exists() || newData.child('isPinned').exists())))))",
-              "reactions": {
-                "$reactUid": {
-                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                }
-              }
-            }
-          }
-        },
-        "dm_typing": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
-            }
-          }
-        },
-        "dm_readReceipts": {
-          "$dmId": {
-            ".read": "auth != null && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "$uid": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))"
-            }
-          }
-        },
-        "device_transfers": {
-          "$sessionCode": {
-            ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "sender_candidates": {
-              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
-            },
-            "receiver_candidates": {
-              ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
-            }
-          }
-        },
-        "p2p_log_sync": {
-          "$syncId": {
-            ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "requesterCandidates": {
-              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
-            },
-            "targetCandidates": {
-              ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
-            }
-          }
-        },
-        "calls": {
-          "$callId": {
-            ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "callerCandidates": {
-              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
-            },
-            "calleeCandidates": {
-              ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('calleeUid').val() === auth.uid"
-            }
-          }
-        },
-        "fileshares": {
-          "$shareId": {
-            ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            "senderCandidates": {
-              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
-            },
-            "receiverCandidates": {
-              ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
-              ".write": "auth != null && data.parent().child('receiverUid').val() === auth.uid"
-            }
-          }
-        },
-        "servers": {
-          "$serverId": {
-            ".read": "auth != null",
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
-            "members": {
-              "$uid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || (auth.uid === $uid && !newData.exists()))"
-              }
-            },
-            "secrets": {
-              ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "profiles": {
-              "$profileUid": {
-                ".read": "auth != null",
-                ".write": "auth != null && (auth.uid === $profileUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-              }
-            },
-            "stamps": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "stampGroups": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "inviteCodes": {
-              ".read": "auth != null",
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-            },
-            "rooms": {
-              "$roomId": {
-                ".read": "auth != null",
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                "roomKeys": {
-                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-                  "$keyId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "rescueRequests": {
-                  ".read": "auth != null",
-                  "$reqUid": {
-                    ".write": "auth != null && (auth.uid === $reqUid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                  }
-                },
-                "messages": {
-                  ".indexOn": [
-                    "timestamp"
-                  ],
-                  "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
-                    "reactions": {
-                      "$reactUid": {
-                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
-                      }
-                    }
-                  }
-                },
-                "typing": {
-                  "$uid": {
-                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
-                  }
-                },
-                "readReceipts": {
-                  "$uid": {
-                    ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
 </file>
 
 <file path="firestore.rules">
@@ -13045,7 +13057,11 @@ service cloud.firestore {
       // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
       match /admin_recovery_requests/{userDocId} {
         allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
+        allow create, delete: if isGlobalAdmin(appId);
+        allow update: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid == userDocId &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
+           request.resource.data.used == true);
       }
       match /admin_recovery_index/{emailHash} {
         allow read: if isGlobalAdmin(appId);
@@ -13163,7 +13179,11 @@ service cloud.firestore {
              request.resource.data.dmId == null ||
              request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
              request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if isAuthenticated();
+        allow update: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
         match /{subcollection}/{docId} {
           allow read, write: if isAuthenticated();
         }
@@ -13186,7 +13206,12 @@ service cloud.firestore {
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            (
+              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            )
           );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
@@ -13208,7 +13233,11 @@ service cloud.firestore {
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            (
+              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            )
           );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
@@ -15978,10 +16007,42 @@ async function handleEmergencyPasswordReset(request, env) {
       const salt = kFields.salt?.stringValue || '';
       const storedKeyHash = kFields.keyHash?.stringValue || '';
       const storedUserId = kFields.userId?.stringValue || '';
+      const currentFailCount = kFields.failCount?.integerValue ? parseInt(kFields.failCount.integerValue, 10) : 0;
+      const isLocked = kFields.locked?.booleanValue || false;
+      if (isLocked || currentFailCount >= 5) {
+        return new Response(JSON.stringify({ success: false, error: "試行回数の上限（5回）を超えたため、このリカバリーキーは一時的にロックされています。通常のメール再設定をお試しいただくか、管理者へお問い合わせください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      }
       const keyBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanKey));
       const computedHash = Array.from(new Uint8Array(keyBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
       if (computedHash !== storedKeyHash) {
-        return new Response(JSON.stringify({ success: false, error: "リカバリーキーが一致しません。大文字・ハイフンを含めて正しく入力されているかご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+        const newFailCount = currentFailCount + 1;
+        const shouldLock = newFailCount >= 5;
+        const failCommitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+        const failUpdateFields = {
+          ...kFields,
+          failCount: { integerValue: newFailCount.toString() }
+        };
+        if (shouldLock) {
+          failUpdateFields.locked = { booleanValue: true };
+          failUpdateFields.lockedAt = { timestampValue: new Date().toISOString() };
+        }
+        await fetch(failCommitUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            writes: [{
+              update: {
+                name: keyIndexData.name,
+                fields: failUpdateFields
+              }
+            }]
+          })
+        }).catch(() => {});
+        const remainingAttempts = Math.max(0, 5 - newFailCount);
+        const errorMsg = shouldLock
+          ? "試行回数の上限（5回）に達しました。セキュリティ保護のためリカバリーキーはロックされました。"
+          : `リカバリーキーが一致しません。残り${remainingAttempts}回試行できます。`;
+        return new Response(JSON.stringify({ success: false, error: errorMsg }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
       }
       let targetUid = storedUserId;
       if (!targetUid) {
@@ -16010,23 +16071,35 @@ async function handleEmergencyPasswordReset(request, env) {
         console.error("Identity Toolkit update password error (recovery key):", updateResult.error);
         return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       }
-      // recovery_vault に監査ログを更新（新規・未作成時でもNOT_FOUNDにならず安全にupsert保存）
+      // recovery_vault に監査ログを更新し、failCountを0にリセット
       const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
       await fetch(commitUrl, {
         method: "POST",
         headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          writes: [{
-            update: {
-              name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
-              fields: {
-                userId: { stringValue: targetUid },
-                email: { stringValue: cleanEmail },
-                lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
-                recoveryStatus: { stringValue: 'verified' }
+          writes: [
+            {
+              update: {
+                name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
+                fields: {
+                  userId: { stringValue: targetUid },
+                  email: { stringValue: cleanEmail },
+                  lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
+                  recoveryStatus: { stringValue: 'verified' }
+                }
+              }
+            },
+            {
+              update: {
+                name: keyIndexData.name,
+                fields: {
+                  ...kFields,
+                  failCount: { integerValue: "0" },
+                  lastVerifiedAt: { timestampValue: new Date().toISOString() }
+                }
               }
             }
-          }]
+          ]
         })
       }).catch(() => {});
       return new Response(JSON.stringify({ success: true, message: "パスワードを正常に変更しました" }), {
@@ -16861,12 +16934,15 @@ async function handleSendCallNotification(request, env) {
 async function handleSendNotification(request, env) {
   const dynamicCors = getCorsHeaders(request);
   try {
-    const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
+    const { receiverIds, title, body, roomId, serverId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
     }
     if (!isValidAppId(appId, env)) {
       return new Response(JSON.stringify({ success: false, error: "Invalid appId" }), { status: 400, headers: dynamicCors });
+    }
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid serverId" }), { status: 400, headers: dynamicCors });
     }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== senderId) {
@@ -16874,6 +16950,27 @@ async function handleSendNotification(request, env) {
     }
     if (receiverIds.length > 50) {
       return new Response(JSON.stringify({ success: false, error: "Too many receivers. Limit is 50." }), { status: 400, headers: dynamicCors });
+    }
+    // 🔒 認可チェック (IDOR / プッシュ通知スプーフィング完全防御)
+    const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+    if (!isGlobal) {
+      if (serverId) {
+        // サーバーメッセージ通知: 送信者がサーバーメンバーであることを検証
+        const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+        if (!isMember) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a member of this server" }), { status: 403, headers: dynamicCors });
+        }
+      } else if (roomId && roomId.includes('_') && !roomId.startsWith('p2p_')) {
+        // DMメッセージ通知: roomId (uid1_uid2) に自分が含まれ、受信者がDM相手であることを検証
+        const dmUids = (roomId.startsWith('dm_') ? roomId.slice(3) : roomId).split('_');
+        if (!dmUids.includes(verifiedUser.uid)) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: dynamicCors });
+        }
+        const notAllowedReceiver = receiverIds.some(rid => !dmUids.includes(rid) || rid === verifiedUser.uid);
+        if (notAllowedReceiver) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid DM recipient" }), { status: 403, headers: dynamicCors });
+        }
+      }
     }
     const workerToken = await getWorkerAuthToken(env);
     if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
@@ -16990,6 +17087,7 @@ async function handleSendNotification(request, env) {
                                     title: safeTitle,
                                     body: safeBody,
                                     roomId: roomId || "",
+                                    serverId: serverId || "",
                                     senderId: senderId || "",
                                     messageId: messageId || "",
                                     type: "chat_message"
@@ -17340,9 +17438,8 @@ async function handleDeleteFile(request, env, url) {
     const folder = (meta?.folder || '').toLowerCase();
     const isProtectedAsset = folder.includes('stamp') || folder.includes('avatar') || folder.includes('icon');
     const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1';
-    const forceDelete = url.searchParams.get('forceDelete') === '1';
-    // スタンプやアバターは専用の削除操作以外ではメッセージ連動削除から保護
-    if (isProtectedAsset && !isExplicitAssetDelete && !forceDelete) {
+    // スタンプやアバターは専用の削除操作 (isAssetDelete=1) 以外ではメッセージ連動削除から100%保護
+    if (isProtectedAsset && !isExplicitAssetDelete) {
       return new Response(JSON.stringify({ success: true, skipped: true, message: '保護されたアセットのため通常削除をスキップしました' }), {
         status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
       });
@@ -17849,6 +17946,9 @@ async function handleAdminDeleteMessage(request, env) {
         const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
         const msgCheckRes = await fetch(msgCheckUrl);
         const msgCheckData = await msgCheckRes.json().catch(() => null);
+        if (!msgCheckData) {
+          return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        }
         const isSender = Boolean(msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid));
         if (!isSender) {
           return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
@@ -17877,14 +17977,19 @@ async function handleAdminDeleteMessage(request, env) {
       targetSenderId = msgCheckData.senderId || msgCheckData.userId || null;
       if (targetSenderId === verifiedUser.uid) isOwner = true;
     }
+    let fsCheckData = null;
     if (!isOwner) {
       const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
       const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
-      const fsCheckData = await fsCheckRes.json().catch(() => null);
+      fsCheckData = await fsCheckRes.json().catch(() => null);
       if (fsCheckData && fsCheckData.fields) {
         targetSenderId = fsCheckData.fields.senderId?.stringValue || fsCheckData.fields.userId?.stringValue || targetSenderId;
         if (targetSenderId === verifiedUser.uid) isOwner = true;
       }
+    }
+    // メッセージがRTDBにもFirestoreにも存在しない場合、既に削除済みなので成功を返してクライアントキャッシュ消去を許可
+    if (!msgCheckData && (!fsCheckData || !fsCheckData.fields)) {
+      return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
     if (!isGlobal && !isSvAdmin && !isOwner) {
       return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
@@ -19260,13 +19365,13 @@ async function handleSetOffline(request, env) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.222" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.223" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.222" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.223" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -22691,7 +22796,7 @@ async function handleSetOffline(request, env) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.222"></script>
+  <script type="module" src="js/main.js?v=1.1.223"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -25873,6 +25978,8 @@ async function _loadOrCreateUserRecoveryKey(user) {
         userId: user.uid,
         salt: salt,
         keyHash: keyHash,
+        failCount: 0,
+        locked: false,
         updatedAt: serverTimestamp()
       }, { merge: true });
     }
@@ -25968,6 +26075,8 @@ window.generateNewRecoveryKey = async function (showPrompt = false) {
       userId: user.uid,
       salt: salt,
       keyHash: keyHash,
+      failCount: 0,
+      locked: false,
       updatedAt: serverTimestamp()
     }, { merge: true });
       const keyDisplay = document.getElementById('settingsRecoveryKeyText');
@@ -36446,11 +36555,11 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     if (currentServerId === serverId && roomDocs.length > 0) {
       if (window.innerWidth >= 768) {
         const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
-        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
+        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId && (d.data().channelType || 'text') !== 'voice');
         if (!targetDoc) {
-          targetDoc = roomDocs[0];
+          targetDoc = roomDocs.find(d => (d.data().channelType || 'text') !== 'voice') || roomDocs[0];
         }
-        if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
+        if (targetDoc && (targetDoc.data().channelType || 'text') !== 'voice' && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
           selectRoom(targetDoc.id, targetDoc.data().name);
         }
       }
@@ -36939,12 +37048,12 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
       }
-    } catch (_) {}
-  };
-  onChildAdded(q, handleAdded);
-  onChildChanged(q, handleChanged);
-  onChildRemoved(q, handleRemoved);
-  const activeServerId = currentServerId;
+      } catch (_) {}
+      };
+      const unsubAdded = onChildAdded(q, handleAdded);
+      const unsubChanged = onChildChanged(q, handleChanged);
+      const unsubRemoved = onChildRemoved(q, handleRemoved);
+      const activeServerId = currentServerId;
   const activeRoomId = currentRoomId;
   const activeDmId = currentDmId;
   if (window.typingUnsubscribe) {
@@ -37018,6 +37127,9 @@ async function subscribeToMessagesRTDB() {
     try { off(rrRef, 'value', onRR); } catch (_) {}
   };
   window.rtdbMessagesUnsub = () => {
+    try { if (typeof unsubAdded === 'function') unsubAdded(); } catch (_) {}
+    try { if (typeof unsubChanged === 'function') unsubChanged(); } catch (_) {}
+    try { if (typeof unsubRemoved === 'function') unsubRemoved(); } catch (_) {}
     try { off(q); } catch (_) {}
     if (window.typingUnsubscribe) window.typingUnsubscribe();
     if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
@@ -37963,6 +38075,7 @@ async function sendSticker(emoji) {
                 title: `${sd.name || 'Covo'} (#${roomNames[snapRoomId] || 'room'})`,
                 body: `${userNickname}: [スタンプ]`,
                 roomId: snapRoomId,
+                serverId: snapServerId,
                 messageId: replyMsgRef.id,
                 appId,
                 senderId: userId,
@@ -38718,6 +38831,7 @@ async function sendMessage() {
               title: notifTitle,
               body: notifBody,
               roomId: snapRoomId,
+              serverId: snapServerId,
               messageId: newMessageId,
               appId: appId,
               senderId: userId,
@@ -38908,6 +39022,7 @@ async function sendMessage() {
             title: `${serverName} (#${roomName})`,
             body: `${userNickname}: [ファイル]`,
             roomId: snapRoomId,
+            serverId: snapServerId,
             messageId: msgRefId,
             appId: appId,
             senderId: userId,
@@ -39461,6 +39576,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
             }
             if (dec && !dec.startsWith('（復号化エラー：')) {
+              message._originalText = rawEnc;
               message.text = dec;
               message._decrypted = true;
               message._decryptedErrorText = null;
@@ -40144,6 +40260,16 @@ function renderMessagesWithReadReceipts() {
       }
       const bubbleElement = row.querySelector('.message-bubble');
       if (bubbleElement) updateReactionsUI(bubbleElement, msg);
+      const replyQuoteText = row.querySelector('.reply-quote-text');
+      if (replyQuoteText && msg.replyTo) {
+        const replyRaw = msg.replyTo._decryptedErrorText || msg.replyTo.text || '（ファイル）';
+        const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
+        if (isReplyEnc) {
+          replyQuoteText.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
+        } else {
+          replyQuoteText.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
+        }
+      }
       existingRowsMap.delete(msg.id);
     } else {
       row = createMessageElement(msg, msg.id, readCount);
@@ -40709,7 +40835,7 @@ if (deleteMsgBtn) {
         const fileKey = m[1];
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${deleteExtraParams}`;
           const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
           if (!res.ok) {
             console.warn('[deleteMessage] KV delete failed:', res.status, fileKey);
@@ -41030,20 +41156,20 @@ function doJumpHighlight(el) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => {
         isStamp.classList.remove('stamp-jump-anim');
-      }, 600);
+      }, 750);
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.7s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
+      // 揺れアニメーション（0.85s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 750);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.4s後）
+      }, 880);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.6s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
-      }, 1400);
+      }, 1600);
     }
-  }, didScroll ? 350 : 50);
+  }, didScroll ? 450 : 30);
 }
 // iOS/Safari 判定
 const _isIOSSafari = (() => {
@@ -43196,9 +43322,19 @@ async function startFileShare(targetUid, targetName, file) {
     });
     // 相手にプッシュ通知（任意・fire-and-forget）
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const fsDmId = [userId, targetUid].sort().join('_');
     fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId, idToken })
+      body: JSON.stringify({
+        receiverIds: [targetUid],
+        title: 'ファイル受信',
+        body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`,
+        roomId: fsDmId,
+        serverId: currentServerId || undefined,
+        appId,
+        senderId: userId,
+        idToken
+      })
     }).catch(() => { });
     _fsShowProgress('send', file.name, '相手の応答を待っています…');
     // answer + 受信側ICEを待つ（リモートDescription設定前のCandidateを確実にキューイング）
@@ -49838,7 +49974,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.222",
+  "version": "1.1.223",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -49895,7 +50031,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.222",
+  "version": "1.1.223",
   "force": false
 }
 </file>

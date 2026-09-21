@@ -18,12 +18,13 @@ export function alertMessage(msg, type = "info") {
   
   box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
   box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  
   let icon = '<i class="fas fa-info-circle"></i>';
   if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
   else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
-  
-  box.innerHTML = `${icon}<span>${msg}</span>`;
+  const textSpan = document.createElement("span");
+  textSpan.textContent = msg;
+  box.innerHTML = icon;
+  box.appendChild(textSpan);
   stack.appendChild(box);
   setTimeout(() => {
     box.style.animation = "fadeIn 0.2s ease reverse forwards";
