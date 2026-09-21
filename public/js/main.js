@@ -2973,8 +2973,16 @@ window.loadErrorTelemetry = async function () {
       const rtdb = await _getOrInitRTDB();
       if (rtdb) {
         const errsRef = ref(rtdb, `artifacts/${appId}/error_reports`);
+        // 前回のスナップショットに含まれていたキー（RTDB から消えた項目の検知用）
+        let prevLiveKeys = new Set();
         const onVal = (snapshot) => {
-          const liveVal = snapshot.val() || {};
+          const liveVal = snapshot.exists() ? (snapshot.val() || {}) : {};
+          const liveKeys = new Set(Object.keys(liveVal));
+          // RTDB から消えた項目（個別削除・全体削除）は mergedMap からも除去し、削除済みデータの復活を防ぐ
+          prevLiveKeys.forEach(k => { if (!liveKeys.has(k)) mergedMap.delete(k); });
+          prevLiveKeys = liveKeys;
+          // 削除済み（dismiss 済み）のシグネチャは、他の取得元由来の残骸も含めて常に除外する
+          _dismissedErrorSignatures.forEach(k => mergedMap.delete(k));
           if (snapshot.exists()) {
             Object.keys(liveVal).forEach(k => {
               const remoteItem = liveVal[k];
@@ -3003,6 +3011,8 @@ window.loadErrorTelemetry = async function () {
           }
           renderTelemetryErrorsList();
         };
+        // 並行して実行された別の loadErrorTelemetry が登録したリスナーを取りこぼさないよう、登録の直前にも解除しておく
+        if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); _telemetryErrorsUnsub = null; }
         onValue(errsRef, onVal);
         _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
       }
@@ -3200,6 +3210,9 @@ function renderTelemetryErrorsList() {
       if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
       if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
       try {
+        // 削除の前にRTDBリアルタイムリスナーを解除する（残したままだと、削除イベントで古い一覧が復活して再描画される）
+        if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); }
+        _telemetryErrorsUnsub = null;
         const toDelete = [..._cachedTelemetryErrors];
         // 1. RTDB から一括削除
         try {
@@ -3240,6 +3253,9 @@ function renderTelemetryErrorsList() {
       } catch (err) {
         console.error("Failed to clear all telemetry errors:", err);
         alertMessage("クリアに失敗しました: " + (err.message || err), "error");
+      } finally {
+        // 解除したリスナーを、削除後の最新状態から張り直して同期を再開する
+        if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
       }
     };
 
@@ -6619,7 +6635,7 @@ window.switchFullProfileTab = function (tab) {
         serversListEl.innerHTML = `<div class="col-span-full p-8 text-center text-xs text-gray-400 dark:text-gray-500">共通のサーバーはありません</div>`;
       } else {
         serversListEl.innerHTML = mutualServers.map(s => `
-          <div class="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-white/5 border border-gray-200/80 dark:border-white/5 hover:border-indigo-500/40 cursor-pointer transition-all shadow-xs group" onclick="closeUserFullProfileModal(); enterServer('${s.id}', ${escapeHtml(JSON.stringify(s))})">
+          <div class="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-white/5 border border-gray-200/80 dark:border-white/5 hover:border-indigo-500/40 cursor-pointer transition-all shadow-xs group" data-mutual-server-id="${escapeHtml(s.id)}">
             <div class="w-10 h-10 rounded-2xl bg-indigo-500 text-white font-bold text-sm flex items-center justify-center overflow-hidden flex-shrink-0 shadow-xs">
               ${s.iconUrl ? `<img src="${escapeHtml(s.iconUrl)}" class="w-full h-full object-cover">` : escapeHtml((s.name || s.id).charAt(0).toUpperCase())}
             </div>
@@ -6629,6 +6645,14 @@ window.switchFullProfileTab = function (tab) {
             </div>
           </div>
         `).join('');
+        // サーバー情報は onclick 属性へ直接埋め込まず、クリックイベントで受け渡す（特殊文字による構文エラー・属性の肥大化を防ぐ）
+        serversListEl.querySelectorAll('[data-mutual-server-id]').forEach(itemEl => {
+          itemEl.addEventListener('click', () => {
+            const targetServer = mutualServers.find(sv => String(sv.id) === itemEl.getAttribute('data-mutual-server-id'));
+            closeUserFullProfileModal();
+            if (targetServer) enterServer(targetServer.id, targetServer);
+          });
+        });
       }
     }
   }
@@ -15117,6 +15141,8 @@ if (messageInpEl) {
   });
 
   messageInpEl.addEventListener("input", (e) => {
+    // 入力内容に応じて送信ボタンの活性状態を更新
+    toggleSendButtonState();
     // メンション機能の判定
     const val = messageInpEl.value;
     const pos = messageInpEl.selectionStart;
@@ -15185,6 +15211,8 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function updateFilePreview() {
+  // 添付ファイルの有無が変わったので、送信ボタンの活性状態も更新
+  toggleSendButtonState();
   const progressBar = document.getElementById("uploadProgressBar");
   const progressFill = document.getElementById("uploadProgressFill");
   const filePreviewImage = document.getElementById("filePreviewImage");
@@ -15446,6 +15474,18 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     });
   } catch (_) {}
 }
+// 送信ボタンの活性状態を更新する（送信先があり・送信処理中でなく・入力テキストまたは添付ファイルがある時だけ有効）
+function toggleSendButtonState() {
+  try {
+    const btn = document.getElementById("sendMessageButton");
+    const input = document.getElementById("messageInput");
+    if (!btn || !input) return;
+    const hasDestination = Boolean(currentRoomId || currentDmId);
+    const hasText = input.value.trim().length > 0;
+    const hasAttachment = Boolean(attachedFile || attachedKvFile || (Array.isArray(attachedFiles) && attachedFiles.length > 0));
+    btn.disabled = !hasDestination || input.disabled || isSendingMessage || !(hasText || hasAttachment);
+  } catch (_) { /* 初期化前などの一時的な参照エラーは無視 */ }
+}
 async function sendMessage() {
   if (isSendingMessage && (attachedFile || attachedKvFile)) return;
   const text = messageInput.value.trim();
@@ -15691,7 +15731,15 @@ async function sendMessage() {
         await set(rtdbMsgRef, rtdbData);
         LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
       } catch (e) {
-        console.error("RTDB Dual Write Failed in sendMessage", e);
+        // キック直後・権限剥奪直後などの PERMISSION_DENIED (403) は想定内の正常動作。
+        // console.error / console.warn は自動でテレメトリに送信されるため、この場合はネイティブコンソールにだけ出力する
+        const dualWriteErrText = `${e && e.code ? e.code : ''} ${e && e.message ? e.message : ''}`.toLowerCase();
+        const isExpectedPermissionDenied = dualWriteErrText.includes('permission_denied') || dualWriteErrText.includes('permission denied');
+        if (isExpectedPermissionDenied) {
+          (window.__covo_native_console__ || console).warn("[RTDB] sendMessage の二重書き込みを権限不足のためスキップしました（キック直後など）");
+        } else {
+          console.error("RTDB Dual Write Failed in sendMessage", e);
+        }
         if (snapServerId && auth.currentUser) {
           auth.currentUser.getIdToken().then(tok => {
             fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {

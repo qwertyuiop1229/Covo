@@ -1097,9 +1097,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptDmText(text, dmIdOrKey, participants) {
       if (!_isEncrypted(text)) return text;
       if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      // catch 節からも参照できるよう、try の外側で宣言する（スコープ外参照による ReferenceError の防止）
+      let dmKeyObj = null;
+      let dmId = null;
       try {
-        let dmKeyObj = null;
-        let dmId = null;
         if (dmIdOrKey && typeof dmIdOrKey === 'object') {
           dmKeyObj = dmIdOrKey;
           dmId = dmKeyObj._dmId || null;
@@ -1156,16 +1157,19 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             }
           } catch (_) {}
           // 相手側にも自分の鍵をバックフィルして相互治癒を促す
-          const otherUid = (participants || dmId.split('_')).find(id => id !== _getUserId());
+          const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
+          const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) {
             _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
           }
         }
-        delete _e2ee._dmKeyPromises[dmId];
+        if (dmId) delete _e2ee._dmKeyPromises[dmId];
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
-        delete _e2ee.dmKeyCache[dmId];
-        delete _e2ee._dmKeyPromises[dmId];
+        if (dmId) {
+          delete _e2ee.dmKeyCache[dmId];
+          delete _e2ee._dmKeyPromises[dmId];
+        }
         return "（復号化エラー：メッセージを解読できません）";
       }
     }
