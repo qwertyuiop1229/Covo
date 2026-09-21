@@ -119,13 +119,41 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-    // 認証ポップアップのユーザー自身による手動キャンセルのみ除外（エラー以外の正常動作）
     if (
-      str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request') ||
+      str.includes('chrome-extension:') ||
+      str.includes('moz-extension:') ||
+      str.includes('safari-extension:') ||
+      str.includes('safari-web-extension:') ||
+      str.includes('extension://') ||
+      str.includes('content.js') ||
+      str.includes('globals-front.js') ||
+      str.includes('page-script.js') ||
+      str.includes('inpage.js') ||
+      str.includes('injected-script') ||
+      str.includes('adblock') ||
+      str.includes('adguard') ||
+      str.includes('ublock') ||
+      str.includes('1password') ||
+      str.includes('bitwarden') ||
+      str.includes('lastpass') ||
+      str.includes('metamask') ||
+      str.includes('grammarly') ||
+      str.includes('usecache is not defined') ||
+      str.includes('receiving end does not exist') ||
+      str.includes('could not establish connection') ||
+      str.includes('a listener indicated an asynchronous response') ||
+      str.includes('message channel closed') ||
+      str.includes('tracking prevention') ||
+      str.includes('blocked access to storage') ||
+      str.includes('resizeobserver') ||
+      str.includes('resize-observer') ||
       str.includes('disconnected port') ||
       str.includes('attempting to use a disconnected port') ||
       str.includes('cross-origin-opener-policy') ||
+      str.includes('syncrtdb') ||
+      str.includes('not a member') ||
+      str.includes('auth/popup-closed-by-user') ||
+      str.includes('auth/cancelled-popup-request') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -8141,7 +8169,13 @@ window.enterServer = async function enterServer(serverId, serverData) {
   loadServerRooms(serverId, 0, thisGen);
 
   // Sync RTDB membership securely via Worker API (一元化により permission_denied を完全防止)
-  if (serverData && (serverData.joinedUsers || []).includes(userId)) {
+  const isMemberOrAdmin = serverData && (
+    (serverData.joinedUsers || []).includes(userId) ||
+    serverData.createdBy === userId ||
+    (serverData.serverAdmins || []).includes(userId) ||
+    isAdmin
+  );
+  if (isMemberOrAdmin && auth.currentUser) {
     try {
       auth.currentUser.getIdToken().then(idToken => {
         fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
@@ -8154,8 +8188,8 @@ window.enterServer = async function enterServer(serverId, serverData) {
             idToken,
             rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined
           })
-        }).catch(() => { });
-      });
+        }).then(r => r.json().catch(() => ({}))).catch(() => { });
+      }).catch(() => { });
     } catch (e) { }
   }
   try {
@@ -13867,14 +13901,12 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
       }
-    } catch (_) {}
-  };
-
-  onChildAdded(q, handleAdded);
-  onChildChanged(q, handleChanged);
-  onChildRemoved(q, handleRemoved);
-
-  const activeServerId = currentServerId;
+      } catch (_) {}
+      };
+      const unsubAdded = onChildAdded(q, handleAdded);
+      const unsubChanged = onChildChanged(q, handleChanged);
+      const unsubRemoved = onChildRemoved(q, handleRemoved);
+      const activeServerId = currentServerId;
   const activeRoomId = currentRoomId;
   const activeDmId = currentDmId;
 
@@ -13951,8 +13983,10 @@ async function subscribeToMessagesRTDB() {
     try { if (typeof onRR === 'function') onRR(); } catch (_) {}
     try { off(rrRef, 'value', onRR); } catch (_) {}
   };
-
   window.rtdbMessagesUnsub = () => {
+    try { if (typeof unsubAdded === 'function') unsubAdded(); } catch (_) {}
+    try { if (typeof unsubChanged === 'function') unsubChanged(); } catch (_) {}
+    try { if (typeof unsubRemoved === 'function') unsubRemoved(); } catch (_) {}
     try { off(q); } catch (_) {}
     if (window.typingUnsubscribe) window.typingUnsubscribe();
     if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
@@ -14983,6 +15017,7 @@ async function sendSticker(emoji) {
                 title: `${sd.name || 'Covo'} (#${roomNames[snapRoomId] || 'room'})`,
                 body: `${userNickname}: [スタンプ]`,
                 roomId: snapRoomId,
+                serverId: snapServerId,
                 messageId: replyMsgRef.id,
                 appId,
                 senderId: userId,
@@ -15786,6 +15821,7 @@ async function sendMessage() {
               title: notifTitle,
               body: notifBody,
               roomId: snapRoomId,
+              serverId: snapServerId,
               messageId: newMessageId,
               appId: appId,
               senderId: userId,
@@ -15978,6 +16014,7 @@ async function sendMessage() {
             title: `${serverName} (#${roomName})`,
             body: `${userNickname}: [ファイル]`,
             roomId: snapRoomId,
+            serverId: snapServerId,
             messageId: msgRefId,
             appId: appId,
             senderId: userId,
@@ -16591,11 +16628,15 @@ function createMessageElement(message, messageId, readByCount = 0) {
               dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
             }
             if (dec && !dec.startsWith('（復号化エラー：')) {
+              message._originalText = rawEnc;
               message.text = dec;
               message._decrypted = true;
               message._decryptedErrorText = null;
               if (messageTextSpan && messageTextSpan.parentElement) {
                 messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(dec);
+              }
+              if (!message.channelId && (snapServerId || snapDmId)) {
+                message.channelId = snapDmId ? `dm_${snapDmId}` : `${snapServerId}_${snapRoomId}`;
               }
               LocalStore.putMessage(message).catch(() => {});
             } else if (dec) {
@@ -17933,7 +17974,7 @@ if (deleteMsgBtn) {
         const fileKey = m[1];
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${deleteExtraParams}`;
           const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
           if (!res.ok) {
             console.warn('[deleteMessage] KV delete failed:', res.status, fileKey);
@@ -18289,20 +18330,20 @@ function doJumpHighlight(el) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => {
         isStamp.classList.remove('stamp-jump-anim');
-      }, 600);
+      }, 750);
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.7s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
+      // 揺れアニメーション（0.85s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 750);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.4s後）
+      }, 880);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.6s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
-      }, 1400);
+      }, 1600);
     }
-  }, didScroll ? 350 : 50);
+  }, didScroll ? 450 : 30);
 }
 
 // iOS/Safari 判定

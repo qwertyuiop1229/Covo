@@ -1,6 +1,11 @@
 {
-  "date": "2026-09-21T07:05:12.694Z",
+  "date": "2026-09-21T08:41:24.442Z",
   "files": [
-    "public/index.html"
+    "public/css/modules/base.css",
+    "public/js/main.js",
+    "public/js/crypto_helpers.js",
+    "public/js/local_store.js",
+    "server/src/index.js",
+    "firestore.rules"
   ]
 }

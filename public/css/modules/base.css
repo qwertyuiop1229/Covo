@@ -66,31 +66,31 @@
     }
     /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
     .stamp-jump-anim {
-      animation: stampSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
       will-change: transform;
     }
     @keyframes stampSway {
       0%   { transform: translateX(0); }
-      16%  { transform: translateX(8px); }
-      36%  { transform: translateX(-5px); }
-      58%  { transform: translateX(2.5px); }
-      78%  { transform: translateX(-1px); }
-      92%  { transform: translateX(0.3px); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
       100% { transform: translateX(0); }
     }
     /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
     .message-jump-anim,
     .message-bubble.message-jump-anim {
-      animation: messageSway 0.7s cubic-bezier(0.25, 1, 0.5, 1) both !important;
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
       will-change: transform;
     }
     @keyframes messageSway {
       0%   { transform: translateX(0); }
-      16%  { transform: translateX(8px); }
-      36%  { transform: translateX(-5px); }
-      58%  { transform: translateX(2.5px); }
-      78%  { transform: translateX(-1px); }
-      92%  { transform: translateX(0.3px); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
       100% { transform: translateX(0); }
     }
     /* Reactions */

@@ -218,11 +218,42 @@ async function handleEmergencyPasswordReset(request, env) {
       const salt = kFields.salt?.stringValue || '';
       const storedKeyHash = kFields.keyHash?.stringValue || '';
       const storedUserId = kFields.userId?.stringValue || '';
-
+      const currentFailCount = kFields.failCount?.integerValue ? parseInt(kFields.failCount.integerValue, 10) : 0;
+      const isLocked = kFields.locked?.booleanValue || false;
+      if (isLocked || currentFailCount >= 5) {
+        return new Response(JSON.stringify({ success: false, error: "試行回数の上限（5回）を超えたため、このリカバリーキーは一時的にロックされています。通常のメール再設定をお試しいただくか、管理者へお問い合わせください。" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      }
       const keyBuf = await crypto.subtle.digest('SHA-256', enc.encode(salt + ':' + cleanKey));
       const computedHash = Array.from(new Uint8Array(keyBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
       if (computedHash !== storedKeyHash) {
-        return new Response(JSON.stringify({ success: false, error: "リカバリーキーが一致しません。大文字・ハイフンを含めて正しく入力されているかご確認ください。" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+        const newFailCount = currentFailCount + 1;
+        const shouldLock = newFailCount >= 5;
+        const failCommitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
+        const failUpdateFields = {
+          ...kFields,
+          failCount: { integerValue: newFailCount.toString() }
+        };
+        if (shouldLock) {
+          failUpdateFields.locked = { booleanValue: true };
+          failUpdateFields.lockedAt = { timestampValue: new Date().toISOString() };
+        }
+        await fetch(failCommitUrl, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            writes: [{
+              update: {
+                name: keyIndexData.name,
+                fields: failUpdateFields
+              }
+            }]
+          })
+        }).catch(() => {});
+        const remainingAttempts = Math.max(0, 5 - newFailCount);
+        const errorMsg = shouldLock
+          ? "試行回数の上限（5回）に達しました。セキュリティ保護のためリカバリーキーはロックされました。"
+          : `リカバリーキーが一致しません。残り${remainingAttempts}回試行できます。`;
+        return new Response(JSON.stringify({ success: false, error: errorMsg }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
       }
 
       let targetUid = storedUserId;
@@ -254,23 +285,35 @@ async function handleEmergencyPasswordReset(request, env) {
         return new Response(JSON.stringify({ success: false, error: `パスワード更新エラー: ${updateResult.error.message || JSON.stringify(updateResult.error)}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
       }
 
-      // recovery_vault に監査ログを更新（新規・未作成時でもNOT_FOUNDにならず安全にupsert保存）
+      // recovery_vault に監査ログを更新し、failCountを0にリセット
       const commitUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
       await fetch(commitUrl, {
         method: "POST",
         headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          writes: [{
-            update: {
-              name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
-              fields: {
-                userId: { stringValue: targetUid },
-                email: { stringValue: cleanEmail },
-                lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
-                recoveryStatus: { stringValue: 'verified' }
+          writes: [
+            {
+              update: {
+                name: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/recovery_vault/${targetUid}`,
+                fields: {
+                  userId: { stringValue: targetUid },
+                  email: { stringValue: cleanEmail },
+                  lastRecoveryAttempt: { timestampValue: new Date().toISOString() },
+                  recoveryStatus: { stringValue: 'verified' }
+                }
+              }
+            },
+            {
+              update: {
+                name: keyIndexData.name,
+                fields: {
+                  ...kFields,
+                  failCount: { integerValue: "0" },
+                  lastVerifiedAt: { timestampValue: new Date().toISOString() }
+                }
               }
             }
-          }]
+          ]
         })
       }).catch(() => {});
 
@@ -1183,21 +1226,43 @@ async function handleSendCallNotification(request, env) {
 async function handleSendNotification(request, env) {
   const dynamicCors = getCorsHeaders(request);
   try {
-    const { receiverIds, title, body, roomId, appId, senderId, idToken, messageId } = await request.json();
+    const { receiverIds, title, body, roomId, serverId, appId, senderId, idToken, messageId } = await request.json();
     if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
     }
     if (!isValidAppId(appId, env)) {
       return new Response(JSON.stringify({ success: false, error: "Invalid appId" }), { status: 400, headers: dynamicCors });
     }
-
+    if (serverId && !/^[a-zA-Z0-9_\-]+$/.test(serverId)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid serverId" }), { status: 400, headers: dynamicCors });
+    }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== senderId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: dynamicCors });
     }
-
     if (receiverIds.length > 50) {
       return new Response(JSON.stringify({ success: false, error: "Too many receivers. Limit is 50." }), { status: 400, headers: dynamicCors });
+    }
+    // 🔒 認可チェック (IDOR / プッシュ通知スプーフィング完全防御)
+    const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+    if (!isGlobal) {
+      if (serverId) {
+        // サーバーメッセージ通知: 送信者がサーバーメンバーであることを検証
+        const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+        if (!isMember) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a member of this server" }), { status: 403, headers: dynamicCors });
+        }
+      } else if (roomId && roomId.includes('_') && !roomId.startsWith('p2p_')) {
+        // DMメッセージ通知: roomId (uid1_uid2) に自分が含まれ、受信者がDM相手であることを検証
+        const dmUids = (roomId.startsWith('dm_') ? roomId.slice(3) : roomId).split('_');
+        if (!dmUids.includes(verifiedUser.uid)) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: dynamicCors });
+        }
+        const notAllowedReceiver = receiverIds.some(rid => !dmUids.includes(rid) || rid === verifiedUser.uid);
+        if (notAllowedReceiver) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid DM recipient" }), { status: 403, headers: dynamicCors });
+        }
+      }
     }
 
     const workerToken = await getWorkerAuthToken(env);
@@ -1328,6 +1393,7 @@ async function handleSendNotification(request, env) {
                                     title: safeTitle,
                                     body: safeBody,
                                     roomId: roomId || "",
+                                    serverId: serverId || "",
                                     senderId: senderId || "",
                                     messageId: messageId || "",
                                     type: "chat_message"
@@ -1715,9 +1781,8 @@ async function handleDeleteFile(request, env, url) {
     const folder = (meta?.folder || '').toLowerCase();
     const isProtectedAsset = folder.includes('stamp') || folder.includes('avatar') || folder.includes('icon');
     const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1';
-    const forceDelete = url.searchParams.get('forceDelete') === '1';
-    // スタンプやアバターは専用の削除操作以外ではメッセージ連動削除から保護
-    if (isProtectedAsset && !isExplicitAssetDelete && !forceDelete) {
+    // スタンプやアバターは専用の削除操作 (isAssetDelete=1) 以外ではメッセージ連動削除から100%保護
+    if (isProtectedAsset && !isExplicitAssetDelete) {
       return new Response(JSON.stringify({ success: true, skipped: true, message: '保護されたアセットのため通常削除をスキップしました' }), {
         status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
       });
@@ -2265,6 +2330,9 @@ async function handleAdminDeleteMessage(request, env) {
         const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
         const msgCheckRes = await fetch(msgCheckUrl);
         const msgCheckData = await msgCheckRes.json().catch(() => null);
+        if (!msgCheckData) {
+          return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        }
         const isSender = Boolean(msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid));
         if (!isSender) {
           return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
@@ -2295,16 +2363,20 @@ async function handleAdminDeleteMessage(request, env) {
       targetSenderId = msgCheckData.senderId || msgCheckData.userId || null;
       if (targetSenderId === verifiedUser.uid) isOwner = true;
     }
+    let fsCheckData = null;
     if (!isOwner) {
       const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
       const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
-      const fsCheckData = await fsCheckRes.json().catch(() => null);
+      fsCheckData = await fsCheckRes.json().catch(() => null);
       if (fsCheckData && fsCheckData.fields) {
         targetSenderId = fsCheckData.fields.senderId?.stringValue || fsCheckData.fields.userId?.stringValue || targetSenderId;
         if (targetSenderId === verifiedUser.uid) isOwner = true;
       }
     }
-
+    // メッセージがRTDBにもFirestoreにも存在しない場合、既に削除済みなので成功を返してクライアントキャッシュ消去を許可
+    if (!msgCheckData && (!fsCheckData || !fsCheckData.fields)) {
+      return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     if (!isGlobal && !isSvAdmin && !isOwner) {
       return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }

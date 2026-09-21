@@ -1900,11 +1900,9 @@ async function _loadOrCreateUserRecoveryKey(user) {
       // ユーザー用の新規緊急リカバリーキーを自動生成
       key = _generateRandomRecoveryKey();
       localStorage.setItem(storageKey, key);
-
       const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
       const keyHash = await _sha256Hash(salt + ':' + key);
       const emailHash = await _sha256Hash(user.email.toLowerCase().trim());
-
       // Vault & Index 保存
       const vaultRef = doc(db, `artifacts/${appId}/recovery_vault`, user.uid);
       await setDoc(vaultRef, {
@@ -1914,12 +1912,13 @@ async function _loadOrCreateUserRecoveryKey(user) {
         keyHash: keyHash,
         updatedAt: serverTimestamp()
       }, { merge: true });
-
       const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
       await setDoc(indexRef, {
         userId: user.uid,
         salt: salt,
         keyHash: keyHash,
+        failCount: 0,
+        locked: false,
         updatedAt: serverTimestamp()
       }, { merge: true });
     }
@@ -2025,12 +2024,13 @@ window.generateNewRecoveryKey = async function (showPrompt = false) {
       keyHash: keyHash,
       updatedAt: serverTimestamp()
     }, { merge: true });
-
     const indexRef = doc(db, `artifacts/${appId}/recovery_index`, emailHash);
     await setDoc(indexRef, {
       userId: user.uid,
       salt: salt,
       keyHash: keyHash,
+      failCount: 0,
+      locked: false,
       updatedAt: serverTimestamp()
     }, { merge: true });
 
@@ -13369,11 +13369,11 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     if (currentServerId === serverId && roomDocs.length > 0) {
       if (window.innerWidth >= 768) {
         const savedLastRoomId = localStorage.getItem('covo_last_room_' + serverId);
-        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId);
+        let targetDoc = roomDocs.find(d => d.id === savedLastRoomId && (d.data().channelType || 'text') !== 'voice');
         if (!targetDoc) {
-          targetDoc = roomDocs[0];
+          targetDoc = roomDocs.find(d => (d.data().channelType || 'text') !== 'voice') || roomDocs[0];
         }
-        if (targetDoc && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
+        if (targetDoc && (targetDoc.data().channelType || 'text') !== 'voice' && (!currentRoomId || !currentRoomIds.has(currentRoomId))) {
           selectRoom(targetDoc.id, targetDoc.data().name);
         }
       }
@@ -13901,14 +13901,12 @@ async function subscribeToMessagesRTDB() {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
       }
-    } catch (_) {}
-  };
-
-  onChildAdded(q, handleAdded);
-  onChildChanged(q, handleChanged);
-  onChildRemoved(q, handleRemoved);
-
-  const activeServerId = currentServerId;
+      } catch (_) {}
+      };
+      const unsubAdded = onChildAdded(q, handleAdded);
+      const unsubChanged = onChildChanged(q, handleChanged);
+      const unsubRemoved = onChildRemoved(q, handleRemoved);
+      const activeServerId = currentServerId;
   const activeRoomId = currentRoomId;
   const activeDmId = currentDmId;
 
@@ -13985,8 +13983,10 @@ async function subscribeToMessagesRTDB() {
     try { if (typeof onRR === 'function') onRR(); } catch (_) {}
     try { off(rrRef, 'value', onRR); } catch (_) {}
   };
-
   window.rtdbMessagesUnsub = () => {
+    try { if (typeof unsubAdded === 'function') unsubAdded(); } catch (_) {}
+    try { if (typeof unsubChanged === 'function') unsubChanged(); } catch (_) {}
+    try { if (typeof unsubRemoved === 'function') unsubRemoved(); } catch (_) {}
     try { off(q); } catch (_) {}
     if (window.typingUnsubscribe) window.typingUnsubscribe();
     if (window.readReceiptsUnsubscribe) window.readReceiptsUnsubscribe();
@@ -15017,6 +15017,7 @@ async function sendSticker(emoji) {
                 title: `${sd.name || 'Covo'} (#${roomNames[snapRoomId] || 'room'})`,
                 body: `${userNickname}: [スタンプ]`,
                 roomId: snapRoomId,
+                serverId: snapServerId,
                 messageId: replyMsgRef.id,
                 appId,
                 senderId: userId,
@@ -15820,6 +15821,7 @@ async function sendMessage() {
               title: notifTitle,
               body: notifBody,
               roomId: snapRoomId,
+              serverId: snapServerId,
               messageId: newMessageId,
               appId: appId,
               senderId: userId,
@@ -16012,6 +16014,7 @@ async function sendMessage() {
             title: `${serverName} (#${roomName})`,
             body: `${userNickname}: [ファイル]`,
             roomId: snapRoomId,
+            serverId: snapServerId,
             messageId: msgRefId,
             appId: appId,
             senderId: userId,
@@ -16625,6 +16628,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
               dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
             }
             if (dec && !dec.startsWith('（復号化エラー：')) {
+              message._originalText = rawEnc;
               message.text = dec;
               message._decrypted = true;
               message._decryptedErrorText = null;
@@ -17359,7 +17363,16 @@ function renderMessagesWithReadReceipts() {
       }
       const bubbleElement = row.querySelector('.message-bubble');
       if (bubbleElement) updateReactionsUI(bubbleElement, msg);
-
+      const replyQuoteText = row.querySelector('.reply-quote-text');
+      if (replyQuoteText && msg.replyTo) {
+        const replyRaw = msg.replyTo._decryptedErrorText || msg.replyTo.text || '（ファイル）';
+        const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
+        if (isReplyEnc) {
+          replyQuoteText.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
+        } else {
+          replyQuoteText.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
+        }
+      }
       existingRowsMap.delete(msg.id);
     } else {
       row = createMessageElement(msg, msg.id, readCount);
@@ -17970,7 +17983,7 @@ if (deleteMsgBtn) {
         const fileKey = m[1];
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${forceDelete ? '&forceDelete=1' : ''}${deleteExtraParams}`;
+          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}${deleteExtraParams}`;
           const res = await fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' });
           if (!res.ok) {
             console.warn('[deleteMessage] KV delete failed:', res.status, fileKey);
@@ -18326,20 +18339,20 @@ function doJumpHighlight(el) {
       isStamp.classList.add('stamp-jump-anim');
       setTimeout(() => {
         isStamp.classList.remove('stamp-jump-anim');
-      }, 600);
+      }, 750);
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.7s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
+      // 揺れアニメーション（0.85s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
-      }, 750);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.4s後）
+      }, 880);
+      // ハイライト色はスーッと滑らかに自然フェードアウト（1.6s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
-      }, 1400);
+      }, 1600);
     }
-  }, didScroll ? 350 : 50);
+  }, didScroll ? 450 : 30);
 }
 
 // iOS/Safari 判定
@@ -20709,9 +20722,19 @@ async function startFileShare(targetUid, targetName, file) {
 
     // 相手にプッシュ通知（任意・fire-and-forget）
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const fsDmId = [userId, targetUid].sort().join('_');
     fetch(`${WORKER_BASE_URL}/api/sendNotification`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiverIds: [targetUid], title: 'ファイル受信', body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`, appId, senderId: userId, idToken })
+      body: JSON.stringify({
+        receiverIds: [targetUid],
+        title: 'ファイル受信',
+        body: `${myUser.nickname || '相手'}さんがファイルを送ろうとしています`,
+        roomId: fsDmId,
+        serverId: currentServerId || undefined,
+        appId,
+        senderId: userId,
+        idToken
+      })
     }).catch(() => { });
 
     _fsShowProgress('send', file.name, '相手の応答を待っています…');

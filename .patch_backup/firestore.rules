@@ -131,7 +131,11 @@ service cloud.firestore {
       // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
       match /admin_recovery_requests/{userDocId} {
         allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
+        allow create, delete: if isGlobalAdmin(appId);
+        allow update: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid == userDocId &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
+           request.resource.data.used == true);
       }
       match /admin_recovery_index/{emailHash} {
         allow read: if isGlobalAdmin(appId);
@@ -249,7 +253,11 @@ service cloud.firestore {
              request.resource.data.dmId == null ||
              request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
              request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if isAuthenticated();
+        allow update: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
         match /{subcollection}/{docId} {
           allow read, write: if isAuthenticated();
         }
@@ -272,7 +280,12 @@ service cloud.firestore {
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            (
+              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            )
           );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
@@ -294,7 +307,11 @@ service cloud.firestore {
         allow update: if isAuthenticated() &&
           (
             isGlobalAdmin(appId) ||
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            (
+              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            )
           );
         allow create: if isAuthenticated() &&
           (isGlobalAdmin(appId) ||
@@ -354,8 +371,6 @@ service cloud.firestore {
             exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
-
----
           );
 
           // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)

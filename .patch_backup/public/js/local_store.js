@@ -109,6 +109,9 @@ export async function putMessage(msg) {
       if (cleanMsg._originalText) {
         cleanMsg.text = cleanMsg._originalText;
       }
+      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+      }
       // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
       if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
         cleanMsg._decrypted = false;
@@ -145,6 +148,9 @@ export async function upsertMessagesBatch(msgs) {
         // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
         if (cleanMsg._originalText) {
           cleanMsg.text = cleanMsg._originalText;
+        }
+        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
         }
         // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
         if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
@@ -393,14 +399,15 @@ export async function getAllChannels() {
  * @param {Object} friend
  */
 export async function putFriend(friend) {
-  if (!friend || !friend.uid) return;
+  if (!friend) return;
+  const uid = friend.uid || friend.targetUid || friend.id;
+  if (!uid) return;
   const db = await initLocalDB();
   if (!db) return;
-
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put(friend);
+      tx.objectStore("friends").put({ ...friend, uid });
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
     } catch (e) {
@@ -408,7 +415,6 @@ export async function putFriend(friend) {
     }
   });
 }
-
 /**
  * フレンド一覧の一括保存
  * @param {Array<Object>} friends
@@ -417,13 +423,14 @@ export async function putFriendsBatch(friends) {
   if (!Array.isArray(friends) || friends.length === 0) return;
   const db = await initLocalDB();
   if (!db) return;
-
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("friends", "readwrite");
       const store = tx.objectStore("friends");
       for (const f of friends) {
-        if (f && f.uid) store.put(f);
+        if (!f) continue;
+        const uid = f.uid || f.targetUid || f.id;
+        if (uid) store.put({ ...f, uid });
       }
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);

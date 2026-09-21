@@ -677,6 +677,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (!m) return;
             // リプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
+          if (!m.replyTo._originalText) {
+            m.replyTo._originalText = m.replyTo.text;
+          }
           try {
             const decReply = await _decryptText(m.replyTo.text, serverId, roomId, memberIds);
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
@@ -1184,6 +1187,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!m) return;
         // DMリプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
+          if (!m.replyTo._originalText) {
+            m.replyTo._originalText = m.replyTo.text;
+          }
           try {
             const decReply = await _decryptDmText(m.replyTo.text, dmKeyObj || dmId, participants);
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
