@@ -158,6 +158,12 @@ function isTransientTelemetryError(args) {
       str.includes('permission denied') ||
       str.includes('aborterror') ||
       str.includes('notallowederror') ||
+      str.includes('requested device not found') ||
+      str.includes('notfounderror') ||
+      str.includes('devicesnotfounderror') ||
+      str.includes('到着を待機します') ||
+      str.includes('dm鍵を生成済みです') ||
+      (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -1937,7 +1943,7 @@ async function _loadOrCreateUserRecoveryKey(user) {
       modalKeyDisplay.textContent = _isModalRecoveryKeyVisible ? key : 'COVO-••••-••••-••••-••••';
     }
   } catch (err) {
-    console.error('[Recovery] Load/Create key error:', err);
+    console.warn('[Recovery] Load/Create key remote notice (continuing in local mode):', err?.message || err);
     if (modalBadge) {
       modalBadge.textContent = 'ローカル保護中';
       modalBadge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20';
@@ -7703,34 +7709,34 @@ function subscribeToUserStatus() {
               lastSeen: rawLc || existing.lastSeen || cachedProf.lastSeen || null
             };
             usersMap.set(uid, merged);
-            Object.assign(cachedProf, data);
+            Object.assign(cachedProf, merged);
             if (rawLc) cachedProf.last_changed = rawLc;
-            // 🌟 相手のニックネームやアイコンがRTDB経由で届いた場合も即座にDM画面へ反映
-            if (data.nickname !== undefined || data.avatarUrl !== undefined || data.customStatus !== undefined) {
-              if (typeof window.refreshCurrentDmParticipantUI === 'function') {
-                window.refreshCurrentDmParticipantUI(uid, {
-                  nickname: data.nickname,
-                  avatarUrl: data.avatarUrl,
-                  customStatus: data.customStatus
-                });
-              }
+            // 🌟 相手のオンライン状態(緑/黄/灰)・ニックネーム・アイコンを即座にDM画面＆右バーへ反映
+            if (typeof window.refreshCurrentDmParticipantUI === 'function') {
+              window.refreshCurrentDmParticipantUI(uid, merged);
             }
           } else {
             const savedLastSeen = localStorage.getItem(`covo_last_seen_${uid}`);
             const lastSeenNum = savedLastSeen ? parseInt(savedLastSeen, 10) : null;
             const fallbackLc = existing.last_changed || cachedProf.last_changed || lastSeenNum || null;
-            usersMap.set(uid, {
+            const offlineMerged = {
               ...existing,
               ...cachedProf,
               id: uid,
               state: 'offline',
+              status: 'offline',
               computedState: 'offline',
               last_changed: fallbackLc,
               lastSeen: fallbackLc
-            });
+            };
+            usersMap.set(uid, offlineMerged);
             if (cachedProf) {
               cachedProf.status = 'offline';
               cachedProf.state = 'offline';
+              cachedProf.computedState = 'offline';
+            }
+            if (typeof window.refreshCurrentDmParticipantUI === 'function') {
+              window.refreshCurrentDmParticipantUI(uid, offlineMerged);
             }
           }
           cachedUsers = Array.from(usersMap.values());
@@ -9007,16 +9013,7 @@ function subscribeToDmChannels() {
               const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
               const targetAv = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
               let textBody = dmData.lastMessageText || '新着メッセージ';
-
               (async () => {
-                if (typeof isEncrypted === 'function' && isEncrypted(textBody)) {
-                  try {
-                    const dmKey = await _getDmKeyWithWait(dmId, dmData.participants || [userId, otherUid], 1000);
-                    textBody = await _decryptDmText(textBody, dmKey);
-                  } catch (e) { textBody = '（暗号化されたメッセージ）'; }
-                }
-                if (typeof isEncrypted === 'function' && isEncrypted(textBody)) textBody = '（暗号化されたメッセージ）';
-
                 await notifyNewMessage({
                   messageId: `${dmId}_${lastAt}`,
                   channelId: dmId,
@@ -9139,7 +9136,7 @@ function renderDmConversationsList() {
   }
   }
 
-  // 🌟 個チャ (DM) 相手のアイコン・名前・ステータス変更を画面全体へ即座に反映するリアクティブ同期関数
+  // 🌟 個チャ (DM) 相手のアイコン・名前・オンライン/オフライン状態を画面全体へ即座に反映するリアクティブ同期関数
   window.refreshCurrentDmParticipantUI = function(targetUid, updatedData = {}) {
   if (!targetUid) return;
   const existingProf = window._userProfileCache?.get(targetUid) || { id: targetUid, uid: targetUid };
@@ -9147,6 +9144,8 @@ function renderDmConversationsList() {
   const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
   const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
   const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
+  const newState = updatedData.computedState || updatedData.state || updatedData.status || existingProf.status || 'offline';
+  const newLastChanged = updatedData.last_changed || updatedData.lastSeen || existingProf.last_changed || null;
   const merged = {
     ...existingProf,
     id: targetUid,
@@ -9154,7 +9153,12 @@ function renderDmConversationsList() {
     nickname: newNickname,
     avatarUrl: newAvatarUrl,
     aboutMe: newAboutMe,
-    customStatus: newCustomStatus
+    customStatus: newCustomStatus,
+    state: newState,
+    status: newState,
+    computedState: newState,
+    last_changed: newLastChanged,
+    lastSeen: newLastChanged
   };
   window._userProfileCache?.set(targetUid, merged);
   if (Array.isArray(cachedUsers)) {
@@ -9168,71 +9172,36 @@ function renderDmConversationsList() {
   if (friendRelationships && friendRelationships[targetUid]) {
     friendRelationships[targetUid].targetNickname = newNickname;
     friendRelationships[targetUid].targetAvatarUrl = newAvatarUrl;
+    friendRelationships[targetUid].status = merged.status;
     if (newCustomStatus !== undefined) friendRelationships[targetUid].customStatus = newCustomStatus;
   }
+  // 🌟 右側プロフィールパネル (#dmProfilePanel) のステータスインジケーター（緑/黄/灰）をリアルタイム即時更新！
+  const dmPanelStatusDot = document.getElementById('dmPanelStatusDot');
+  if (dmPanelStatusDot && currentDmParticipant && currentDmParticipant.uid === targetUid) {
+    dmPanelStatusDot.className = `status-indicator status-${newState}`;
+  }
+  // 🌟 ポップアウト (#userProfileModal) が開いていればステータスドットを即時更新！
+  if (_currentProfileTargetUser && _currentProfileTargetUser.uid === targetUid) {
+    const upStatusDot = document.getElementById('userProfileStatusDot');
+    if (upStatusDot) upStatusDot.className = `status-indicator status-${newState}`;
+  }
+  // 🌟 フルプロフィール (#userFullProfileModal) が開いていればステータスドットを即時更新！
+  if (_fullProfileTargetUser && _fullProfileTargetUser.uid === targetUid) {
+    const fpStatusDot = document.getElementById('fullProfileStatusDot');
+    if (fpStatusDot) fpStatusDot.className = `status-indicator status-${newState}`;
+  }
+  // 🌟 左サイドバーの該当DM行 (#dmConversationsList) のステータスドットを即時更新！
+  const dmSidebarItems = document.querySelectorAll('#dmConversationsList .dm-sidebar-item');
+  dmSidebarItems.forEach(item => {
+    if (item.getAttribute('onclick')?.includes(targetUid)) {
+      const dot = item.querySelector('.status-indicator');
+      if (dot) dot.className = `status-indicator status-${newState}`;
+    }
+  });
   // 現在この相手との個チャ (DM) を開いている場合、アクティブUIを瞬時に即座反映
   if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
     currentDmParticipant = {
       ...currentDmParticipant,
-      nickname: newNickname,
-      avatarUrl: newAvatarUrl,
-      aboutMe: newAboutMe,
-      customStatus: newCustomStatus
-    };
-    // 1. チャット上部ヘッダー
-    const title = document.getElementById("currentRoomTitleText");
-    if (title) title.textContent = newNickname;
-    // 2. 入力欄プレースホルダー
-    const mi = document.getElementById("messageInput");
-    if (mi) mi.placeholder = `@${newNickname} へのメッセージ`;
-    // 3. ウィンドウ最上部タイトルバー
-    if (typeof updateTitleBarContext === 'function') {
-      updateTitleBarContext('dm', currentDmParticipant);
-    }
-    // 4. 右側プロフィールパネルの再描画
-    if (typeof renderDmProfilePanel === 'function') {
-      renderDmProfilePanel(targetUid, newNickname, newAvatarUrl);
-    }
-    // 5. チャット内メッセージの相手アバター・名前の即時更新
-    const container = document.getElementById('messagesDisplay');
-    if (container) {
-      container.querySelectorAll(`.msg-avatar[data-user-id="${targetUid}"]`).forEach(av => {
-        __setAvatarImg(av, newAvatarUrl, newNickname, { style: '' });
-      });
-      container.querySelectorAll(`.msg-sender-name[data-sender-id="${targetUid}"]`).forEach(nm => {
-        nm.textContent = newNickname;
-      });
-    }
-    // 6. DMウェルカムバナーの更新
-    const hero = document.getElementById('dmHeroWelcomeBanner');
-    if (hero) {
-      const heroAvatar = hero.querySelector('.dm-hero-avatar');
-      const heroTitle = hero.querySelector('h2');
-      if (heroAvatar) {
-        if (isUsableAvatarUrl(newAvatarUrl)) {
-          heroAvatar.innerHTML = `<img src="${escapeHtml(newAvatarUrl)}" class="w-20 h-20 rounded-full object-cover shadow-lg border-2 border-indigo-500/20">`;
-        } else {
-          heroAvatar.innerHTML = `<div class="w-20 h-20 rounded-full bg-slate-700 text-white font-bold text-3xl flex items-center justify-center shadow-lg">${escapeHtml(newNickname.charAt(0))}</div>`;
-        }
-      }
-      if (heroTitle) heroTitle.textContent = newNickname;
-    }
-    // 7. メッセージキャッシュ内の送信者名・アバターも同期 & 画面再描画
-    if (Array.isArray(allLoadedMessages)) {
-      allLoadedMessages.forEach(m => {
-        if (m && m.senderId === targetUid) {
-          m.senderNickname = newNickname;
-          if (newAvatarUrl !== undefined) m.senderAvatarUrl = newAvatarUrl;
-        }
-      });
-    }
-    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
-  }
-  // 8. 左側サイドバー（DM会話一覧）とフレンド一覧の更新
-  if (typeof renderDmConversationsList === 'function') renderDmConversationsList();
-  if (typeof renderFriendTabs === 'function') renderFriendTabs();
-  if (typeof renderMembersList === 'function' && cachedUsers) renderMembersList(cachedUsers);
-  };
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
@@ -12622,22 +12591,18 @@ async function setupGlobalNotificationListeners() {
               if (roomData.lastMessageSender && roomData.lastMessageSender !== userId) {
                 newItemsToNotif.push({ serverId: svId, serverName: svData.name || svId, roomId: rmId, roomName: rmName, lastAt: ts });
                 (async () => {
-                  let body = roomData.lastMessageText || '新着メッセージ';
-                  try {
-                    if (typeof isEncrypted === 'function' && isEncrypted(body)) {
-                      const _members = (svData && svData.joinedUsers) || [];
-                      body = await decryptText(body, svId, rmId, _members);
-                    }
-                  } catch (e) { body = '（暗号化されたメッセージ）'; }
-                  if (typeof isEncrypted === 'function' && isEncrypted(body)) body = '（暗号化されたメッセージ）';
-
+                  let senderNick = roomData.lastMessageSenderNickname || '';
+                  if (!senderNick && roomData.lastMessageSender) {
+                    const prof = await window.getUserProfile(roomData.lastMessageSender).catch(() => null);
+                    senderNick = prof?.nickname || 'メンバー';
+                  }
                   await notifyNewMessage({
                     messageId: `${rmId}_${ts}`,
                     channelId: rmId,
                     serverName: svData.name || svId,
                     channelName: rmName,
-                    senderName: 'メンバー',
-                    text: body,
+                    senderName: senderNick || 'メンバー',
+                    text: roomData.lastMessageText || '新着メッセージ',
                     sticker: null,
                     serverId: svId,
                     serverData: svData,
@@ -13446,24 +13411,19 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
             updateGlobalNotifUI();
             const serverName = currentServerData?.name || 'Covo';
             const roomName = room.name || 'room';
-            let text = room.lastMessageText || '新着メッセージ';
-
             (async () => {
-              try {
-                if (typeof isEncrypted === 'function' && isEncrypted(text)) {
-                  const _members = (currentServerData && currentServerData.joinedUsers) || [];
-                  text = await decryptText(text, currentServerId, change.doc.id, _members);
-                }
-              } catch (e) { text = '（暗号化されたメッセージ）'; }
-              if (typeof isEncrypted === 'function' && isEncrypted(text)) text = '（暗号化されたメッセージ）';
-
+              let senderNick = room.lastMessageSenderNickname || '';
+              if (!senderNick && room.lastMessageSender) {
+                const prof = await window.getUserProfile(room.lastMessageSender).catch(() => null);
+                senderNick = prof?.nickname || 'メンバー';
+              }
               await notifyNewMessage({
                 messageId: `${change.doc.id}_${lastMsgAt}`,
                 channelId: change.doc.id,
                 serverName: serverName,
                 channelName: roomName,
-                senderName: 'メンバー',
-                text: text,
+                senderName: senderNick || 'メンバー',
+                text: room.lastMessageText || '新着メッセージ',
                 sticker: null,
                 serverId: currentServerId,
                 serverData: currentServerData,
@@ -13860,11 +13820,6 @@ async function subscribeToMessagesRTDB() {
           }
         }
       } catch (e) { }
-      const cleanBody = formatNotificationBody(bodyText, data.sticker);
-      const isMentioned = cleanBody && typeof cleanBody === "string" && (cleanBody.includes(`@${userNickname}`) || cleanBody.includes('@all'));
-      if (isMentioned && document.hasFocus()) {
-        showMentionToast(data.senderNickname || "ユーザー");
-      }
       const sName = targetServerId ? (targetServerData?.name || 'Covo') : 'ダイレクトメッセージ';
       const rName = targetServerId ? (roomNames[targetRoomId] || 'ルーム') : (currentDmParticipant?.nickname || 'ユーザー');
       notifyNewMessage({
@@ -13873,7 +13828,7 @@ async function subscribeToMessagesRTDB() {
         serverName: sName,
         channelName: rName,
         senderName: data.senderNickname || 'ユーザー',
-        text: cleanBody,
+        text: data.text,
         sticker: data.sticker,
         serverId: targetServerId,
         serverData: targetServerData,
@@ -15543,7 +15498,11 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
       if (res.ok) {
         const d = await res.json().catch(() => ({}));
         if (d.prunedCount > 0) {
-          console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+          const now = Date.now();
+          if (!window._lastPruneLogTime || now - window._lastPruneLogTime > 30000) {
+            window._lastPruneLogTime = now;
+            console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+          }
         }
       }
     }).catch(err => {
@@ -15779,6 +15738,7 @@ async function sendMessage() {
         participants: snapDmParticipants,
         lastMessageAt: data.timestamp,
         lastMessageSender: userId,
+        lastMessageSenderNickname: userNickname || 'ユーザー',
         lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
       }, { merge: true });
       LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
@@ -15839,6 +15799,7 @@ async function sendMessage() {
         await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
           lastMessageAt: data.timestamp,
           lastMessageSender: userId,
+          lastMessageSenderNickname: snapServerNickname || userNickname || 'ユーザー',
           lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
         });
       } catch (updateErr) { }
@@ -18812,22 +18773,55 @@ async function notifyNewMessage({
   let bodyText = text;
   if (sticker) {
     bodyText = '[スタンプ]';
-  } else if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
-    try {
-      if (isDm && targetUid) {
-        const dmKey = await _getDmKeyWithWait(channelId, [userId, targetUid], 1000);
-        bodyText = await _decryptDmText(bodyText, dmKey);
-      } else if (serverId && channelId) {
-        const memberIds = serverData?.joinedUsers || [];
-        bodyText = await decryptText(bodyText, serverId, channelId, memberIds);
+  } else {
+    // 🔒 E2EE暗号文の完全復号（通知に送信者名と本文を確実に表示）
+    const isEnc = typeof isEncrypted === 'function' && (isEncrypted(bodyText) || (typeof bodyText === 'string' && bodyText.startsWith('enc::')));
+    if (isEnc) {
+      try {
+        if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+        let decrypted = null;
+        if (isDm) {
+          const cleanDm = channelId.startsWith('dm_') ? channelId.slice(3) : channelId;
+          const participants = (targetUid && userId) ? [userId, targetUid] : cleanDm.split('_');
+          const dmKey = await _getDmKeyWithWait(cleanDm, participants, 2500);
+          if (dmKey) {
+            decrypted = await _decryptDmText(bodyText, dmKey, participants);
+          }
+        } else if (serverId && channelId) {
+          const memberIds = serverData?.joinedUsers || [];
+          const roomKey = await getRoomKeyWithWait(serverId, channelId, memberIds, 2500);
+          if (roomKey) {
+            decrypted = await decryptText(bodyText, serverId, channelId, memberIds);
+          }
+        }
+        if (decrypted && !decrypted.startsWith('（復号化エラー')) {
+          bodyText = decrypted;
+        } else {
+          // わずかな遅延時のセーフティリトライ (350ms待機)
+          await new Promise(r => setTimeout(r, 350));
+          if (isDm) {
+            const cleanDm = channelId.startsWith('dm_') ? channelId.slice(3) : channelId;
+            const dmKey = _e2ee?.dmKeyCache?.[cleanDm] || await _getOrCreateDmKey(cleanDm, [userId, targetUid]);
+            if (dmKey) decrypted = await _decryptDmText(bodyText, dmKey);
+          } else if (serverId && channelId) {
+            const memberIds = serverData?.joinedUsers || [];
+            decrypted = await decryptText(bodyText, serverId, channelId, memberIds);
+          }
+          if (decrypted && !decrypted.startsWith('（復号化エラー')) {
+            bodyText = decrypted;
+          }
+        }
+      } catch (e) {
+        console.warn('[notifyNewMessage] Decryption warning:', e);
       }
-    } catch (e) { bodyText = '新着メッセージがあります'; }
+    }
+    if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
+      bodyText = '新着メッセージがあります';
+    } else if (typeof bodyText === 'string' && bodyText.startsWith('（復号化エラー')) {
+      bodyText = '新着メッセージがあります';
+    }
+    bodyText = formatNotificationBody(bodyText, sticker);
   }
-  if (typeof isEncrypted === 'function' && isEncrypted(bodyText)) {
-    bodyText = '新着メッセージがあります';
-  }
-
-  bodyText = formatNotificationBody(bodyText, sticker);
 
   const isCurrentChannel = (channelId === currentRoomId) || (isDm && channelId === currentDmId);
   // アプリが最前面でアクティブにフォーカスされているかを厳密に判定
@@ -20693,7 +20687,10 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
       console.warn('[P2P LogSync targetCandidates onSnapshot] notice:', err?.message || err);
     });
     unsubDoc = onSnapshot(syncDocRef, async (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        cleanupP2P();
+        return;
+      }
       const d = snap.data();
       if (d.answer && pc && !pc.currentRemoteDescription) {
         await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
@@ -20703,6 +20700,11 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         }
       }
     }, (err) => {
+      if (err?.code === 'permission-denied') {
+        // ドキュメント削除完了時の正常シグナルとして安全にクリーンアップ
+        cleanupP2P();
+        return;
+      }
       console.warn('[P2P LogSync syncDocRef onSnapshot] notice:', err?.message || err);
     });
 
@@ -21882,7 +21884,7 @@ window.toggleCamera = async function () {
     menu.className = "discord-device-menu";
     document.body.appendChild(menu);
     document.addEventListener("click", (ev) => {
-      if (menu && !menu.contains(ev.target) && ev.target.id !== "callDeviceSettingsBtn" && !ev.target.closest("#callDeviceSettingsBtn")) {
+      if (menu && !menu.contains(ev.target) && !ev.target.closest("#callDeviceSettingsBtn, #vcGridDeviceBtn, #vcBarDeviceBtn, .discord-control-btn, .vc-ctrl-btn, .vc-bar-btn")) {
         menu.classList.remove("show");
       }
     });
@@ -21891,64 +21893,96 @@ window.toggleCamera = async function () {
     menu.classList.remove("show");
     return;
   }
-  menu.innerHTML = '<div class="p-3 text-xs text-gray-400 text-center"><i class="fas fa-spinner fa-spin mr-1"></i>デバイス一覧を取得中...</div>';
-  const triggerBtn = document.getElementById("callDeviceSettingsBtn");
+  menu.innerHTML = '<div class="p-4 text-xs text-gray-400 dark:text-gray-500 text-center flex items-center justify-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>デバイス一覧を取得中...</span></div>';
+  // クリックされたボタン（ボイスチャンネル・1対1通話・左下バーのいずれか）から正確な座標を取得
+  const triggerBtn = e?.currentTarget || e?.target?.closest('button') || document.getElementById("vcGridDeviceBtn") || document.getElementById("callDeviceSettingsBtn") || document.getElementById("vcBarDeviceBtn");
   if (triggerBtn) {
     const r = triggerBtn.getBoundingClientRect();
     menu.style.position = "fixed";
-    menu.style.bottom = `${window.innerHeight - r.top + 10}px`;
-    menu.style.left = `${Math.max(12, Math.min(window.innerWidth - 270, r.left - 100))}px`;
+    const menuWidth = Math.min(320, window.innerWidth - 24);
+    menu.style.width = `${menuWidth}px`;
+    const menuHeight = 360;
+    let topPos = r.top - menuHeight - 12;
+    if (topPos < 10) {
+      topPos = r.bottom + 12;
+    }
+    menu.style.top = `${Math.max(10, Math.round(topPos))}px`;
+    menu.style.bottom = "auto";
+    const leftPos = Math.max(12, Math.min(window.innerWidth - menuWidth - 12, Math.round(r.left + r.width / 2 - menuWidth / 2)));
+    menu.style.left = `${leftPos}px`;
   }
   menu.classList.add("show");
   try {
-    const mics = await AgoraRTC.getMicrophones();
-    const cams = await AgoraRTC.getCameras();
-    const speakers = (AgoraRTC.getPlaybackDevices ? await AgoraRTC.getPlaybackDevices() : []);
+    // 標準API (navigator.mediaDevices) と AgoraRTC の両対応で確実にデバイスを取得
+    let mics = [], cams = [], speakers = [];
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+      const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      mics = devices.filter(d => d.kind === 'audioinput');
+      cams = devices.filter(d => d.kind === 'videoinput');
+      speakers = devices.filter(d => d.kind === 'audiooutput');
+    }
+    if (mics.length === 0 && typeof AgoraRTC !== 'undefined' && AgoraRTC.getMicrophones) {
+      mics = await AgoraRTC.getMicrophones().catch(() => []);
+    }
+    if (cams.length === 0 && typeof AgoraRTC !== 'undefined' && AgoraRTC.getCameras) {
+      cams = await AgoraRTC.getCameras().catch(() => []);
+    }
+    if (speakers.length === 0 && typeof AgoraRTC !== 'undefined' && AgoraRTC.getPlaybackDevices) {
+      speakers = await AgoraRTC.getPlaybackDevices().catch(() => []);
+    }
     const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
     const currentModeOverride = window._voiceEngine?._modeOverride || 'auto';
     const adminModeSection = isGlobalAdmin ? `
-      <div class="pt-3 mt-2 border-t border-white/10 space-y-2">
+      <div class="pt-3 mt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
         <div class="flex items-center justify-between">
-          <label class="block font-bold text-gray-400 text-xs flex items-center gap-1.5">
-            <i class="fas fa-network-wired text-indigo-400"></i>通話方式 (全体管理者専用)
+          <label class="block font-bold text-gray-500 dark:text-gray-400 text-xs flex items-center gap-1.5">
+            <i class="fas fa-network-wired text-indigo-500"></i>通話方式 (全体管理者専用)
           </label>
-          <span class="text-[10px] text-amber-400 font-bold px-1.5 py-0.5 bg-amber-400/10 rounded">リアルタイム即時切替</span>
+          <span class="text-[10px] text-amber-500 font-bold px-1.5 py-0.5 bg-amber-500/10 rounded">リアルタイム切替</span>
         </div>
         <div class="grid grid-cols-2 gap-1.5" id="callModeButtonGrid">
-          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'auto' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="auto" onclick="setVoiceCallMode('auto')">
+          <button type="button" class="call-mode-btn p-2 rounded-xl text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'auto' ? 'bg-[#5865f2] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'}" data-mode="auto" onclick="setVoiceCallMode('auto')">
             自動判定
           </button>
-          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'p2p' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="p2p" onclick="setVoiceCallMode('p2p')">
+          <button type="button" class="call-mode-btn p-2 rounded-xl text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'p2p' ? 'bg-[#5865f2] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'}" data-mode="p2p" onclick="setVoiceCallMode('p2p')">
             P2P直接
           </button>
-          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'turn' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="turn" onclick="setVoiceCallMode('turn')">
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'turn' ? 'bg-[#5865f2] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'}" data-mode="turn" onclick="setVoiceCallMode('turn')">
             TURNリレー
           </button>
-          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'agora' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-[#1e1f22] text-gray-300 hover:bg-white/10'}" data-mode="agora" onclick="setVoiceCallMode('agora')">
+          <button type="button" class="call-mode-btn p-2 rounded-lg text-xs font-bold transition flex items-center justify-center text-center ${currentModeOverride === 'agora' ? 'bg-[#5865f2] text-white shadow-sm' : 'bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10'}" data-mode="agora" onclick="setVoiceCallMode('agora')">
             Agora SFU
           </button>
         </div>
       </div>
     ` : '';
     menu.innerHTML = `
-      <div class="p-3.5 space-y-3 text-xs text-gray-200">
+      <div class="p-4 space-y-3.5 text-xs">
+        <div class="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-white/10">
+          <span class="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+            <i class="fas fa-sliders text-indigo-500"></i>音声・デバイス設定
+          </span>
+          <button type="button" onclick="document.getElementById('callDeviceMenu')?.classList.remove('show')" class="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1">
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
         <div>
-          <label class="block font-bold text-gray-400 mb-1"><i class="fas fa-microphone mr-1 text-emerald-400"></i>入力デバイス (マイク)</label>
-          <select id="callMicSelect" class="w-full bg-[#1e1f22] border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
-            ${mics.map(m => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.label || 'マイク')}</option>`).join('')}
+          <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-microphone mr-1.5 text-emerald-500"></i>入力デバイス (マイク)</label>
+          <select id="callMicSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            ${mics.length > 0 ? mics.map(m => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">マイクが見つかりません</option>'}
           </select>
         </div>
         <div>
-          <label class="block font-bold text-gray-400 mb-1"><i class="fas fa-video mr-1 text-indigo-400"></i>ビデオデバイス (カメラ)</label>
-          <select id="callCamSelect" class="w-full bg-[#1e1f22] border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
-            ${cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'カメラ')}</option>`).join('')}
+          <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-video mr-1.5 text-indigo-500"></i>カメラ (ビデオ)</label>
+          <select id="callCamSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            ${cams.length > 0 ? cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || `カメラ ${c.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">カメラが見つかりません</option>'}
           </select>
         </div>
         ${speakers.length > 0 ? `
         <div>
-          <label class="block font-bold text-gray-400 mb-1"><i class="fas fa-volume-high mr-1 text-blue-400"></i>出力デバイス (スピーカー)</label>
-          <select id="callSpeakerSelect" class="w-full bg-[#1e1f22] border border-white/10 rounded-lg p-1.5 text-xs text-white focus:outline-none">
-            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || 'スピーカー')}</option>`).join('')}
+          <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-volume-high mr-1.5 text-blue-500"></i>出力デバイス (スピーカー)</label>
+          <select id="callSpeakerSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</option>`).join('')}
           </select>
         </div>
         ` : ''}
@@ -22007,7 +22041,7 @@ window.toggleCamera = async function () {
       };
     }
   } catch (err) {
-    menu.innerHTML = `<div class="p-3 text-xs text-rose-400">デバイス取得エラー: ${escapeHtml(err.message || String(err))}</div>`;
+    menu.innerHTML = `<div class="p-4 text-xs text-rose-500">デバイス取得エラー: ${escapeHtml(err.message || String(err))}</div>`;
   }
   };
   window.openDeviceSettingsModal = window.toggleCallDeviceMenu;
@@ -22104,14 +22138,33 @@ async function showNotification(title, body, roomId, forceOs = false) {
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
   if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
-  // 本文のスタンプ・添付ファイル整形
+  // 本文のスタンプ・添付ファイル整形（万が一暗号文が残っていた場合のオンデマンド救済復号）
   let displayBody = formatNotificationBody(body);
   if (typeof displayBody === 'string' && (displayBody.includes('enc::v') || displayBody.startsWith('enc::'))) {
-    if (displayBody.includes(': enc::')) {
-      const senderPart = displayBody.split(': enc::')[0];
-      displayBody = `${senderPart}: 新しいメッセージがあります`;
+    const rawEnc = displayBody.includes(': enc::') ? displayBody.split(': enc::')[1] : (displayBody.startsWith('enc::') ? displayBody : null);
+    const senderPrefix = displayBody.includes(': enc::') ? displayBody.split(': enc::')[0] : '';
+    if (rawEnc && roomId) {
+      try {
+        if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+        let dec = null;
+        if (roomId.startsWith('dm_') || roomId.includes('_')) {
+          const cleanDm = roomId.startsWith('dm_') ? roomId.slice(3) : roomId;
+          const dmKey = _e2ee?.dmKeyCache?.[cleanDm] || await _getDmKeyWithWait(cleanDm, cleanDm.split('_'), 1500);
+          if (dmKey) dec = await _decryptDmText(rawEnc, dmKey);
+        } else if (currentServerId) {
+          const members = (currentServerData && currentServerData.joinedUsers) || [];
+          dec = await decryptText(rawEnc, currentServerId, roomId, members);
+        }
+        if (dec && !dec.startsWith('（復号化エラー')) {
+          displayBody = senderPrefix ? `${senderPrefix}: ${dec}` : dec;
+        } else {
+          displayBody = senderPrefix ? `${senderPrefix}: 新しいメッセージがあります` : '新しいメッセージがあります';
+        }
+      } catch (_) {
+        displayBody = senderPrefix ? `${senderPrefix}: 新しいメッセージがあります` : '新しいメッセージがあります';
+      }
     } else {
-      displayBody = '新しいメッセージがあります';
+      displayBody = senderPrefix ? `${senderPrefix}: 新しいメッセージがあります` : '新しいメッセージがあります';
     }
   }
   if (typeof title === 'string' && (title.includes('enc::v') || title.startsWith('enc::'))) {
@@ -25578,43 +25631,52 @@ window.saveViewerMessagesAsTxt = function () {
 //   TURN_USERNAME / TURN_CREDENTIAL を環境変数またはWorker経由で取得
 // ================================================================
 
-// --- TURN / ICE サーバー設定 ---
+// --- TURN / ICE サーバー設定 (到達率の高い標準3478番 & TLS443番を最優先最適化) ---
 const VC_ICE_SERVERS = [
-  // Google STUN（認証不要・無制限）
+  // Google STUN（高信頼・最速・無制限）
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  // Cloudflare STUN
+  { urls: 'stun:stun.cloudflare.com:3478' },
   // OpenRelay STUN
-  { urls: 'stun:openrelay.metered.ca:80' },
   { urls: 'stun:openrelay.metered.ca:3478' },
-  // OpenRelay TURN – 全ポート・プロトコル網羅 (UDP/TCP/TLS 80, 443, 3478)
+  { urls: 'stun:openrelay.metered.ca:80' },
+  // OpenRelay TURN – 標準3478ポート(UDP/TCP)およびTLS443ポートを個別に優先接続
   {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:3478',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turn:openrelay.metered.ca:80?transport=tcp',
-      'turn:openrelay.metered.ca:3478?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-      'turns:openrelay.metered.ca:3478?transport=tcp'
-    ],
+    urls: 'turn:openrelay.metered.ca:3478',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   },
-  // Cloudflare STUN（追加 STUN バックアップ）
-  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: 'turn:openrelay.metered.ca:3478?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ];
 const VC_TURN_TEST_SERVERS = [
   {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:3478',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turn:openrelay.metered.ca:3478?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp'
-    ],
+    urls: 'turn:openrelay.metered.ca:3478',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   }
@@ -27109,8 +27171,14 @@ class VoiceEngine {
         audio: false
       });
     } catch(e) {
-      console.error('[VoiceEngine] カメラ取得失敗:', e);
-      if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました: ' + (e.message || ''), 'error');
+      const isNotFound = e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError' || String(e.message || '').includes('Requested device not found');
+      if (isNotFound) {
+        console.warn('[VoiceEngine] カメラデバイスが見つかりません (未接続)');
+        if (typeof alertMessage === 'function') alertMessage('カメラデバイスが見つかりませんでした。Webカメラの接続をご確認ください。', 'warning');
+      } else {
+        console.error('[VoiceEngine] カメラ取得失敗:', e);
+        if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました: ' + (e.message || ''), 'error');
+      }
       return;
     }
     const camTrack = this._localVideoStream.getVideoTracks()[0];
@@ -27699,14 +27767,25 @@ window.setVoiceCallMode = async function(mode) {
 window.vcOpenGrid = _vcOpenGrid;
 function _vcOpenGrid() {
   const overlay = document.getElementById('vcGridOverlay');
+  const pipBar = document.getElementById('callPipBar');
   if (!overlay) return;
   const isHidden = overlay.classList.contains('hidden');
   overlay.classList.toggle('hidden', !isHidden);
   if (isHidden) {
     // グリッドを開く
+    if (pipBar) pipBar.classList.remove('active');
     const nameEl = document.getElementById('vcGridChannelName');
     if (nameEl && window._voiceEngine.channelName) nameEl.textContent = window._voiceEngine.channelName;
     window._voiceEngine._renderGrid();
+  } else {
+    // グリッドを最小化した時はフローティングPiPバーも連動表示（チャットしながら通話継続）
+    if (pipBar && window._voiceEngine?.isActive) {
+      const pipName = document.getElementById('callPipName');
+      const pipAvatar = document.getElementById('callPipAvatar');
+      if (pipName) pipName.textContent = window._voiceEngine.channelName ? `#${window._voiceEngine.channelName}` : 'ボイスチャンネル';
+      if (pipAvatar) pipAvatar.innerHTML = '<i class="fas fa-volume-up text-xs text-white"></i>';
+      pipBar.classList.add('active');
+    }
   }
 }
 

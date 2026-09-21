@@ -370,7 +370,7 @@ service cloud.firestore {
             isAuthenticated() &&
             exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
           );
 
           // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)

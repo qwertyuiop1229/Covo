@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.223" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.224" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.223" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.224" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -242,6 +242,10 @@
         s.includes('cross-origin-opener-policy') ||
         s.includes('syncrtdb') ||
         s.includes('not a member') ||
+        s.includes('share failed') ||
+        s.includes('permission denied') ||
+        s.includes('aborterror') ||
+        s.includes('notallowederror') ||
         (s.includes('failed to fetch') && (s.includes('chrome-extension') || s.includes('adblock'))) ||
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
@@ -2892,14 +2896,17 @@
               </button>
             </div>
             <div class="vc-bar-actions">
-              <button class="vc-bar-btn" id="vcBarMuteBtn" onclick="vcToggleMute()" title="マイク切替">
-                <i class="fas fa-microphone" id="vcBarMuteIcon"></i>
-              </button>
-              <button class="vc-bar-btn" id="vcBarCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+              <button class="vc-bar-btn" id="vcBarCamBtn" onclick="vcToggleCamera()" title="カメラ (ビデオ)">
                 <i class="fas fa-video" id="vcBarCamIcon"></i>
               </button>
-              <button class="vc-bar-btn" id="vcBarScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+              <button class="vc-bar-btn" id="vcBarScreenBtn" onclick="vcToggleScreen()" title="画面を共有">
                 <i class="fas fa-desktop" id="vcBarScreenIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarMuteBtn" onclick="vcToggleMute()" title="マイクミュート切替">
+                <i class="fas fa-microphone" id="vcBarMuteIcon"></i>
+              </button>
+              <button class="vc-bar-btn" id="vcBarDeviceBtn" onclick="toggleCallDeviceMenu(event)" title="音声・デバイス設定">
+                <i class="fas fa-cog"></i>
               </button>
               <button class="vc-bar-btn vc-bar-hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">
                 <i class="fas fa-phone-slash"></i>
@@ -3668,7 +3675,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.223"></script>
+  <script type="module" src="js/main.js?v=1.1.224"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -3988,18 +3995,18 @@
       <!-- 動的生成 -->
     </div>
 
-    <!-- 下部コントロールバー -->
+    <!-- 下部コントロールバー (Discord本家完全準拠 配置 & スタイル) -->
     <div class="vc-grid-controls">
-      <button class="vc-ctrl-btn" id="vcGridMuteBtn" onclick="vcToggleMute()" title="マイク切替">
-        <i class="fas fa-microphone" id="vcGridMuteIcon"></i>
-      </button>
-      <button class="vc-ctrl-btn" id="vcGridCamBtn" onclick="vcToggleCamera()" title="カメラ切替">
+      <button class="vc-ctrl-btn" id="vcGridCamBtn" onclick="vcToggleCamera()" title="カメラ (ビデオ)">
         <i class="fas fa-video" id="vcGridCamIcon"></i>
       </button>
-      <button class="vc-ctrl-btn" id="vcGridScreenBtn" onclick="vcToggleScreen()" title="画面共有">
+      <button class="vc-ctrl-btn" id="vcGridScreenBtn" onclick="vcToggleScreen()" title="画面を共有">
         <i class="fas fa-desktop" id="vcGridScreenIcon"></i>
       </button>
-      <button class="vc-ctrl-btn" id="vcGridDeviceBtn" onclick="toggleCallDeviceMenu(event)" title="デバイス設定">
+      <button class="vc-ctrl-btn" id="vcGridMuteBtn" onclick="vcToggleMute()" title="マイクミュート切替">
+        <i class="fas fa-microphone" id="vcGridMuteIcon"></i>
+      </button>
+      <button class="vc-ctrl-btn" id="vcGridDeviceBtn" onclick="toggleCallDeviceMenu(event)" title="音声・デバイス設定">
         <i class="fas fa-cog"></i>
       </button>
       <button class="vc-ctrl-btn hangup" onclick="leaveVoiceChannel()" title="ボイスチャンネルから切断">

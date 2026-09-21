@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
 
 let _getDb = () => null;
@@ -312,8 +312,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
       _e2ee._dmRescueRequestFlags[cleanDmId] = now;
       try {
-        // Firestore: dm_channels ドキュメントに救済リクエストを記録
+        // Firestore: dm_channels ドキュメントに救済リクエストを記録 (新規作成時でもルールを通るよう participants を常時包含)
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+          participants: [uid, otherUid].sort(),
           rescueRequests: {
             [uid]: Date.now()
           },
@@ -875,7 +876,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
       const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
-      const cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
+      let cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
+      if (!cached) {
+        // メモリキャッシュに鍵がない場合、自端末の鍵をFirestore/DBから復号ロードして自動取得
+        cached = await _getOrCreateDmKey(cleanDmId, [_getUserId(), targetUid]);
+      }
       if (!cached) return;
       _e2ee._lastBackfillTime = _e2ee._lastBackfillTime || new Map();
       const throttleKey = `${cleanDmId}_${targetUid}`;
@@ -939,9 +944,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             updatedAt: serverTimestamp()
           }, { merge: false });
           // バックフィル完了後、相手からの救済リクエストフラグを消去して完了
-          setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
-            rescueRequests: { [targetUid]: null }
-          }, { merge: true }).catch(() => {});
+          updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+            [`rescueRequests.${targetUid}`]: deleteField()
+          }).catch(() => {});
           console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${cleanDmId})`);
         }
       } catch (err) {

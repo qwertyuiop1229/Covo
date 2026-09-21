@@ -1774,141 +1774,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/ui_helpers.js">
-/**
- * UI補助機能 (ui_helpers.js)
- * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
- */
-/**
- * 画面上にトースト（通知ポップアップ）を表示
- * @param {string} msg - 表示するメッセージ
- * @param {string} type - "info", "success", "error"
- */
-export function alertMessage(msg, type = "info") {
-  const stack = document.getElementById("notifStack");
-  if (!stack) return;
-  const box = document.createElement("div");
-  let colorClass = "bg-gray-800 text-white";
-  if (type === "error") colorClass = "bg-red-600 text-white";
-  else if (type === "success") colorClass = "bg-emerald-600 text-white";
-  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
-  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
-  let icon = '<i class="fas fa-info-circle"></i>';
-  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
-  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
-  box.innerHTML = `${icon}<span>${msg}</span>`;
-  stack.appendChild(box);
-  setTimeout(() => {
-    box.style.animation = "fadeIn 0.2s ease reverse forwards";
-    setTimeout(() => box.remove(), 200);
-  }, 2800);
-}
-/**
- * アバター高解像度拡大表示（Discord風ライトボックス）
- * @param {string} url - アバター画像のURL
- * @param {string} nickname - ユーザーニックネーム
- * @param {string} tag - ユーザータグ (#1234)
- */
-export function openAvatarLightbox(url, nickname = '', tag = '') {
-  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
-  if (isUsable && typeof window.openPhotoSwipeModal === 'function') {
-    window.openPhotoSwipeModal(url, nickname ? `${nickname} のアバター` : 'アバター');
-    return;
-  }
-  const lb = document.getElementById("avatarLightbox");
-  const img = document.getElementById("avatarLightboxImg");
-  const initialEl = document.getElementById("avatarLightboxInitial");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const tagEl = document.getElementById("avatarLightboxUserTag");
-  if (!lb) return;
-  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
-  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
-  if (isUsable) {
-    if (img) {
-      img.src = url;
-      img.style.display = 'block';
-    }
-    if (initialEl) initialEl.style.display = 'none';
-  } else {
-    if (img) img.style.display = 'none';
-    if (initialEl) {
-      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
-      initialEl.style.display = 'block';
-    }
-  }
-  lb.style.display = "flex";
-  lb.classList.remove("hidden");
-}
-export function closeAvatarLightbox() {
-  const lb = document.getElementById("avatarLightbox");
-  if (lb) {
-    lb.style.display = "none";
-    lb.classList.add("hidden");
-  }
-}
-export function downloadAvatarLightboxImage() {
-  const img = document.getElementById("avatarLightboxImg");
-  const titleEl = document.getElementById("avatarLightboxTitle");
-  const url = img?.src;
-  if (url && url.startsWith('http')) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-}
-if (typeof window !== 'undefined') {
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.closeAvatarLightbox = closeAvatarLightbox;
-  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
-}
-/**
- * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
- */
-let audioCtx = null;
-export function playNotificationSound() {
-  try {
-    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (!soundEnabled || !notifEnabled) return;
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const play = () => {
-      const now = audioCtx.currentTime;
-      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
-      notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + i * 0.09);
-        gain.gain.setValueAtTime(0, now + i * 0.09);
-        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(now + i * 0.09);
-        osc.stop(now + i * 0.09 + 0.5);
-      });
-    };
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(play).catch(() => {});
-    } else {
-      play();
-    }
-  } catch (e) { }
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.alertMessage = alertMessage;
-  window.openAvatarLightbox = openAvatarLightbox;
-  window.playNotificationSound = playNotificationSound;
-}
-</file>
-
 <file path="public/js/utils.js">
 /**
  * ユーティリティ関数群 (utils.js)
@@ -3116,6 +2981,144 @@ exit
       background-color: #242629 !important;
       border-top-color: #1f2023 !important;
     }
+</file>
+
+<file path="public/js/ui_helpers.js">
+/**
+ * UI補助機能 (ui_helpers.js)
+ * トースト通知、アバター拡大、通知音などのUI表示用純粋関数群です。
+ */
+/**
+ * 画面上にトースト（通知ポップアップ）を表示
+ * @param {string} msg - 表示するメッセージ
+ * @param {string} type - "info", "success", "error"
+ */
+export function alertMessage(msg, type = "info") {
+  const stack = document.getElementById("notifStack");
+  if (!stack) return;
+  const box = document.createElement("div");
+  let colorClass = "bg-gray-800 text-white";
+  if (type === "error") colorClass = "bg-red-600 text-white";
+  else if (type === "success") colorClass = "bg-emerald-600 text-white";
+  box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
+  box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+  let icon = '<i class="fas fa-info-circle"></i>';
+  if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
+  else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';
+  const textSpan = document.createElement("span");
+  textSpan.textContent = msg;
+  box.innerHTML = icon;
+  box.appendChild(textSpan);
+  stack.appendChild(box);
+  setTimeout(() => {
+    box.style.animation = "fadeIn 0.2s ease reverse forwards";
+    setTimeout(() => box.remove(), 200);
+  }, 2800);
+}
+/**
+ * アバター高解像度拡大表示（Discord風ライトボックス）
+ * @param {string} url - アバター画像のURL
+ * @param {string} nickname - ユーザーニックネーム
+ * @param {string} tag - ユーザータグ (#1234)
+ */
+export function openAvatarLightbox(url, nickname = '', tag = '') {
+  const isUsable = url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && url.length > 0;
+  if (isUsable && typeof window.openPhotoSwipeModal === 'function') {
+    window.openPhotoSwipeModal(url, nickname ? `${nickname} のアバター` : 'アバター');
+    return;
+  }
+  const lb = document.getElementById("avatarLightbox");
+  const img = document.getElementById("avatarLightboxImg");
+  const initialEl = document.getElementById("avatarLightboxInitial");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const tagEl = document.getElementById("avatarLightboxUserTag");
+  if (!lb) return;
+  if (titleEl) titleEl.textContent = nickname ? `${nickname} のアバター` : 'アバター';
+  if (tagEl) tagEl.textContent = tag ? `#${tag}` : '';
+  if (isUsable) {
+    if (img) {
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (initialEl) initialEl.style.display = 'none';
+  } else {
+    if (img) img.style.display = 'none';
+    if (initialEl) {
+      initialEl.textContent = (nickname || '?').charAt(0).toUpperCase();
+      initialEl.style.display = 'block';
+    }
+  }
+  lb.style.display = "flex";
+  lb.classList.remove("hidden");
+}
+export function closeAvatarLightbox() {
+  const lb = document.getElementById("avatarLightbox");
+  if (lb) {
+    lb.style.display = "none";
+    lb.classList.add("hidden");
+  }
+}
+export function downloadAvatarLightboxImage() {
+  const img = document.getElementById("avatarLightboxImg");
+  const titleEl = document.getElementById("avatarLightboxTitle");
+  const url = img?.src;
+  if (url && url.startsWith('http')) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(titleEl?.textContent || 'avatar').replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+if (typeof window !== 'undefined') {
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.closeAvatarLightbox = closeAvatarLightbox;
+  window.downloadAvatarLightboxImage = downloadAvatarLightboxImage;
+}
+/**
+ * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
+ */
+let audioCtx = null;
+export function playNotificationSound() {
+  try {
+    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
+    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+    if (!soundEnabled || !notifEnabled) return;
+    if (!audioCtx || audioCtx.state === 'closed') {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const play = () => {
+      const now = audioCtx.currentTime;
+      const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
+      notes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.5);
+      });
+    };
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
+  } catch (e) { }
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.alertMessage = alertMessage;
+  window.openAvatarLightbox = openAvatarLightbox;
+  window.playNotificationSound = playNotificationSound;
+}
 </file>
 
 <file path="public/auth-desktop.html">
@@ -11773,7 +11776,7 @@ html.dark .server-menu-item.text-rose-500:hover {
 </file>
 
 <file path="public/js/crypto_helpers.js">
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
 let _getDb = () => null;
 let _getUserId = () => null;
@@ -12049,6 +12052,31 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         delete _e2ee.roomKeyCache[roomId];
         delete _e2ee._roomKeyPromises[roomId];
       } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
+    }
+    // 【DM E2EE 自動治癒】DM鍵未到着・不一致時の救済リクエスト（デバウンス付き）
+    export async function _requestDmKeyRescue(dmId, otherUid) {
+      const uid = _getUserId();
+      if (!uid || !dmId || !otherUid) return;
+      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      _e2ee._dmRescueRequestFlags = _e2ee._dmRescueRequestFlags || {};
+      const now = Date.now();
+      if (_e2ee._dmRescueRequestFlags[cleanDmId] && (now - _e2ee._dmRescueRequestFlags[cleanDmId] < 30000)) {
+        return; // 30秒以内の重複リクエストは抑止
+      }
+      _e2ee._dmRescueRequestFlags[cleanDmId] = now;
+      try {
+        // Firestore: dm_channels ドキュメントに救済リクエストを記録 (新規作成時でもルールを通るよう participants を常時包含)
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+          participants: [uid, otherUid].sort(),
+          rescueRequests: {
+            [uid]: Date.now()
+          },
+          updatedAt: serverTimestamp()
+        }, { merge: true }).catch(() => {});
+        console.log(`[E2EE] DM鍵の救済リクエストを発行しました (dmId=${cleanDmId}, target=${otherUid})`);
+      } catch (e) {
+        console.warn("[E2EE] DM救済リクエスト発行警告:", e);
+      }
     }
     // 管理者が初回ログイン時にエスクロー鍵ペア(合鍵)を生成する。
     // 公開鍵を settings/escrowKey（全員読取可）に、秘密鍵を管理者本人の private に暗号化して保存。
@@ -12556,17 +12584,22 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      */
     export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
-      const cached = _e2ee.dmKeyCache[dmId];
+      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      let cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
+      if (!cached) {
+        // メモリキャッシュに鍵がない場合、自端末の鍵をFirestore/DBから復号ロードして自動取得
+        cached = await _getOrCreateDmKey(cleanDmId, [_getUserId(), targetUid]);
+      }
       if (!cached) return;
       _e2ee._lastBackfillTime = _e2ee._lastBackfillTime || new Map();
-      const throttleKey = `${dmId}_${targetUid}`;
+      const throttleKey = `${cleanDmId}_${targetUid}`;
       const lastTime = _e2ee._lastBackfillTime.get(throttleKey) || 0;
       if (!forceUpdate && Date.now() - lastTime < 5000) return;
       _e2ee._lastBackfillTime.set(throttleKey, Date.now());
       try {
         const targetPub = await __getUserPublicKey(targetUid, forceUpdate);
         if (!targetPub) return;
-        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`)).catch(() => null);
+        const targetWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${targetUid}`)).catch(() => null);
         const existingData = (targetWrapSnap && targetWrapSnap.exists()) ? targetWrapSnap.data() || {} : {};
         // 既存の versions から肥大化の原因となるエイリアスキー(_from_)を完全除外
         const cleanExistingVersions = {};
@@ -12609,47 +12642,63 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           prunedVersions[v] = versionsMap[v];
         });
         const hadJunkKeys = existingData.versions && Object.keys(existingData.versions).length > sortedVers.length;
-        if ((hasNewKeys || hadJunkKeys) && Object.keys(prunedVersions).length > 0) {
+        if ((hasNewKeys || hadJunkKeys || !targetWrapSnap || !targetWrapSnap.exists()) && Object.keys(prunedVersions).length > 0) {
           const latestVer = cached.latestVersion || existingData.latestVersion || sortedVers[0] || "1";
           const wrappedLatest = prunedVersions[latestVer] || Object.values(prunedVersions)[0];
           // 1MB超過した既存ドキュメントを完全修復・軽量化するため、余計なフィールドを排して上書き保存
-          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${targetUid}`), {
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${targetUid}`), {
             versions: prunedVersions,
             latestVersion: latestVer,
             wrappedKey: wrappedLatest,
             updatedAt: serverTimestamp()
           }, { merge: false });
-          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${dmId})`);
+          // バックフィル完了後、相手からの救済リクエストフラグを消去して完了
+          updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
+            [`rescueRequests.${targetUid}`]: deleteField()
+          }).catch(() => {});
+          console.log(`[E2EE] DM鍵を相手(${targetUid})へ正常にバックフィル・同期しました (dmId=${cleanDmId})`);
         }
       } catch (err) {
-        console.warn(`[E2EE] DM鍵バックフィル失敗 (target=${targetUid}):`, err);
+        console.warn(`[E2EE] DM鍵バックフィル警告 (target=${targetUid}):`, err);
       }
     }
-    export async function _getOrCreateDmKey(dmId, participants) {
+    export async function _getOrCreateDmKey(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
-      if (_e2ee._dmKeyPromises[dmId]) return _e2ee._dmKeyPromises[dmId];
-      _e2ee._dmKeyPromises[dmId] = (async () => {
-        const res = await __getOrCreateDmKeyImpl(dmId, participants);
-        if (!res) delete _e2ee._dmKeyPromises[dmId];
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      if (!forceGenerateNew && _e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
+      if (!forceGenerateNew && _e2ee._dmKeyPromises[cleanDmId]) return _e2ee._dmKeyPromises[cleanDmId];
+      const promise = (async () => {
+        const res = await __getOrCreateDmKeyImpl(cleanDmId, participants, forceGenerateNew);
+        if (!res) {
+          // 待機中またはキー未到着時: 2.5秒間ネガティブキャッシュを保持し、短時間のFirestore問い合わせ連打・ログスパムを完全防止
+          setTimeout(() => {
+            if (_e2ee._dmKeyPromises[cleanDmId] === promise) {
+              delete _e2ee._dmKeyPromises[cleanDmId];
+            }
+          }, 2500);
+        }
         return res;
       })();
-      return _e2ee._dmKeyPromises[dmId];
+      if (!forceGenerateNew) {
+        _e2ee._dmKeyPromises[cleanDmId] = promise;
+      }
+      return promise;
     }
-    export async function __getOrCreateDmKeyImpl(dmId, participants) {
+    export async function __getOrCreateDmKeyImpl(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
       const currentUid = _getUserId();
       if (!currentUid) return null;
       try {
         const ok = await _ensureE2EEKeys();
         if (!ok) return null;
-        const rawMembers = participants && participants.length ? participants : dmId.split('_');
+        const rawMembers = participants && participants.length ? participants : cleanDmId.split('_');
         const memberUids = Array.from(new Set(rawMembers.filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
         const otherUid = memberUids.find(uid => uid !== currentUid) || null;
-        const keysObj = { _dmId: dmId };
-        // 0) レガシー共有キー (dm_channels/${dmId} 直下に sharedKey がある初期形式) の確認
+        const keysObj = { _dmId: cleanDmId };
+        // 0) レガシー共有キー (dm_channels/${cleanDmId} 直下に sharedKey がある初期形式) の確認
         try {
-          const dmSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+          const dmSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
           const dmData = dmSnap && dmSnap.exists() ? dmSnap.data() : null;
           if (dmData && dmData.sharedKey) {
             try {
@@ -12661,7 +12710,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         } catch (_) {}
         // 1) Firestoreの自分宛て wrappedKey から復元を試行
-        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${currentUid}`));
+        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`));
         if (myWrapSnap.exists()) {
           const data = myWrapSnap.data() || {};
           const versionsMap = {};
@@ -12699,38 +12748,46 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             const activeVer = (data.latestVersion && keysObj[data.latestVersion]) ? String(data.latestVersion) : sortedVers[0];
             keysObj.latest = keysObj[activeVer];
             keysObj.latestVersion = activeVer;
-            _e2ee.dmKeyCache[dmId] = keysObj;
+            _e2ee.dmKeyCache[cleanDmId] = keysObj;
             // 自分が鍵を持っている場合、相手にも確実に鍵をバックフィル（配布・相互同期）
             if (otherUid) {
-              _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
+              _backfillDmKeysForParticipant(cleanDmId, otherUid).catch(() => {});
             }
             return keysObj;
           }
         }
         // 2) 自分宛ての鍵が見つからない、または秘密鍵で復号できなかった場合
-        if (otherUid) {
-          const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${otherUid}`)).catch(() => null);
+        if (otherUid && !forceGenerateNew) {
+          const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${otherUid}`)).catch(() => null);
           if (otherWrapSnap && otherWrapSnap.exists()) {
-            console.warn(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${dmId})`);
+            // スロットル: 同一 dmId に対する待機案内ログは 60 秒に 1 回のみ出力
+            _e2ee._lastDmLogTime = _e2ee._lastDmLogTime || new Map();
+            const lastLog = _e2ee._lastDmLogTime.get(cleanDmId) || 0;
+            if (Date.now() - lastLog > 60000) {
+              _e2ee._lastDmLogTime.set(cleanDmId, Date.now());
+              console.log(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${cleanDmId})`);
+            }
+            // 相手に対して即座に鍵再暗号化（救済）リクエストを自動発行
+            _requestDmKeyRescue(cleanDmId, otherUid).catch(() => {});
             // レガシー共有キーがステップ0で取得できていればそれを返す
             if (keysObj["legacy_shared"]) {
               keysObj.latest = keysObj["legacy_shared"];
               keysObj.latestVersion = "1";
-              _e2ee.dmKeyCache[dmId] = keysObj;
+              _e2ee.dmKeyCache[cleanDmId] = keysObj;
               return keysObj;
             }
             // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
             // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
-            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`)).catch(() => null);
+            const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
             const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
             if (hasExistingDmHistory) {
               return null;
             }
           }
         }
-        // 3) 完全新規DMの場合のみ、新しいDM鍵を生成して参加者両名に配布
+        // 3) 完全新規DMの場合、または送信時の自律回復 (forceGenerateNew) の場合: 新しいDM鍵を生成して参加者両名に配布
         try {
-          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`), {
+          await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
             participants: memberUids,
             updatedAt: serverTimestamp()
           }, { merge: true });
@@ -12740,16 +12797,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const newKey = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const rawKey = await window.crypto.subtle.exportKey("raw", newKey);
         const writePromises = [];
+        const newVerStr = forceGenerateNew ? String(Date.now()) : "1";
         for (const uid of memberUids) {
-          const pub = (uid === currentUid) ? _e2ee.publicKey : await __getUserPublicKey(uid);
+          const pub = (uid === currentUid) ? _e2ee.publicKey : await __getUserPublicKey(uid, true);
           if (pub) {
             try {
               const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
               const b64Wrapped = _abToB64(wrapped);
               writePromises.push(
-                setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${uid}`), {
-                  versions: { "1": b64Wrapped },
-                  latestVersion: "1",
+                setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${uid}`), {
+                  versions: { [newVerStr]: b64Wrapped },
+                  latestVersion: newVerStr,
                   wrappedKey: b64Wrapped,
                   updatedAt: serverTimestamp()
                 }, { merge: true }).catch(() => {})
@@ -12762,26 +12820,27 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (writePromises.length > 0) {
           await Promise.all(writePromises);
         }
-        keysObj["1"] = newKey;
+        keysObj[newVerStr] = newKey;
         keysObj.latest = newKey;
-        keysObj.latestVersion = "1";
-        _e2ee.dmKeyCache[dmId] = keysObj;
+        keysObj.latestVersion = newVerStr;
+        _e2ee.dmKeyCache[cleanDmId] = keysObj;
         return keysObj;
       } catch (e) {
-        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${dmId}):`, e);
+        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
         return null;
       }
     }
     export async function _getDmKeyWithWait(dmId, participants, maxWaitMs = 2000) {
       if (!_subtleOK || !dmId) return null;
-      if (_e2ee.dmKeyCache[dmId]) return _e2ee.dmKeyCache[dmId];
+      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      if (_e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
-        const keyObj = await _getOrCreateDmKey(dmId, participants);
+        const keyObj = await _getOrCreateDmKey(cleanDmId, participants);
         if (keyObj) return keyObj;
         if (Date.now() >= deadline) return null;
-        const delay = Math.min(150 * Math.pow(2, attempt++), 500);
+        const delay = Math.min(250 * Math.pow(1.5, attempt++), 600);
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -12805,12 +12864,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           dmKeyObj = dmIdOrKey;
           dmId = dmKeyObj._dmId || null;
         } else if (typeof dmIdOrKey === 'string') {
-          dmId = dmIdOrKey;
-          dmKeyObj = _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmIdOrKey, participants, 2500);
+          dmId = dmIdOrKey.startsWith('dm_') ? dmIdOrKey.slice(3) : dmIdOrKey;
+          dmKeyObj = _e2ee.dmKeyCache[dmId] || _e2ee.dmKeyCache[dmIdOrKey] || await _getDmKeyWithWait(dmId, participants, 2500);
         }
         if (!dmId && typeof participants === 'object' && Array.isArray(participants) && participants.length === 2) {
           dmId = [...participants].sort().join('_');
         }
+        if (dmId && dmId.startsWith('dm_')) dmId = dmId.slice(3);
         if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
         const parts = text.split("::");
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
@@ -12863,12 +12923,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             _backfillDmKeysForParticipant(dmId, otherUid).catch(() => {});
           }
         }
-        if (dmId) delete _e2ee._dmKeyPromises[dmId];
+        if (dmId) {
+          delete _e2ee._dmKeyPromises[dmId];
+          // 鍵不一致時は相手に再暗号化（救済）リクエストを自動発行
+          const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
+          const otherUid = memberList.find(id => id !== _getUserId());
+          if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
+        }
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
         if (dmId) {
           delete _e2ee.dmKeyCache[dmId];
           delete _e2ee._dmKeyPromises[dmId];
+          const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
+          const otherUid = memberList.find(id => id !== _getUserId());
+          if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
         return "（復号化エラー：メッセージを解読できません）";
       }
@@ -12920,6 +12989,15 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           m._decrypted = false;
         }
       }));
+    }
+    if (typeof window !== 'undefined') {
+      window._requestDmKeyRescue = _requestDmKeyRescue;
+      window._getOrCreateDmKey = _getOrCreateDmKey;
+      window._getDmKeyWithWait = _getDmKeyWithWait;
+      window._backfillDmKeysForParticipant = _backfillDmKeysForParticipant;
+      window._encryptDmText = _encryptDmText;
+      window._decryptDmText = _decryptDmText;
+      window._decryptDmMessagesInPlace = _decryptDmMessagesInPlace;
     }
 </file>
 
@@ -19365,13 +19443,13 @@ async function handleSetOffline(request, env) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.223" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.224" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.223" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.224" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -19557,6 +19635,10 @@ async function handleSetOffline(request, env) {
         s.includes('cross-origin-opener-policy') ||
         s.includes('syncrtdb') ||
         s.includes('not a member') ||
+        s.includes('share failed') ||
+        s.includes('permission denied') ||
+        s.includes('aborterror') ||
+        s.includes('notallowederror') ||
         (s.includes('failed to fetch') && (s.includes('chrome-extension') || s.includes('adblock'))) ||
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
@@ -22796,7 +22878,7 @@ async function handleSetOffline(request, env) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.223"></script>
+  <script type="module" src="js/main.js?v=1.1.224"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -24249,7 +24331,7 @@ import {
   deleteToken,
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
 import * as LocalStore from './local_store.js';
 import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
@@ -24337,6 +24419,10 @@ function isTransientTelemetryError(args) {
       str.includes('not a member') ||
       str.includes('auth/popup-closed-by-user') ||
       str.includes('auth/cancelled-popup-request') ||
+      str.includes('share failed') ||
+      str.includes('permission denied') ||
+      str.includes('aborterror') ||
+      str.includes('notallowederror') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -30380,7 +30466,7 @@ window.switchFullProfileTab = function (tab) {
               ? `<img src="${escapeHtml(avUrl)}" class="w-full h-full rounded-full object-cover">`
               : escapeHtml(fNick.charAt(0).toUpperCase());
             return `
-              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${fUid}', '${escapeHtml(fNick).replace(/'/g, "\\'")}', '${escapeHtml(avUrl).replace(/'/g, "\\'")}')">
+              <div class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors group" onclick="closeUserFullProfileModal(); openUserFullProfileModal('${_jsq(fUid)}', '${_jsq(fNick)}', '${_jsq(avUrl)}')">
                 <div class="relative w-10 h-10 flex-shrink-0">
                   <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
                     ${avatarHtml}
@@ -32509,7 +32595,14 @@ function subscribeToDmChannels() {
     unsubscribeDmChannels = onSnapshot(dmQuery, (snap) => {
       dmConversations = {};
       snap.forEach(d => {
-        dmConversations[d.id] = { id: d.id, ...d.data() };
+        const dmData = d.data() || {};
+        dmConversations[d.id] = { id: d.id, ...dmData };
+        // 相手からの救済リクエスト（rescueRequests）を検知した場合に自動バックフィル（オンデマンドで自端末キーを復号ロードして相手へ再配布）
+        const otherUid = (dmData.participants || []).find(id => id !== userId);
+        if (otherUid && dmData.rescueRequests && dmData.rescueRequests[otherUid]) {
+          const cleanId = d.id.startsWith('dm_') ? d.id.slice(3) : d.id;
+          _backfillDmKeysForParticipant(cleanId, otherUid, true).catch(() => {});
+        }
       });
       renderDmConversationsList();
       if (!_isDmChannelsFirst) {
@@ -32567,7 +32660,19 @@ function subscribeToDmChannels() {
 function renderDmConversationsList() {
   const container = document.getElementById('dmConversationsList');
   if (!container) return;
-  const list = Object.values(dmConversations);
+  const hiddenMap = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
+  const list = Object.values(dmConversations).filter(dm => {
+    if (currentDmId === dm.id) return true;
+    const hiddenAt = hiddenMap[dm.id];
+    if (!hiddenAt) return true;
+    const lastMsgAt = typeof dm.lastMessageAt === 'number' ? dm.lastMessageAt : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
+    if (lastMsgAt > hiddenAt) {
+      delete hiddenMap[dm.id];
+      localStorage.setItem('covo_hidden_dms', JSON.stringify(hiddenMap));
+      return true;
+    }
+    return false;
+  });
   if (list.length === 0) {
     container.innerHTML = `
       <div class="p-4 text-center text-xs text-gray-400 dark:text-gray-500 bg-gray-50/50 dark:bg-[#1e1f22]/50 rounded-xl border border-gray-200/50 dark:border-gray-800/50 m-1">
@@ -32742,6 +32847,14 @@ function renderDmConversationsList() {
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
+  // 能動的にDMを開いた場合は非表示リストから即座に復帰
+  try {
+    const hiddenMap = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
+    if (hiddenMap[dmId]) {
+      delete hiddenMap[dmId];
+      localStorage.setItem('covo_hidden_dms', JSON.stringify(hiddenMap));
+    }
+  } catch (_) {}
   currentDmId = dmId;
   currentDmParticipants = [userId, targetUid].sort();
   const cachedProfInitial = window._userProfileCache?.get(targetUid);
@@ -33278,7 +33391,7 @@ window.renderDmActiveNowPanel = function () {
       }
     }
     return `
-      <div class="active-now-item" onclick="openUserProfileModal('${u.id}', '${safeNick.replace(/'/g, "\\'")}', '${escapeHtml(u.avatarUrl).replace(/'/g, "\\'")}')">
+      <div class="active-now-item" onclick="openUserProfileModal('${_jsq(u.id)}', '${_jsq(u.nickname || safeNick)}', '${_jsq(u.avatarUrl)}')">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden shadow-xs">
             ${safeAv}
@@ -33312,6 +33425,10 @@ window.handleDmHeroFriendAction = async function (targetUid, targetNickname) {
   }
 };
 window.hideDmConversation = async function(dmId) {
+  if (!dmId) return;
+  const hidden = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
+  hidden[dmId] = Date.now();
+  localStorage.setItem('covo_hidden_dms', JSON.stringify(hidden));
   delete dmConversations[dmId];
   renderDmConversationsList();
 };
@@ -36990,7 +37107,7 @@ async function subscribeToMessagesRTDB() {
         serverId: targetServerId,
         serverData: targetServerData,
         isDm: Boolean(targetDmId),
-        targetUid: currentDmParticipant?.uid || null,
+        targetUid: (targetDmParticipants.find(id => id !== userId) || currentDmParticipant?.uid || null),
         targetAvatarUrl: currentDmParticipant?.avatarUrl || null
       });
     }
@@ -38619,7 +38736,11 @@ async function sendMessage() {
       } else {
         try {
           if (snapDmId) {
-            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            if (!dmKey) {
+              console.log('[E2EE] 相手鍵の到着を待機しましたが不在のため、送信継続のために新鍵バージョンを自律生成します');
+              dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
+            }
             if (!dmKey) {
               messageInput.value = previousInputText;
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
@@ -38689,7 +38810,10 @@ async function sendMessage() {
         let isFileEncrypted = false;
         if (_subtleOK) {
           if (snapDmId) {
-            const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            if (!dmKey) {
+              dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
+            }
             if (dmKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
               fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
@@ -38924,12 +39048,16 @@ async function sendMessage() {
     let isFileEncrypted = false;
     if (_subtleOK) {
     if (snapDmId) {
-      const dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
-      if (dmKey) {
-        const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
-        fileToUpload = new File([encBlob], fileObj.name, { type: 'application/octet-stream' });
-        isFileEncrypted = true;
+      let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+      if (!dmKey) {
+        dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
       }
+      if (!dmKey) {
+        throw new Error("DM暗号化鍵の取得に失敗したため添付ファイルの送信を中断しました");
+      }
+      const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
+      fileToUpload = new File([encBlob], fileObj.name, { type: 'application/octet-stream' });
+      isFileEncrypted = true;
     } else {
       const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, snapMembers, 2000);
       if (roomKey) {
@@ -40324,7 +40452,7 @@ function renderMessagesWithReadReceipts() {
           <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
           <span>${mutualServersCount}個の共通サーバー</span>
         </button>
-        <button onclick="window.handleDmHeroFriendAction('${escapeHtml(targetUid)}', '${safeNick}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
+        <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
           ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
         </button>
         <button onclick="window.blockUser('${escapeHtml(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
@@ -40774,10 +40902,10 @@ if (copyMsgBtn) {
               await navigator.share({ files: [file], title: selectedMessageForContext.fileName });
               return;
             } catch (shareErr) {
-              if (shareErr.name === 'AbortError' || shareErr.message.includes('Share canceled')) {
+              if (shareErr.name === 'AbortError' || shareErr.name === 'NotAllowedError' || shareErr.message?.toLowerCase().includes('cancel') || shareErr.message?.toLowerCase().includes('permission denied')) {
                 return;
               }
-              console.warn("Share failed with error:", shareErr);
+              console.debug("Share failed with error:", shareErr);
             }
           }
         }
@@ -41194,7 +41322,10 @@ function downloadFile(fileData, fileName, mimeType) {
           return;
         }
       } catch (e) {
-        console.warn("Share failed", e);
+        if (e.name === 'AbortError' || e.message?.toLowerCase().includes('cancel') || e.message?.toLowerCase().includes('abort')) {
+          return;
+        }
+        console.debug("Share failed fallback to download:", e);
       }
     }
     // Fallback: download
@@ -49974,7 +50105,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.223",
+  "version": "1.1.224",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -50031,7 +50162,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.223",
+  "version": "1.1.224",
   "force": false
 }
 </file>

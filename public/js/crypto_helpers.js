@@ -1051,12 +1051,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (otherUid && !forceGenerateNew) {
           const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${otherUid}`)).catch(() => null);
           if (otherWrapSnap && otherWrapSnap.exists()) {
-            // スロットル: 同一 dmId に対する待機案内ログは 60 秒に 1 回のみ出力
+            // スロットル: 同一 dmId に対する待機案内ログは通常デバッグログ(debug)とし、テレメトリ汚染を完全防止
             _e2ee._lastDmLogTime = _e2ee._lastDmLogTime || new Map();
             const lastLog = _e2ee._lastDmLogTime.get(cleanDmId) || 0;
-            if (Date.now() - lastLog > 60000) {
+            if (Date.now() - lastLog > 120000) {
               _e2ee._lastDmLogTime.set(cleanDmId, Date.now());
-              console.log(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${cleanDmId})`);
+              (window.__covo_native_console__ || console).debug(`[E2EE] 相手(${otherUid})が既にDM鍵を生成済みです。相手からの共有または公開鍵の到着を待機します (dmId=${cleanDmId})`);
             }
             // 相手に対して即座に鍵再暗号化（救済）リクエストを自動発行
             _requestDmKeyRescue(cleanDmId, otherUid).catch(() => {});
