@@ -833,32 +833,44 @@ async function handleSyncRtdb(request, env) {
     if (!isValidAppId(appId, env) || !/^[a-zA-Z0-9_\-]+$/.test(serverId) || !/^[a-zA-Z0-9_\-]+$/.test(userId)) {
       return new Response(JSON.stringify({ success: false, error: "Invalid parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     if (!env.SERVICE_ACCOUNT_JSON) {
       return new Response(JSON.stringify({ success: false, error: "SERVICE_ACCOUNT_JSON not set" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
     const adminToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
     const projectId = env.FIREBASE_PROJECT_ID;
-
-    // Firestore で joinedUsers に含まれているか検証
+    // Firestore でサーバーおよびメンバーシップを包括的に検証
     const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
       headers: { "Authorization": `Bearer ${adminToken}` }
     });
     const srvData = await srvRes.json();
-    
-    let isMember = false;
-    if (!srvData.error && srvData.fields && srvData.fields.joinedUsers && srvData.fields.joinedUsers.arrayValue && srvData.fields.joinedUsers.arrayValue.values) {
-      isMember = srvData.fields.joinedUsers.arrayValue.values.some(v => v.stringValue === userId);
+    if (srvData.error) {
+      // サーバーが存在しない、または削除済みの場合は安全にステータス200で応答（コンソールエラー防止）
+      return new Response(JSON.stringify({ success: false, notFound: true, error: "Server not found" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
-
+    let isMember = false;
+    if (srvData.fields) {
+      if (srvData.fields.joinedUsers?.arrayValue?.values?.some(v => (v.stringValue || "").trim() === userId)) {
+        isMember = true;
+      } else if (srvData.fields.createdBy?.stringValue === userId) {
+        isMember = true;
+      } else if (srvData.fields.serverAdmins?.arrayValue?.values?.some(v => (v.stringValue || "").trim() === userId)) {
+        isMember = true;
+      }
+    }
     if (!isMember) {
-      return new Response(JSON.stringify({ success: false, error: "Not a member" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+      const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+      if (isGlobal) isMember = true;
+    }
+    if (!isMember) {
+      isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
+    }
+    if (!isMember) {
+      // 未参加の場合はRTDB書き込みを行わず安全に終了（ブラウザコンソールでの赤文字403ネットワークエラーを完全防止）
+      return new Response(JSON.stringify({ success: false, notMember: true, error: "Not a member" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // RTDB に同期

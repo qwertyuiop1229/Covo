@@ -119,13 +119,41 @@ function isTransientTelemetryError(args) {
       }
       return String(a);
     }).join(' ').toLowerCase();
-    // 認証ポップアップのユーザー自身による手動キャンセルのみ除外（エラー以外の正常動作）
     if (
-      str.includes('auth/popup-closed-by-user') ||
-      str.includes('auth/cancelled-popup-request') ||
+      str.includes('chrome-extension:') ||
+      str.includes('moz-extension:') ||
+      str.includes('safari-extension:') ||
+      str.includes('safari-web-extension:') ||
+      str.includes('extension://') ||
+      str.includes('content.js') ||
+      str.includes('globals-front.js') ||
+      str.includes('page-script.js') ||
+      str.includes('inpage.js') ||
+      str.includes('injected-script') ||
+      str.includes('adblock') ||
+      str.includes('adguard') ||
+      str.includes('ublock') ||
+      str.includes('1password') ||
+      str.includes('bitwarden') ||
+      str.includes('lastpass') ||
+      str.includes('metamask') ||
+      str.includes('grammarly') ||
+      str.includes('usecache is not defined') ||
+      str.includes('receiving end does not exist') ||
+      str.includes('could not establish connection') ||
+      str.includes('a listener indicated an asynchronous response') ||
+      str.includes('message channel closed') ||
+      str.includes('tracking prevention') ||
+      str.includes('blocked access to storage') ||
+      str.includes('resizeobserver') ||
+      str.includes('resize-observer') ||
       str.includes('disconnected port') ||
       str.includes('attempting to use a disconnected port') ||
       str.includes('cross-origin-opener-policy') ||
+      str.includes('syncrtdb') ||
+      str.includes('not a member') ||
+      str.includes('auth/popup-closed-by-user') ||
+      str.includes('auth/cancelled-popup-request') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -8141,7 +8169,13 @@ window.enterServer = async function enterServer(serverId, serverData) {
   loadServerRooms(serverId, 0, thisGen);
 
   // Sync RTDB membership securely via Worker API (一元化により permission_denied を完全防止)
-  if (serverData && (serverData.joinedUsers || []).includes(userId)) {
+  const isMemberOrAdmin = serverData && (
+    (serverData.joinedUsers || []).includes(userId) ||
+    serverData.createdBy === userId ||
+    (serverData.serverAdmins || []).includes(userId) ||
+    isAdmin
+  );
+  if (isMemberOrAdmin && auth.currentUser) {
     try {
       auth.currentUser.getIdToken().then(idToken => {
         fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
@@ -8154,8 +8188,8 @@ window.enterServer = async function enterServer(serverId, serverData) {
             idToken,
             rtdbUrl: typeof firebaseConfig !== 'undefined' ? firebaseConfig.databaseURL : undefined
           })
-        }).catch(() => { });
-      });
+        }).then(r => r.json().catch(() => ({}))).catch(() => { });
+      }).catch(() => { });
     } catch (e) { }
   }
   try {
@@ -16596,6 +16630,9 @@ function createMessageElement(message, messageId, readByCount = 0) {
               message._decryptedErrorText = null;
               if (messageTextSpan && messageTextSpan.parentElement) {
                 messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(dec);
+              }
+              if (!message.channelId && (snapServerId || snapDmId)) {
+                message.channelId = snapDmId ? `dm_${snapDmId}` : `${snapServerId}_${snapRoomId}`;
               }
               LocalStore.putMessage(message).catch(() => {});
             } else if (dec) {

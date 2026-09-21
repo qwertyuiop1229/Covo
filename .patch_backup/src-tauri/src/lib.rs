@@ -1268,11 +1268,10 @@ pub fn run() {
             let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
             let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
-            let mut tray_builder = TrayIconBuilder::with_id("main-tray").menu(&menu);
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
-            }
-            let _tray = tray_builder
+
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => { cleanup_and_quit(&app); }
                     "show" => {

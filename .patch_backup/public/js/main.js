@@ -75,6 +75,13 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+// 🔒 inline onclick="fn('${...}')" 用: HTML属性デコード後もJS文字列を壊さないエスケープ（escapeHtml は &#039; が ' に戻るためJS文脈では無効）
+function _jsq(v) {
+  return String(v == null ? '' : v).replace(/[^A-Za-z0-9_\-.:@ ]/g, (ch) => {
+    const c = ch.charCodeAt(0);
+    return c < 256 ? '\\x' + c.toString(16).padStart(2, '0') : '\\u' + c.toString(16).padStart(4, '0');
+  });
+}
 const firebaseConfig = {
   apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
   authDomain: "simplechat-65a0d.firebaseapp.com",
@@ -3813,7 +3820,7 @@ window.renderStorageFilesGrid = function() {
   currentStorageFiles.forEach(file => {
     const fileUrl = `${WORKER_BASE_URL}${file.url}?preview=1`;
     const fullUrl = `${WORKER_BASE_URL}${file.url}`;
-    const safeName = escapeHtml(file.name || file.key);
+    const safeName = escapeHtml(file.name || file.key).replace(/&#039;/g, '\u2019').replace(/\\/g, '\uFF3C'); // 🔒 onclick="fn('${safeName}')" 内で ' や \ がJS文字列を壊さないよう無害な文字へ置換
     const sizeStr = formatBytes(file.size || 0);
     const isImg = file.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|heic|bmp|ico)$/i.test(file.name);
     const isVid = file.type?.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(file.name);
@@ -4876,8 +4883,8 @@ function renderNotifList(items) {
       }
 
       const clickAction = isDm
-        ? `closeNotifModal(); openDm('${escapeHtml(it.targetUid)}','${escapeHtml(it.targetNickname || '')}','${escapeHtml(it.targetAvatarUrl || '')}')`
-        : `goToServerRoom('${it.serverId}','${it.roomId}')`;
+        ? `closeNotifModal(); openDm('${_jsq(it.targetUid)}','${_jsq(it.targetNickname || '')}','${_jsq(it.targetAvatarUrl || '')}')`
+        : `goToServerRoom('${_jsq(it.serverId)}','${_jsq(it.roomId)}')`;
 
       html += `
         <div class="p-3.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200/80 dark:border-white/5 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-[#35373c] hover:border-indigo-500/40 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="${clickAction}">
@@ -8673,7 +8680,7 @@ function createFriendCardHtml(friend, online) {
     ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).emoji || '💬')}</span><span class="truncate">${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
   return `
-    <div class="friend-card" onclick="openUserProfileModal('${friend.targetUid}', '${escapeHtml(resolvedNick).replace(/'/g, "\\'")}', '${escapeHtml(resolvedAvatar).replace(/'/g, "\\'")}')">
+    <div class="friend-card" onclick="openUserProfileModal('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
       <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
@@ -8687,7 +8694,7 @@ function createFriendCardHtml(friend, online) {
         </div>
       </div>
       <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
-        <button onclick="openDm('${friend.targetUid}', '${escapeHtml(resolvedNick).replace(/'/g, "\\'")}', '${escapeHtml(resolvedAvatar).replace(/'/g, "\\'")}')" class="friend-action-btn" title="メッセージを送る">
+        <button onclick="openDm('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')" class="friend-action-btn" title="メッセージを送る">
           <i class="fas fa-comment-dots"></i>
         </button>
         <button onclick="openCallPickerWithTarget('${friend.targetUid}')" class="friend-action-btn" title="通話">
@@ -9044,7 +9051,7 @@ function renderDmConversationsList() {
       }).catch(() => {});
     }
     return `
-      <div class="dm-sidebar-item group ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${escapeHtml(nickname).replace(/'/g, "\\'")}', '${escapeHtml(avatarUrl).replace(/'/g, "\\'")}')">
+      <div class="dm-sidebar-item group ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${_jsq(nickname)}', '${_jsq(avatarUrl)}')">
         <div class="relative w-8 h-8 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
             ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
