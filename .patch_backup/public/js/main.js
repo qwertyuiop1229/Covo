@@ -158,6 +158,12 @@ function isTransientTelemetryError(args) {
       str.includes('permission denied') ||
       str.includes('aborterror') ||
       str.includes('notallowederror') ||
+      str.includes('requested device not found') ||
+      str.includes('notfounderror') ||
+      str.includes('devicesnotfounderror') ||
+      str.includes('到着を待機します') ||
+      str.includes('dm鍵を生成済みです') ||
+      (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -1937,7 +1943,7 @@ async function _loadOrCreateUserRecoveryKey(user) {
       modalKeyDisplay.textContent = _isModalRecoveryKeyVisible ? key : 'COVO-••••-••••-••••-••••';
     }
   } catch (err) {
-    console.error('[Recovery] Load/Create key error:', err);
+    console.warn('[Recovery] Load/Create key remote notice (continuing in local mode):', err?.message || err);
     if (modalBadge) {
       modalBadge.textContent = 'ローカル保護中';
       modalBadge.className = 'px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20';
@@ -15492,7 +15498,11 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
       if (res.ok) {
         const d = await res.json().catch(() => ({}));
         if (d.prunedCount > 0) {
-          console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+          const now = Date.now();
+          if (!window._lastPruneLogTime || now - window._lastPruneLogTime > 30000) {
+            window._lastPruneLogTime = now;
+            console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
+          }
         }
       }
     }).catch(err => {
@@ -20677,7 +20687,10 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
       console.warn('[P2P LogSync targetCandidates onSnapshot] notice:', err?.message || err);
     });
     unsubDoc = onSnapshot(syncDocRef, async (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        cleanupP2P();
+        return;
+      }
       const d = snap.data();
       if (d.answer && pc && !pc.currentRemoteDescription) {
         await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
@@ -20687,6 +20700,11 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         }
       }
     }, (err) => {
+      if (err?.code === 'permission-denied') {
+        // ドキュメント削除完了時の正常シグナルとして安全にクリーンアップ
+        cleanupP2P();
+        return;
+      }
       console.warn('[P2P LogSync syncDocRef onSnapshot] notice:', err?.message || err);
     });
 
@@ -25613,43 +25631,52 @@ window.saveViewerMessagesAsTxt = function () {
 //   TURN_USERNAME / TURN_CREDENTIAL を環境変数またはWorker経由で取得
 // ================================================================
 
-// --- TURN / ICE サーバー設定 ---
+// --- TURN / ICE サーバー設定 (到達率の高い標準3478番 & TLS443番を最優先最適化) ---
 const VC_ICE_SERVERS = [
-  // Google STUN（認証不要・無制限）
+  // Google STUN（高信頼・最速・無制限）
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  // Cloudflare STUN
+  { urls: 'stun:stun.cloudflare.com:3478' },
   // OpenRelay STUN
-  { urls: 'stun:openrelay.metered.ca:80' },
   { urls: 'stun:openrelay.metered.ca:3478' },
-  // OpenRelay TURN – 全ポート・プロトコル網羅 (UDP/TCP/TLS 80, 443, 3478)
+  { urls: 'stun:openrelay.metered.ca:80' },
+  // OpenRelay TURN – 標準3478ポート(UDP/TCP)およびTLS443ポートを個別に優先接続
   {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:3478',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turn:openrelay.metered.ca:80?transport=tcp',
-      'turn:openrelay.metered.ca:3478?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-      'turns:openrelay.metered.ca:3478?transport=tcp'
-    ],
+    urls: 'turn:openrelay.metered.ca:3478',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   },
-  // Cloudflare STUN（追加 STUN バックアップ）
-  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: 'turn:openrelay.metered.ca:3478?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ];
 const VC_TURN_TEST_SERVERS = [
   {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:3478',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turn:openrelay.metered.ca:3478?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp'
-    ],
+    urls: 'turn:openrelay.metered.ca:3478',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   }
@@ -27144,8 +27171,14 @@ class VoiceEngine {
         audio: false
       });
     } catch(e) {
-      console.error('[VoiceEngine] カメラ取得失敗:', e);
-      if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました: ' + (e.message || ''), 'error');
+      const isNotFound = e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError' || String(e.message || '').includes('Requested device not found');
+      if (isNotFound) {
+        console.warn('[VoiceEngine] カメラデバイスが見つかりません (未接続)');
+        if (typeof alertMessage === 'function') alertMessage('カメラデバイスが見つかりませんでした。Webカメラの接続をご確認ください。', 'warning');
+      } else {
+        console.error('[VoiceEngine] カメラ取得失敗:', e);
+        if (typeof alertMessage === 'function') alertMessage('カメラの起動に失敗しました: ' + (e.message || ''), 'error');
+      }
       return;
     }
     const camTrack = this._localVideoStream.getVideoTracks()[0];

@@ -1780,8 +1780,8 @@ async function handleDeleteFile(request, env, url) {
     });
     const folder = (meta?.folder || '').toLowerCase();
     const isProtectedAsset = folder.includes('stamp') || folder.includes('avatar') || folder.includes('icon');
-    const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1';
-    // スタンプやアバターは専用の削除操作 (isAssetDelete=1) 以外ではメッセージ連動削除から100%保護
+    const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1' || url.searchParams.get('forceDelete') === '1';
+    // スタンプやアバターは専用の削除操作 (isAssetDelete=1 または forceDelete=1) 以外ではメッセージ連動削除から100%保護
     if (isProtectedAsset && !isExplicitAssetDelete) {
       return new Response(JSON.stringify({ success: true, skipped: true, message: '保護されたアセットのため通常削除をスキップしました' }), {
         status: 200, headers: { ...cors, 'Content-Type': 'application/json' }

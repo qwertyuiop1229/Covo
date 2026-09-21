@@ -2330,6 +2330,9 @@ async function handleAdminDeleteMessage(request, env) {
         const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
         const msgCheckRes = await fetch(msgCheckUrl);
         const msgCheckData = await msgCheckRes.json().catch(() => null);
+        if (!msgCheckData) {
+          return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+        }
         const isSender = Boolean(msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid));
         if (!isSender) {
           return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
@@ -2360,16 +2363,20 @@ async function handleAdminDeleteMessage(request, env) {
       targetSenderId = msgCheckData.senderId || msgCheckData.userId || null;
       if (targetSenderId === verifiedUser.uid) isOwner = true;
     }
+    let fsCheckData = null;
     if (!isOwner) {
       const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
       const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
-      const fsCheckData = await fsCheckRes.json().catch(() => null);
+      fsCheckData = await fsCheckRes.json().catch(() => null);
       if (fsCheckData && fsCheckData.fields) {
         targetSenderId = fsCheckData.fields.senderId?.stringValue || fsCheckData.fields.userId?.stringValue || targetSenderId;
         if (targetSenderId === verifiedUser.uid) isOwner = true;
       }
     }
-
+    // メッセージがRTDBにもFirestoreにも存在しない場合、既に削除済みなので成功を返してクライアントキャッシュ消去を許可
+    if (!msgCheckData && (!fsCheckData || !fsCheckData.fields)) {
+      return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
+    }
     if (!isGlobal && !isSvAdmin && !isOwner) {
       return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }

@@ -3992,17 +3992,14 @@ window.deleteIndividualStorageFile = async function(key, name) {
     'この操作は取り消せません。'
   );
   if (!confirmed) return;
-
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
-
   try {
-    const res = await fetch(`${WORKER_BASE_URL}/api/file/${encodeURIComponent(key)}?appId=${appId}`, {
+    const res = await fetch(`${WORKER_BASE_URL}/api/file/${encodeURIComponent(key)}?appId=${appId}&isAssetDelete=1&forceDelete=1`, {
       method: 'DELETE',
       headers: { "Authorization": `Bearer ${idToken}` }
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    
     alertMessage('ファイルを削除しました', 'success');
     currentStorageFiles = currentStorageFiles.filter(f => f.key !== key);
     const subEl = document.getElementById('storageCategoryModalSub');
@@ -7436,20 +7433,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function updateUserStatus(state) {
   if (!userId || !userNickname) return;
-
   const activeChannelId = currentRoomId || currentDmId || null;
-
   // 差分チェック（同じ状態ならスキップ）
-  const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl });
+  const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl, customStatus: window._currentUserCustomStatus || null });
   if (_lastReportedStatusStr === currentStatusStr) return;
   _lastReportedStatusStr = currentStatusStr;
-
   try {
-    const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const { ref, update, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     const statusRef = ref(rtdb, `status/${userId}`);
     _rtdbStatusRef = statusRef;
-
     const payload = {
       state: state,
       last_changed: serverTimestamp(),
@@ -7458,8 +7451,13 @@ async function updateUserStatus(state) {
     };
     if (state === 'online') {
       payload.currentRoomId = activeChannelId;
+    } else {
+      payload.currentRoomId = null;
     }
-    await set(statusRef, payload);
+    if (window._currentUserCustomStatus) {
+      payload.customStatus = window._currentUserCustomStatus;
+    }
+    await update(statusRef, payload);
   } catch (error) {
     console.error('[RTDB] Status update error:', error);
   }
@@ -9202,6 +9200,40 @@ function renderDmConversationsList() {
   if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
     currentDmParticipant = {
       ...currentDmParticipant,
+      nickname: newNickname,
+      avatarUrl: newAvatarUrl
+    };
+    const title = document.getElementById("currentRoomTitleText");
+    if (title) title.textContent = newNickname;
+    const msgInput = document.getElementById("messageInput");
+    if (msgInput) msgInput.placeholder = `@${newNickname} へのメッセージ`;
+    if (typeof updateTitleBarContext === 'function') {
+      updateTitleBarContext('dm', currentDmParticipant);
+    }
+    const dmPanelName = document.getElementById('dmPanelName');
+    if (dmPanelName) dmPanelName.textContent = newNickname;
+    const dmPanelAvatar = document.getElementById('dmPanelAvatar');
+    if (dmPanelAvatar) {
+      if (isUsableAvatarUrl(newAvatarUrl)) {
+        dmPanelAvatar.innerHTML = `<img src="${escapeHtml(newAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">`;
+      } else {
+        dmPanelAvatar.innerHTML = `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(newNickname.charAt(0).toUpperCase())}</span>`;
+      }
+    }
+    const dmPanelAboutMe = document.getElementById('dmPanelAboutMe');
+    if (dmPanelAboutMe && newAboutMe) dmPanelAboutMe.textContent = newAboutMe;
+    const customStatusWrap = document.getElementById('dmPanelCustomStatus');
+    const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
+    const customText = document.getElementById('dmPanelCustomStatusText');
+    if (newCustomStatus && newCustomStatus.text) {
+      if (customEmoji) customEmoji.textContent = newCustomStatus.emoji || '💬';
+      if (customText) customText.textContent = newCustomStatus.text;
+      if (customStatusWrap) customStatusWrap.classList.remove('hidden');
+    } else if (customStatusWrap) {
+      customStatusWrap.classList.add('hidden');
+    }
+  }
+};
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
@@ -9475,24 +9507,24 @@ function renderDmConversationsList() {
           <i class="fas fa-ellipsis"></i>
         </button>
         <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
-          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
           </button>
-          <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openCallPickerWithTarget('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-phone w-4 text-center"></i> 音声通話
           </button>
-          <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openFileShareWithTarget('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
           </button>
           <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
-          <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+          <button onclick="window.blockUser('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
             <i class="fas fa-ban w-4 text-center"></i> ブロック
           </button>
         </div>
       </div>
     </div>
     <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-20" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
-      <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
+      <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${_jsq(targetAvatarUrl || '')}', '${_jsq(targetNickname || '')}', '${_jsq(targetUid.slice(-4))}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}
         </div>
@@ -9504,13 +9536,13 @@ function renderDmConversationsList() {
         <div class="mb-3">
           <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
             <span id="dmPanelName">${safeName}</span>
-            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
+            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
           </div>
           <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
             ${handleTag}
           </div>
         </div>
-        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}', 'friends')" title="共通の友だち・共通サーバーを表示">
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}', 'friends')" title="共通の友だち・共通サーバーを表示">
           <span class="inline-flex -space-x-1.5 mr-1 flex-shrink-0" id="dmPanelMutualsStack">
             ${mutualAvatarStackHtml}
           </span>
@@ -9534,7 +9566,7 @@ function renderDmConversationsList() {
     </div>
     <!-- input_file_1.png / input_file_3.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
     <div class="mt-auto p-3 border-t border-gray-200/60 dark:border-white/5 bg-[#f2f3f5] dark:bg-[#111827] flex-shrink-0 relative z-20">
-      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+      <button onclick="openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
         <span>プロフィール全体を表示</span>
       </button>
     </div>
@@ -17203,8 +17235,7 @@ async function jumpToUnloadedMessage(msgId) {
 
     hasMoreJumpOlder = pastMsgs.length >= fetchLimit;
     hasMoreJumpNewer = futureMsgs.length >= fetchLimit;
-
-    const combinedMsgs = [...pastMsgs, ...futureMsgs];
+    const combinedMsgs = [targetMsg, ...pastMsgs, ...futureMsgs];
     const seen = new Set();
     const uniqueMsgs = combinedMsgs.filter(m => {
       if (seen.has(m.id)) return false;
@@ -17431,14 +17462,14 @@ function renderMessagesWithReadReceipts() {
         ここが、あなたと <strong>${safeNick}</strong> のDM履歴の先頭です。
       </p>
       <div class="flex items-center gap-2.5 flex-wrap">
-        <button onclick="window.openUserProfileModal('${escapeHtml(targetUid)}', '${safeNick}', '${escapeHtml(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
+        <button onclick="window.openUserProfileModal('${_jsq(targetUid)}', '${_jsq(currentDmParticipant.nickname || '')}', '${_jsq(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
           <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
           <span>${mutualServersCount}個の共通サーバー</span>
         </button>
         <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
           ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
         </button>
-        <button onclick="window.blockUser('${escapeHtml(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
+        <button onclick="window.blockUser('${_jsq(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
           <i class="fas fa-ban mr-1.5 text-xs"></i>ブロック
         </button>
       </div>
