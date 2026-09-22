@@ -2064,8 +2064,30 @@ body.dark-server-theme .vc-member-count-badge {
   background: rgba(255,255,255,0.08);
 }
 
+.vc-connection-bar {
+  margin: 0 0.625rem 0.375rem;
+  border-radius: 0.625rem;
+  background: var(--vc-bar-bg, #f2f3f5);
+  border: 1px solid var(--vc-bar-border, rgba(0,0,0,0.08));
+  overflow: hidden;
+  transition: all 0.2s ease;
+  animation: vc-bar-slide-in 0.25s ease;
+}
+
+
 /* ================================================================
-   VC接続中バー (左下・Discord本家完全準拠)
+   VC接続中バー (左下・Discord本家完全準拠 & Material 3)
+.vc-connection-bar {
+  margin: 0 0.625rem 0.375rem;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: all 0.2s ease;
+  animation: vc-bar-slide-in 0.25s ease;
+}
    ================================================================ */
 .vc-connection-bar {
   margin: 0 0.625rem 0.375rem;
@@ -2351,8 +2373,35 @@ body.dark-server-theme .channel-type-desc {
   color: #6b7280;
 }
 
+#vcGridOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: #1a1b1e;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+
 /* ================================================================
-   VCグリッドモーダル（VC参加中のフルスクリーン通話グリッド）
+   VCグリッドモーダル（VC参加中のフルスクリーン通話グリッド - ライト/ダーク両対応）
+#vcGridOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: #f8fafc;
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+body.dark-server-theme #vcGridOverlay,
+body.discord-dark-theme #vcGridOverlay {
+  background: #111214 !important;
+  color: #f2f3f5 !important;
+}
    ================================================================ */
 #vcGridOverlay {
   position: fixed;

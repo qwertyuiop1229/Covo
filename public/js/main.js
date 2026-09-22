@@ -1182,14 +1182,21 @@ function initializeFirebase() {
               window.__pendingNotifJump = null;
               setTimeout(() => { try { jumpFn(); } catch(e){} }, 600);
             }
-            // URLクエリパラメータからの自動ジャンプ（PWA/Web通知タップ起動対応）
+            // URLクエリパラメータからの自動ジャンプ & 招待コード処理（PWA/Web通知タップ起動 & 招待リンク対応）
             try {
               const urlParams = new URLSearchParams(window.location.search);
               const pRoomId = urlParams.get('roomId');
               const pServerId = urlParams.get('serverId');
               const pCallId = urlParams.get('callId');
+              const pInvite = urlParams.get('invite') || sessionStorage.getItem('covo_pending_invite');
               if (pCallId) {
                 handleCallNotificationClick({ callId: pCallId });
+                window.history.replaceState({}, document.title, window.location.pathname);
+              } else if (pInvite) {
+                sessionStorage.removeItem('covo_pending_invite');
+                setTimeout(() => {
+                  handleUrlInviteCode(pInvite);
+                }, 800);
                 window.history.replaceState({}, document.title, window.location.pathname);
               } else if (pRoomId) {
                 setTimeout(() => {
@@ -10328,21 +10335,17 @@ async function joinServerByPassword(serverId, password) {
 // 招待コードでサーバー参加
 async function joinServerByInviteCode(code) {
   code = code.toUpperCase().trim();
-
   // inviteIndex からサーバーIDを逆引き（全サーバー一覧取得不要）
   const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, code));
   if (!indexSnap.exists()) throw new Error("招待コードが見つかりません");
   const foundServerId = indexSnap.data().serverId;
-
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, foundServerId));
   if (!serverSnap.exists()) throw new Error("サーバーが見つかりません");
   const serverData = serverSnap.data();
-
   if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
     enterServer(foundServerId, serverData);
     return;
   }
-
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   const res = await fetch(`${WORKER_BASE_URL}/api/joinServer`, {
     method: "POST",
@@ -10360,7 +10363,6 @@ async function joinServerByInviteCode(code) {
   if (!res.ok || !data.success) {
     throw new Error(data.error || "招待コードが無効か、使用期限/上限に達しています");
   }
-
   await setDoc(doc(db, `artifacts/${appId}/servers/${foundServerId}/profiles`, userId), {
     nickname: userNickname,
     avatarUrl: userAvatarUrl || null,
@@ -10368,6 +10370,53 @@ async function joinServerByInviteCode(code) {
   });
   enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
 }
+
+// 招待リンク (?invite=CODE) の自動受諾・参加処理
+async function handleUrlInviteCode(inviteCode) {
+  if (!inviteCode || !userId) return;
+  const cleanCode = inviteCode.toUpperCase().trim();
+  try {
+    const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, cleanCode));
+    if (!indexSnap.exists()) {
+      alertMessage(`招待コード「${cleanCode}」は見つかりませんでした`, 'error');
+      return;
+    }
+    const targetServerId = indexSnap.data().serverId;
+    const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId));
+    if (!serverSnap.exists()) {
+      alertMessage('対象のサーバーが見つかりませんでした', 'error');
+      return;
+    }
+    const serverData = serverSnap.data();
+    const serverName = serverData.name || targetServerId;
+    if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+      alertMessage(`「${serverName}」に参加済みです`, 'info');
+      enterServer(targetServerId, serverData);
+      return;
+    }
+    const ok = await showCustomConfirm(
+      `サーバー「${serverName}」への招待を受け取りました。\n参加しますか？`,
+      '参加する',
+      'キャンセル',
+      `招待コード: ${cleanCode}`
+    );
+    if (ok) {
+      const loadingOverlayEl = document.getElementById('loadingOverlay');
+      if (loadingOverlayEl) loadingOverlayEl.classList.remove('hidden');
+      try {
+        await joinServerByInviteCode(cleanCode);
+        alertMessage(`サーバー「${serverName}」に参加しました！`, 'success');
+      } catch (err) {
+        alertMessage(`参加エラー: ${err.message || err}`, 'error');
+      } finally {
+        if (loadingOverlayEl) loadingOverlayEl.classList.add('hidden');
+      }
+    }
+  } catch (err) {
+    console.error('[Invite] handleUrlInviteCode error:', err);
+  }
+}
+window.handleUrlInviteCode = handleUrlInviteCode;
 
 // 管理者向け：パスワードなしでサーバーに参加
 async function adminJoinServer(serverId, serverData) {
@@ -25554,6 +25603,14 @@ window.saveViewerMessagesAsTxt = function () {
 // =========================================================================
 (async function bootstrapApp() {
   try {
+    // 未ログイン時の招待URL (?invite=CODE) パラメータ退避
+    try {
+      const initParams = new URLSearchParams(window.location.search);
+      const initInvite = initParams.get('invite');
+      if (initInvite) {
+        sessionStorage.setItem('covo_pending_invite', initInvite.toUpperCase().trim());
+      }
+    } catch (_) {}
     // 0. 設定の初期化 (通知設定などの状態復元)
     if (typeof initSettings === 'function') {
       initSettings();
@@ -27808,16 +27865,8 @@ function _vcOpenGrid() {
     const nameEl = document.getElementById('vcGridChannelName');
     if (nameEl && window._voiceEngine.channelName) nameEl.textContent = window._voiceEngine.channelName;
     window._voiceEngine._renderGrid();
-  } else {
-    // グリッドを最小化した時はフローティングPiPバーも連動表示（チャットしながら通話継続）
-    if (pipBar && window._voiceEngine?.isActive) {
-      const pipName = document.getElementById('callPipName');
-      const pipAvatar = document.getElementById('callPipAvatar');
-      if (pipName) pipName.textContent = window._voiceEngine.channelName ? `#${window._voiceEngine.channelName}` : 'ボイスチャンネル';
-      if (pipAvatar) pipAvatar.innerHTML = '<i class="fas fa-volume-up text-xs text-white"></i>';
-      pipBar.classList.add('active');
-    }
   }
+  // サーバーVC時は左下の vcConnectionBar に一本化するため、右下PiPバー (callPipBar) は重複表示しない
 }
 
 // ================================================================

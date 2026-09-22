@@ -1959,6 +1959,222 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="public/auth-desktop.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Covo - デスクトップ認証</title>
+    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .auth-card {
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        }
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            color: #f8fafc;
+        }
+        p {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            line-height: 1.6;
+            margin-bottom: 1.75rem;
+        }
+        .btn-google {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s;
+        }
+        .btn-google:hover:not(:disabled) {
+            background: #f1f5f9;
+            transform: translateY(-1px);
+        }
+        .btn-google:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status-box {
+            margin-top: 1.25rem;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            min-height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.5);
+            color: #cbd5e1;
+        }
+        .status-box.error {
+            color: #f87171;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .status-box.success {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.1);
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        const firebaseConfig = {
+            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+            authDomain: "simplechat-65a0d.firebaseapp.com",
+            projectId: "simplechat-65a0d",
+            storageBucket: "simplechat-65a0d.firebasestorage.app",
+            messagingSenderId: "611067360180",
+            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        auth.languageCode = 'ja';
+        const params = new URLSearchParams(window.location.search);
+        const callbackUrl = params.get('callback');
+        const state = params.get('state') || '';
+        // 🔒 セキュリティ: callbackUrl をローカルループバックのみに制限（オープンリダイレクト防止）
+        function isAllowedCallback(urlStr) {
+            if (!urlStr) return false;
+            try {
+                const u = new URL(urlStr);
+                const host = u.hostname.toLowerCase();
+                return (u.protocol === 'http:') && (host === '127.0.0.1' || host === 'localhost');
+            } catch {
+                return false;
+            }
+        }
+        if (callbackUrl && !isAllowedCallback(callbackUrl)) {
+            window.addEventListener('load', () => {
+                const status = document.getElementById('status');
+                if (status) {
+                    status.className = 'status-box error';
+                    status.textContent = 'エラー: 不正なコールバックURLが指定されています。ローカルアプリからのみ認証できます。';
+                }
+                const btn = document.getElementById('googleBtn');
+                if (btn) btn.disabled = true;
+            });
+        }
+        window.doGoogleLogin = async function (isAuto = false) {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('googleBtn');
+            btn.disabled = true;
+            status.className = 'status-box';
+            status.textContent = 'Google 認証ウィンドウを起動中...';
+            try {
+                const provider = new GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+                const result = await signInWithPopup(auth, provider);
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                const idToken = credential?.idToken || (await result.user.getIdToken());
+                const accessToken = credential?.accessToken || '';
+                status.className = 'status-box success';
+                status.textContent = '認証成功！Covo アプリへ転送しています...';
+                if (callbackUrl && isAllowedCallback(callbackUrl)) {
+                    const target = new URL(callbackUrl);
+                    target.searchParams.set('idToken', idToken);
+                    if (accessToken) target.searchParams.set('accessToken', accessToken);
+                    if (state) target.searchParams.set('state', state);
+                    // 🔒 ローカルループバックサーバーへのみリダイレクト
+                    window.location.href = target.toString();
+                } else {
+                    btn.disabled = false;
+                    status.className = 'status-box error';
+                    status.textContent = 'コールバックURLが指定されていません。';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                if (err.code === 'auth/popup-blocked' || isAuto) {
+                    status.className = 'status-box';
+                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
+                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+                    status.className = 'status-box';
+                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
+                } else {
+                    console.error('Desktop Auth Error:', err);
+                    status.className = 'status-box error';
+                    status.textContent = '認証エラー: ' + (err.message || err);
+                }
+            }
+        };
+        window.addEventListener('load', () => {
+            const status = document.getElementById('status');
+            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
+            setTimeout(() => {
+                if (typeof window.doGoogleLogin === 'function') {
+                    window.doGoogleLogin(true);
+                }
+            }, 300);
+        });
+    </script>
+</head>
+<body>
+    <div class="auth-card">
+        <div class="logo">💬</div>
+        <h1>Covo デスクトップ版のログイン</h1>
+        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
+        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
+            <svg width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            <span>Google でログイン</span>
+        </button>
+        <div id="status" class="status-box">認証の準備中...</div>
+    </div>
+</body>
+</html>
+</file>
+
 <file path="server/wrangler.toml">
 name = "simplechat-api"
 main = "src/index.js"
@@ -1992,6 +2208,50 @@ CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
 binding = "DB"
 database_name = "covo-db"
 database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
+</file>
+
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
+}
 </file>
 
 <file path="deploy.ps1">
@@ -3121,222 +3381,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/auth-desktop.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex, nofollow" />
-    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-    <meta name="referrer" content="no-referrer" />
-    <title>Covo - デスクトップ認証</title>
-    <link rel="icon" type="image/png" href="img/icon-32x32.png?v=6" />
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        body {
-            background: #0f172a;
-            color: #f8fafc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 1rem;
-        }
-        .auth-card {
-            background: #1e293b;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 1.5rem;
-            padding: 2.5rem 2rem;
-            max-width: 420px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-        }
-        .logo {
-            font-size: 2.5rem;
-            margin-bottom: 0.75rem;
-        }
-        h1 {
-            font-size: 1.35rem;
-            font-weight: 800;
-            margin-bottom: 0.5rem;
-            color: #f8fafc;
-        }
-        p {
-            font-size: 0.875rem;
-            color: #94a3b8;
-            line-height: 1.6;
-            margin-bottom: 1.75rem;
-        }
-        .btn-google {
-            width: 100%;
-            padding: 0.85rem 1rem;
-            border: none;
-            border-radius: 0.75rem;
-            font-size: 0.95rem;
-            font-weight: 700;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            background: #ffffff;
-            color: #0f172a;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s;
-        }
-        .btn-google:hover:not(:disabled) {
-            background: #f1f5f9;
-            transform: translateY(-1px);
-        }
-        .btn-google:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .status-box {
-            margin-top: 1.25rem;
-            padding: 0.75rem;
-            border-radius: 0.75rem;
-            font-size: 0.8rem;
-            font-weight: 600;
-            min-height: 2.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(15, 23, 42, 0.5);
-            color: #cbd5e1;
-        }
-        .status-box.error {
-            color: #f87171;
-            background: rgba(239, 68, 68, 0.1);
-        }
-        .status-box.success {
-            color: #34d399;
-            background: rgba(16, 185, 129, 0.1);
-        }
-    </style>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        const firebaseConfig = {
-            apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-            authDomain: "simplechat-65a0d.firebaseapp.com",
-            projectId: "simplechat-65a0d",
-            storageBucket: "simplechat-65a0d.firebasestorage.app",
-            messagingSenderId: "611067360180",
-            appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-        };
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        auth.languageCode = 'ja';
-        const params = new URLSearchParams(window.location.search);
-        const callbackUrl = params.get('callback');
-        const state = params.get('state') || '';
-        // 🔒 セキュリティ: callbackUrl をローカルループバックのみに制限（オープンリダイレクト防止）
-        function isAllowedCallback(urlStr) {
-            if (!urlStr) return false;
-            try {
-                const u = new URL(urlStr);
-                const host = u.hostname.toLowerCase();
-                return (u.protocol === 'http:') && (host === '127.0.0.1' || host === 'localhost');
-            } catch {
-                return false;
-            }
-        }
-        if (callbackUrl && !isAllowedCallback(callbackUrl)) {
-            window.addEventListener('load', () => {
-                const status = document.getElementById('status');
-                if (status) {
-                    status.className = 'status-box error';
-                    status.textContent = 'エラー: 不正なコールバックURLが指定されています。ローカルアプリからのみ認証できます。';
-                }
-                const btn = document.getElementById('googleBtn');
-                if (btn) btn.disabled = true;
-            });
-        }
-        window.doGoogleLogin = async function (isAuto = false) {
-            const status = document.getElementById('status');
-            const btn = document.getElementById('googleBtn');
-            btn.disabled = true;
-            status.className = 'status-box';
-            status.textContent = 'Google 認証ウィンドウを起動中...';
-            try {
-                const provider = new GoogleAuthProvider();
-                provider.setCustomParameters({ prompt: 'select_account' });
-                const result = await signInWithPopup(auth, provider);
-                const credential = GoogleAuthProvider.credentialFromResult(result);
-                const idToken = credential?.idToken || (await result.user.getIdToken());
-                const accessToken = credential?.accessToken || '';
-                status.className = 'status-box success';
-                status.textContent = '認証成功！Covo アプリへ転送しています...';
-                if (callbackUrl && isAllowedCallback(callbackUrl)) {
-                    const target = new URL(callbackUrl);
-                    target.searchParams.set('idToken', idToken);
-                    if (accessToken) target.searchParams.set('accessToken', accessToken);
-                    if (state) target.searchParams.set('state', state);
-                    // 🔒 ローカルループバックサーバーへのみリダイレクト
-                    window.location.href = target.toString();
-                } else {
-                    btn.disabled = false;
-                    status.className = 'status-box error';
-                    status.textContent = 'コールバックURLが指定されていません。';
-                }
-            } catch (err) {
-                btn.disabled = false;
-                if (err.code === 'auth/popup-blocked' || isAuto) {
-                    status.className = 'status-box';
-                    status.textContent = '「Google でログイン」ボタンをクリックして続行してください。';
-                } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-                    status.className = 'status-box';
-                    status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
-                } else {
-                    console.error('Desktop Auth Error:', err);
-                    status.className = 'status-box error';
-                    status.textContent = '認証エラー: ' + (err.message || err);
-                }
-            }
-        };
-        window.addEventListener('load', () => {
-            const status = document.getElementById('status');
-            if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
-            setTimeout(() => {
-                if (typeof window.doGoogleLogin === 'function') {
-                    window.doGoogleLogin(true);
-                }
-            }, 300);
-        });
-    </script>
-</head>
-<body>
-    <div class="auth-card">
-        <div class="logo">💬</div>
-        <h1>Covo デスクトップ版のログイン</h1>
-        <p>ブラウザで Google アカウントを認証し、安全にアプリへログインします。</p>
-        <button id="googleBtn" class="btn-google" onclick="doGoogleLogin()">
-            <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>Google でログイン</span>
-        </button>
-        <div id="status" class="status-box">認証の準備中...</div>
-    </div>
-</body>
-</html>
-</file>
-
 <file path="public/recovery.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -3699,50 +3743,6 @@ if (typeof window !== 'undefined') {
   </script>
 </body>
 </html>
-</file>
-
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
 </file>
 
 <file path="firebase.json">
@@ -4837,6 +4837,1245 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
     xhr.send(fd);
   });
+}
+</file>
+
+<file path="src-tauri/src/lib.rs">
+use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
+use tauri::WebviewWindowBuilder;
+use std::sync::Mutex;
+const CONTAINER_LABEL: &str = "notif_container";
+const PICKER_LABEL: &str = "notif_pos_picker";
+const CONTAINER_W: i32 = 360;
+#[allow(dead_code)]
+const CONTAINER_H_INITIAL: i32 = 100;       // 初期は1枚分の高さだけ
+const CONTAINER_H_DEFAULT: i32 = 600;       // 「右下」デフォルト計算用の見込み高さ
+const CONTAINER_H_MIN: i32 = 90;            // カードなしのとき
+const CONTAINER_H_MAX_RATIO: f64 = 0.85;    // モニター高さの比率上限
+const PICKER_W: i32 = 360;
+const PICKER_H: i32 = 200;
+const SCREEN_MARGIN: i32 = 20;
+const OFFSCREEN_X: i32 = -8000;
+const OFFSCREEN_Y: i32 = -8000;
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SavedPosition {
+    monitor_index: Option<usize>,
+    x_in_monitor: i32,
+    y_in_monitor: i32,
+    stack_direction: String, // "up" (新着が下、古いのが上) | "down" (新着が上、古いのが下)
+}
+#[derive(Clone)]
+struct PendingNotif {
+    id: String,
+    title: String,
+    body: String,
+    room_id: String,
+    stack_dir: String,
+}
+#[derive(Default)]
+struct NotificationState {
+    saved_position: Mutex<Option<SavedPosition>>,
+    container_ready: Mutex<bool>,
+    pending: Mutex<Vec<PendingNotif>>,
+    close_behavior: Mutex<String>,
+    app_loaded: Mutex<bool>,
+}
+#[derive(serde::Serialize)]
+struct MonitorInfo {
+    index: usize,
+    name: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    is_primary: bool,
+    scale_factor: f64,
+}
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
+struct SavedWindowState {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    is_maximized: bool,
+}
+fn get_window_state_path(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    let dir = app_handle.path().app_data_dir().ok()?;
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir.join("window_state.json"))
+}
+fn save_window_state(window: &tauri::Window) {
+    if window.label() != "main" { return; }
+    if let (Ok(pos), Ok(size), Ok(is_max)) = (window.outer_position(), window.inner_size(), window.is_maximized()) {
+        // 最小化中や画面外の不正座標は無視
+        if pos.x <= -30000 || pos.y <= -30000 || size.width < 100 || size.height < 100 {
+            return;
+        }
+        let state = SavedWindowState {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+            is_maximized: is_max,
+        };
+        if let Some(path) = get_window_state_path(&window.app_handle()) {
+            if let Ok(json) = serde_json::to_string_pretty(&state) {
+                let _ = std::fs::write(path, json);
+            }
+        }
+    }
+}
+fn restore_window_state(window: &tauri::Window) {
+    if window.label() != "main" { return; }
+    if let Some(path) = get_window_state_path(&window.app_handle()) {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(state) = serde_json::from_str::<SavedWindowState>(&content) {
+                if state.width >= 400 && state.height >= 300 {
+                    let _ = window.set_size(tauri::PhysicalSize {
+                        width: state.width,
+                        height: state.height,
+                    });
+                }
+                // 画面外に出ていないか（有効なモニター内にあるか）をチェック
+                if let Ok(monitors) = window.available_monitors() {
+                    let in_any_monitor = monitors.iter().any(|m| {
+                        let mp = m.position();
+                        let ms = m.size();
+                        state.x >= mp.x - 50 && state.x < mp.x + ms.width as i32
+                            && state.y >= mp.y - 50 && state.y < mp.y + ms.height as i32
+                    });
+                    if in_any_monitor {
+                        let _ = window.set_position(tauri::PhysicalPosition {
+                            x: state.x,
+                            y: state.y,
+                        });
+                    }
+                }
+                if state.is_maximized {
+                    let _ = window.maximize();
+                }
+            }
+        }
+    }
+}
+fn cleanup_and_quit(app_handle: &tauri::AppHandle) {
+    // 補助ウィンドウをすべて明示的に破棄
+    for label in &[CONTAINER_LABEL, PICKER_LABEL, "recovery-engine", "main"] {
+        if let Some(win) = app_handle.get_webview_window(label) {
+            let _ = win.destroy();
+        }
+    }
+    app_handle.exit(0);
+}
+// ===========================================================================
+// 位置計算ヘルパー
+// ===========================================================================
+fn pick_monitor(
+    app_handle: &tauri::AppHandle,
+    monitor_index: Option<usize>,
+) -> Option<tauri::Monitor> {
+    let win = app_handle.get_webview_window("main")?;
+    let monitors = win.available_monitors().ok()?;
+    if let Some(idx) = monitor_index {
+        if let Some(m) = monitors.get(idx) {
+            return Some(m.clone());
+        }
+    }
+    if let Ok(Some(m)) = win.primary_monitor() {
+        return Some(m);
+    }
+    monitors.into_iter().next()
+}
+fn container_height_for_monitor(monitor: &tauri::Monitor) -> i32 {
+    let mh = monitor.size().height as f64;
+    (mh * 0.8).min(CONTAINER_H_DEFAULT as f64).max(200.0) as i32
+}
+// 保存位置 (None なら primary 右下デフォルト) を実際の物理座標に解決
+// 戻り値: (window_x, window_y, stack_direction)
+fn resolve_window_position(
+    app_handle: &tauri::AppHandle,
+    saved: Option<&SavedPosition>,
+) -> Option<(i32, i32, String)> {
+    let monitor = pick_monitor(app_handle, saved.and_then(|s| s.monitor_index))?;
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let mw = ms.width as i32;
+    let mh = ms.height as i32;
+    if let Some(s) = saved {
+        let wx = mp.x + s.x_in_monitor;
+        let wy = mp.y + s.y_in_monitor;
+        Some((wx, wy, s.stack_direction.clone()))
+    } else {
+        // デフォルト: 右下
+        let container_h = container_height_for_monitor(&monitor);
+        let wx = mp.x + mw - CONTAINER_W - SCREEN_MARGIN;
+        let wy = mp.y + mh - container_h - SCREEN_MARGIN;
+        Some((wx, wy, "up".to_string()))
+    }
+}
+// ===========================================================================
+// コンテナウィンドウ生成・取得（現在は使用していない: WebView2 でのハング問題により
+// Windows ネイティブのトースト通知に切り替えた。将来カスタム UI を再開する際の
+// ためにコードは残してある）
+// ===========================================================================
+#[allow(dead_code)]
+fn ensure_container_window(
+    app_handle: &tauri::AppHandle,
+) -> Result<(tauri::WebviewWindow, bool), String> {
+    log::info!("[ensure] step 1: checking existing container");
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        log::info!("[ensure] step 1.5: existing container found, reusing");
+        return Ok((win, false));
+    }
+    log::error!("[ensure] step 2: container should have been pre-created in setup()! Falling back...");
+    // フォールバック: setup() で作られていなかった場合に build を試みる
+    // ただしハングする可能性あり
+    let win = WebviewWindowBuilder::new(
+        app_handle,
+        CONTAINER_LABEL,
+        tauri::WebviewUrl::App("/notification-container.html".into()),
+    )
+    .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
+    .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
+    .build()
+    .map_err(|e| format!("fallback build failed: {}", e))?;
+    let _ = win.set_decorations(false);
+    let _ = win.set_skip_taskbar(true);
+    let _ = win.set_always_on_top(true);
+    let _ = win.set_resizable(false);
+    log::info!("[ensure] step 6: container window setup complete (fallback)");
+    Ok((win, true))
+}
+// JS から呼ばれるコンテナリサイズ。
+// stack_direction によってアンカー（top or bottom）を維持する
+#[tauri::command]
+fn resize_notif_container(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    height: u32,
+) -> Result<(), String> {
+    let win = app_handle
+        .get_webview_window(CONTAINER_LABEL)
+        .ok_or_else(|| "container not found".to_string())?;
+    // モニターから最大高を計算
+    let monitor = pick_monitor(&app_handle, None);
+    let max_h = monitor
+        .as_ref()
+        .map(|m| (m.size().height as f64 * CONTAINER_H_MAX_RATIO) as i32)
+        .unwrap_or(CONTAINER_H_DEFAULT);
+    let new_h = height.max(CONTAINER_H_MIN as u32).min(max_h as u32);
+    let saved = state.saved_position.lock().unwrap().clone();
+    let stack_dir = saved
+        .as_ref()
+        .map(|s| s.stack_direction.clone())
+        .unwrap_or_else(|| "up".to_string());
+    let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
+    let cur_size = win.outer_size().map_err(|e| e.to_string())?;
+    if stack_dir == "up" {
+        // 「up」(下から積む): bottom anchor を維持。top を新しい高さに合わせて上下調整
+        let bottom = cur_pos.y + cur_size.height as i32;
+        let new_top = bottom - new_h as i32;
+        win.set_size(tauri::PhysicalSize {
+            width: cur_size.width,
+            height: new_h,
+        })
+        .map_err(|e| format!("set_size failed: {}", e))?;
+        win.set_position(tauri::PhysicalPosition {
+            x: cur_pos.x,
+            y: new_top,
+        })
+        .map_err(|e| format!("set_position failed: {}", e))?;
+    } else {
+        // 「down」(上から積む): top anchor 維持。サイズだけ変える
+        win.set_size(tauri::PhysicalSize {
+            width: cur_size.width,
+            height: new_h,
+        })
+        .map_err(|e| format!("set_size failed: {}", e))?;
+    }
+    Ok(())
+}
+// ===========================================================================
+#[tauri::command]
+fn show_main_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+#[tauri::command]
+fn minimize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.minimize();
+    }
+}
+#[tauri::command]
+fn toggle_maximize_window(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if let Ok(is_max) = window.is_maximized() {
+            if is_max {
+                let _ = window.unmaximize();
+            } else {
+                let _ = window.maximize();
+            }
+        }
+    }
+}
+#[tauri::command]
+fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        save_window_state(&window.as_ref().window());
+        let behavior = {
+            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            b
+        };
+        if behavior == "quit" {
+            cleanup_and_quit(&app_handle);
+        } else if behavior == "hide" {
+            let _ = window.hide();
+        } else {
+            let _ = window.minimize();
+        }
+    }
+}
+#[tauri::command]
+fn restart_app(app_handle: tauri::AppHandle) {
+    app_handle.restart();
+}
+#[tauri::command]
+fn exit_app(app_handle: tauri::AppHandle) {
+    cleanup_and_quit(&app_handle);
+}
+#[tauri::command]
+fn set_close_behavior(
+    behavior: String,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    if let Ok(mut b) = state.close_behavior.lock() {
+        *b = behavior;
+    }
+    Ok(())
+}
+// コンテナの JS が起動完了したときに呼ばれる
+#[tauri::command]
+fn container_loaded(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    log::info!("container_loaded called");
+    *state.container_ready.lock().unwrap() = true;
+    // 溜まっている notifications をすべて flush
+    let pending: Vec<PendingNotif> = std::mem::take(&mut *state.pending.lock().unwrap());
+    log::info!("Flushing {} pending notifications", pending.len());
+    let window = app_handle
+        .get_webview_window(CONTAINER_LABEL)
+        .ok_or_else(|| "container not found".to_string())?;
+    for p in pending {
+        let payload = serde_json::json!({
+            "id": p.id,
+            "title": p.title,
+            "body": p.body,
+            "roomId": p.room_id,
+            "stackDir": p.stack_dir,
+        });
+        if let Err(e) = window.emit("new-notif", payload) {
+            log::error!("flush emit failed: {}", e);
+        }
+    }
+    Ok(())
+}
+#[tauri::command]
+fn hide_notif_container(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        // hide() バグ回避のため画面外に移動して実質非表示にする
+        let _ = win.set_position(tauri::PhysicalPosition {
+            x: OFFSCREEN_X,
+            y: OFFSCREEN_Y,
+        });
+    }
+}
+#[tauri::command]
+fn close_notification(_app_handle: tauri::AppHandle, _label: String) {
+    // 互換性のため残すがコンテナ方式では使わない
+}
+// ===========================================================================
+// コマンド: 位置ピッカー
+// ===========================================================================
+#[tauri::command]
+fn open_position_picker(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<(), String> {
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        let _ = win.close();
+    }
+    let saved = state.saved_position.lock().unwrap().clone();
+    let (initial_x, initial_y) = resolve_window_position(&app_handle, saved.as_ref())
+        .map(|(x, y, _)| (x, y))
+        .unwrap_or((100, 100));
+    let win = WebviewWindowBuilder::new(
+        &app_handle,
+        PICKER_LABEL,
+        tauri::WebviewUrl::App("/notification-picker.html".into()),
+    )
+    .inner_size(PICKER_W as f64, PICKER_H as f64)
+    .position(initial_x as f64, initial_y as f64)
+    .always_on_top(true)
+    .decorations(false)
+    .skip_taskbar(true)
+    .resizable(false)
+    .build()
+    .map_err(|e| format!("picker build failed: {}", e))?;
+    let _ = win.set_position(tauri::PhysicalPosition {
+        x: initial_x,
+        y: initial_y,
+    });
+    // F12 で開閉可能（devtools feature 有効）
+    Ok(())
+}
+#[tauri::command]
+fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        win.open_devtools();
+    }
+}
+#[tauri::command]
+fn open_devtools_for_container(app_handle: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
+    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        win.open_devtools();
+    }
+}
+// デスクトップにショートカットを作成
+#[tauri::command]
+fn create_desktop_shortcut() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe failed: {}", e))?;
+    let exe_str = exe.to_string_lossy().to_string();
+    let exe_escaped = exe_str.replace('\'', "''").replace('`', "``").replace('$', "`$");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let ps_script = format!(
+            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');if(-not $dp -or -not (Test-Path $dp)){{$dp=Join-Path $HOME 'Desktop'}};$sc=$s.CreateShortcut((Join-Path $dp 'Covo.lnk'));$sc.TargetPath=$t;$sc.IconLocation=$t;[void]$sc.Save()",
+            exe_escaped
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| format!("powershell failed: {}", e))?;
+        if !status.success() {
+            return Err("shortcut creation failed".to_string());
+        }
+    }
+    Ok(())
+}
+// ログディレクトリをエクスプローラーで開く
+#[tauri::command]
+fn open_log_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let path = app_handle
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("app_log_dir failed: {}", e))?;
+    // ディレクトリがまだ作られていなければ作る
+    if !path.exists() {
+        std::fs::create_dir_all(&path).map_err(|e| format!("create_dir_all failed: {}", e))?;
+    }
+    // ログファイルが空でも何か書いておく
+    let log_marker = path.join("opened_at.txt");
+    let _ = std::fs::write(
+        &log_marker,
+        format!("Log dir opened: {:?}\n", std::time::SystemTime::now()),
+    );
+    let path_str = path.to_string_lossy().to_string();
+    log::info!("Opening log dir: {}", path_str);
+    // explorer で開く
+    std::process::Command::new("explorer")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("spawn explorer failed: {}", e))?;
+    Ok(path_str)
+}
+#[tauri::command]
+fn save_notification_position(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+) -> Result<SavedPosition, String> {
+    let win = app_handle
+        .get_webview_window(PICKER_LABEL)
+        .ok_or_else(|| "picker window not found".to_string())?;
+    let pos = win
+        .outer_position()
+        .map_err(|e| format!("outer_position failed: {}", e))?;
+    let main = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitors = main
+        .available_monitors()
+        .map_err(|e| format!("monitors failed: {}", e))?;
+    // ピッカー位置 (左上) から所属モニターを判定
+    let found = monitors.iter().enumerate().find(|(_, m)| {
+        let mp = m.position();
+        let ms = m.size();
+        pos.x >= mp.x
+            && pos.x < mp.x + ms.width as i32
+            && pos.y >= mp.y
+            && pos.y < mp.y + ms.height as i32
+    });
+    let (monitor_idx, monitor) = match found {
+        Some((i, m)) => (Some(i), m.clone()),
+        None => {
+            let m = monitors.first().cloned().ok_or_else(|| "no monitors".to_string())?;
+            (Some(0), m)
+        }
+    };
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let x_in_monitor = pos.x - mp.x;
+    let y_in_monitor = pos.y - mp.y;
+    // y がモニター高の 1/3 未満なら下方向にスタック (top stack)、それ以外は上方向
+    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
+        "down".to_string()
+    } else {
+        "up".to_string()
+    };
+    let saved = SavedPosition {
+        monitor_index: monitor_idx,
+        x_in_monitor,
+        y_in_monitor,
+        stack_direction: stack_direction.clone(),
+    };
+    {
+        let mut lock = state.saved_position.lock().unwrap();
+        *lock = Some(saved.clone());
+    }
+    let _ = win.close();
+    if let Some(main) = app_handle.get_webview_window("main") {
+        let _ = main.emit("position-saved", &saved);
+    }
+    // 既存コンテナがあれば即時再配置
+    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
+            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
+        }
+    }
+    Ok(saved)
+}
+#[tauri::command]
+fn cancel_position_picker(app_handle: tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+        let _ = win.close();
+    }
+}
+// メインウィンドウ内で完結する位置設定: 絶対物理ピクセル座標を受け取って保存
+#[tauri::command]
+fn save_position_absolute(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    x: i32,
+    y: i32,
+) -> Result<SavedPosition, String> {
+    log::info!("save_position_absolute called: x={}, y={}", x, y);
+    let main = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    let monitors = main
+        .available_monitors()
+        .map_err(|e| format!("monitors failed: {}", e))?;
+    // 与えられた座標を含むモニターを判定
+    let found = monitors.iter().enumerate().find(|(_, m)| {
+        let mp = m.position();
+        let ms = m.size();
+        x >= mp.x && x < mp.x + ms.width as i32
+            && y >= mp.y && y < mp.y + ms.height as i32
+    });
+    let (monitor_idx, monitor) = match found {
+        Some((i, m)) => (Some(i), m.clone()),
+        None => {
+            // 座標がどのモニターにも含まれない場合は primary または 1 番目
+            let m = main.primary_monitor().ok().flatten()
+                .or_else(|| monitors.first().cloned())
+                .ok_or_else(|| "no monitors".to_string())?;
+            (Some(0), m)
+        }
+    };
+    let mp = monitor.position();
+    let ms = monitor.size();
+    let x_in_monitor = x - mp.x;
+    let y_in_monitor = y - mp.y;
+    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
+        "down".to_string()
+    } else {
+        "up".to_string()
+    };
+    let saved = SavedPosition {
+        monitor_index: monitor_idx,
+        x_in_monitor,
+        y_in_monitor,
+        stack_direction,
+    };
+    {
+        let mut lock = state.saved_position.lock().unwrap();
+        *lock = Some(saved.clone());
+    }
+    log::info!("Saved position: {:?}", serde_json::to_string(&saved).ok());
+    // 既存コンテナがあれば即時再配置
+    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
+        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
+            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
+        }
+    }
+    Ok(saved)
+}
+#[tauri::command]
+fn set_saved_position(state: tauri::State<'_, NotificationState>, saved: SavedPosition) {
+    let mut lock = state.saved_position.lock().unwrap();
+    *lock = Some(saved);
+}
+#[tauri::command]
+fn get_saved_position(state: tauri::State<'_, NotificationState>) -> Option<SavedPosition> {
+    state.saved_position.lock().unwrap().clone()
+}
+#[tauri::command]
+fn get_available_monitors(app_handle: tauri::AppHandle) -> Vec<MonitorInfo> {
+    let Some(win) = app_handle.get_webview_window("main") else {
+        return vec![];
+    };
+    let monitors = match win.available_monitors() {
+        Ok(m) => m,
+        Err(_) => return vec![],
+    };
+    let primary = win.primary_monitor().ok().flatten();
+    let primary_pos = primary.as_ref().map(|m| {
+        let p = m.position();
+        (p.x, p.y)
+    });
+    monitors
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| {
+            let s = m.size();
+            let p = m.position();
+            let is_primary = primary_pos.map_or(false, |(px, py)| px == p.x && py == p.y);
+            MonitorInfo {
+                index: idx,
+                name: m.name().cloned().unwrap_or_else(|| format!("Display {}", idx + 1)),
+                x: p.x,
+                y: p.y,
+                width: s.width,
+                height: s.height,
+                is_primary,
+                scale_factor: m.scale_factor(),
+            }
+        })
+        .collect()
+}
+// ===========================================================================
+// グローバルショートカット
+// ===========================================================================
+fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
+    use tauri_plugin_global_shortcut::Code;
+    match key.to_uppercase().as_str() {
+        "A" => Some(Code::KeyA), "B" => Some(Code::KeyB), "C" => Some(Code::KeyC),
+        "D" => Some(Code::KeyD), "E" => Some(Code::KeyE), "F" => Some(Code::KeyF),
+        "G" => Some(Code::KeyG), "H" => Some(Code::KeyH), "I" => Some(Code::KeyI),
+        "J" => Some(Code::KeyJ), "K" => Some(Code::KeyK), "L" => Some(Code::KeyL),
+        "M" => Some(Code::KeyM), "N" => Some(Code::KeyN), "O" => Some(Code::KeyO),
+        "P" => Some(Code::KeyP), "Q" => Some(Code::KeyQ), "R" => Some(Code::KeyR),
+        "S" => Some(Code::KeyS), "T" => Some(Code::KeyT), "U" => Some(Code::KeyU),
+        "V" => Some(Code::KeyV), "W" => Some(Code::KeyW), "X" => Some(Code::KeyX),
+        "Y" => Some(Code::KeyY), "Z" => Some(Code::KeyZ),
+        _ => None,
+    }
+}
+#[tauri::command]
+fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
+    let _ = app_handle.global_shortcut().unregister_all();
+    if let Some(code) = char_to_code(&key) {
+        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
+        app_handle.global_shortcut().register(shortcut)
+            .map_err(|e| format!("ショートカット Ctrl+Shift+{} の登録に失敗しました (重複の可能性): {}", key, e))?;
+    }
+    Ok(())
+}
+#[tauri::command]
+fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
+    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
+    if let Some(window) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+            use windows::Win32::Foundation::HWND;
+            if let Ok(hwnd_ptr) = window.hwnd() {
+                let hwnd = HWND(hwnd_ptr.0 as _);
+                unsafe {
+                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
+                        if taskbar.HrInit().is_ok() {
+                            if has_unread {
+                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+                                let ico_bytes = include_bytes!("../icons/badge.ico");
+                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
+                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
+                                    let icon = CreateIconFromResourceEx(&ico_bytes[offset..], true, 0x00030000, 16, 16, LR_DEFAULTCOLOR).unwrap_or_default();
+                                    icon.0 as isize
+                                });
+                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
+                                if !icon.is_invalid() {
+                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
+                                }
+                            } else {
+                                use windows::Win32::UI::WindowsAndMessaging::HICON;
+                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let icon_bytes = if has_unread {
+            include_bytes!("../icons/icon-unread.png").to_vec()
+        } else {
+            include_bytes!("../icons/icon.png").to_vec()
+        };
+        match image::load_from_memory(&icon_bytes) {
+            Ok(img) => {
+                let rgba = img.into_rgba8();
+                let width = rgba.width();
+                let height = rgba.height();
+                let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+                // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
+                // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
+                if let Err(e) = window.set_icon(tauri_image.clone()) {
+                    log::error!("[DEBUG] window.set_icon failed: {}", e);
+                } else {
+                    log::info!("[DEBUG] window.set_icon succeeded");
+                }
+                if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                    if let Err(e) = tray.set_icon(Some(tauri_image)) {
+                        log::error!("[DEBUG] tray.set_icon failed: {}", e);
+                    } else {
+                        log::info!("[DEBUG] tray.set_icon succeeded");
+                    }
+                } else {
+                    log::warn!("[DEBUG] main-tray not found");
+                }
+            },
+            Err(e) => {
+                log::error!("[DEBUG] failed to load icon from memory: {}", e);
+            }
+        }
+    } else {
+        log::error!("[DEBUG] get_webview_window('main') returned None");
+    }
+}
+use tauri_plugin_notification::NotificationExt;
+#[tauri::command]
+fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
+    let _ = app.notification().builder()
+        .title(title)
+        .body(body)
+        .show();
+}
+#[tauri::command]
+async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
+    log::info!("silent_install_past_version called: {} -> {}", tag, url);
+    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        return Err("Invalid tag format".to_string());
+    }
+    let url_lower = url.to_lowercase();
+    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
+        || url.starts_with("https://objects.githubusercontent.com/");
+    if !is_valid_url {
+        return Err("Invalid download URL: must be from official repository".to_string());
+    }
+    let temp_dir = std::env::temp_dir();
+    let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
+    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
+    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
+    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
+    let total = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    let mut file = std::fs::File::create(&exe_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let mut stream = response;
+    loop {
+        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
+        match chunk {
+            None => break,
+            Some(bytes) => {
+                use std::io::Write;
+                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
+                downloaded += bytes.len() as u64;
+                let progress = if total > 0 {
+                    ((downloaded as f64 / total as f64) * 100.0) as u32
+                } else {
+                    0
+                };
+                let _ = app_handle.emit("download-progress", serde_json::json!({
+                    "tag": tag,
+                    "downloaded": downloaded,
+                    "total": total,
+                    "progress": progress
+                }));
+            }
+        }
+    }
+    drop(file);
+    // ─── 破損・不完全ダウンロード検証 (空ファイルやエラーHTML、不完全切断の防止) ───
+    let downloaded_meta = std::fs::metadata(&exe_path).map_err(|e| format!("インストーラー検証失敗: {}", e))?;
+    let downloaded_size = downloaded_meta.len();
+    if downloaded_size < 500_000 {
+        let _ = std::fs::remove_file(&exe_path);
+        return Err(format!("ダウンロードされたインストーラーが破損しています (サイズが極端に小さい: {} bytes)", downloaded_size));
+    }
+    if total > 0 && downloaded_size != total {
+        let _ = std::fs::remove_file(&exe_path);
+        return Err(format!("インストーラーのサイズが一致しません (期待: {} bytes, 実際: {} bytes)", total, downloaded_size));
+    }
+    log::info!("Downloaded installer verified successfully: {:?} ({} bytes)", exe_path, downloaded_size);
+    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let covo_exe = std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "Covo.exe".to_string());
+        let installer_path = exe_path.to_string_lossy().to_string();
+        // PowerShell スクリプト:
+        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
+        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
+        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
+        //   4. Covo.exe を再起動
+        let ps_script = format!(
+            "Start-Sleep -Seconds 5; \
+             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
+             Start-Sleep -Seconds 1; \
+             Start-Process -FilePath '{covo}'",
+            installer = installer_path.replace('\'', "''").replace('`', "``").replace('$', "`$"),
+            covo = covo_exe.replace('\'', "''").replace('`', "``").replace('$', "`$"),
+        );
+        std::process::Command::new("powershell")
+            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
+        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
+        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
+            app_handle.exit(0);
+        });
+    }
+    Ok(())
+}
+#[tauri::command]
+fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
+    if let Ok(mut loaded) = state.app_loaded.lock() {
+        *loaded = true;
+        log::info!("Received notify_app_loaded signal from frontend. Cancelling recovery popup.");
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DesktopAuthResult {
+    id_token: String,
+    access_token: Option<String>,
+}
+#[tauri::command]
+async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<DesktopAuthResult, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Duration;
+    // ローカルポートのバインド（競合回避リトライ付き）
+    let mut bound_listener = None;
+    for _ in 0..5 {
+        if let Ok(l) = TcpListener::bind("127.0.0.1:0") {
+            bound_listener = Some(l);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    let listener = bound_listener.ok_or_else(|| "ローカルポートのバインドに失敗しました。ファイアウォール等の設定を確認してください。".to_string())?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("ローカルアドレスの取得に失敗しました: {}", e))?
+        .port();
+    let state_nonce = uuid::Uuid::new_v4().to_string();
+    let auth_url = format!(
+        "https://simplechat-65a0d.web.app/auth-desktop.html?callback=http%3A%2F%2F127.0.0.1%3A{}%2Fcallback&state={}",
+        port, state_nonce
+    );
+    log::info!("Starting desktop Google auth: port={}, url={}", port, auth_url);
+    // システム既定の外部ブラウザで安全にWeb認証ページを開く (ShellExecuteW による安全起動)
+    safe_open_browser_url(&auth_url)?;
+    let expected_state = state_nonce.clone();
+    // spawn_blocking で非同期にタイムアウト付きでコールバックを受け取る
+    let auth_res = tauri::async_runtime::spawn_blocking(move || -> Result<DesktopAuthResult, String> {
+        let start = std::time::Instant::now();
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        while start.elapsed() < Duration::from_secs(180) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut buffer = [0u8; 16384];
+                    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+                    let n = match stream.read(&mut buffer) {
+                        Ok(n) => n,
+                        Err(_) => continue,
+                    };
+                    let req_str = String::from_utf8_lossy(&buffer[..n]);
+                    let first_line = req_str.lines().next().unwrap_or("");
+                    if first_line.starts_with("GET ") {
+                        let path_query = first_line.split_whitespace().nth(1).unwrap_or("");
+                        // favicon.ico などのブラウザ副次リクエストは 204 で即応答してコールバック待機を継続
+                        if path_query.starts_with("/favicon.ico") {
+                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
+                            let _ = stream.write_all(resp.as_bytes());
+                            let _ = stream.flush();
+                            continue;
+                        }
+                        // /callback 宛てのリクエストを正しく解析
+                        if path_query.starts_with("/callback") {
+                            if let Some(pos) = path_query.find('?') {
+                                let query = &path_query[pos + 1..];
+                                let mut id_token = String::new();
+                                let mut access_token = None;
+                                let mut state = String::new();
+                                for pair in query.split('&') {
+                                    let mut kv = pair.splitn(2, '=');
+                                    let k = kv.next().unwrap_or("");
+                                    let v = kv.next().unwrap_or("");
+                                    let decoded_v = urlencoding::decode(v).unwrap_or_default().to_string();
+                                    if k == "idToken" {
+                                        id_token = decoded_v;
+                                    } else if k == "accessToken" {
+                                        access_token = Some(decoded_v);
+                                    } else if k == "state" {
+                                        state = decoded_v;
+                                    }
+                                }
+                                if state.trim() == expected_state.trim() && !id_token.is_empty() {
+                                    let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
+                                    let response = format!(
+                                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                        html_body.len(),
+                                        html_body
+                                    );
+                                    let _ = stream.write_all(response.as_bytes());
+                                    let _ = stream.flush();
+                                    return Ok(DesktopAuthResult {
+                                        id_token,
+                                        access_token,
+                                    });
+                                }
+                            }
+                            let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\nInvalid authentication request";
+                            let _ = stream.write_all(err_body.as_bytes());
+                            let _ = stream.flush();
+                            continue;
+                        }
+                        // /callback 以外の通常リクエストは 404 を返してループを継続
+                        let not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
+                        let _ = stream.write_all(not_found.as_bytes());
+                        let _ = stream.flush();
+                        continue;
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    log::warn!("Listener error: {}", e);
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+        Err("Google 認証の待機がタイムアウトしました。もう一度お試しください。".to_string())
+    }).await.map_err(|e| format!("タスク実行エラー: {}", e))??;
+    // メインウィンドウを前面に復帰
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    Ok(auth_res)
+}
+#[tauri::command]
+fn open_in_app_browser_window(
+    _app_handle: tauri::AppHandle,
+    url: String,
+    _title: Option<String>,
+) -> Result<(), String> {
+    // 🔒 セキュリティ: 外部URLはシステム既定ブラウザで開く
+    // TauriのWebviewWindowで開くと withGlobalTauri:true により
+    // window.__TAURI__ がフルアクセスで注入され、RCEが成立するため
+    let parsed_url: url::Url = url.parse().map_err(|e| format!("無効なURLです: {}", e))?;
+    // HTTPSのみ許可（javascript: 等の危険なスキームを遮断）
+    if parsed_url.scheme() != "https" && parsed_url.scheme() != "http" {
+        return Err("安全でないURLスキームです。HTTPまたはHTTPSのみ許可されています。".to_string());
+    }
+    safe_open_browser_url(&url)
+}
+fn safe_open_browser_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide_url = HSTRING::from(url);
+        let wide_op = HSTRING::from("open");
+        let ret = unsafe {
+            ShellExecuteW(
+                None,
+                &wide_op,
+                &wide_url,
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if (ret.0 as usize) <= 32 {
+            return Err(format!("ブラウザ起動エラー (code: {})", ret.0 as usize));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| format!("ブラウザの起動に失敗しました: {}", e))?;
+        Ok(())
+    }
+}
+// ===========================================================================
+// run()
+// ===========================================================================
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .manage(NotificationState::default())
+        .invoke_handler(tauri::generate_handler![
+            restart_app,
+            exit_app,
+            show_main_window,
+            minimize_window,
+            toggle_maximize_window,
+            close_window,
+            set_close_behavior,
+            container_loaded,
+            hide_notif_container,
+            resize_notif_container,
+            close_notification,
+            open_position_picker,
+            save_notification_position,
+            cancel_position_picker,
+            save_position_absolute,
+            set_saved_position,
+            get_saved_position,
+            get_available_monitors,
+            update_shortcut_key,
+            open_devtools_for_picker,
+            open_devtools_for_container,
+            open_log_dir,
+            create_desktop_shortcut,
+            set_badge,
+            send_desktop_notification,
+            silent_install_past_version,
+            notify_app_loaded,
+            start_desktop_google_auth,
+            open_in_app_browser_window,
+        ])
+        .setup(|app| {
+            let _handle = app.handle().clone();
+            // アップデート後にショートカット・タスクバーのアイコンキャッシュを更新する
+            // ie4uinit.exe -show は Windows シェルにアイコン再読み込みを要求する標準的な方法
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                let _ = std::process::Command::new("ie4uinit.exe")
+                    .arg("-show")
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+            }
+            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState, ShortcutEvent};
+            let ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
+            let shortcut_plugin = {
+                let h = app.handle().clone();
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |_app, _sc, event: ShortcutEvent| {
+                        if event.state() == ShortcutState::Pressed {
+                            if let Some(window) = h.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                                let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
+                            }
+                        }
+                    })
+                    .build()
+            };
+            app.handle().plugin(shortcut_plugin)?;
+            let _ = app.global_shortcut().register(ctrl_shift_s);
+            // 正常起動の非同期監視タスク (45秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
+            let monitor_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(45)).await;
+                let loaded = {
+                    let state = monitor_handle.state::<NotificationState>();
+                    let val = *state.app_loaded.lock().unwrap();
+                    val
+                };
+                if !loaded {
+                    log::warn!("App loaded signal not received within 45 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
+                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
+                        let _ = main_win.hide();
+                    }
+                    if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                        &monitor_handle,
+                        "recovery-engine",
+                        tauri::WebviewUrl::App("recovery.html".into())
+                    )
+                    .title("Covo - リカバリーパネル")
+                    .inner_size(840.0, 680.0)
+                    .resizable(true)
+                    .center()
+                    .build() {
+                        let _ = recovery_win.show();
+                    }
+                }
+            });
+            // 前回終了時のウィンドウ位置とサイズを復元
+            if let Some(main_win) = app.get_webview_window("main") {
+                restore_window_state(&main_win.as_ref().window());
+            }
+            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
+            let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray").menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            let _tray = tray_builder
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => { cleanup_and_quit(&app); }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "recovery" => {
+                        // トレイメニューからいつでもリカバリー画面を呼び出せる
+                        if let Some(existing) = app.get_webview_window("recovery-engine") {
+                            let _ = existing.unminimize();
+                            let _ = existing.show();
+                            let _ = existing.set_focus();
+                        } else {
+                            if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+                                app,
+                                "recovery-engine",
+                                tauri::WebviewUrl::App("recovery.html".into())
+                            )
+                            .title("Covo - リカバリーパネル")
+                            .inner_size(840.0, 680.0)
+                            .resizable(true)
+                            .center()
+                            .build() {
+                                let _ = recovery_win.show();
+                            }
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "main" {
+                        save_window_state(window);
+                        use tauri::Manager;
+                        let behavior = {
+                            let state = window.app_handle().state::<NotificationState>();
+                            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                            b
+                        };
+                        if behavior == "quit" {
+                            cleanup_and_quit(&window.app_handle());
+                        } else if behavior == "hide" {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        } else {
+                            // デフォルト: タスクバーに最小化
+                            api.prevent_close();
+                            let _ = window.minimize();
+                        }
+                    }
+                }
+                WindowEvent::Focused(true) => {
+                    if window.label() == "main" {
+                        let _ = window.emit("window-focused", ());
+                    }
+                }
+                _ => {}
+            }
+        })
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.emit("single-instance-opened", ());
+            }
+        }))
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Debug)
+                .build(),
+        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 </file>
 
@@ -6459,1245 +7698,6 @@ if (typeof window !== 'undefined') {
     restoreAllLocalData,
     clearAllLocalData
   };
-}
-</file>
-
-<file path="src-tauri/src/lib.rs">
-use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
-use tauri::WebviewWindowBuilder;
-use std::sync::Mutex;
-const CONTAINER_LABEL: &str = "notif_container";
-const PICKER_LABEL: &str = "notif_pos_picker";
-const CONTAINER_W: i32 = 360;
-#[allow(dead_code)]
-const CONTAINER_H_INITIAL: i32 = 100;       // 初期は1枚分の高さだけ
-const CONTAINER_H_DEFAULT: i32 = 600;       // 「右下」デフォルト計算用の見込み高さ
-const CONTAINER_H_MIN: i32 = 90;            // カードなしのとき
-const CONTAINER_H_MAX_RATIO: f64 = 0.85;    // モニター高さの比率上限
-const PICKER_W: i32 = 360;
-const PICKER_H: i32 = 200;
-const SCREEN_MARGIN: i32 = 20;
-const OFFSCREEN_X: i32 = -8000;
-const OFFSCREEN_Y: i32 = -8000;
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-struct SavedPosition {
-    monitor_index: Option<usize>,
-    x_in_monitor: i32,
-    y_in_monitor: i32,
-    stack_direction: String, // "up" (新着が下、古いのが上) | "down" (新着が上、古いのが下)
-}
-#[derive(Clone)]
-struct PendingNotif {
-    id: String,
-    title: String,
-    body: String,
-    room_id: String,
-    stack_dir: String,
-}
-#[derive(Default)]
-struct NotificationState {
-    saved_position: Mutex<Option<SavedPosition>>,
-    container_ready: Mutex<bool>,
-    pending: Mutex<Vec<PendingNotif>>,
-    close_behavior: Mutex<String>,
-    app_loaded: Mutex<bool>,
-}
-#[derive(serde::Serialize)]
-struct MonitorInfo {
-    index: usize,
-    name: String,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    is_primary: bool,
-    scale_factor: f64,
-}
-#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
-struct SavedWindowState {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    is_maximized: bool,
-}
-fn get_window_state_path(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    use tauri::Manager;
-    let dir = app_handle.path().app_data_dir().ok()?;
-    let _ = std::fs::create_dir_all(&dir);
-    Some(dir.join("window_state.json"))
-}
-fn save_window_state(window: &tauri::Window) {
-    if window.label() != "main" { return; }
-    if let (Ok(pos), Ok(size), Ok(is_max)) = (window.outer_position(), window.inner_size(), window.is_maximized()) {
-        // 最小化中や画面外の不正座標は無視
-        if pos.x <= -30000 || pos.y <= -30000 || size.width < 100 || size.height < 100 {
-            return;
-        }
-        let state = SavedWindowState {
-            x: pos.x,
-            y: pos.y,
-            width: size.width,
-            height: size.height,
-            is_maximized: is_max,
-        };
-        if let Some(path) = get_window_state_path(&window.app_handle()) {
-            if let Ok(json) = serde_json::to_string_pretty(&state) {
-                let _ = std::fs::write(path, json);
-            }
-        }
-    }
-}
-fn restore_window_state(window: &tauri::Window) {
-    if window.label() != "main" { return; }
-    if let Some(path) = get_window_state_path(&window.app_handle()) {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(state) = serde_json::from_str::<SavedWindowState>(&content) {
-                if state.width >= 400 && state.height >= 300 {
-                    let _ = window.set_size(tauri::PhysicalSize {
-                        width: state.width,
-                        height: state.height,
-                    });
-                }
-                // 画面外に出ていないか（有効なモニター内にあるか）をチェック
-                if let Ok(monitors) = window.available_monitors() {
-                    let in_any_monitor = monitors.iter().any(|m| {
-                        let mp = m.position();
-                        let ms = m.size();
-                        state.x >= mp.x - 50 && state.x < mp.x + ms.width as i32
-                            && state.y >= mp.y - 50 && state.y < mp.y + ms.height as i32
-                    });
-                    if in_any_monitor {
-                        let _ = window.set_position(tauri::PhysicalPosition {
-                            x: state.x,
-                            y: state.y,
-                        });
-                    }
-                }
-                if state.is_maximized {
-                    let _ = window.maximize();
-                }
-            }
-        }
-    }
-}
-fn cleanup_and_quit(app_handle: &tauri::AppHandle) {
-    // 補助ウィンドウをすべて明示的に破棄
-    for label in &[CONTAINER_LABEL, PICKER_LABEL, "recovery-engine", "main"] {
-        if let Some(win) = app_handle.get_webview_window(label) {
-            let _ = win.destroy();
-        }
-    }
-    app_handle.exit(0);
-}
-// ===========================================================================
-// 位置計算ヘルパー
-// ===========================================================================
-fn pick_monitor(
-    app_handle: &tauri::AppHandle,
-    monitor_index: Option<usize>,
-) -> Option<tauri::Monitor> {
-    let win = app_handle.get_webview_window("main")?;
-    let monitors = win.available_monitors().ok()?;
-    if let Some(idx) = monitor_index {
-        if let Some(m) = monitors.get(idx) {
-            return Some(m.clone());
-        }
-    }
-    if let Ok(Some(m)) = win.primary_monitor() {
-        return Some(m);
-    }
-    monitors.into_iter().next()
-}
-fn container_height_for_monitor(monitor: &tauri::Monitor) -> i32 {
-    let mh = monitor.size().height as f64;
-    (mh * 0.8).min(CONTAINER_H_DEFAULT as f64).max(200.0) as i32
-}
-// 保存位置 (None なら primary 右下デフォルト) を実際の物理座標に解決
-// 戻り値: (window_x, window_y, stack_direction)
-fn resolve_window_position(
-    app_handle: &tauri::AppHandle,
-    saved: Option<&SavedPosition>,
-) -> Option<(i32, i32, String)> {
-    let monitor = pick_monitor(app_handle, saved.and_then(|s| s.monitor_index))?;
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let mw = ms.width as i32;
-    let mh = ms.height as i32;
-    if let Some(s) = saved {
-        let wx = mp.x + s.x_in_monitor;
-        let wy = mp.y + s.y_in_monitor;
-        Some((wx, wy, s.stack_direction.clone()))
-    } else {
-        // デフォルト: 右下
-        let container_h = container_height_for_monitor(&monitor);
-        let wx = mp.x + mw - CONTAINER_W - SCREEN_MARGIN;
-        let wy = mp.y + mh - container_h - SCREEN_MARGIN;
-        Some((wx, wy, "up".to_string()))
-    }
-}
-// ===========================================================================
-// コンテナウィンドウ生成・取得（現在は使用していない: WebView2 でのハング問題により
-// Windows ネイティブのトースト通知に切り替えた。将来カスタム UI を再開する際の
-// ためにコードは残してある）
-// ===========================================================================
-#[allow(dead_code)]
-fn ensure_container_window(
-    app_handle: &tauri::AppHandle,
-) -> Result<(tauri::WebviewWindow, bool), String> {
-    log::info!("[ensure] step 1: checking existing container");
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        log::info!("[ensure] step 1.5: existing container found, reusing");
-        return Ok((win, false));
-    }
-    log::error!("[ensure] step 2: container should have been pre-created in setup()! Falling back...");
-    // フォールバック: setup() で作られていなかった場合に build を試みる
-    // ただしハングする可能性あり
-    let win = WebviewWindowBuilder::new(
-        app_handle,
-        CONTAINER_LABEL,
-        tauri::WebviewUrl::App("/notification-container.html".into()),
-    )
-    .inner_size(CONTAINER_W as f64, CONTAINER_H_INITIAL as f64)
-    .position(OFFSCREEN_X as f64, OFFSCREEN_Y as f64)
-    .build()
-    .map_err(|e| format!("fallback build failed: {}", e))?;
-    let _ = win.set_decorations(false);
-    let _ = win.set_skip_taskbar(true);
-    let _ = win.set_always_on_top(true);
-    let _ = win.set_resizable(false);
-    log::info!("[ensure] step 6: container window setup complete (fallback)");
-    Ok((win, true))
-}
-// JS から呼ばれるコンテナリサイズ。
-// stack_direction によってアンカー（top or bottom）を維持する
-#[tauri::command]
-fn resize_notif_container(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-    height: u32,
-) -> Result<(), String> {
-    let win = app_handle
-        .get_webview_window(CONTAINER_LABEL)
-        .ok_or_else(|| "container not found".to_string())?;
-    // モニターから最大高を計算
-    let monitor = pick_monitor(&app_handle, None);
-    let max_h = monitor
-        .as_ref()
-        .map(|m| (m.size().height as f64 * CONTAINER_H_MAX_RATIO) as i32)
-        .unwrap_or(CONTAINER_H_DEFAULT);
-    let new_h = height.max(CONTAINER_H_MIN as u32).min(max_h as u32);
-    let saved = state.saved_position.lock().unwrap().clone();
-    let stack_dir = saved
-        .as_ref()
-        .map(|s| s.stack_direction.clone())
-        .unwrap_or_else(|| "up".to_string());
-    let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
-    let cur_size = win.outer_size().map_err(|e| e.to_string())?;
-    if stack_dir == "up" {
-        // 「up」(下から積む): bottom anchor を維持。top を新しい高さに合わせて上下調整
-        let bottom = cur_pos.y + cur_size.height as i32;
-        let new_top = bottom - new_h as i32;
-        win.set_size(tauri::PhysicalSize {
-            width: cur_size.width,
-            height: new_h,
-        })
-        .map_err(|e| format!("set_size failed: {}", e))?;
-        win.set_position(tauri::PhysicalPosition {
-            x: cur_pos.x,
-            y: new_top,
-        })
-        .map_err(|e| format!("set_position failed: {}", e))?;
-    } else {
-        // 「down」(上から積む): top anchor 維持。サイズだけ変える
-        win.set_size(tauri::PhysicalSize {
-            width: cur_size.width,
-            height: new_h,
-        })
-        .map_err(|e| format!("set_size failed: {}", e))?;
-    }
-    Ok(())
-}
-// ===========================================================================
-#[tauri::command]
-fn show_main_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-#[tauri::command]
-fn minimize_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.minimize();
-    }
-}
-#[tauri::command]
-fn toggle_maximize_window(app_handle: tauri::AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        if let Ok(is_max) = window.is_maximized() {
-            if is_max {
-                let _ = window.unmaximize();
-            } else {
-                let _ = window.maximize();
-            }
-        }
-    }
-}
-#[tauri::command]
-fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        save_window_state(&window.as_ref().window());
-        let behavior = {
-            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            b
-        };
-        if behavior == "quit" {
-            cleanup_and_quit(&app_handle);
-        } else if behavior == "hide" {
-            let _ = window.hide();
-        } else {
-            let _ = window.minimize();
-        }
-    }
-}
-#[tauri::command]
-fn restart_app(app_handle: tauri::AppHandle) {
-    app_handle.restart();
-}
-#[tauri::command]
-fn exit_app(app_handle: tauri::AppHandle) {
-    cleanup_and_quit(&app_handle);
-}
-#[tauri::command]
-fn set_close_behavior(
-    behavior: String,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    if let Ok(mut b) = state.close_behavior.lock() {
-        *b = behavior;
-    }
-    Ok(())
-}
-// コンテナの JS が起動完了したときに呼ばれる
-#[tauri::command]
-fn container_loaded(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    log::info!("container_loaded called");
-    *state.container_ready.lock().unwrap() = true;
-    // 溜まっている notifications をすべて flush
-    let pending: Vec<PendingNotif> = std::mem::take(&mut *state.pending.lock().unwrap());
-    log::info!("Flushing {} pending notifications", pending.len());
-    let window = app_handle
-        .get_webview_window(CONTAINER_LABEL)
-        .ok_or_else(|| "container not found".to_string())?;
-    for p in pending {
-        let payload = serde_json::json!({
-            "id": p.id,
-            "title": p.title,
-            "body": p.body,
-            "roomId": p.room_id,
-            "stackDir": p.stack_dir,
-        });
-        if let Err(e) = window.emit("new-notif", payload) {
-            log::error!("flush emit failed: {}", e);
-        }
-    }
-    Ok(())
-}
-#[tauri::command]
-fn hide_notif_container(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        // hide() バグ回避のため画面外に移動して実質非表示にする
-        let _ = win.set_position(tauri::PhysicalPosition {
-            x: OFFSCREEN_X,
-            y: OFFSCREEN_Y,
-        });
-    }
-}
-#[tauri::command]
-fn close_notification(_app_handle: tauri::AppHandle, _label: String) {
-    // 互換性のため残すがコンテナ方式では使わない
-}
-// ===========================================================================
-// コマンド: 位置ピッカー
-// ===========================================================================
-#[tauri::command]
-fn open_position_picker(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<(), String> {
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        let _ = win.close();
-    }
-    let saved = state.saved_position.lock().unwrap().clone();
-    let (initial_x, initial_y) = resolve_window_position(&app_handle, saved.as_ref())
-        .map(|(x, y, _)| (x, y))
-        .unwrap_or((100, 100));
-    let win = WebviewWindowBuilder::new(
-        &app_handle,
-        PICKER_LABEL,
-        tauri::WebviewUrl::App("/notification-picker.html".into()),
-    )
-    .inner_size(PICKER_W as f64, PICKER_H as f64)
-    .position(initial_x as f64, initial_y as f64)
-    .always_on_top(true)
-    .decorations(false)
-    .skip_taskbar(true)
-    .resizable(false)
-    .build()
-    .map_err(|e| format!("picker build failed: {}", e))?;
-    let _ = win.set_position(tauri::PhysicalPosition {
-        x: initial_x,
-        y: initial_y,
-    });
-    // F12 で開閉可能（devtools feature 有効）
-    Ok(())
-}
-#[tauri::command]
-fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
-    #[cfg(debug_assertions)]
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        win.open_devtools();
-    }
-}
-#[tauri::command]
-fn open_devtools_for_container(app_handle: tauri::AppHandle) {
-    #[cfg(debug_assertions)]
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        win.open_devtools();
-    }
-}
-// デスクトップにショートカットを作成
-#[tauri::command]
-fn create_desktop_shortcut() -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("current_exe failed: {}", e))?;
-    let exe_str = exe.to_string_lossy().to_string();
-    let exe_escaped = exe_str.replace('\'', "''").replace('`', "``").replace('$', "`$");
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let ps_script = format!(
-            "$t='{}';$s=New-Object -COM WScript.Shell;$dp=[Environment]::GetFolderPath('Desktop');if(-not $dp -or -not (Test-Path $dp)){{$dp=Join-Path $HOME 'Desktop'}};$sc=$s.CreateShortcut((Join-Path $dp 'Covo.lnk'));$sc.TargetPath=$t;$sc.IconLocation=$t;[void]$sc.Save()",
-            exe_escaped
-        );
-        let status = std::process::Command::new("powershell")
-            .args(["-NonInteractive", "-NoProfile", "-Command", &ps_script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .map_err(|e| format!("powershell failed: {}", e))?;
-        if !status.success() {
-            return Err("shortcut creation failed".to_string());
-        }
-    }
-    Ok(())
-}
-// ログディレクトリをエクスプローラーで開く
-#[tauri::command]
-fn open_log_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let path = app_handle
-        .path()
-        .app_log_dir()
-        .map_err(|e| format!("app_log_dir failed: {}", e))?;
-    // ディレクトリがまだ作られていなければ作る
-    if !path.exists() {
-        std::fs::create_dir_all(&path).map_err(|e| format!("create_dir_all failed: {}", e))?;
-    }
-    // ログファイルが空でも何か書いておく
-    let log_marker = path.join("opened_at.txt");
-    let _ = std::fs::write(
-        &log_marker,
-        format!("Log dir opened: {:?}\n", std::time::SystemTime::now()),
-    );
-    let path_str = path.to_string_lossy().to_string();
-    log::info!("Opening log dir: {}", path_str);
-    // explorer で開く
-    std::process::Command::new("explorer")
-        .arg(&path_str)
-        .spawn()
-        .map_err(|e| format!("spawn explorer failed: {}", e))?;
-    Ok(path_str)
-}
-#[tauri::command]
-fn save_notification_position(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-) -> Result<SavedPosition, String> {
-    let win = app_handle
-        .get_webview_window(PICKER_LABEL)
-        .ok_or_else(|| "picker window not found".to_string())?;
-    let pos = win
-        .outer_position()
-        .map_err(|e| format!("outer_position failed: {}", e))?;
-    let main = app_handle
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = main
-        .available_monitors()
-        .map_err(|e| format!("monitors failed: {}", e))?;
-    // ピッカー位置 (左上) から所属モニターを判定
-    let found = monitors.iter().enumerate().find(|(_, m)| {
-        let mp = m.position();
-        let ms = m.size();
-        pos.x >= mp.x
-            && pos.x < mp.x + ms.width as i32
-            && pos.y >= mp.y
-            && pos.y < mp.y + ms.height as i32
-    });
-    let (monitor_idx, monitor) = match found {
-        Some((i, m)) => (Some(i), m.clone()),
-        None => {
-            let m = monitors.first().cloned().ok_or_else(|| "no monitors".to_string())?;
-            (Some(0), m)
-        }
-    };
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let x_in_monitor = pos.x - mp.x;
-    let y_in_monitor = pos.y - mp.y;
-    // y がモニター高の 1/3 未満なら下方向にスタック (top stack)、それ以外は上方向
-    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
-        "down".to_string()
-    } else {
-        "up".to_string()
-    };
-    let saved = SavedPosition {
-        monitor_index: monitor_idx,
-        x_in_monitor,
-        y_in_monitor,
-        stack_direction: stack_direction.clone(),
-    };
-    {
-        let mut lock = state.saved_position.lock().unwrap();
-        *lock = Some(saved.clone());
-    }
-    let _ = win.close();
-    if let Some(main) = app_handle.get_webview_window("main") {
-        let _ = main.emit("position-saved", &saved);
-    }
-    // 既存コンテナがあれば即時再配置
-    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
-            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
-        }
-    }
-    Ok(saved)
-}
-#[tauri::command]
-fn cancel_position_picker(app_handle: tauri::AppHandle) {
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
-        let _ = win.close();
-    }
-}
-// メインウィンドウ内で完結する位置設定: 絶対物理ピクセル座標を受け取って保存
-#[tauri::command]
-fn save_position_absolute(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-    x: i32,
-    y: i32,
-) -> Result<SavedPosition, String> {
-    log::info!("save_position_absolute called: x={}, y={}", x, y);
-    let main = app_handle
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = main
-        .available_monitors()
-        .map_err(|e| format!("monitors failed: {}", e))?;
-    // 与えられた座標を含むモニターを判定
-    let found = monitors.iter().enumerate().find(|(_, m)| {
-        let mp = m.position();
-        let ms = m.size();
-        x >= mp.x && x < mp.x + ms.width as i32
-            && y >= mp.y && y < mp.y + ms.height as i32
-    });
-    let (monitor_idx, monitor) = match found {
-        Some((i, m)) => (Some(i), m.clone()),
-        None => {
-            // 座標がどのモニターにも含まれない場合は primary または 1 番目
-            let m = main.primary_monitor().ok().flatten()
-                .or_else(|| monitors.first().cloned())
-                .ok_or_else(|| "no monitors".to_string())?;
-            (Some(0), m)
-        }
-    };
-    let mp = monitor.position();
-    let ms = monitor.size();
-    let x_in_monitor = x - mp.x;
-    let y_in_monitor = y - mp.y;
-    let stack_direction = if y_in_monitor < (ms.height as i32) / 3 {
-        "down".to_string()
-    } else {
-        "up".to_string()
-    };
-    let saved = SavedPosition {
-        monitor_index: monitor_idx,
-        x_in_monitor,
-        y_in_monitor,
-        stack_direction,
-    };
-    {
-        let mut lock = state.saved_position.lock().unwrap();
-        *lock = Some(saved.clone());
-    }
-    log::info!("Saved position: {:?}", serde_json::to_string(&saved).ok());
-    // 既存コンテナがあれば即時再配置
-    if let Some(container) = app_handle.get_webview_window(CONTAINER_LABEL) {
-        if let Some((wx, wy, _)) = resolve_window_position(&app_handle, Some(&saved)) {
-            let _ = container.set_position(tauri::PhysicalPosition { x: wx, y: wy });
-        }
-    }
-    Ok(saved)
-}
-#[tauri::command]
-fn set_saved_position(state: tauri::State<'_, NotificationState>, saved: SavedPosition) {
-    let mut lock = state.saved_position.lock().unwrap();
-    *lock = Some(saved);
-}
-#[tauri::command]
-fn get_saved_position(state: tauri::State<'_, NotificationState>) -> Option<SavedPosition> {
-    state.saved_position.lock().unwrap().clone()
-}
-#[tauri::command]
-fn get_available_monitors(app_handle: tauri::AppHandle) -> Vec<MonitorInfo> {
-    let Some(win) = app_handle.get_webview_window("main") else {
-        return vec![];
-    };
-    let monitors = match win.available_monitors() {
-        Ok(m) => m,
-        Err(_) => return vec![],
-    };
-    let primary = win.primary_monitor().ok().flatten();
-    let primary_pos = primary.as_ref().map(|m| {
-        let p = m.position();
-        (p.x, p.y)
-    });
-    monitors
-        .iter()
-        .enumerate()
-        .map(|(idx, m)| {
-            let s = m.size();
-            let p = m.position();
-            let is_primary = primary_pos.map_or(false, |(px, py)| px == p.x && py == p.y);
-            MonitorInfo {
-                index: idx,
-                name: m.name().cloned().unwrap_or_else(|| format!("Display {}", idx + 1)),
-                x: p.x,
-                y: p.y,
-                width: s.width,
-                height: s.height,
-                is_primary,
-                scale_factor: m.scale_factor(),
-            }
-        })
-        .collect()
-}
-// ===========================================================================
-// グローバルショートカット
-// ===========================================================================
-fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
-    use tauri_plugin_global_shortcut::Code;
-    match key.to_uppercase().as_str() {
-        "A" => Some(Code::KeyA), "B" => Some(Code::KeyB), "C" => Some(Code::KeyC),
-        "D" => Some(Code::KeyD), "E" => Some(Code::KeyE), "F" => Some(Code::KeyF),
-        "G" => Some(Code::KeyG), "H" => Some(Code::KeyH), "I" => Some(Code::KeyI),
-        "J" => Some(Code::KeyJ), "K" => Some(Code::KeyK), "L" => Some(Code::KeyL),
-        "M" => Some(Code::KeyM), "N" => Some(Code::KeyN), "O" => Some(Code::KeyO),
-        "P" => Some(Code::KeyP), "Q" => Some(Code::KeyQ), "R" => Some(Code::KeyR),
-        "S" => Some(Code::KeyS), "T" => Some(Code::KeyT), "U" => Some(Code::KeyU),
-        "V" => Some(Code::KeyV), "W" => Some(Code::KeyW), "X" => Some(Code::KeyX),
-        "Y" => Some(Code::KeyY), "Z" => Some(Code::KeyZ),
-        _ => None,
-    }
-}
-#[tauri::command]
-fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
-    let _ = app_handle.global_shortcut().unregister_all();
-    if let Some(code) = char_to_code(&key) {
-        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
-        app_handle.global_shortcut().register(shortcut)
-            .map_err(|e| format!("ショートカット Ctrl+Shift+{} の登録に失敗しました (重複の可能性): {}", key, e))?;
-    }
-    Ok(())
-}
-#[tauri::command]
-fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
-    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
-    if let Some(window) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::UI::Shell::{ITaskbarList3, TaskbarList};
-            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-            use windows::Win32::Foundation::HWND;
-            if let Ok(hwnd_ptr) = window.hwnd() {
-                let hwnd = HWND(hwnd_ptr.0 as _);
-                unsafe {
-                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
-                    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
-                        if taskbar.HrInit().is_ok() {
-                            if has_unread {
-                                use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
-                                let ico_bytes = include_bytes!("../icons/badge.ico");
-                                let offset = u32::from_le_bytes(ico_bytes[18..22].try_into().unwrap()) as usize;
-                                static BADGE_ICON_PTR: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
-                                let icon_ptr = BADGE_ICON_PTR.get_or_init(|| {
-                                    let icon = CreateIconFromResourceEx(&ico_bytes[offset..], true, 0x00030000, 16, 16, LR_DEFAULTCOLOR).unwrap_or_default();
-                                    icon.0 as isize
-                                });
-                                let icon = windows::Win32::UI::WindowsAndMessaging::HICON(*icon_ptr as *mut core::ffi::c_void);
-                                if !icon.is_invalid() {
-                                    let _ = taskbar.SetOverlayIcon(hwnd, icon, windows::core::w!("Unread Messages"));
-                                }
-                            } else {
-                                use windows::Win32::UI::WindowsAndMessaging::HICON;
-                                let _ = taskbar.SetOverlayIcon(hwnd, HICON::default(), windows::core::w!(""));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let icon_bytes = if has_unread {
-            include_bytes!("../icons/icon-unread.png").to_vec()
-        } else {
-            include_bytes!("../icons/icon.png").to_vec()
-        };
-        match image::load_from_memory(&icon_bytes) {
-            Ok(img) => {
-                let rgba = img.into_rgba8();
-                let width = rgba.width();
-                let height = rgba.height();
-                let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
-                // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
-                // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
-                if let Err(e) = window.set_icon(tauri_image.clone()) {
-                    log::error!("[DEBUG] window.set_icon failed: {}", e);
-                } else {
-                    log::info!("[DEBUG] window.set_icon succeeded");
-                }
-                if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                    if let Err(e) = tray.set_icon(Some(tauri_image)) {
-                        log::error!("[DEBUG] tray.set_icon failed: {}", e);
-                    } else {
-                        log::info!("[DEBUG] tray.set_icon succeeded");
-                    }
-                } else {
-                    log::warn!("[DEBUG] main-tray not found");
-                }
-            },
-            Err(e) => {
-                log::error!("[DEBUG] failed to load icon from memory: {}", e);
-            }
-        }
-    } else {
-        log::error!("[DEBUG] get_webview_window('main') returned None");
-    }
-}
-use tauri_plugin_notification::NotificationExt;
-#[tauri::command]
-fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
-    let _ = app.notification().builder()
-        .title(title)
-        .body(body)
-        .show();
-}
-#[tauri::command]
-async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
-    log::info!("silent_install_past_version called: {} -> {}", tag, url);
-    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
-        return Err("Invalid tag format".to_string());
-    }
-    let url_lower = url.to_lowercase();
-    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
-        || url.starts_with("https://objects.githubusercontent.com/");
-    if !is_valid_url {
-        return Err("Invalid download URL: must be from official repository".to_string());
-    }
-    let temp_dir = std::env::temp_dir();
-    let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
-    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
-    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
-    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
-    let total = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-    let mut file = std::fs::File::create(&exe_path)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-    let mut stream = response;
-    loop {
-        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
-        match chunk {
-            None => break,
-            Some(bytes) => {
-                use std::io::Write;
-                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
-                downloaded += bytes.len() as u64;
-                let progress = if total > 0 {
-                    ((downloaded as f64 / total as f64) * 100.0) as u32
-                } else {
-                    0
-                };
-                let _ = app_handle.emit("download-progress", serde_json::json!({
-                    "tag": tag,
-                    "downloaded": downloaded,
-                    "total": total,
-                    "progress": progress
-                }));
-            }
-        }
-    }
-    drop(file);
-    // ─── 破損・不完全ダウンロード検証 (空ファイルやエラーHTML、不完全切断の防止) ───
-    let downloaded_meta = std::fs::metadata(&exe_path).map_err(|e| format!("インストーラー検証失敗: {}", e))?;
-    let downloaded_size = downloaded_meta.len();
-    if downloaded_size < 500_000 {
-        let _ = std::fs::remove_file(&exe_path);
-        return Err(format!("ダウンロードされたインストーラーが破損しています (サイズが極端に小さい: {} bytes)", downloaded_size));
-    }
-    if total > 0 && downloaded_size != total {
-        let _ = std::fs::remove_file(&exe_path);
-        return Err(format!("インストーラーのサイズが一致しません (期待: {} bytes, 実際: {} bytes)", total, downloaded_size));
-    }
-    log::info!("Downloaded installer verified successfully: {:?} ({} bytes)", exe_path, downloaded_size);
-    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let covo_exe = std::env::current_exe()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "Covo.exe".to_string());
-        let installer_path = exe_path.to_string_lossy().to_string();
-        // PowerShell スクリプト:
-        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
-        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
-        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
-        //   4. Covo.exe を再起動
-        let ps_script = format!(
-            "Start-Sleep -Seconds 5; \
-             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{covo}'",
-            installer = installer_path.replace('\'', "''").replace('`', "``").replace('$', "`$"),
-            covo = covo_exe.replace('\'', "''").replace('`', "``").replace('$', "`$"),
-        );
-        std::process::Command::new("powershell")
-            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
-        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
-        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
-            app_handle.exit(0);
-        });
-    }
-    Ok(())
-}
-#[tauri::command]
-fn notify_app_loaded(state: tauri::State<'_, NotificationState>) {
-    if let Ok(mut loaded) = state.app_loaded.lock() {
-        *loaded = true;
-        log::info!("Received notify_app_loaded signal from frontend. Cancelling recovery popup.");
-    }
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-struct DesktopAuthResult {
-    id_token: String,
-    access_token: Option<String>,
-}
-#[tauri::command]
-async fn start_desktop_google_auth(app_handle: tauri::AppHandle) -> Result<DesktopAuthResult, String> {
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::time::Duration;
-    // ローカルポートのバインド（競合回避リトライ付き）
-    let mut bound_listener = None;
-    for _ in 0..5 {
-        if let Ok(l) = TcpListener::bind("127.0.0.1:0") {
-            bound_listener = Some(l);
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(150)).await;
-    }
-    let listener = bound_listener.ok_or_else(|| "ローカルポートのバインドに失敗しました。ファイアウォール等の設定を確認してください。".to_string())?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("ローカルアドレスの取得に失敗しました: {}", e))?
-        .port();
-    let state_nonce = uuid::Uuid::new_v4().to_string();
-    let auth_url = format!(
-        "https://simplechat-65a0d.web.app/auth-desktop.html?callback=http%3A%2F%2F127.0.0.1%3A{}%2Fcallback&state={}",
-        port, state_nonce
-    );
-    log::info!("Starting desktop Google auth: port={}, url={}", port, auth_url);
-    // システム既定の外部ブラウザで安全にWeb認証ページを開く (ShellExecuteW による安全起動)
-    safe_open_browser_url(&auth_url)?;
-    let expected_state = state_nonce.clone();
-    // spawn_blocking で非同期にタイムアウト付きでコールバックを受け取る
-    let auth_res = tauri::async_runtime::spawn_blocking(move || -> Result<DesktopAuthResult, String> {
-        let start = std::time::Instant::now();
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-        while start.elapsed() < Duration::from_secs(180) {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let mut buffer = [0u8; 16384];
-                    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
-                    let n = match stream.read(&mut buffer) {
-                        Ok(n) => n,
-                        Err(_) => continue,
-                    };
-                    let req_str = String::from_utf8_lossy(&buffer[..n]);
-                    let first_line = req_str.lines().next().unwrap_or("");
-                    if first_line.starts_with("GET ") {
-                        let path_query = first_line.split_whitespace().nth(1).unwrap_or("");
-                        // favicon.ico などのブラウザ副次リクエストは 204 で即応答してコールバック待機を継続
-                        if path_query.starts_with("/favicon.ico") {
-                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
-                            let _ = stream.write_all(resp.as_bytes());
-                            let _ = stream.flush();
-                            continue;
-                        }
-                        // /callback 宛てのリクエストを正しく解析
-                        if path_query.starts_with("/callback") {
-                            if let Some(pos) = path_query.find('?') {
-                                let query = &path_query[pos + 1..];
-                                let mut id_token = String::new();
-                                let mut access_token = None;
-                                let mut state = String::new();
-                                for pair in query.split('&') {
-                                    let mut kv = pair.splitn(2, '=');
-                                    let k = kv.next().unwrap_or("");
-                                    let v = kv.next().unwrap_or("");
-                                    let decoded_v = urlencoding::decode(v).unwrap_or_default().to_string();
-                                    if k == "idToken" {
-                                        id_token = decoded_v;
-                                    } else if k == "accessToken" {
-                                        access_token = Some(decoded_v);
-                                    } else if k == "state" {
-                                        state = decoded_v;
-                                    }
-                                }
-                                if state.trim() == expected_state.trim() && !id_token.is_empty() {
-                                    let html_body = r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Covo 認証完了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;}.box{background:#1e293b;padding:2.5rem 2rem;border-radius:1.5rem;box-shadow:0 20px 40px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.08);max-width:380px;width:90%;}h1{font-size:1.35rem;margin-bottom:0.6rem;color:#34d399;}p{font-size:0.875rem;color:#94a3b8;line-height:1.6;margin:0 0 1.25rem;}</style></head><body><div class="box"><div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div><h1>ログインに成功しました</h1><p>Covo デスクトップアプリへお戻りください。<br>このタブは自動的に閉じるか、手動で閉じて構いません。</p><script>setTimeout(function(){window.close();}, 2000);</script></div></body></html>"#;
-                                    let response = format!(
-                                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                                        html_body.len(),
-                                        html_body
-                                    );
-                                    let _ = stream.write_all(response.as_bytes());
-                                    let _ = stream.flush();
-                                    return Ok(DesktopAuthResult {
-                                        id_token,
-                                        access_token,
-                                    });
-                                }
-                            }
-                            let err_body = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\nInvalid authentication request";
-                            let _ = stream.write_all(err_body.as_bytes());
-                            let _ = stream.flush();
-                            continue;
-                        }
-                        // /callback 以外の通常リクエストは 404 を返してループを継続
-                        let not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: https://simplechat-65a0d.web.app\r\nConnection: close\r\n\r\n";
-                        let _ = stream.write_all(not_found.as_bytes());
-                        let _ = stream.flush();
-                        continue;
-                    }
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    log::warn!("Listener error: {}", e);
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-            }
-        }
-        Err("Google 認証の待機がタイムアウトしました。もう一度お試しください。".to_string())
-    }).await.map_err(|e| format!("タスク実行エラー: {}", e))??;
-    // メインウィンドウを前面に復帰
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-    Ok(auth_res)
-}
-#[tauri::command]
-fn open_in_app_browser_window(
-    _app_handle: tauri::AppHandle,
-    url: String,
-    _title: Option<String>,
-) -> Result<(), String> {
-    // 🔒 セキュリティ: 外部URLはシステム既定ブラウザで開く
-    // TauriのWebviewWindowで開くと withGlobalTauri:true により
-    // window.__TAURI__ がフルアクセスで注入され、RCEが成立するため
-    let parsed_url: url::Url = url.parse().map_err(|e| format!("無効なURLです: {}", e))?;
-    // HTTPSのみ許可（javascript: 等の危険なスキームを遮断）
-    if parsed_url.scheme() != "https" && parsed_url.scheme() != "http" {
-        return Err("安全でないURLスキームです。HTTPまたはHTTPSのみ許可されています。".to_string());
-    }
-    safe_open_browser_url(&url)
-}
-fn safe_open_browser_url(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use windows::core::HSTRING;
-        use windows::Win32::UI::Shell::ShellExecuteW;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let wide_url = HSTRING::from(url);
-        let wide_op = HSTRING::from("open");
-        let ret = unsafe {
-            ShellExecuteW(
-                None,
-                &wide_op,
-                &wide_url,
-                None,
-                None,
-                SW_SHOWNORMAL,
-            )
-        };
-        if (ret.0 as usize) <= 32 {
-            return Err(format!("ブラウザ起動エラー (code: {})", ret.0 as usize));
-        }
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::process::Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|e| format!("ブラウザの起動に失敗しました: {}", e))?;
-        Ok(())
-    }
-}
-// ===========================================================================
-// run()
-// ===========================================================================
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
-        .manage(NotificationState::default())
-        .invoke_handler(tauri::generate_handler![
-            restart_app,
-            exit_app,
-            show_main_window,
-            minimize_window,
-            toggle_maximize_window,
-            close_window,
-            set_close_behavior,
-            container_loaded,
-            hide_notif_container,
-            resize_notif_container,
-            close_notification,
-            open_position_picker,
-            save_notification_position,
-            cancel_position_picker,
-            save_position_absolute,
-            set_saved_position,
-            get_saved_position,
-            get_available_monitors,
-            update_shortcut_key,
-            open_devtools_for_picker,
-            open_devtools_for_container,
-            open_log_dir,
-            create_desktop_shortcut,
-            set_badge,
-            send_desktop_notification,
-            silent_install_past_version,
-            notify_app_loaded,
-            start_desktop_google_auth,
-            open_in_app_browser_window,
-        ])
-        .setup(|app| {
-            let _handle = app.handle().clone();
-            // アップデート後にショートカット・タスクバーのアイコンキャッシュを更新する
-            // ie4uinit.exe -show は Windows シェルにアイコン再読み込みを要求する標準的な方法
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                let _ = std::process::Command::new("ie4uinit.exe")
-                    .arg("-show")
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn();
-            }
-            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState, ShortcutEvent};
-            let ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
-            let shortcut_plugin = {
-                let h = app.handle().clone();
-                tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |_app, _sc, event: ShortcutEvent| {
-                        if event.state() == ShortcutState::Pressed {
-                            if let Some(window) = h.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
-                            }
-                        }
-                    })
-                    .build()
-            };
-            app.handle().plugin(shortcut_plugin)?;
-            let _ = app.global_shortcut().register(ctrl_shift_s);
-            // 正常起動の非同期監視タスク (45秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
-            let monitor_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(45)).await;
-                let loaded = {
-                    let state = monitor_handle.state::<NotificationState>();
-                    let val = *state.app_loaded.lock().unwrap();
-                    val
-                };
-                if !loaded {
-                    log::warn!("App loaded signal not received within 45 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
-                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
-                        let _ = main_win.hide();
-                    }
-                    if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
-                        &monitor_handle,
-                        "recovery-engine",
-                        tauri::WebviewUrl::App("recovery.html".into())
-                    )
-                    .title("Covo - リカバリーパネル")
-                    .inner_size(840.0, 680.0)
-                    .resizable(true)
-                    .center()
-                    .build() {
-                        let _ = recovery_win.show();
-                    }
-                }
-            });
-            // 前回終了時のウィンドウ位置とサイズを復元
-            if let Some(main_win) = app.get_webview_window("main") {
-                restore_window_state(&main_win.as_ref().window());
-            }
-            let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
-            let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
-            let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
-            let mut tray_builder = TrayIconBuilder::with_id("main-tray").menu(&menu);
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
-            }
-            let _tray = tray_builder
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => { cleanup_and_quit(&app); }
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "recovery" => {
-                        // トレイメニューからいつでもリカバリー画面を呼び出せる
-                        if let Some(existing) = app.get_webview_window("recovery-engine") {
-                            let _ = existing.unminimize();
-                            let _ = existing.show();
-                            let _ = existing.set_focus();
-                        } else {
-                            if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
-                                app,
-                                "recovery-engine",
-                                tauri::WebviewUrl::App("recovery.html".into())
-                            )
-                            .title("Covo - リカバリーパネル")
-                            .inner_size(840.0, 680.0)
-                            .resizable(true)
-                            .center()
-                            .build() {
-                                let _ = recovery_win.show();
-                            }
-                        }
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    if window.label() == "main" {
-                        save_window_state(window);
-                        use tauri::Manager;
-                        let behavior = {
-                            let state = window.app_handle().state::<NotificationState>();
-                            let b = state.close_behavior.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                            b
-                        };
-                        if behavior == "quit" {
-                            cleanup_and_quit(&window.app_handle());
-                        } else if behavior == "hide" {
-                            api.prevent_close();
-                            let _ = window.hide();
-                        } else {
-                            // デフォルト: タスクバーに最小化
-                            api.prevent_close();
-                            let _ = window.minimize();
-                        }
-                    }
-                }
-                WindowEvent::Focused(true) => {
-                    if window.label() == "main" {
-                        let _ = window.emit("window-focused", ());
-                    }
-                }
-                _ => {}
-            }
-        })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.emit("single-instance-opened", ());
-            }
-        }))
-        .plugin(
-            tauri_plugin_log::Builder::default()
-                .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                ])
-                .level(log::LevelFilter::Debug)
-                .build(),
-        )
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
 </file>
 
@@ -17603,8 +17603,8 @@ async function handleDeleteFile(request, env, url) {
     });
     const folder = (meta?.folder || '').toLowerCase();
     const isProtectedAsset = folder.includes('stamp') || folder.includes('avatar') || folder.includes('icon');
-    const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1';
-    // スタンプやアバターは専用の削除操作 (isAssetDelete=1) 以外ではメッセージ連動削除から100%保護
+    const isExplicitAssetDelete = url.searchParams.get('isAssetDelete') === '1' || url.searchParams.get('forceDelete') === '1';
+    // スタンプやアバターは専用の削除操作 (isAssetDelete=1 または forceDelete=1) 以外ではメッセージ連動削除から100%保護
     if (isProtectedAsset && !isExplicitAssetDelete) {
       return new Response(JSON.stringify({ success: true, skipped: true, message: '保護されたアセットのため通常削除をスキップしました' }), {
         status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
@@ -19531,13 +19531,13 @@ async function handleSetOffline(request, env) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.225" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.226" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.225" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.226" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -22975,7 +22975,7 @@ async function handleSetOffline(request, env) {
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.225"></script>
+  <script type="module" src="js/main.js?v=1.1.226"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -28078,7 +28078,7 @@ window.deleteIndividualStorageFile = async function(key, name) {
   const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
   if (!idToken) return;
   try {
-    const res = await fetch(`${WORKER_BASE_URL}/api/file/${encodeURIComponent(key)}?appId=${appId}`, {
+    const res = await fetch(`${WORKER_BASE_URL}/api/file/${encodeURIComponent(key)}?appId=${appId}&isAssetDelete=1&forceDelete=1`, {
       method: 'DELETE',
       headers: { "Authorization": `Bearer ${idToken}` }
     });
@@ -31288,11 +31288,11 @@ async function updateUserStatus(state) {
   if (!userId || !userNickname) return;
   const activeChannelId = currentRoomId || currentDmId || null;
   // 差分チェック（同じ状態ならスキップ）
-  const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl });
+  const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl, customStatus: window._currentUserCustomStatus || null });
   if (_lastReportedStatusStr === currentStatusStr) return;
   _lastReportedStatusStr = currentStatusStr;
   try {
-    const { ref, set, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const { ref, update, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     const statusRef = ref(rtdb, `status/${userId}`);
     _rtdbStatusRef = statusRef;
@@ -31304,8 +31304,13 @@ async function updateUserStatus(state) {
     };
     if (state === 'online') {
       payload.currentRoomId = activeChannelId;
+    } else {
+      payload.currentRoomId = null;
     }
-    await set(statusRef, payload);
+    if (window._currentUserCustomStatus) {
+      payload.customStatus = window._currentUserCustomStatus;
+    }
+    await update(statusRef, payload);
   } catch (error) {
     console.error('[RTDB] Status update error:', error);
   }
@@ -32912,6 +32917,40 @@ function renderDmConversationsList() {
   if (currentDmId && currentDmParticipant && currentDmParticipant.uid === targetUid) {
     currentDmParticipant = {
       ...currentDmParticipant,
+      nickname: newNickname,
+      avatarUrl: newAvatarUrl
+    };
+    const title = document.getElementById("currentRoomTitleText");
+    if (title) title.textContent = newNickname;
+    const msgInput = document.getElementById("messageInput");
+    if (msgInput) msgInput.placeholder = `@${newNickname} へのメッセージ`;
+    if (typeof updateTitleBarContext === 'function') {
+      updateTitleBarContext('dm', currentDmParticipant);
+    }
+    const dmPanelName = document.getElementById('dmPanelName');
+    if (dmPanelName) dmPanelName.textContent = newNickname;
+    const dmPanelAvatar = document.getElementById('dmPanelAvatar');
+    if (dmPanelAvatar) {
+      if (isUsableAvatarUrl(newAvatarUrl)) {
+        dmPanelAvatar.innerHTML = `<img src="${escapeHtml(newAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">`;
+      } else {
+        dmPanelAvatar.innerHTML = `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(newNickname.charAt(0).toUpperCase())}</span>`;
+      }
+    }
+    const dmPanelAboutMe = document.getElementById('dmPanelAboutMe');
+    if (dmPanelAboutMe && newAboutMe) dmPanelAboutMe.textContent = newAboutMe;
+    const customStatusWrap = document.getElementById('dmPanelCustomStatus');
+    const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
+    const customText = document.getElementById('dmPanelCustomStatusText');
+    if (newCustomStatus && newCustomStatus.text) {
+      if (customEmoji) customEmoji.textContent = newCustomStatus.emoji || '💬';
+      if (customText) customText.textContent = newCustomStatus.text;
+      if (customStatusWrap) customStatusWrap.classList.remove('hidden');
+    } else if (customStatusWrap) {
+      customStatusWrap.classList.add('hidden');
+    }
+  }
+};
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
   const dmId = [userId, targetUid].sort().join('_');
@@ -33171,24 +33210,24 @@ function renderDmConversationsList() {
           <i class="fas fa-ellipsis"></i>
         </button>
         <div id="dmBannerMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-48 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
-          <button onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
           </button>
-          <button onclick="window.openCallPickerWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openCallPickerWithTarget('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-phone w-4 text-center"></i> 音声通話
           </button>
-          <button onclick="window.openFileShareWithTarget('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+          <button onclick="window.openFileShareWithTarget('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
             <i class="fas fa-share-from-square w-4 text-center"></i> ファイル送信
           </button>
           <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
-          <button onclick="window.blockUser('${targetUid}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+          <button onclick="window.blockUser('${_jsq(targetUid)}'); window.closeDmBannerMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
             <i class="fas fa-ban w-4 text-center"></i> ブロック
           </button>
         </div>
       </div>
     </div>
     <div class="dm-profile-avatar-wrap flex-shrink-0 relative z-20" style="padding: 0 16px; margin-top: -42px; margin-bottom: 8px; display: flex; align-items: flex-end;">
-      <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${escapeHtml(targetAvatarUrl || '')}', '${safeName}', '${targetUid.slice(-4)}')">
+      <div class="relative group cursor-pointer" onclick="openAvatarLightbox('${_jsq(targetAvatarUrl || '')}', '${_jsq(targetNickname || '')}', '${_jsq(targetUid.slice(-4))}')">
         <div class="dm-profile-avatar" id="dmPanelAvatar" style="width: 80px; height: 80px; min-width: 80px; min-height: 80px; max-width: 80px; max-height: 80px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
           ${isUsableAvatarUrl(targetAvatarUrl) ? `<img src="${escapeHtml(targetAvatarUrl)}" class="w-full h-full object-cover rounded-full" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">` : `<span style="font-size: 2rem; font-weight: 800; color: #ffffff;">${escapeHtml(safeName.charAt(0).toUpperCase())}</span>`}
         </div>
@@ -33200,13 +33239,13 @@ function renderDmConversationsList() {
         <div class="mb-3">
           <div class="text-xl font-extrabold text-gray-900 dark:text-white truncate leading-tight tracking-tight flex items-center gap-2" id="dmPanelNameWrapper">
             <span id="dmPanelName">${safeName}</span>
-            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
+            <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}')" title="メモ / 詳細プロフィール"></i>
           </div>
           <div class="text-xs font-mono font-medium text-gray-500 dark:text-[#949ba4] mt-0.5" id="dmPanelTag">
             ${handleTag}
           </div>
         </div>
-        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}', 'friends')" title="共通の友だち・共通サーバーを表示">
+        <div class="text-xs text-gray-500 dark:text-[#949ba4] font-medium mb-3 flex items-center gap-1.5 flex-wrap cursor-pointer hover:opacity-85 transition-opacity" id="dmPanelMutualsText" onclick="openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}', 'friends')" title="共通の友だち・共通サーバーを表示">
           <span class="inline-flex -space-x-1.5 mr-1 flex-shrink-0" id="dmPanelMutualsStack">
             ${mutualAvatarStackHtml}
           </span>
@@ -33230,7 +33269,7 @@ function renderDmConversationsList() {
     </div>
     <!-- input_file_1.png / input_file_3.png 準拠: パネル最下部にドックされたプロフィール全体ボタン -->
     <div class="mt-auto p-3 border-t border-gray-200/60 dark:border-white/5 bg-[#f2f3f5] dark:bg-[#111827] flex-shrink-0 relative z-20">
-      <button onclick="openUserFullProfileModal('${targetUid}', '${safeName}', '${escapeHtml(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+      <button onclick="openUserFullProfileModal('${_jsq(targetUid)}', '${_jsq(targetNickname || '')}', '${_jsq(targetAvatarUrl || '')}')" class="w-full py-2.5 px-4 bg-gray-200/80 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/15 text-gray-800 dark:text-gray-200 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer active:scale-98">
         <span>プロフィール全体を表示</span>
       </button>
     </div>
@@ -40296,7 +40335,7 @@ async function jumpToUnloadedMessage(msgId) {
     }
     hasMoreJumpOlder = pastMsgs.length >= fetchLimit;
     hasMoreJumpNewer = futureMsgs.length >= fetchLimit;
-    const combinedMsgs = [...pastMsgs, ...futureMsgs];
+    const combinedMsgs = [targetMsg, ...pastMsgs, ...futureMsgs];
     const seen = new Set();
     const uniqueMsgs = combinedMsgs.filter(m => {
       if (seen.has(m.id)) return false;
@@ -40511,14 +40550,14 @@ function renderMessagesWithReadReceipts() {
         ここが、あなたと <strong>${safeNick}</strong> のDM履歴の先頭です。
       </p>
       <div class="flex items-center gap-2.5 flex-wrap">
-        <button onclick="window.openUserProfileModal('${escapeHtml(targetUid)}', '${safeNick}', '${escapeHtml(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
+        <button onclick="window.openUserProfileModal('${_jsq(targetUid)}', '${_jsq(currentDmParticipant.nickname || '')}', '${_jsq(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
           <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
           <span>${mutualServersCount}個の共通サーバー</span>
         </button>
         <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
           ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
         </button>
-        <button onclick="window.blockUser('${escapeHtml(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
+        <button onclick="window.blockUser('${_jsq(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
           <i class="fas fa-ban mr-1.5 text-xs"></i>ブロック
         </button>
       </div>
@@ -50287,7 +50326,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.225",
+  "version": "1.1.226",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -50344,7 +50383,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.225",
+  "version": "1.1.226",
   "force": false
 }
 </file>
