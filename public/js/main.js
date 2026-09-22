@@ -5801,6 +5801,14 @@ if (setNicknameBtnEl && nicknameInpEl) {
       setupGlobalRtdbListener();
       setupGlobalAnnouncementListener();
       checkLatestAnnouncement();
+      // 新規登録完了時の招待コード自動受諾連携
+      const pInvite = sessionStorage.getItem('covo_pending_invite');
+      if (pInvite) {
+        sessionStorage.removeItem('covo_pending_invite');
+        setTimeout(() => {
+          if (typeof handleUrlInviteCode === 'function') handleUrlInviteCode(pInvite);
+        }, 800);
+      }
     } catch (error) {
       if (nicknameMsgEl) nicknameMsgEl.textContent = `エラー: ${error.message}`;
     } finally {
@@ -10371,7 +10379,8 @@ async function joinServerByInviteCode(code) {
   enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
 }
 
-// 招待リンク (?invite=CODE) の自動受諾・参加処理
+// 招待リンク (?invite=CODE) の Discord本家完全準拠 受諾カード表示 & 参加処理
+let _pendingDiscordInviteCode = null;
 async function handleUrlInviteCode(inviteCode) {
   if (!inviteCode || !userId) return;
   const cleanCode = inviteCode.toUpperCase().trim();
@@ -10394,29 +10403,90 @@ async function handleUrlInviteCode(inviteCode) {
       enterServer(targetServerId, serverData);
       return;
     }
-    const ok = await showCustomConfirm(
-      `サーバー「${serverName}」への招待を受け取りました。\n参加しますか？`,
-      '参加する',
-      'キャンセル',
-      `招待コード: ${cleanCode}`
-    );
-    if (ok) {
-      const loadingOverlayEl = document.getElementById('loadingOverlay');
-      if (loadingOverlayEl) loadingOverlayEl.classList.remove('hidden');
-      try {
-        await joinServerByInviteCode(cleanCode);
-        alertMessage(`サーバー「${serverName}」に参加しました！`, 'success');
-      } catch (err) {
-        alertMessage(`参加エラー: ${err.message || err}`, 'error');
-      } finally {
-        if (loadingOverlayEl) loadingOverlayEl.classList.add('hidden');
+    _pendingDiscordInviteCode = cleanCode;
+    const modal = document.getElementById('discordInviteAcceptModal');
+    const nameEl = document.getElementById('inviteAcceptServerName');
+    const iconEl = document.getElementById('inviteAcceptServerIcon');
+    const memberCountEl = document.getElementById('inviteAcceptMemberCount');
+    const onlineCountEl = document.getElementById('inviteAcceptOnlineCount');
+    if (nameEl) nameEl.textContent = serverName;
+    if (iconEl) {
+      if (serverData.iconUrl) {
+        iconEl.innerHTML = `<img src="${escapeHtml(serverData.iconUrl)}" class="w-full h-full object-cover" />`;
+      } else {
+        iconEl.textContent = serverName.charAt(0).toUpperCase();
       }
     }
+    const members = serverData.joinedUsers || [];
+    const totalMembers = Number.isFinite(serverData.memberCount) ? serverData.memberCount : members.length;
+    if (memberCountEl) memberCountEl.textContent = `${totalMembers} メンバー`;
+    const onlineCount = (cachedUsers || []).filter(u => members.includes(u.id) && (u.computedState === 'online' || u.computedState === 'away')).length;
+    if (onlineCountEl) onlineCountEl.textContent = `${Math.max(1, onlineCount)} オンライン`;
+    if (modal) modal.classList.remove('hidden');
   } catch (err) {
     console.error('[Invite] handleUrlInviteCode error:', err);
   }
 }
 window.handleUrlInviteCode = handleUrlInviteCode;
+window.closeDiscordInviteAcceptModal = function () {
+  const modal = document.getElementById('discordInviteAcceptModal');
+  if (modal) modal.classList.add('hidden');
+  _pendingDiscordInviteCode = null;
+};
+window.confirmDiscordInviteAccept = async function () {
+  if (!_pendingDiscordInviteCode) return;
+  const code = _pendingDiscordInviteCode;
+  window.closeDiscordInviteAcceptModal();
+  const loadingOverlayEl = document.getElementById('loadingOverlay');
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove('hidden');
+  try {
+    await joinServerByInviteCode(code);
+    alertMessage('サーバーに参加しました！', 'success');
+  } catch (err) {
+    alertMessage(`参加エラー: ${err.message || err}`, 'error');
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add('hidden');
+  }
+};
+
+// ユーザーパネル マイク・スピーカー（ディフン）操作
+let _isUserPanelDeafened = false;
+window.toggleUserPanelMic = async function (e) {
+  if (e) e.stopPropagation();
+  if (window._voiceEngine && window._voiceEngine.isActive) {
+    await window._voiceEngine.toggleMute();
+    return;
+  }
+  _isAudioMuted = !_isAudioMuted;
+  const micIcon = document.getElementById('userPanelMicIcon');
+  const micBtn = document.getElementById('userPanelMicBtn');
+  if (micIcon) {
+    micIcon.className = _isAudioMuted ? 'fas fa-microphone-slash text-xs text-rose-500' : 'fas fa-microphone text-xs';
+  }
+  if (micBtn) {
+    micBtn.title = _isAudioMuted ? 'マイクミュート解除' : 'マイクミュート';
+  }
+};
+window.toggleUserPanelDeafen = function (e) {
+  if (e) e.stopPropagation();
+  _isUserPanelDeafened = !_isUserPanelDeafened;
+  const deafenIcon = document.getElementById('userPanelDeafenIcon');
+  const deafenBtn = document.getElementById('userPanelDeafenBtn');
+  if (deafenIcon) {
+    deafenIcon.className = _isUserPanelDeafened ? 'fas fa-headphones-slash text-xs text-rose-500' : 'fas fa-headphones text-xs';
+  }
+  if (deafenBtn) {
+    deafenBtn.title = _isUserPanelDeafened ? 'スピーカーミュート解除' : 'スピーカーミュート';
+  }
+  // 全リモート音声のミュート切り替え
+  if (window._voiceEngine && window._voiceEngine._audioElements) {
+    window._voiceEngine._audioElements.forEach(audioEl => {
+      if (audioEl) audioEl.muted = _isUserPanelDeafened;
+    });
+  }
+  const remAudio = document.getElementById('remoteAudio');
+  if (remAudio) remAudio.muted = _isUserPanelDeafened;
+};
 
 // 管理者向け：パスワードなしでサーバーに参加
 async function adminJoinServer(serverId, serverData) {
@@ -13411,12 +13481,29 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
     };
 
     // 1. Categories and their rooms
+    const isSvAdmin = currentServerData?.createdBy === userId || (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || isAdmin;
     categories.forEach(cat => {
       const catRooms = roomDocs.filter(d => d.data().categoryId === cat.id);
-
       const catDiv = document.createElement("div");
-      catDiv.className = "flex items-center px-4 pt-3 pb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors";
-      catDiv.innerHTML = `<i class="fas fa-chevron-down mr-1.5 text-[9px] transition-transform"></i>${escapeHtml(cat.name)}`;
+      catDiv.className = "flex items-center justify-between px-3.5 pt-3 pb-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider select-none group cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors";
+      catDiv.innerHTML = `
+        <div class="flex items-center gap-1.5 truncate">
+          <i class="fas fa-chevron-down text-[9px] transition-transform"></i>
+          <span class="truncate">${escapeHtml(cat.name)}</span>
+        </div>
+        ${isSvAdmin ? `
+          <button type="button" class="cat-add-ch-btn opacity-0 group-hover:opacity-100 hover:text-indigo-500 p-0.5 text-xs transition-opacity" title="このカテゴリーにチャンネルを作成">
+            <i class="fas fa-plus"></i>
+          </button>
+        ` : ''}
+      `;
+      const addChBtn = catDiv.querySelector('.cat-add-ch-btn');
+      if (addChBtn) {
+        addChBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openCreateChannelModal('text', cat.id);
+        });
+      }
       roomList.appendChild(catDiv);
 
       if (catRooms.length > 0) {
@@ -17179,10 +17266,42 @@ function createMessageElement(message, messageId, readByCount = 0) {
   bubbleContainer.appendChild(bubbleRowWrapper);
   messageRowInner.appendChild(bubbleContainer);
 
-  return messageRow;
-}
+  // Discord 本家完全準拠 メッセージホバー・クイックアクションバー (PCホバー時)
+  const quickActions = document.createElement("div");
+  quickActions.className = "msg-quick-actions";
+  quickActions.innerHTML = `
+    <button type="button" class="msg-quick-action-btn qa-react" title="リアクションを追加">
+      <i class="far fa-smile"></i>
+    </button>
+    <button type="button" class="msg-quick-action-btn qa-reply" title="返信">
+      <i class="fas fa-reply"></i>
+    </button>
+    <button type="button" class="msg-quick-action-btn qa-more" title="その他">
+      <i class="fas fa-ellipsis"></i>
+    </button>
+  `;
+  quickActions.querySelector('.qa-react').addEventListener('click', (e) => {
+    e.stopPropagation();
+    window._reactionTargetMessageId = message.id;
+    window.toggleStickerPicker();
+  });
+  quickActions.querySelector('.qa-reply').addEventListener('click', (e) => {
+    e.stopPropagation();
+    replyingToMessage = message;
+    if (replyingToNickname) replyingToNickname.textContent = message.senderNickname;
+    if (replyingToText) replyingToText.textContent = message.text || (message.fileName ? "ファイル" : "...");
+    if (replyingToContainer) replyingToContainer.classList.remove("hidden");
+    if (messageInput) messageInput.focus();
+  });
+  quickActions.querySelector('.qa-more').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showContextMenu(messageElement, e.clientX, e.clientY);
+  });
+  messageRow.appendChild(quickActions);
 
-window.jumpToUnloadedMessage = jumpToUnloadedMessage;
+  return messageRow;
+  }
+  window.jumpToUnloadedMessage = jumpToUnloadedMessage;
 async function jumpToUnloadedMessage(msgId) {
   if (!msgId) return;
   const modal = document.getElementById("messagePreviewModal");
@@ -27557,11 +27676,11 @@ class VoiceEngine {
   // ================================================================
   _updateMuteUI() {
     const muted = this._isMuted;
-    ['vcBarMuteIcon','vcGridMuteIcon','callMuteIcon'].forEach(id => {
+    ['vcBarMuteIcon','vcGridMuteIcon','callMuteIcon','userPanelMicIcon'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.className = muted ? 'fas fa-microphone-slash' : 'fas fa-microphone';
+      if (el) el.className = muted ? 'fas fa-microphone-slash' + (id === 'userPanelMicIcon' ? ' text-xs text-rose-500' : '') : 'fas fa-microphone' + (id === 'userPanelMicIcon' ? ' text-xs' : '');
     });
-    ['vcBarMuteBtn','vcGridMuteBtn','callMuteBtn'].forEach(id => {
+    ['vcBarMuteBtn','vcGridMuteBtn','callMuteBtn','userPanelMicBtn'].forEach(id => {
       document.getElementById(id)?.classList.toggle('muted', muted);
       document.getElementById(id)?.classList.toggle('active', muted);
     });
