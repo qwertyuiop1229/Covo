@@ -6011,12 +6011,17 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const statusEmojiEl = document.getElementById("userProfileStatusEmoji");
   const statusTextEl = document.getElementById("userProfileStatusText");
   const mutualServersCountText = document.getElementById("userProfileMutualServersCountText");
-  const quickMsgArea = document.getElementById("userProfileQuickMsgArea");
-  const quickMsgInput = document.getElementById("userProfileQuickMsgInput");
+  const aboutMeWrap = document.getElementById("userProfileAboutMeWrap");
+  const aboutMeText = document.getElementById("userProfileAboutMeText");
+  const joinedWrap = document.getElementById("userProfileJoinedWrap");
+  const joinedDateEl = document.getElementById("userProfileJoinedDate");
   const upBannerFriendBtn = document.getElementById("upBannerFriendBtn");
   const safeName = targetNickname || targetUid.substring(0, 8);
   if (nameEl) nameEl.textContent = safeName;
-  if (tagEl) tagEl.textContent = `#${targetUid.slice(-4).toLowerCase()}`;
+  if (tagEl) tagEl.textContent = `${targetUid.slice(-4).toLowerCase()}`;
+  // 自己紹介・メンバーになった日は非同期取得完了までは前のユーザーの残留を防ぐため一旦隠す
+  if (aboutMeWrap) aboutMeWrap.classList.add("hidden");
+  if (joinedWrap) joinedWrap.classList.add("hidden");
   if (avatarEl) {
     if (isUsableAvatarUrl(targetAvatarUrl)) {
       __setAvatarImg(avatarEl, targetAvatarUrl, safeName, { className: 'w-full h-full rounded-full object-cover' });
@@ -6089,21 +6094,9 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       if (_currentProfileTargetUser?.uid !== targetUid) return;
       if (mutualServersCountText) {
         const mCount = mFriends.length;
-        mutualServersCountText.textContent = `${mCount > 0 ? `${mCount}人の共通の友だち • ` : ''}${mutualServersCount}個の共通サーバー`;
+        mutualServersCountText.textContent = `${mCount > 0 ? `${mCount}人の共通の友だち・` : ''}${mutualServersCount}個の共通サーバー`;
       }
     }).catch(() => {});
-  }
-  // クイックメッセージ入力欄
-  if (quickMsgArea) {
-    if (isSelf) {
-      quickMsgArea.classList.add("hidden");
-    } else {
-      quickMsgArea.classList.remove("hidden");
-      if (quickMsgInput) {
-        quickMsgInput.placeholder = `@${safeName} ヘメッセージを...`;
-        quickMsgInput.value = "";
-      }
-    }
   }
   // 前のユーザーのカスタムステータス残留を完全防止（キャッシュがあれば即時適用、なければ非表示に初期化）
   if (customStatusWrap) {
@@ -6119,7 +6112,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   }
   // 🚀 タップ直後に0msで即座にモーダルを表示（通信待ちによるタップ無反応バグを完全解消）
   openModal(modal);
-  // バックグラウンドで非同期に最新ユーザー詳細（ステメ等）を取得して反映
+  // バックグラウンドで非同期に最新ユーザー詳細（ステメ・自己紹介・メンバーになった日等）を取得して反映
   (async () => {
     try {
       const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
@@ -6131,7 +6124,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
         }
         if (uData.email && tagEl) {
-          tagEl.textContent = `@${uData.email.split('@')[0]}`;
+          tagEl.textContent = `${uData.email.split('@')[0]}`;
         }
         if (uData.customStatus && uData.customStatus.text) {
           if (customStatusWrap) customStatusWrap.classList.remove("hidden");
@@ -6139,6 +6132,20 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
         } else {
           if (customStatusWrap) customStatusWrap.classList.add("hidden");
+        }
+        if (uData.aboutMe) {
+          if (aboutMeWrap) aboutMeWrap.classList.remove("hidden");
+          if (aboutMeText) aboutMeText.textContent = uData.aboutMe;
+        } else {
+          if (aboutMeWrap) aboutMeWrap.classList.add("hidden");
+        }
+        if (joinedWrap && joinedDateEl) {
+          let dt = '-';
+          if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
+          else if (typeof uData.createdAt === 'number') dt = new Date(uData.createdAt).toLocaleDateString('ja-JP');
+          else if (uData.createdAt?.seconds != null) dt = new Date(uData.createdAt.seconds * 1000).toLocaleDateString('ja-JP');
+          joinedDateEl.textContent = dt;
+          joinedWrap.classList.remove("hidden");
         }
       }
     } catch (err) {
@@ -17265,41 +17272,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
   bubbleContainer.appendChild(bubbleRowWrapper);
   messageRowInner.appendChild(bubbleContainer);
-
-  // Discord 本家完全準拠 メッセージホバー・クイックアクションバー (PCホバー時)
-  const quickActions = document.createElement("div");
-  quickActions.className = "msg-quick-actions";
-  quickActions.innerHTML = `
-    <button type="button" class="msg-quick-action-btn qa-react" title="リアクションを追加">
-      <i class="far fa-smile"></i>
-    </button>
-    <button type="button" class="msg-quick-action-btn qa-reply" title="返信">
-      <i class="fas fa-reply"></i>
-    </button>
-    <button type="button" class="msg-quick-action-btn qa-more" title="その他">
-      <i class="fas fa-ellipsis"></i>
-    </button>
-  `;
-  quickActions.querySelector('.qa-react').addEventListener('click', (e) => {
-    e.stopPropagation();
-    window._reactionTargetMessageId = message.id;
-    window.toggleStickerPicker();
-  });
-  quickActions.querySelector('.qa-reply').addEventListener('click', (e) => {
-    e.stopPropagation();
-    replyingToMessage = message;
-    if (replyingToNickname) replyingToNickname.textContent = message.senderNickname;
-    if (replyingToText) replyingToText.textContent = message.text || (message.fileName ? "ファイル" : "...");
-    if (replyingToContainer) replyingToContainer.classList.remove("hidden");
-    if (messageInput) messageInput.focus();
-  });
-  quickActions.querySelector('.qa-more').addEventListener('click', (e) => {
-    e.stopPropagation();
-    showContextMenu(messageElement, e.clientX, e.clientY);
-  });
-  messageRow.appendChild(quickActions);
-
+  // Discordを意識したメッセージホバー・クイックアクションバーは、
+  // LINE風メッセージの方針と合わないため撤去
   return messageRow;
+
+  ---
   }
   window.jumpToUnloadedMessage = jumpToUnloadedMessage;
 async function jumpToUnloadedMessage(msgId) {
@@ -19609,6 +19586,11 @@ const callPickerBoxEl = callPickerModalEl ? callPickerModalEl.querySelector('.ca
 const callPickerListEl = document.getElementById('callPickerList');
 if (callPickerBoxEl) {
   initBottomSheetGestures(callPickerBoxEl, callPickerModalEl, () => closeCallPicker(), callPickerListEl);
+}
+const userProfileModalEl = document.getElementById('userProfileModal');
+const userProfileCardEl = userProfileModalEl ? userProfileModalEl.querySelector('.user-profile-card') : null;
+if (userProfileCardEl) {
+  initBottomSheetGestures(userProfileCardEl, userProfileModalEl, () => window.closeUserProfileModal(), null);
 }
 
 // --- LINE完全準拠 ピン留め（アナウンス）機能 ---
@@ -22074,6 +22056,11 @@ window.toggleCamera = async function () {
     icon.className = document.fullscreenElement ? "fas fa-compress text-xs" : "fas fa-expand text-xs";
   }
   });
+  // iOS Safariは要素単位のFullscreen APIを実装していないため、押しても反応しないボタンを非表示にする
+  if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+    const fsBtn = document.getElementById("callFullscreenIcon")?.closest("button");
+    if (fsBtn) fsBtn.style.display = "none";
+  }
   window.toggleCallDeviceMenu = async function (e) {
   if (e && e.stopPropagation) e.stopPropagation();
   let menu = document.getElementById("callDeviceMenu");
@@ -22129,6 +22116,9 @@ window.toggleCamera = async function () {
     if (speakers.length === 0 && typeof AgoraRTC !== 'undefined' && AgoraRTC.getPlaybackDevices) {
       speakers = await AgoraRTC.getPlaybackDevices().catch(() => []);
     }
+    // iOS Safariは出力デバイス切り替え(setSinkId)自体を実装していないため、
+    // 選んでも実際には切り替わらないUIを出さないようにする
+    const sinkIdSupported = typeof document.createElement('audio').setSinkId === 'function';
     const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
     const currentModeOverride = window._voiceEngine?._modeOverride || 'auto';
     const adminModeSection = isGlobalAdmin ? `
@@ -22167,20 +22157,20 @@ window.toggleCamera = async function () {
         </div>
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-microphone mr-1.5 text-emerald-500"></i>入力デバイス (マイク)</label>
-          <select id="callMicSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <select id="callMicSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
             ${mics.length > 0 ? mics.map(m => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">マイクが見つかりません</option>'}
           </select>
         </div>
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-video mr-1.5 text-indigo-500"></i>カメラ (ビデオ)</label>
-          <select id="callCamSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <select id="callCamSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
             ${cams.length > 0 ? cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || `カメラ ${c.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">カメラが見つかりません</option>'}
           </select>
         </div>
-        ${speakers.length > 0 ? `
+        ${speakers.length > 0 && sinkIdSupported ? `
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-volume-high mr-1.5 text-blue-500"></i>出力デバイス (スピーカー)</label>
-          <select id="callSpeakerSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-xs text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <select id="callSpeakerSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
             ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</option>`).join('')}
           </select>
         </div>
@@ -25917,6 +25907,7 @@ class VoiceEngine {
     this._isLeaving = false;
     this._boundDeviceChange = null;
     this._boundVisibilityChange = null;
+    this._wakeLock = null; // 通話中の画面スリープ防止用 (Screen Wake Lock API)
 
     // --- Local Media ---
     this._localStream = null;      // マイク専用 MediaStream
@@ -26169,12 +26160,16 @@ class VoiceEngine {
           if (document.visibilityState === 'visible' && this._p2pAudioContext && this._p2pAudioContext.state === 'suspended') {
             this._p2pAudioContext.resume().catch(e => console.warn('[VoiceEngine] AudioContext resume failed:', e));
           }
+          if (document.visibilityState === 'visible' && this.isActive && !this._wakeLock) {
+            this._acquireWakeLock();
+          }
         };
         try {
           document.addEventListener('visibilitychange', this._boundVisibilityChange);
         } catch(_) {}
       }
-
+      // 通話中の画面ロックによる強制切断を防ぐ (特にiOSはバックグラウンド/ロック時にWebRTCが切れやすい)
+      this._acquireWakeLock();
       // --- TURN 疎通チェック（非同期・バックグラウンド） ---
       this._checkTurnConnectivity();
       // --- シグナリングリスナーを最速先行起動（相手からのOffer取りこぼしを完全防止） ---
@@ -26198,12 +26193,30 @@ class VoiceEngine {
     } finally {
       this._isJoining = false;
     }
-  }
-
-  // ================================================================
-  // LEAVE
-  // ================================================================
-  async leave() {
+    }
+    // ================================================================
+    // WAKE LOCK (通話中の画面スリープ防止。iOSはバックグラウンド/画面ロックでWebRTCが
+    // 切れやすいため、通話中は画面が自動ロックされないようにする)
+    // ================================================================
+    async _acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen');
+      this._wakeLock.addEventListener('release', () => { this._wakeLock = null; });
+    } catch (e) {
+      console.warn('[VoiceEngine] WakeLock取得失敗:', e);
+    }
+    }
+    async _releaseWakeLock() {
+    if (this._wakeLock) {
+      try { await this._wakeLock.release(); } catch (_) {}
+      this._wakeLock = null;
+    }
+    }
+    // ================================================================
+    // LEAVE
+    // ================================================================
+    async leave() {
     if (this._isLeaving) return;
     this._isLeaving = true;
     try {
@@ -26224,9 +26237,11 @@ class VoiceEngine {
         try { document.removeEventListener('visibilitychange', this._boundVisibilityChange); } catch(_) {}
         this._boundVisibilityChange = null;
       }
-
+      this._releaseWakeLock();
       // P2P クリーンアップ
       this._cleanupAllPeers();
+
+      ---
 
       // Agora クリーンアップ
       await this._cleanupAgora();

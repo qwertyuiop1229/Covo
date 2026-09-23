@@ -2050,20 +2050,6 @@ body.dark-server-theme .vc-member-name {
   flex-shrink: 0;
 }
 
-.vc-member-count-badge {
-  font-size: 0.65rem;
-  color: #9ca3af;
-  background: rgba(0,0,0,0.08);
-  border-radius: 0.75rem;
-  padding: 0.05rem 0.4rem;
-  flex-shrink: 0;
-}
-
-body.dark-mode .vc-member-count-badge,
-body.dark-server-theme .vc-member-count-badge {
-  background: rgba(255,255,255,0.08);
-}
-
 .vc-connection-bar {
   margin: 0 0.625rem 0.375rem;
   border-radius: 0.625rem;
@@ -2073,8 +2059,27 @@ body.dark-server-theme .vc-member-count-badge {
   transition: all 0.2s ease;
   animation: vc-bar-slide-in 0.25s ease;
 }
+@keyframes vc-bar-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.vc-connection-bar.hidden {
+  display: none;
+}
 
 
+.vc-member-count-badge {
+  font-size: 0.65rem;
+  color: #9ca3af;
+  background: rgba(0,0,0,0.08);
+  border-radius: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  flex-shrink: 0;
+}
+body.dark-mode .vc-member-count-badge,
+body.dark-server-theme .vc-member-count-badge {
+  background: rgba(255,255,255,0.08);
+}
 /* ================================================================
    VC接続中バー (左下・Discord本家完全準拠 & Material 3)
 .vc-connection-bar {
@@ -2087,6 +2092,13 @@ body.dark-server-theme .vc-member-count-badge {
   overflow: hidden;
   transition: all 0.2s ease;
   animation: vc-bar-slide-in 0.25s ease;
+}
+@keyframes vc-bar-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.vc-connection-bar.hidden {
+  display: none !important;
 }
    ================================================================ */
 .vc-connection-bar {

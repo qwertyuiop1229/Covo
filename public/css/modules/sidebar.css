@@ -1849,7 +1849,7 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.auth-ready:not(.logged-in):not(.needs-nickname) #authContainer {
       display: flex !important;
       width: 100% !important;
-      min-height: 100vh !important;
+      min-height: 100dvh !important;
     }
     /* ニックネーム設定待機状態 (新規登録時) */
     body.auth-ready.needs-nickname #appContainer,
@@ -1861,8 +1861,10 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
     body.auth-ready.needs-nickname #nicknameContainer {
       display: flex !important;
       width: 100% !important;
-      min-height: 100vh !important;
+      min-height: 100dvh !important;
     }
+
+---
     /* ----------------------------------- */
 /* ================================================================
    VOICE CHANNEL — サイドバー・VCバー・チャンネルタイプ CSS
