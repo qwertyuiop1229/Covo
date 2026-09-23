@@ -75,6 +75,40 @@ import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from 
 import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
+// P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
+const VC_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:openrelay.metered.ca:3478' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  {
+    urls: 'turn:openrelay.metered.ca:3478',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:3478?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+];
 // 🔒 inline onclick="fn('${...}')" 用: HTML属性デコード後もJS文字列を壊さないエスケープ（escapeHtml は &#039; が ' に戻るためJS文脈では無効）
 function _jsq(v) {
   return String(v == null ? '' : v).replace(/[^A-Za-z0-9_\-.:@ ]/g, (ch) => {
@@ -701,6 +735,19 @@ let dmConversations = {};
 let unsubscribeRelationships = null;
 let unsubscribeDmChannels = null;
 let unsubscribeFeatureFlags = null;
+let globalNotifListeners = {};
+let currentServerStampsUnsub = null;
+let currentServerStampGroupsUnsub = null;
+let readStatesUnsub = null;
+let _fsIncomingUnsub = null;
+let _telemetryErrorsUnsub = null;
+let _announcementListenerUnsub = null;
+let unsubscribeStatusArray = [];
+let userAuthEmail = "";
+let lastNotificationTime = 0;
+let lastNotificationKey = "";
+let lastNotificationBody = "";
+let lastNotificationRoomId = "";
 let activeMigrationSession = null;
 let activeMigrationCountdown = null;
 let activeMigrationPeer = null;
@@ -2599,8 +2646,7 @@ window.sendPasswordResetToCurrentUser = async function () {
 };
 
 // authEmail を保持するための変数
-let userAuthEmail = "";
-
+userAuthEmail = "";
 // --- 管理者パネルの処理 ---
 
 // タブ切り替え（洗練されたピル型タブ）
@@ -2849,7 +2895,7 @@ window.filterErrorTelemetry = function (filter) {
   renderTelemetryErrorsList();
 };
 
-let _telemetryErrorsUnsub = null;
+_telemetryErrorsUnsub = null;
 window.loadErrorTelemetry = async function () {
   const listEl = document.getElementById("telemetryErrorsList");
   const badgeEl = document.getElementById("telemetryCountBadge");
@@ -7531,7 +7577,7 @@ window.setDarkServerTheme = setDarkServerTheme;
 window.prewarmPeerConnection = prewarmPeerConnection;
 window.stopPrewarmPC = stopPrewarmPC;
 
-let unsubscribeStatusArray = [];
+unsubscribeStatusArray = [];
 let _renderMembersDebounceTimer = null;
 
 function getTimestampMs(obj) {
@@ -12693,8 +12739,7 @@ document.addEventListener("click", (e) => {
 });
 
 // 他サーバーのメッセージを監視するグローバルリスナー
-let globalNotifListeners = {};
-
+globalNotifListeners = {};
 async function setupGlobalNotificationListeners() {
   Object.values(globalNotifListeners).forEach(unsub => unsub());
   globalNotifListeners = {};
@@ -14771,9 +14816,8 @@ let STICKER_CATEGORIES = [
     ]
   }
 ];
-let currentServerStampsUnsub = null;
-let currentServerStampGroupsUnsub = null;
-
+currentServerStampsUnsub = null;
+currentServerStampGroupsUnsub = null;
 async function loadCurrentServerStamps() {
   if (!currentServerId) return;
   try {
@@ -17272,40 +17316,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
   bubbleContainer.appendChild(bubbleRowWrapper);
   messageRowInner.appendChild(bubbleContainer);
-
-  // Discord 本家完全準拠 メッセージホバー・クイックアクションバー (PCホバー時)
-  const quickActions = document.createElement("div");
-  quickActions.className = "msg-quick-actions";
-  quickActions.innerHTML = `
-    <button type="button" class="msg-quick-action-btn qa-react" title="リアクションを追加">
-      <i class="far fa-smile"></i>
-    </button>
-    <button type="button" class="msg-quick-action-btn qa-reply" title="返信">
-      <i class="fas fa-reply"></i>
-    </button>
-    <button type="button" class="msg-quick-action-btn qa-more" title="その他">
-      <i class="fas fa-ellipsis"></i>
-    </button>
-  `;
-  quickActions.querySelector('.qa-react').addEventListener('click', (e) => {
-    e.stopPropagation();
-    window._reactionTargetMessageId = message.id;
-    window.toggleStickerPicker();
-  });
-  quickActions.querySelector('.qa-reply').addEventListener('click', (e) => {
-    e.stopPropagation();
-    replyingToMessage = message;
-    if (replyingToNickname) replyingToNickname.textContent = message.senderNickname;
-    if (replyingToText) replyingToText.textContent = message.text || (message.fileName ? "ファイル" : "...");
-    if (replyingToContainer) replyingToContainer.classList.remove("hidden");
-    if (messageInput) messageInput.focus();
-  });
-  quickActions.querySelector('.qa-more').addEventListener('click', (e) => {
-    e.stopPropagation();
-    showContextMenu(messageElement, e.clientX, e.clientY);
-  });
-  messageRow.appendChild(quickActions);
-
+  // Discordを意識したメッセージホバー・クイックアクションバーは、
+  // LINE風メッセージの方針と合わないため撤去
   return messageRow;
   }
   window.jumpToUnloadedMessage = jumpToUnloadedMessage;
@@ -20023,11 +20035,10 @@ function jumpToMsg(id) {
 // =========================================================================
 
 // 重複通知防止 (同一内容を3秒以内に複数ソースから受け取った場合は1件のみ表示)
-let lastNotificationTime = 0;
-let lastNotificationKey = "";
-let lastNotificationBody = "";
-let lastNotificationRoomId = "";
-
+lastNotificationTime = 0;
+lastNotificationKey = "";
+lastNotificationBody = "";
+lastNotificationRoomId = "";
 // --- 堅牢なクリップボードコピーユーティリティ ---
 function fallbackCopyTextToClipboard(text) {
   const ta = document.createElement('textarea');
@@ -20280,7 +20291,7 @@ async function cleanupWebRtcDoc(colName, docId) {
   } catch (_) {}
 }
 
-let readStatesUnsub = null;
+readStatesUnsub = null;
 async function initReadStatesSync() {
   if (!userId || !appId) return;
   if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
@@ -21158,7 +21169,7 @@ async function _fsMarkComplete() {
   _fsCleanup();
 }
 
-let _fsIncomingUnsub = null;
+_fsIncomingUnsub = null;
 // 受信側: 着信を監視（ログイン時に開始）
 async function initFileShareListener() {
   if (!userId) return;
@@ -23134,7 +23145,7 @@ window.deleteAdminAnnouncement = async function (id) {
   }
 };
 
-let _announcementListenerUnsub = null;
+_announcementListenerUnsub = null;
 async function setupGlobalAnnouncementListener() {
   if (!userId) return; // 認証完了前はスキップ（onAuthStateChanged で確実に起動）
   if (_announcementListenerUnsub) return;
@@ -25857,45 +25868,7 @@ window.saveViewerMessagesAsTxt = function () {
 //   https://dashboard.metered.ca/  → 月 50GB 無料、認証付き
 //   TURN_USERNAME / TURN_CREDENTIAL を環境変数またはWorker経由で取得
 // ================================================================
-
-// --- TURN / ICE サーバー設定 (到達率の高い標準3478番 & TLS443番を最優先最適化) ---
-const VC_ICE_SERVERS = [
-  // Google STUN（高信頼・最速・無制限）
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  // Cloudflare STUN
-  { urls: 'stun:stun.cloudflare.com:3478' },
-  // OpenRelay STUN
-  { urls: 'stun:openrelay.metered.ca:3478' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  // OpenRelay TURN – 標準3478ポート(UDP/TCP)およびTLS443ポートを個別に優先接続
-  {
-    urls: 'turn:openrelay.metered.ca:3478',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:3478?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  }
-];
+// --- TURN / ICE サーバー設定 (VC_ICE_SERVERS はトップレベル先行定義済み) ---
 const VC_TURN_TEST_SERVERS = [
   {
     urls: 'turn:openrelay.metered.ca:3478',
@@ -26266,15 +26239,12 @@ class VoiceEngine {
       if (this._boundVisibilityChange) {
         try { document.removeEventListener('visibilitychange', this._boundVisibilityChange); } catch(_) {}
         this._boundVisibilityChange = null;
-      }
-      this._releaseWakeLock();
-      // P2P クリーンアップ
-      this._cleanupAllPeers();
-
-      ---
-
-      // Agora クリーンアップ
-      await this._cleanupAgora();
+        }
+        this._releaseWakeLock();
+        // P2P クリーンアップ
+        this._cleanupAllPeers();
+        // Agora クリーンアップ
+        await this._cleanupAgora();
 
       // ローカルストリーム停止
       this._stopLocalStreams();

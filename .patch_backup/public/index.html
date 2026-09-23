@@ -30,15 +30,15 @@
   <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png?v=6" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.228" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.229" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.228" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.229" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -833,7 +833,7 @@
           <form id="resetViaEmailForm" onsubmit="event.preventDefault(); submitPasswordReset();" class="space-y-4">
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1.5">登録メールアドレス</label>
-              <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-sm text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs" required />
+              <input type="email" id="resetEmailInput" placeholder="example@mail.com" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-xs" required />
             </div>
             <div id="resetEmailMessage" class="text-xs min-h-[1rem] leading-relaxed"></div>
             <button id="sendResetEmailBtn" type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98">
@@ -848,16 +848,16 @@
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
-              <input type="email" id="resetKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              <input type="email" id="resetKeyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">リカバリーキー (24文字)</label>
-              <input type="text" id="resetKeyInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+              <input type="text" id="resetKeyInput" placeholder="COVO-XXXX-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base font-mono text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
               <div class="relative">
-                <input type="password" id="resetKeyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <input type="password" id="resetKeyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
                 <button type="button" onclick="toggleRecoveryPasswordVisibility('resetKeyNewPassword', 'recoveryPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                   <i id="recoveryPasswordEyeIcon" class="fas fa-eye"></i>
                 </button>
@@ -881,16 +881,16 @@
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">メールアドレス</label>
-                <input type="email" id="resetEmergencyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <input type="email" id="resetEmergencyEmailInput" placeholder="登録メールアドレス" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">エマージェンシーコード (6桁)</label>
-                <input type="text" id="resetEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <input type="text" id="resetEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
                 <div class="relative">
-                  <input type="password" id="resetEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                  <input type="password" id="resetEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
                   <button type="button" onclick="toggleRecoveryPasswordVisibility('resetEmergencyNewPassword', 'emergencyPasswordEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                     <i id="emergencyPasswordEyeIcon" class="fas fa-eye"></i>
                   </button>
@@ -931,7 +931,7 @@
             <div id="changePasswordCurrentRowModal">
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">現在のパスワード</label>
               <div class="relative">
-                <input type="password" id="modalCurrentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                <input type="password" id="modalCurrentPasswordInput" placeholder="現在のパスワード" autocomplete="current-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
                 <button type="button" onclick="toggleRecoveryPasswordVisibility('modalCurrentPasswordInput', 'modalCurrEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                   <i id="modalCurrEyeIcon" class="fas fa-eye"></i>
                 </button>
@@ -940,7 +940,7 @@
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
               <div class="relative">
-                <input type="password" id="modalNewPasswordInput" placeholder="新しいパスワード" autocomplete="new-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <input type="password" id="modalNewPasswordInput" placeholder="新しいパスワード" autocomplete="new-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
                 <button type="button" onclick="toggleRecoveryPasswordVisibility('modalNewPasswordInput', 'modalNewEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                   <i id="modalNewEyeIcon" class="fas fa-eye"></i>
                 </button>
@@ -949,7 +949,7 @@
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (確認)</label>
               <div class="relative">
-                <input type="password" id="modalConfirmNewPasswordInput" placeholder="もう一度入力" autocomplete="new-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
+                <input type="password" id="modalConfirmNewPasswordInput" placeholder="もう一度入力" autocomplete="new-password" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" required />
                 <button type="button" onclick="toggleRecoveryPasswordVisibility('modalConfirmNewPasswordInput', 'modalConfirmEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                   <i id="modalConfirmEyeIcon" class="fas fa-eye"></i>
                 </button>
@@ -978,12 +978,12 @@
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">エマージェンシーコード (6桁)</label>
-                <input type="text" id="modalEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                <input type="text" id="modalEmergencyCodeInput" placeholder="例: 839201" maxlength="8" class="w-full px-3.5 py-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base font-mono font-bold tracking-widest text-center text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
               </div>
               <div>
                 <label class="block text-xs font-bold text-gray-600 dark:text-slate-300 mb-1">新しいパスワード (6文字以上)</label>
                 <div class="relative">
-                  <input type="password" id="modalEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+                  <input type="password" id="modalEmergencyNewPassword" placeholder="新しいパスワード" class="w-full px-3.5 py-2 pr-9 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
                   <button type="button" onclick="toggleRecoveryPasswordVisibility('modalEmergencyNewPassword', 'modalEmergencyPwdEyeIcon')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs">
                     <i id="modalEmergencyPwdEyeIcon" class="fas fa-eye"></i>
                   </button>
@@ -1165,7 +1165,7 @@
                   <!-- ニックネーム -->
                   <div>
                     <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム (表示名)</label>
-                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm font-medium" />
+                    <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-base font-medium" />
                   </div>
 
                   <!-- カスタムステータス (ステメ) 設定カード -->
@@ -1599,7 +1599,7 @@
                         <div class="flex items-center gap-2">
                           <span class="text-xs opacity-70">キーを変更:</span>
                           <span class="text-xs opacity-70"><kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> +</span>
-                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold text-sm rounded-lg border border-blue-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 py-1 uppercase" placeholder="S" />
+                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold text-base rounded-lg border border-blue-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 py-1 uppercase" placeholder="S" />
                         </div>
                       </div>
                     </div>
@@ -1666,7 +1666,7 @@
 
                   <div class="space-y-3">
                     <div class="flex gap-2 max-w-sm">
-                      <input type="text" id="migrationSendCodeInput" placeholder="例: COVO-A1B2-C3D4" maxlength="16" class="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-sm font-mono text-gray-800 dark:text-white uppercase placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition shadow-inner" />
+                      <input type="text" id="migrationSendCodeInput" placeholder="例: COVO-A1B2-C3D4" maxlength="16" class="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-base font-mono text-gray-800 dark:text-white uppercase placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition shadow-inner" />
                       <button id="startSendMigrationBtn" onclick="initiateMigrationSend()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
                         <i class="fas fa-link"></i> 接続して送信
                       </button>
@@ -1737,7 +1737,7 @@
             <span class="text-[11px] text-gray-400 dark:text-slate-400 font-mono font-semibold" id="adminRecoveryUserCount">0名</span>
           </div>
           <div class="relative flex-shrink-0">
-            <input type="text" id="adminRecoverySearchInput" oninput="filterAdminRecoveryUsers()" placeholder="ユーザー名またはメールで絞り込み..." class="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs transition-all" />
+            <input type="text" id="adminRecoverySearchInput" oninput="filterAdminRecoveryUsers()" placeholder="ユーザー名またはメールで絞り込み..." class="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-base text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs transition-all" />
             <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
           </div>
           <div id="adminRecoveryUsersList" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-1 min-h-[220px]">
@@ -1749,7 +1749,7 @@
       <div id="adminTabAllowedContent" class="space-y-4">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">登録を許可するメールアドレスを管理します。リストが空の場合は誰でも登録できます。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <input type="email" id="newAllowedEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
           <button id="addAllowedEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="allowedEmailsList" class="space-y-2"></div>
@@ -1757,7 +1757,7 @@
       <div id="adminTabAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">管理者は全サーバーの閲覧・管理と、この管理パネルの操作が可能です。</p>
         <div class="flex gap-2">
-          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <input type="email" id="newAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
           <button id="addAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="adminEmailsList" class="space-y-2"></div>
@@ -1765,7 +1765,7 @@
       <div id="adminTabListAdminsContent" class="space-y-4 hidden">
         <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed font-medium">許可リストの編集のみできる管理者を管理します。それ以外は通常ユーザーと同じです。</p>
         <div class="flex gap-2">
-          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
+          <input type="email" id="newListAdminEmailInput" placeholder="メールアドレスを追加..." class="flex-1 px-3.5 py-2.5 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-transparent rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:focus:border-indigo-500 transition-all shadow-xs" />
           <button id="addListAdminEmailButton" class="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95">追加</button>
         </div>
         <div id="listAdminEmailsList" class="space-y-2"></div>
@@ -1776,7 +1776,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">バージョン</label>
-              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm font-mono" />
+              <input type="text" id="announcementVersionInput" placeholder="例: v1.1.40" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm font-mono" />
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">カテゴリー</label>
@@ -1808,13 +1808,13 @@
                 <input type="hidden" id="announcementCategorySelect" value="update" />
               </div>
               <div id="announcementCustomCategoryWrapper" class="hidden mt-2">
-                <input type="text" id="announcementCustomCategoryInput" placeholder="カスタムカテゴリ名（例: メンテナンス）" class="w-full px-3.5 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
+                <input type="text" id="announcementCustomCategoryInput" placeholder="カスタムカテゴリ名（例: メンテナンス）" class="w-full px-3.5 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
               </div>
             </div>
           </div>
           <div>
             <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">タイトル</label>
-            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
+            <input type="text" id="announcementTitleInput" placeholder="例: 新機能追加とデザインの改善" class="w-full px-3.5 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm" />
           </div>
           <div>
             <label class="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1.5">内容</label>
@@ -2642,7 +2642,7 @@
                     <div>
                       <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">有効期限</label>
                       <div class="relative">
-                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
+                        <select id="inviteExpiry" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">なし</option>
                           <option value="1">1日</option>
                           <option value="7">7日</option>
@@ -2656,7 +2656,7 @@
                     <div>
                       <label class="text-xs text-gray-500 dark:text-gray-400 font-bold block mb-1">使用回数</label>
                       <div class="relative">
-                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
+                        <select id="inviteMaxUses" class="w-full py-2.5 pl-3 pr-8 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-[#2b2d31] rounded-xl text-base text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-xs">
                           <option value="0">無制限</option>
                           <option value="1">1回</option>
                           <option value="5">5回</option>
@@ -2993,7 +2993,7 @@
             <div class="mb-4">
               <div class="relative flex items-center">
                 <i class="fas fa-search absolute left-3 text-gray-400 dark:text-[#949ba4] text-xs pointer-events-none"></i>
-                <input type="text" id="friendListSearchInput" placeholder="フレンドを検索..." oninput="window.filterFriendsList(this.value)" class="w-full pl-9 pr-8 py-2 bg-[#ebedef] dark:bg-[#1e1f22] border border-transparent dark:border-[#1e1f22] rounded-lg text-sm text-[#060607] dark:text-[#dbdee1] placeholder-[#4e5058] dark:placeholder-[#949ba4] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium" />
+                <input type="text" id="friendListSearchInput" placeholder="フレンドを検索..." oninput="window.filterFriendsList(this.value)" class="w-full pl-9 pr-8 py-2 bg-[#ebedef] dark:bg-[#1e1f22] border border-transparent dark:border-[#1e1f22] rounded-lg text-base text-[#060607] dark:text-[#dbdee1] placeholder-[#4e5058] dark:placeholder-[#949ba4] focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium" />
                 <button id="clearFriendSearchBtn" onclick="window.clearFriendSearch()" class="absolute right-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs hidden w-5 h-5 rounded-full flex items-center justify-center"><i class="fas fa-times"></i></button>
               </div>
             </div>
@@ -3039,7 +3039,7 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">ニックネーム#1234 または メールアドレス を入力してフレンド申請を送信できます。</p>
               </div>
               <div class="bg-gray-100 dark:bg-[#1e1f22] p-3 rounded-2xl border border-gray-200 dark:border-slate-700/60 flex items-center gap-2 shadow-inner">
-                <input type="text" id="dmAddFriendInput" placeholder="例: ニックネーム#1234 または user@example.com" class="flex-1 bg-transparent border-none text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-2" />
+                <input type="text" id="dmAddFriendInput" placeholder="例: ニックネーム#1234 または user@example.com" class="flex-1 bg-transparent border-none text-base text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-2" />
                 <button id="dmAddFriendSubmitBtn" onclick="submitFriendRequest()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition active:scale-95 whitespace-nowrap">フレンド申請を送信</button>
               </div>
               <div id="dmAddFriendFeedback" class="text-xs font-semibold px-2 min-h-[1.25rem]"></div>
@@ -3327,7 +3327,7 @@
   <div id="customPromptModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
     <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
       <p id="customPromptMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-3 text-base leading-snug"></p>
-      <input type="text" id="customPromptInput" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all mb-4" />
+      <input type="text" id="customPromptInput" class="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-[#1e1f22] border border-gray-200 dark:border-slate-700 rounded-xl text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all mb-4" />
       <div class="flex gap-3">
         <button id="customPromptCancel" class="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-200 font-bold py-2.5 rounded-xl transition-all text-sm">キャンセル</button>
         <button id="customPromptOk" class="flex-1 bg-slate-900 hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl transition-all text-sm shadow-xs">決定</button>
@@ -3413,14 +3413,14 @@
           <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">チャンネル名</label>
           <div class="relative flex items-center">
             <span id="createChannelPrefixIcon" class="absolute left-3.5 text-gray-400 dark:text-gray-500 text-sm font-bold">#</span>
-            <input type="text" id="modalChannelNameInput" required placeholder="新しいチャンネル" class="w-full pl-8 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all placeholder-gray-400 dark:placeholder-gray-500" />
+            <input type="text" id="modalChannelNameInput" required placeholder="新しいチャンネル" class="w-full pl-8 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all placeholder-gray-400 dark:placeholder-gray-500" />
           </div>
         </div>
 
         <!-- カテゴリー選択 -->
         <div>
           <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">カテゴリー (任意)</label>
-          <select id="modalChannelCategorySelect" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all cursor-pointer">
+          <select id="modalChannelCategorySelect" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all cursor-pointer">
             <option value="">カテゴリーなし</option>
           </select>
         </div>
@@ -3454,7 +3454,7 @@
           <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">サーバー招待リンク</label>
           <div class="flex items-center gap-2">
             <div class="relative flex-1">
-              <input type="text" id="inviteModalUrlInput" readonly class="w-full pl-3.5 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-mono text-gray-900 dark:text-white select-all focus:outline-none" />
+              <input type="text" id="inviteModalUrlInput" readonly class="w-full pl-3.5 pr-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-base font-mono text-gray-900 dark:text-white select-all focus:outline-none" />
             </div>
             <button type="button" id="inviteModalCopyBtn" onclick="copyInviteModalLink()" class="px-5 py-2.5 rounded-xl text-sm font-bold bg-[#5865f2] hover:bg-[#4752c4] text-white shadow-sm transition-all cursor-pointer flex-shrink-0 flex items-center gap-1.5">
               <i class="fas fa-copy"></i>
@@ -3517,7 +3517,7 @@
       <form id="createCategoryForm" onsubmit="event.preventDefault(); submitCreateCategory();" class="p-5 pt-4 space-y-4">
         <div>
           <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">カテゴリー名</label>
-          <input type="text" id="modalCategoryNameInput" required placeholder="新しいカテゴリー" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all" />
+          <input type="text" id="modalCategoryNameInput" required placeholder="新しいカテゴリー" class="w-full px-3.5 py-2.5 bg-gray-100 dark:bg-[#1e1f22] border border-gray-300/80 dark:border-[#202225] rounded-xl text-base font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865f2]/40 transition-all" />
         </div>
         <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100 dark:border-white/5">
           <button type="button" onclick="closeCreateCategoryModal()" class="px-4 py-2.5 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300 hover:underline cursor-pointer">キャンセル</button>
@@ -3616,7 +3616,7 @@
         <div id="saSectionNew" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative z-30 block">
           <h3 class="text-md font-bold text-gray-700 mb-4 border-b pb-2">新規スタンプグループ作成</h3>
           <div class="flex flex-col gap-4">
-            <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 outline-none text-sm" />
+            <input type="text" id="saNewGroupName" placeholder="グループ名（例: 日常セット）" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-400 outline-none text-base" />
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-bold text-gray-500 mb-1">メインアイコン画像（サムネイル）</label>
@@ -3714,7 +3714,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
-  <script type="module" src="js/main.js?v=1.1.228"></script>
+  <script type="module" src="js/main.js?v=1.1.229"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4234,7 +4234,7 @@
       <!-- 検索バー -->
       <div class="p-3 bg-gray-50/60 dark:bg-slate-950/40 border-b border-gray-200/60 dark:border-slate-800 flex-shrink-0">
         <div class="relative">
-          <input type="text" id="viewerSearchInput" oninput="filterViewerMessages(this.value)" placeholder="メッセージを検索..." class="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          <input type="text" id="viewerSearchInput" oninput="filterViewerMessages(this.value)" placeholder="メッセージを検索..." class="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
           <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
         </div>
       </div>
@@ -4865,7 +4865,7 @@
           <div>
             <label class="block text-sm font-bold text-gray-300 mb-1.5">カテゴリ</label>
             <div class="relative">
-              <select id="feedbackCategory" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
+              <select id="feedbackCategory" class="w-full py-2.5 pl-3 pr-8 bg-[#1e1f22] border border-[#1e1f22] rounded-xl text-base text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer shadow-inner">
                 <option value="bug">バグ報告</option>
                 <option value="feature">機能要望</option>
                 <option value="other">その他</option>
@@ -4891,7 +4891,7 @@
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
     <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[320px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
       <!-- スマホ用ボトムシートドラッグハンドル -->
-      <div class="w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
+      <div class="bottom-sheet-handle w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
       <div id="userProfileBanner" class="h-20 relative flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
       </div>
@@ -4936,28 +4936,33 @@
           <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h3>
           <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openFullProfileFromPopout()" title="メモ / 詳細プロフィール"></i>
         </div>
-        <div class="text-xs text-[#949ba4] font-mono font-medium mt-0.5" id="userProfileTag">#0000</div>
+        <div class="text-xs text-[#949ba4] font-mono font-medium mt-0.5" id="userProfileTag">0000</div>
       </div>
-      <!-- 4. カスタムステータス (ある場合) -->
+      <!-- 4. 共通サーバー数 (本家の並び順に合わせ、ステータスより先に表示) -->
+      <div class="px-4 mb-2.5 flex items-center gap-2 text-xs text-[#949ba4] font-medium" id="userProfileMutualServersSummary">
+        <i class="fas fa-server text-[11px]"></i>
+        <span id="userProfileMutualServersCountText">1個の共通サーバー</span>
+      </div>
+      <!-- 5. カスタムステータス (ある場合) -->
       <div id="userProfileCustomStatusWrap" class="mx-4 mb-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2">
         <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
         <span id="userProfileStatusText" class="font-medium truncate select-text"></span>
       </div>
-      <!-- 5. 共通サーバー数 -->
-      <div class="px-4 mb-3 flex items-center gap-2 text-xs text-[#949ba4] font-medium" id="userProfileMutualServersSummary">
-        <i class="fas fa-server text-[11px]"></i>
-        <span id="userProfileMutualServersCountText">1個の共通サーバー</span>
+      <!-- 6. 自己紹介 (ある場合のみ表示) -->
+      <div id="userProfileAboutMeWrap" class="mx-4 mb-2.5 p-2.5 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 hidden">
+        <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wide mb-1">自己紹介</div>
+        <div id="userProfileAboutMeText" class="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words select-text"></div>
       </div>
-      <!-- 6. 最下部 クイックメッセージ入力エリア (input_file_0.png仕様) -->
-      <div id="userProfileQuickMsgArea" class="p-3 pt-0 mt-auto">
-        <form onsubmit="event.preventDefault(); submitQuickDmMessage();" class="relative">
-          <div class="p-1.5 pl-3 bg-gray-100 dark:bg-[#1e1f22] rounded-xl border border-gray-200 dark:border-white/5 focus-within:border-indigo-500 flex items-center gap-2 transition-all shadow-inner">
-            <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信..." class="flex-1 bg-transparent border-none text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none font-medium" />
-            <button type="button" onclick="document.getElementById('stickerButton')?.click()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 text-sm transition-colors" title="絵文字・スタンプ">
-              <i class="far fa-smile"></i>
-            </button>
-          </div>
-        </form>
+      <!-- 7. メンバーになった日 -->
+      <div id="userProfileJoinedWrap" class="px-4 mb-3 hidden">
+        <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wide mb-1">メンバーになった日</div>
+        <div id="userProfileJoinedDate" class="text-xs text-gray-800 dark:text-gray-200 font-medium">-</div>
+      </div>
+      <!-- 8. 最下部: プロフィール全体を表示ボタン (Discord本家準拠。旧クイックメッセージ入力欄から変更) -->
+      <div class="p-3 pt-0 mt-auto">
+        <button type="button" id="userProfileViewFullBtn" onclick="window.openFullProfileFromPopout()" class="w-full py-2.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#2b2d31] text-gray-800 dark:text-white text-sm font-bold transition-colors cursor-pointer">
+          プロフィール全体を表示
+        </button>
       </div>
     </div>
   </div>
@@ -5116,7 +5121,9 @@
             <button type="button" id="customStatusEmojiBtn" onclick="toggleStatusEmojiPicker(event)" class="w-9 h-9 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#383a40] text-lg flex items-center justify-center shadow-xs transition flex-shrink-0">
               <span id="customStatusSelectedEmoji">💬</span>
             </button>
-            <input type="text" id="customStatusTextInput" maxlength="100" placeholder="作業中、ゲーム中、お腹すいた..." class="flex-1 bg-transparent border-none text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-1 font-medium" />
+            <input type="text" id="customStatusTextInput" maxlength="100" placeholder="作業中、ゲーム中、お腹すいた..." class="flex-1 bg-transparent border-none text-base text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-1 font-medium" />
+
+---
             <button type="button" onclick="document.getElementById('customStatusTextInput').value=''; document.getElementById('customStatusSelectedEmoji').textContent='💬';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 text-xs">
               クリア
             </button>

@@ -30,6 +30,15 @@
     .modal-overlay {
       background-color: rgba(0, 0, 0, 0.75);
     }
+    /* Discord本家のユーザーポップオーバーは画面全体を暗くしないため、
+       PC幅ではプロフィールカードの暗幕だけ弱める */
+    @media (min-width: 768px) {
+      #userProfileModal.modal-overlay {
+        background-color: transparent;
+      }
+    }
+
+---
 
     /* ドロップダウンコンテナのスタイル */
     .dropdown-container {

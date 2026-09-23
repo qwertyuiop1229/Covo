@@ -2429,16 +2429,16 @@ async function handleAdminDeleteMessage(request, env) {
 
 async function handleSetOffline(request, env) {
   const corsSetOffline = getCorsHeaders(request);
-
   try {
     const bodyText = await request.text();
     const data = JSON.parse(bodyText);
     const { userId, appId, idToken } = data;
-
     if (!userId || !appId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
     }
-
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ success: false, error: "Invalid appId" }), { status: 400, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
+    }
     const verifiedUser = await verifyFirebaseIdToken(idToken, env);
     if (!verifiedUser || verifiedUser.uid !== userId) {
       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: { ...corsSetOffline, "Content-Type": "application/json" } });
