@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.230" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.231" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.230" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.231" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -251,6 +251,18 @@
         s.includes('requested device not found') ||
         s.includes('notfounderror') ||
         s.includes('devicesnotfounderror') ||
+        s.includes('client is offline') ||
+        s.includes('failed to get document because the client is offline') ||
+        s.includes('could not reach cloud firestore backend') ||
+        s.includes('network-request-failed') ||
+        s.includes('fetching auth token failed') ||
+        s.includes('rtdb sdk read warning: timeout') ||
+        s.includes('wakelock取得失敗: permission was denied') ||
+        s.includes('permission was denied') ||
+        s.includes('切断検知') ||
+        s.includes('openpastversionsmodal is not defined') ||
+        s.includes('emergencycheckupdate is not defined') ||
+        s.includes('pdfjslib is not defined') ||
         s.includes('到着を待機します') ||
         s.includes('dm鍵を生成済みです') ||
         (s.includes('unexpected token') && !s.includes('main.js'))
@@ -266,6 +278,33 @@
         detailArea.value = `エラー発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
       }
     };
+    // リカバリーボタン用先行フォールバック定義 (ReferenceError防止)
+    if (typeof window.openPastVersionsModal !== 'function') {
+      window.openPastVersionsModal = function() {
+        const modal = document.getElementById('pastVersionsModal');
+        if (modal) { modal.classList.remove('hidden'); modal.style.display = 'flex'; }
+        if (typeof window.loadPastVersionsPage === 'function') window.loadPastVersionsPage(1);
+      };
+    }
+    if (typeof window.emergencyCheckUpdate !== 'function') {
+      window.emergencyCheckUpdate = async function(btn) {
+        if (btn) btn.textContent = '確認中...';
+        if (window.__TAURI__?.core?.invoke) {
+          try {
+            const metadata = await window.__TAURI__.core.invoke('plugin:updater|check');
+            if (metadata) {
+              alert('新しいバージョンが見つかりました: v' + metadata.version);
+              window.location.reload();
+            } else {
+              alert('最新バージョンです');
+            }
+          } catch(e) { alert('更新確認エラー: ' + (e.message || e)); }
+        } else {
+          window.location.reload();
+        }
+        if (btn) btn.textContent = '更新をチェック';
+      };
+    }
     window._earlyErrors = window._earlyErrors || [];
     window._covoLogs = window._covoLogs || [];
     // ネイティブコンソール関数の退避
@@ -487,11 +526,15 @@
       }
     }, 2800);
     setTimeout(function() {
-      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible') {
+      const isUiVisible = document.body.classList.contains("auth-ready") ||
+                          document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
+                          document.getElementById("appContainer")?.classList.contains("hidden") === false ||
+                          document.getElementById("authContainer")?.classList.contains("hidden") === false;
+      if (!window.__app_fully_loaded__ && document.visibilityState === 'visible' && !isUiVisible) {
         console.warn('[Watchdog Timer] アプリ起動完了タイムアウトを確認しました。リカバリーパネルを展開します。');
         showEmergencyRecoveryPanel('アプリ起動完了タイムアウト（通信遮断またはネットワーク遅延の可能性）', null);
       }
-    }, 18000);
+    }, 28000);
   </script>
   <!-- アップデートオーバーレイ（ブロッキング） -->
   <div id="updateOverlay">
@@ -2920,36 +2963,104 @@
             </div>
           </div>
 
-          <!-- ユーザー情報ミニバー (添付画像0/1完全準拠のフローティングカード) -->
-          <div id="userPanel" class="mt-auto m-2.5 p-2 rounded-2xl flex items-center justify-between cursor-pointer transition-all">
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
-              <div class="avatar-placeholder relative w-9 h-9 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
+          <!-- ユーザー情報ミニバー (Discord本家完全準拠 input_file_2.png 仕様) -->
+          <div id="userPanel" class="mt-auto w-full h-[54px] px-2.5 py-1.5 border-t border-gray-200/80 dark:border-white/5 flex items-center justify-between cursor-pointer transition-colors bg-gray-100/90 dark:bg-[#111214] select-none flex-shrink-0 relative">
+            <!-- 左側: アバター + 名前 + ステータス -->
+            <div class="flex items-center gap-2 min-w-0 flex-1 pl-0.5">
+              <div class="avatar-placeholder relative w-8 h-8 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
                 <div class="status-indicator status-online" id="userPanelStatus"></div>
               </div>
-              <div class="user-panel-info flex flex-col min-w-0 flex-1">
-                <div class="user-panel-name text-xs font-bold truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[10px] font-medium truncate" id="userPanelId">オンライン</div>
+              <div class="user-panel-info flex flex-col min-w-0 flex-1 leading-tight">
+                <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-white truncate" id="userPanelName">User</div>
+                <div class="user-panel-id text-[11px] font-medium text-emerald-600 dark:text-emerald-400 truncate" id="userPanelId">オンライン</div>
               </div>
             </div>
-            <div class="flex items-center gap-0.5 flex-shrink-0" onclick="event.stopPropagation()">
-              <button id="userPanelMicBtn" onclick="window.toggleUserPanelMic(event)"
-                class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="マイクミュート">
-                <i class="fas fa-microphone text-xs" id="userPanelMicIcon"></i>
-              </button>
-              <button id="userPanelDeafenBtn" onclick="window.toggleUserPanelDeafen(event)"
-                class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="スピーカーミュート">
-                <i class="fas fa-headphones text-xs" id="userPanelDeafenIcon"></i>
-              </button>
+            <!-- 右側: Discord風コントロールボタン群 (マイク^, ヘッドフォンv, 設定) -->
+            <div class="flex items-center gap-0.5 flex-shrink-0 pr-0.5" onclick="event.stopPropagation()">
+              <!-- マイクボタン (本体クリックでミュート + 矢印でメニュー展開) -->
+              <div class="user-panel-ctrl-wrap flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                <button id="userPanelMicBtn" onclick="window.toggleUserPanelMic(event)"
+                  class="user-panel-ctrl-btn p-1.5 rounded-l-md flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors" title="マイクミュート">
+                  <span id="userPanelMicIconWrap" class="relative inline-flex items-center justify-center w-4 h-4">
+                    <i class="fas fa-microphone text-xs" id="userPanelMicIcon"></i>
+                    <span id="userPanelMicSlash" class="absolute inset-0 hidden items-center justify-center pointer-events-none">
+                      <svg class="w-4 h-4 text-[#da373c]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="3" x2="21" y2="21"/></svg>
+                    </span>
+                  </span>
+                </button>
+                <button id="userPanelMicMenuBtn" onclick="window.toggleUserAudioQuickMenu(event, 'input')"
+                  class="user-panel-chevron-btn p-1 pr-1.5 rounded-r-md text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors" title="入力デバイス設定">
+                  <i class="fas fa-chevron-up text-[9px]"></i>
+                </button>
+              </div>
+              <!-- スピーカー/ヘッドフォンボタン (本体クリックでディフン + 矢印でメニュー展開) -->
+              <div class="user-panel-ctrl-wrap flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                <button id="userPanelDeafenBtn" onclick="window.toggleUserPanelDeafen(event)"
+                  class="user-panel-ctrl-btn p-1.5 rounded-l-md flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors" title="スピーカーミュート">
+                  <span id="userPanelDeafenIconWrap" class="relative inline-flex items-center justify-center w-4 h-4">
+                    <i class="fas fa-headphones text-xs" id="userPanelDeafenIcon"></i>
+                    <span id="userPanelDeafenSlash" class="absolute inset-0 hidden items-center justify-center pointer-events-none">
+                      <svg class="w-4 h-4 text-[#da373c]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="3" x2="21" y2="21"/></svg>
+                    </span>
+                  </span>
+                </button>
+                <button id="userPanelDeafenMenuBtn" onclick="window.toggleUserAudioQuickMenu(event, 'output')"
+                  class="user-panel-chevron-btn p-1 pr-1.5 rounded-r-md text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors" title="出力デバイス設定">
+                  <i class="fas fa-chevron-up text-[9px]"></i>
+                </button>
+              </div>
+              <!-- ユーザー設定 (歯車) -->
               <button id="openSettingsBtn"
-                class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="ユーザー設定">
+                class="w-8 h-8 rounded-md flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="ユーザー設定">
                 <i class="fas fa-cog text-xs"></i>
               </button>
             </div>
+            <!-- Discord input_file_2.png 準拠の音声クイックメニュー -->
+            <div id="userAudioQuickMenu" class="user-audio-quick-menu hidden absolute bottom-[58px] right-2 w-[270px] bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/10 p-2 z-[999] text-xs font-semibold select-none" onclick="event.stopPropagation()">
+              <div class="p-1 space-y-1">
+                <!-- 入力デバイス -->
+                <div class="relative group/dev">
+                  <button type="button" id="qaInputDeviceRow" onclick="window.toggleDeviceSubMenu('input')" class="w-full flex items-center justify-between p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-800 dark:text-gray-200 transition-colors text-left cursor-pointer">
+                    <div class="min-w-0 flex-1 mr-2">
+                      <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">入力デバイス</div>
+                      <div class="text-xs font-medium truncate text-gray-700 dark:text-gray-300" id="qaSelectedInputDeviceLabel">既定のマイク</div>
+                    </div>
+                    <i class="fas fa-chevron-right text-[10px] text-gray-400"></i>
+                  </button>
+                  <div id="qaInputDeviceSubmenu" class="hidden pl-2 pt-1 pb-1 space-y-0.5 border-l-2 border-indigo-500/30 ml-2 mt-0.5 max-h-36 overflow-y-auto"></div>
+                </div>
+                <!-- 出力デバイス -->
+                <div class="relative group/dev">
+                  <button type="button" id="qaOutputDeviceRow" onclick="window.toggleDeviceSubMenu('output')" class="w-full flex items-center justify-between p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 text-gray-800 dark:text-gray-200 transition-colors text-left cursor-pointer">
+                    <div class="min-w-0 flex-1 mr-2">
+                      <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">出力デバイス</div>
+                      <div class="text-xs font-medium truncate text-gray-700 dark:text-gray-300" id="qaSelectedOutputDeviceLabel">既定のスピーカー</div>
+                    </div>
+                    <i class="fas fa-chevron-right text-[10px] text-gray-400"></i>
+                  </button>
+                  <div id="qaOutputDeviceSubmenu" class="hidden pl-2 pt-1 pb-1 space-y-0.5 border-l-2 border-indigo-500/30 ml-2 mt-0.5 max-h-36 overflow-y-auto"></div>
+                </div>
+                <div class="h-px bg-gray-200 dark:bg-white/5 my-1"></div>
+                <!-- 入力音量スライダー (input_file_2.png 準拠) -->
+                <div class="px-2 py-1.5 space-y-1.5">
+                  <div class="flex items-center justify-between text-xs font-bold text-gray-800 dark:text-gray-200">
+                    <span>入力音量</span>
+                    <span id="qaInputVolumeValue" class="text-[10px] font-mono text-gray-400">100%</span>
+                  </div>
+                  <input type="range" id="qaInputVolumeSlider" min="0" max="100" value="100" oninput="window.handleInputVolumeChange(this.value)" class="w-full h-1.5 bg-gray-200 dark:bg-black/40 rounded-lg appearance-none cursor-pointer accent-[#5865f2]" />
+                </div>
+                <div class="h-px bg-gray-200 dark:bg-white/5 my-1"></div>
+                <!-- 音声設定ボタン -->
+                <button type="button" onclick="window.closeUserAudioQuickMenu(); window.toggleCallDeviceMenu(event);" class="w-full flex items-center gap-2 p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl text-left text-gray-800 dark:text-gray-200 transition-colors cursor-pointer">
+                  <i class="fas fa-cog w-4 text-center text-gray-400"></i>
+                  <span>音声設定</span>
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-
-        <!-- リサイズハンドル -->
-        <div id="resizer"></div>
+          </div>
+          <!-- リサイズハンドル -->
+          <div id="resizer"></div>
 
         <!-- Discord風 DM/フレンドメインビュー (吹き出しマーク押下時に表示) -->
         <div id="discordDmHomeView" class="flex-1 hidden md:flex flex-col overflow-hidden select-none relative min-w-0 bg-[#f8fafc] dark:bg-[#313338]">
@@ -3710,11 +3821,13 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
   </script>
-  <script type="module" src="js/main.js?v=1.1.230"></script>
+  <script type="module" src="js/main.js?v=1.1.231"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

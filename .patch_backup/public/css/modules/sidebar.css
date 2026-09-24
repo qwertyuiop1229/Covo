@@ -1863,8 +1863,6 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
       width: 100% !important;
       min-height: 100dvh !important;
     }
-
----
     /* ----------------------------------- */
 /* ================================================================
    VOICE CHANNEL — サイドバー・VCバー・チャンネルタイプ CSS

@@ -195,6 +195,18 @@ function isTransientTelemetryError(args) {
       str.includes('requested device not found') ||
       str.includes('notfounderror') ||
       str.includes('devicesnotfounderror') ||
+      str.includes('client is offline') ||
+      str.includes('failed to get document because the client is offline') ||
+      str.includes('could not reach cloud firestore backend') ||
+      str.includes('network-request-failed') ||
+      str.includes('fetching auth token failed') ||
+      str.includes('rtdb sdk read warning: timeout') ||
+      str.includes('wakelock取得失敗: permission was denied') ||
+      str.includes('permission was denied') ||
+      str.includes('切断検知') ||
+      str.includes('openpastversionsmodal is not defined') ||
+      str.includes('emergencycheckupdate is not defined') ||
+      str.includes('pdfjslib is not defined') ||
       str.includes('到着を待機します') ||
       str.includes('dm鍵を生成済みです') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
@@ -602,6 +614,8 @@ function loadPastVersionsPage(...args) { return window.loadPastVersionsPage ? wi
 function installPastRelease(...args) { return window.installPastRelease ? window.installPastRelease(...args) : null; }
 function showAnnouncementModal(...args) { return window.showAnnouncementModal ? window.showAnnouncementModal(...args) : null; }
 function forceRestartNow(...args) { return window.forceRestartNow ? window.forceRestartNow(...args) : null; }
+function openPastVersionsModal(...args) { return window.openPastVersionsModal ? window.openPastVersionsModal(...args) : null; }
+function emergencyCheckUpdate(...args) { return window.emergencyCheckUpdate ? window.emergencyCheckUpdate(...args) : null; }
 function updateThemeSelectorUI(...args) { return window.updateThemeSelectorUI ? window.updateThemeSelectorUI(...args) : null; }
 function closePinSetupModal(...args) { return window.closePinSetupModal ? window.closePinSetupModal(...args) : null; }
 function changeLockGraceTimeout(...args) { return window.changeLockGraceTimeout ? window.changeLockGraceTimeout(...args) : null; }
@@ -1025,10 +1039,38 @@ function initializeFirebase() {
           const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
           const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await withTimeout(
             Promise.all([
-              getDoc(adminDocRef).catch(e => { console.error("Admin check error:", e); return null; }),
-              getDoc(configRef).catch(e => { console.error("allowedEmails check error:", e); return null; }),
-              getDoc(listAdminRef).catch(e => { console.error("list admin check error:", e); return null; }),
-              getDoc(userProfileRef).catch(e => { console.error("profile check error:", e); return null; })
+              getDoc(adminDocRef).catch(e => {
+                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
+                  console.warn("Admin check skipped (offline mode)");
+                } else {
+                  console.error("Admin check error:", e);
+                }
+                return null;
+              }),
+              getDoc(configRef).catch(e => {
+                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
+                  console.warn("allowedEmails check skipped (offline mode)");
+                } else {
+                  console.error("allowedEmails check error:", e);
+                }
+                return null;
+              }),
+              getDoc(listAdminRef).catch(e => {
+                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
+                  console.warn("list admin check skipped (offline mode)");
+                } else {
+                  console.error("list admin check error:", e);
+                }
+                return null;
+              }),
+              getDoc(userProfileRef).catch(e => {
+                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
+                  console.warn("profile check skipped (offline mode)");
+                } else {
+                  console.error("profile check error:", e);
+                }
+                return null;
+              })
             ]),
             3000,
             [null, null, null, null]
@@ -2967,7 +3009,7 @@ window.loadErrorTelemetry = async function () {
       if (rtdb) {
         const snap = await Promise.race([
           get(ref(rtdb, `artifacts/${appId}/error_reports`)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
         ]);
         if (snap && snap.exists()) {
           const val = snap.val() || {};
@@ -2987,7 +3029,10 @@ window.loadErrorTelemetry = async function () {
         }
       }
     } catch (rtdbErr) {
-      console.warn('[loadErrorTelemetry] RTDB SDK read warning:', rtdbErr);
+      // ログ出力による自爆・再集約ループを防ぐため debug レベルで静かに処理
+      if (window.__covo_native_console__?.debug) {
+        window.__covo_native_console__.debug('[loadErrorTelemetry] RTDB SDK read skipped, fallback to REST/Worker:', rtdbErr?.message || rtdbErr);
+      }
     }
     // 4. RTDB REST API からの取得フォールバック (SDK接続遅延時)
     if (!fetchedFromRtdbSdk) {
@@ -5268,18 +5313,21 @@ async function startPresenceSystem() {
   if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
   _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
 
+  // 起動時に即座にオンライン状態を初期送信 (RTDBが接続待ちの間も確実にキューイング＆Firestoreバックアップ)
+  _lastReportedStatusStr = null;
+  const initialPresenceState = document.visibilityState === 'hidden' ? 'away' : 'online';
+  updateUserStatus(initialPresenceState).catch(() => {});
+
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
     const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue, off } =
       await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-
     // 既存リスナーのクリーンアップ（多重登録による連続ログ・多重送信を完全防止）
     if (window._connectedRefUnsub) {
       window._connectedRefUnsub();
       window._connectedRefUnsub = null;
     }
-
     const connectedRef = ref(rtdb, '.info/connected');
     const onConnected = async (snap) => {
       if (snap.val() === true) {
@@ -5292,7 +5340,6 @@ async function startPresenceSystem() {
           nickname: userNickname,
           avatarUrl: userAvatarUrl || null
         });
-
         // ログ出力のデバウンス（3秒以内の連続出力抑止）
         const now = Date.now();
         window._lastConnectedLogTime = window._lastConnectedLogTime || 0;
@@ -5300,7 +5347,6 @@ async function startPresenceSystem() {
           window._lastConnectedLogTime = now;
           console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
         }
-
         // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
         _lastReportedStatusStr = null;
         const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
@@ -5314,7 +5360,6 @@ async function startPresenceSystem() {
   } catch (e) {
     console.warn('[RTDB] presence setup failed:', e);
   }
-
   resetAwayTimer();
   // startHeartbeat() はRTDB onDisconnect経由のため不要
   document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -7372,6 +7417,11 @@ function handleWindowFocus() {
   clearAppBadgeFull();
 }
 function handleWindowBlur() {
+  // Windowsデスクトップ版（Tauri）では、ウィンドウが最小化・非表示されない限り、
+  // 他のウィンドウ（ブラウザやメモ帳など）をクリックしただけで勝手に離席中/オフラインにしない
+  if (isTauri && document.visibilityState === 'visible') {
+    return;
+  }
   updateUserStatus('away');
   stopAwayTimer();
   startOfflineTimer();
@@ -7539,7 +7589,19 @@ async function updateUserStatus(state) {
       payload.customStatus = window._currentUserCustomStatus;
     }
     await update(statusRef, payload);
+    // Firestore の status/{userId} にも二重化保存（万が一のRTDB不通時にも確実にオンラインを維持）
+    if (db) {
+      const fsStatusRef = doc(db, `artifacts/${appId}/status`, userId);
+      setDoc(fsStatusRef, {
+        state: state,
+        last_changed: serverTimestamp(),
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || null,
+        currentRoomId: state === 'online' ? activeChannelId : null
+      }, { merge: true }).catch(() => {});
+    }
   } catch (error) {
+    _lastReportedStatusStr = null;
     console.error('[RTDB] Status update error:', error);
   }
 }
@@ -7859,12 +7921,17 @@ function subscribeToUserStatus() {
         computedState = 'offline';
       }
     }
-    // update own UI status indicator here (自分が最前面アクティブ時は常にオンラインを維持)
+    // update own UI status indicator here (自分が最前面アクティブ時やアプリ表示中はオンラインを安定維持)
     if (u.id === userId) {
-      const isSelfActive = (document.visibilityState === 'visible') && document.hasFocus();
+      const isSelfActive = (document.visibilityState === 'visible');
       const myDisplayState = isSelfActive ? 'online' : computedState;
       const statusElement = document.getElementById('userPanelStatus');
       if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
+      const statusTextElement = document.getElementById('userPanelId');
+      if (statusTextElement) {
+        statusTextElement.textContent = myDisplayState === 'online' ? 'オンライン' : (myDisplayState === 'away' ? '離席中' : 'オフライン');
+        statusTextElement.className = `user-panel-id text-[11px] font-medium truncate ${myDisplayState === 'online' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-500 dark:text-slate-400'}`;
+      }
     }
     return { ...u, computedState };
   });
@@ -10520,28 +10587,42 @@ window.toggleUserPanelMic = async function (e) {
   if (e) e.stopPropagation();
   if (window._voiceEngine && window._voiceEngine.isActive) {
     await window._voiceEngine.toggleMute();
-    return;
+    _isAudioMuted = window._voiceEngine._isMuted;
+  } else {
+    _isAudioMuted = !_isAudioMuted;
   }
-  _isAudioMuted = !_isAudioMuted;
   const micIcon = document.getElementById('userPanelMicIcon');
+  const micSlash = document.getElementById('userPanelMicSlash');
   const micBtn = document.getElementById('userPanelMicBtn');
-  if (micIcon) {
-    micIcon.className = _isAudioMuted ? 'fas fa-microphone-slash text-xs text-rose-500' : 'fas fa-microphone text-xs';
-  }
   if (micBtn) {
+    micBtn.classList.toggle('is-muted', _isAudioMuted);
     micBtn.title = _isAudioMuted ? 'マイクミュート解除' : 'マイクミュート';
   }
+  if (micIcon) {
+    micIcon.className = _isAudioMuted ? 'fas fa-microphone text-xs text-[#da373c]' : 'fas fa-microphone text-xs';
+  }
+  if (micSlash) {
+    micSlash.classList.toggle('hidden', !_isAudioMuted);
+    micSlash.style.display = _isAudioMuted ? 'flex' : 'none';
+  }
 };
+
 window.toggleUserPanelDeafen = function (e) {
   if (e) e.stopPropagation();
   _isUserPanelDeafened = !_isUserPanelDeafened;
   const deafenIcon = document.getElementById('userPanelDeafenIcon');
+  const deafenSlash = document.getElementById('userPanelDeafenSlash');
   const deafenBtn = document.getElementById('userPanelDeafenBtn');
-  if (deafenIcon) {
-    deafenIcon.className = _isUserPanelDeafened ? 'fas fa-headphones-slash text-xs text-rose-500' : 'fas fa-headphones text-xs';
-  }
   if (deafenBtn) {
+    deafenBtn.classList.toggle('is-deafened', _isUserPanelDeafened);
     deafenBtn.title = _isUserPanelDeafened ? 'スピーカーミュート解除' : 'スピーカーミュート';
+  }
+  if (deafenIcon) {
+    deafenIcon.className = _isUserPanelDeafened ? 'fas fa-headphones text-xs text-[#da373c]' : 'fas fa-headphones text-xs';
+  }
+  if (deafenSlash) {
+    deafenSlash.classList.toggle('hidden', !_isUserPanelDeafened);
+    deafenSlash.style.display = _isUserPanelDeafened ? 'flex' : 'none';
   }
   // 全リモート音声のミュート切り替え
   if (window._voiceEngine && window._voiceEngine._audioElements) {
@@ -10551,6 +10632,128 @@ window.toggleUserPanelDeafen = function (e) {
   }
   const remAudio = document.getElementById('remoteAudio');
   if (remAudio) remAudio.muted = _isUserPanelDeafened;
+};
+
+// Discord input_file_2.png 準拠の音声クイックメニュー
+let _activeAudioDevices = { mics: [], speakers: [], selectedMicId: '', selectedSpeakerId: '' };
+window.toggleUserAudioQuickMenu = async function (e, targetType = 'input') {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('userAudioQuickMenu');
+  if (!menu) return;
+  if (!menu.classList.contains('hidden')) {
+    window.closeUserAudioQuickMenu();
+    return;
+  }
+  menu.classList.remove('hidden');
+  // デバイス一覧の取得
+  try {
+    let mics = [], speakers = [];
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+      const devs = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      mics = devs.filter(d => d.kind === 'audioinput');
+      speakers = devs.filter(d => d.kind === 'audiooutput');
+    }
+    _activeAudioDevices.mics = mics;
+    _activeAudioDevices.speakers = speakers;
+    // 初期ラベル設定
+    const inLbl = document.getElementById('qaSelectedInputDeviceLabel');
+    const outLbl = document.getElementById('qaSelectedOutputDeviceLabel');
+    if (inLbl) inLbl.textContent = mics[0]?.label || '既定のマイク';
+    if (outLbl) outLbl.textContent = speakers[0]?.label || '既定のスピーカー';
+  } catch (_) {}
+  if (targetType === 'output') {
+    window.toggleDeviceSubMenu('output');
+  }
+};
+
+window.closeUserAudioQuickMenu = function () {
+  const menu = document.getElementById('userAudioQuickMenu');
+  if (menu) menu.classList.add('hidden');
+  document.getElementById('qaInputDeviceSubmenu')?.classList.add('hidden');
+  document.getElementById('qaOutputDeviceSubmenu')?.classList.add('hidden');
+};
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#userAudioQuickMenu') && !e.target.closest('#userPanelMicMenuBtn') && !e.target.closest('#userPanelDeafenMenuBtn')) {
+    window.closeUserAudioQuickMenu();
+  }
+});
+
+window.toggleDeviceSubMenu = function (type) {
+  const subIn = document.getElementById('qaInputDeviceSubmenu');
+  const subOut = document.getElementById('qaOutputDeviceSubmenu');
+  if (type === 'input') {
+    if (!subIn) return;
+    const isHidden = subIn.classList.contains('hidden');
+    if (subOut) subOut.classList.add('hidden');
+    if (isHidden) {
+      subIn.innerHTML = _activeAudioDevices.mics.length > 0
+        ? _activeAudioDevices.mics.map(m => `
+            <div onclick="window.selectAudioDevice('input', '${m.deviceId}', '${escapeHtml(m.label || 'マイク')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+              <span class="truncate">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</span>
+              ${m.deviceId === _activeAudioDevices.selectedMicId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
+            </div>
+          `).join('')
+        : '<div class="p-1 text-[10px] text-gray-400">マイクが見つかりません</div>';
+      subIn.classList.remove('hidden');
+    } else {
+      subIn.classList.add('hidden');
+    }
+  } else {
+    if (!subOut) return;
+    const isHidden = subOut.classList.contains('hidden');
+    if (subIn) subIn.classList.add('hidden');
+    if (isHidden) {
+      subOut.innerHTML = _activeAudioDevices.speakers.length > 0
+        ? _activeAudioDevices.speakers.map(s => `
+            <div onclick="window.selectAudioDevice('output', '${s.deviceId}', '${escapeHtml(s.label || 'スピーカー')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+              <span class="truncate">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</span>
+              ${s.deviceId === _activeAudioDevices.selectedSpeakerId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
+            </div>
+          `).join('')
+        : '<div class="p-1 text-[10px] text-gray-400">スピーカーが見つかりません</div>';
+      subOut.classList.remove('hidden');
+    } else {
+      subOut.classList.add('hidden');
+    }
+  }
+};
+
+window.selectAudioDevice = async function (kind, deviceId, label) {
+  if (kind === 'input') {
+    _activeAudioDevices.selectedMicId = deviceId;
+    const inLbl = document.getElementById('qaSelectedInputDeviceLabel');
+    if (inLbl) inLbl.textContent = label;
+    if (window._voiceEngine && window._voiceEngine.isActive && typeof window._voiceEngine.switchMicrophone === 'function') {
+      await window._voiceEngine.switchMicrophone(deviceId).catch(() => {});
+    }
+    document.getElementById('qaInputDeviceSubmenu')?.classList.add('hidden');
+    alertMessage(`マイクを「${label}」に切り替えました`, 'success');
+  } else {
+    _activeAudioDevices.selectedSpeakerId = deviceId;
+    const outLbl = document.getElementById('qaSelectedOutputDeviceLabel');
+    if (outLbl) outLbl.textContent = label;
+    if (window._voiceEngine && window._voiceEngine.isActive && typeof window._voiceEngine.switchSpeaker === 'function') {
+      await window._voiceEngine.switchSpeaker(deviceId).catch(() => {});
+    }
+    document.getElementById('qaOutputDeviceSubmenu')?.classList.add('hidden');
+    alertMessage(`スピーカーを「${label}」に切り替えました`, 'success');
+  }
+};
+
+window.handleInputVolumeChange = function (val) {
+  const num = parseInt(val, 10) || 100;
+  const valEl = document.getElementById('qaInputVolumeValue');
+  if (valEl) valEl.textContent = `${num}%`;
+  // Web Audio または VoiceEngine のゲイン調整
+  if (window._voiceEngine && window._voiceEngine._p2pAudioContext) {
+    try {
+      const gainVal = num / 100;
+      if (window._voiceEngine._localGainNode) {
+        window._voiceEngine._localGainNode.gain.setValueAtTime(gainVal, window._voiceEngine._p2pAudioContext.currentTime);
+      }
+    } catch (_) {}
+  }
 };
 
 // 管理者向け：パスワードなしでサーバーに参加
@@ -26218,7 +26421,10 @@ class VoiceEngine {
       this._wakeLock = await navigator.wakeLock.request('screen');
       this._wakeLock.addEventListener('release', () => { this._wakeLock = null; });
     } catch (e) {
-      console.warn('[VoiceEngine] WakeLock取得失敗:', e);
+      // iOS Safari 等でユーザー操作直後以外の WakeLock 要求が NotAllowedError となるため静かに無視
+      if (e.name !== 'NotAllowedError' && !String(e.message || '').includes('Permission was denied')) {
+        console.warn('[VoiceEngine] WakeLock取得失敗:', e);
+      }
     }
     }
     async _releaseWakeLock() {
@@ -26912,7 +27118,9 @@ class VoiceEngine {
         // 5秒待って回復しなければリスタート
         peerInfo.iceTimer = setTimeout(() => {
           if (pc.iceConnectionState === 'disconnected') {
-            console.warn(`[VoiceEngine] 🔌 切断検知 (${peerUid.slice(0,8)}) → ICE Restart`);
+            if (window.__covo_native_console__?.log) {
+              window.__covo_native_console__.log(`[VoiceEngine] 🔌 一時切断検知 (${peerUid.slice(0,8)}) → ICE Restart`);
+            }
             this._iceRestart(peerUid);
           }
         }, 5000);

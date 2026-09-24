@@ -748,6 +748,21 @@ let lastNotificationTime = 0;
 let lastNotificationKey = "";
 let lastNotificationBody = "";
 let lastNotificationRoomId = "";
+let _isModalRecoveryKeyVisible = false;
+let _scanUnreadBusy = false;
+let _beaconSent = false;
+let _idTokenRefreshTimer = null;
+let _lastReportedStatusStr = null;
+let _rtdbStatusRef = null;
+let _rtdbOnDisconnect = null;
+let isMentionPopupOpen = false;
+let mentionSelectedIndex = 0;
+let mentionUsers = [];
+let mentionSearchString = "";
+let isPinnedMessagesExpanded = false;
+let isPinnedMessagesMinimized = false;
+let _stickerActiveCat = 'covo';
+let _skTabsBound = false;
 let activeMigrationSession = null;
 let activeMigrationCountdown = null;
 let activeMigrationPeer = null;
@@ -2438,7 +2453,7 @@ window.submitChangePasswordModalAction = async function () {
 };
 
 // ============ 緊急リカバリーキー管理モーダル コントローラー ============
-let _isModalRecoveryKeyVisible = false;
+_isModalRecoveryKeyVisible = false;
 window.openRecoveryKeyManagerModal = function () {
   const modal = document.getElementById('recoveryKeyManagerModal');
   if (!modal) return;
@@ -4504,13 +4519,16 @@ async function removeListAdminEmail(email) {
 // ★ ショートカットから呼ばれるフォーカス関数
 window.focusMessageInput = function () {
   if (currentRoomId) {
-    messageInput.focus();
+    if (messageInput) messageInput.focus();
   } else {
     // ルームを開いていない場合は検索にフォーカス
-    if (searchContainer.classList.contains("hidden")) {
-      toggleSearchButton.click();
-    } else {
-      searchInput.focus();
+    const sc = document.getElementById("searchContainer");
+    const tsb = document.getElementById("toggleSearchButton");
+    const si = document.getElementById("searchInput");
+    if (sc && sc.classList.contains("hidden")) {
+      if (tsb) tsb.click();
+    } else if (si) {
+      si.focus();
     }
   }
 };
@@ -4807,7 +4825,7 @@ window.goToRoom = function (rid) {
 };
 
 // 全参加サーバーを横断して未読ルームを集計し、通知タブ(スマホ/PC)に一覧表示する。
-let _scanUnreadBusy = false;
+_scanUnreadBusy = false;
 async function scanAllUnreadAndRender() {
   if (_scanUnreadBusy || !userId) return;
   _scanUnreadBusy = true;
@@ -7326,7 +7344,7 @@ async function resyncActiveRoomMessages() {
   }
 }
 
-const handleWindowFocus = () => {
+function handleWindowFocus() {
   _beaconSent = false;
   stopOfflineTimer();
   updateUserStatus('online');
@@ -7352,9 +7370,8 @@ const handleWindowFocus = () => {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
   }
   clearAppBadgeFull();
-};
-
-const handleWindowBlur = () => {
+}
+function handleWindowBlur() {
   updateUserStatus('away');
   stopAwayTimer();
   startOfflineTimer();
@@ -7363,9 +7380,8 @@ const handleWindowBlur = () => {
     try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch (e) { }
     window.__TAURI__.core.invoke('set_badge', { hasUnread: globalCount > 0 }).catch(console.error);
   }
-};
-
-const handleVisibilityChange = () => {
+}
+function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') {
     updateUserStatus('away');
     stopAwayTimer();
@@ -7380,12 +7396,10 @@ const handleVisibilityChange = () => {
     if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
     if (currentRoomId || currentDmId) resyncActiveRoomMessages();
   }
-};
-
-const handlePageShow = (e) => {
+}
+function handlePageShow(e) {
   if (e.persisted) handleWindowFocus();
-};
-
+}
 // Tauri ネイティブウィンドウフォーカス & 多重起動復帰イベントの連動
 if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen('window-focused', () => {
@@ -7395,9 +7409,8 @@ if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
     try { handleWindowFocus(); } catch (_) {}
   }).catch(() => {});
 }
-
 // タブ閉じ・ページ離脱時の確実なオフライン化 & 通話クリーンアップ (#57)
-const handlePageClose = (e) => {
+function handlePageClose(e) {
   if ((typeof _callId !== 'undefined' && _callId) || (typeof _agoraClient !== 'undefined' && _agoraClient)) {
     try { endCall(false); } catch (_) {}
   }
@@ -7412,10 +7425,10 @@ const handlePageClose = (e) => {
 };
 
 // ビーコン送信済みフラグ（visibilitychange:hidden → pagehide/freeze の重複送信防止）
-let _beaconSent = false;
+_beaconSent = false;
 // Worker認証用: Firebase IDトークンをキャッシュ（sendBeaconは同期のため事前取得が必要）
 _cachedIdToken = null;
-let _idTokenRefreshTimer = null;
+_idTokenRefreshTimer = null;
 
 async function refreshCachedIdToken() {
   try {
@@ -7458,11 +7471,11 @@ function sendOfflineBeacon() {
   } catch (e) { }
 }
 
-let _lastReportedStatusStr = null;
+_lastReportedStatusStr = null;
 // RTDB presence管理
 let _rtdb = null;
-let _rtdbStatusRef = null;
-let _rtdbOnDisconnect = null;
+_rtdbStatusRef = null;
+_rtdbOnDisconnect = null;
 
 async function _getOrInitRTDB() {
   if (_rtdb) return _rtdb;
@@ -10000,22 +10013,21 @@ window.initiateMigrationReceive = async function() {
           } else if (packet.type === 'END') {
             if (progressBar) progressBar.style.width = '100%';
             if (statusEl) statusEl.textContent = 'データをローカルデータベースへ復元中...';
-            
             const fullJson = receivedChunks.join('');
             const bundle = JSON.parse(fullJson);
-            
             await LocalStore.restoreAllLocalData(bundle);
             if (statusEl) statusEl.textContent = '復元完了！';
             alertMessage("端末データ移行が完了しました！過去ログと設定がすべて復元されました。", "success");
-            
             setTimeout(() => {
               cancelMigrationReceive();
               location.reload();
             }, 1500);
           }
-        } catch (msgErr) {
+          } catch (msgErr) {
           console.error('Migration chunk processing error:', msgErr);
-        }
+          if (statusEl) statusEl.textContent = 'データの解析・復元に失敗しました';
+          alertMessage('データの解析または復元中にエラーが発生しました', 'error');
+          }
       };
     };
 
@@ -14896,7 +14908,7 @@ async function loadCurrentServerStamps() {
   }
 }
 const SK_RECENT = 'covo_sticker_recent', SK_FAV = 'covo_sticker_fav';
-let _stickerActiveCat = 'covo';
+_stickerActiveCat = 'covo';
 
 // Twemoji を「生きているCDN(jsDelivr)」のSVGで描画する共通関数。
 // 旧デフォルトの maxcdn は閉鎖済みで画像が404→OS純正絵文字に戻ってしまうため base を明示する。
@@ -14915,7 +14927,7 @@ function _skToggleFav(emoji) {
   _skRenderGrid(_stickerActiveCat);
 }
 
-let _skTabsBound = false;
+_skTabsBound = false;
 function _skRenderTabs() {
   const tabs = document.getElementById('stickerTabs');
   tabs.innerHTML = '';
@@ -16332,10 +16344,10 @@ const plusMenuButton = document.getElementById("plusMenuButton");
 const plusMenuPopup = document.getElementById("plusMenuPopup");
 const menuMentionBtn = document.getElementById("menuMentionBtn");
 const mentionPopup = document.getElementById("mentionPopup");
-let mentionSearchString = "";
-let isMentionPopupOpen = false;
-let mentionSelectedIndex = 0;
-let mentionUsers = [];
+mentionSearchString = "";
+isMentionPopupOpen = false;
+mentionSelectedIndex = 0;
+mentionUsers = [];
 
 function getRecentlyMentioned() {
   try {
@@ -19810,9 +19822,8 @@ if (pinMessageBtn) {
   });
 }
 
-let isPinnedMessagesExpanded = false;
-let isPinnedMessagesMinimized = false;
-
+isPinnedMessagesExpanded = false;
+isPinnedMessagesMinimized = false;
 function renderPinnedMessages() {
   if (!currentRoomId && !currentDmId) {
     currentPinnedMessages = [];
