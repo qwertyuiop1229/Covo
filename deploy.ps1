@@ -103,11 +103,45 @@ git tag $tagName
 Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
 firebase deploy --only "hosting,firestore:rules,database"
 
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# GitHub Actions real-time build monitor
+
+
 # [5/5] git push
 Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
 git push origin HEAD --tags
 
 Write-Host ''
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# Repomix によるコードベース集約パッケージの自動生成
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+try {
+    npx --yes repomix
+    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
+} catch {
+    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
+}
+Write-Host ''
+
+# GitHub Actions real-time build monitor
 Write-Host '====================================' -ForegroundColor Cyan
 Write-Host '  Deploy complete!' -ForegroundColor Green
 Write-Host "  Version : $newVersion" -ForegroundColor Green

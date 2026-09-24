@@ -1403,19 +1403,23 @@ function initializeFirebase() {
 function updateUserPanelUI() {
   if (userNickname) {
     userPanelName.textContent = userNickname;
-    userPanelId.textContent = `#${userId.substring(0, 4)}`;
-
+    const curStatus = window._currentUserCustomStatus;
+    if (curStatus && curStatus.text) {
+      userPanelId.textContent = `${curStatus.emoji || '💬'} ${curStatus.text}`;
+      userPanelId.className = 'user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate';
+    } else {
+      userPanelId.textContent = 'オンライン';
+      userPanelId.className = 'user-panel-id text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate';
+    }
     if (userAvatarUrl) {
       __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
     } else {
       userPanelAvatar.innerHTML = userNickname.charAt(0).toUpperCase();
     }
-
     const stat = document.createElement('div');
     stat.id = 'userPanelStatus';
     stat.className = 'status-indicator status-online';
     userPanelAvatar.appendChild(stat);
-
     // サーバーリスト画面のアバターボタンも更新
     updateServerListUserBtn();
   }
@@ -22531,8 +22535,11 @@ window.toggleCamera = async function () {
   const muteBtn = document.getElementById("callMuteBtn") || document.getElementById("muteButton");
   const muteIcon = document.getElementById("callMuteIcon");
   const pipMuteBtn = document.getElementById("callPipMuteBtn");
-  if (muteBtn) { muteBtn.classList.remove("active", "muted"); muteBtn.title = "マイクミュート切替"; }
-  if (muteIcon) { muteIcon.className = "fas fa-microphone"; }
+  if (muteBtn) { muteBtn.classList.remove("active", "muted", "is-muted"); muteBtn.title = "マイクミュート切替"; }
+  if (muteIcon) { muteIcon.className = "fas fa-microphone text-xs"; }
+  const upMicSlash = document.getElementById('userPanelMicSlash');
+  if (upMicSlash) { upMicSlash.classList.add('hidden'); upMicSlash.style.display = 'none'; }
+  document.getElementById('userPanelMicBtn')?.classList.remove('is-muted');
   if (pipMuteBtn) { pipMuteBtn.classList.remove("active"); pipMuteBtn.innerHTML = '<i class="fas fa-microphone"></i>'; }
   const camBtn = document.getElementById("callVideoBtn") || document.getElementById("callCameraBtn");
   if (camBtn) { camBtn.classList.remove("active"); camBtn.innerHTML = '<i class="fas fa-video"></i>'; camBtn.title = "カメラ (ビデオ)"; }
@@ -27910,10 +27917,20 @@ class VoiceEngine {
   // ================================================================
   _updateMuteUI() {
     const muted = this._isMuted;
-    ['vcBarMuteIcon','vcGridMuteIcon','callMuteIcon','userPanelMicIcon'].forEach(id => {
+    ['vcBarMuteIcon','vcGridMuteIcon','callMuteIcon'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.className = muted ? 'fas fa-microphone-slash' + (id === 'userPanelMicIcon' ? ' text-xs text-rose-500' : '') : 'fas fa-microphone' + (id === 'userPanelMicIcon' ? ' text-xs' : '');
+      if (el) el.className = muted ? 'fas fa-microphone-slash text-xs text-rose-500' : 'fas fa-microphone text-xs';
     });
+    const upMicIcon = document.getElementById('userPanelMicIcon');
+    if (upMicIcon) {
+      upMicIcon.className = muted ? 'fas fa-microphone text-xs text-[#da373c]' : 'fas fa-microphone text-xs';
+    }
+    const upMicSlash = document.getElementById('userPanelMicSlash');
+    if (upMicSlash) {
+      upMicSlash.classList.toggle('hidden', !muted);
+      upMicSlash.style.display = muted ? 'flex' : 'none';
+    }
+    document.getElementById('userPanelMicBtn')?.classList.toggle('is-muted', muted);
     ['vcBarMuteBtn','vcGridMuteBtn','callMuteBtn','userPanelMicBtn'].forEach(id => {
       document.getElementById(id)?.classList.toggle('muted', muted);
       document.getElementById(id)?.classList.toggle('active', muted);

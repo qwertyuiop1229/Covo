@@ -1,9 +1,7 @@
 {
-  "date": "2026-09-24T08:15:52.084Z",
+  "date": "2026-09-24T08:22:36.443Z",
   "files": [
-    "src-tauri/tauri.conf.json",
-    "public/index.html",
-    "public/css/modules/sidebar.css",
+    "deploy.ps1",
     "public/js/main.js"
   ]
 }
