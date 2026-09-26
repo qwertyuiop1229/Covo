@@ -125,7 +125,8 @@ service cloud.firestore {
       match /recovery_index/{emailHash} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
       }
 
       // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
@@ -239,10 +240,11 @@ service cloud.firestore {
         }
       }
 
-      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定)
+      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定、削除後の完了読み取りを許容)
       match /p2p_log_sync/{syncId} {
         allow read, delete: if isAuthenticated() && (
           isGlobalAdmin(appId) ||
+          resource == null ||
           (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
           (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
         );

@@ -128,7 +128,7 @@
   background-color: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   color: #0f172a;
-  border-top-left-radius: 8px !important;
+  border-top-left-radius: 12px !important;
 }
 #serverNameDisplay {
   color: #0f172a !important;
@@ -194,6 +194,11 @@ body.discord-dark-theme #userPanel {
 @media (min-width: 769px) {
   body.discord-ui-mode #discordServerNav {
     padding-bottom: 74px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
+    z-index: 20 !important;
+  }
+  body.discord-ui-mode #sidebar {
+    z-index: 35 !important;
+    overflow: visible !important; /* userPanelの左端アバターがサーバー一覧に切り落とされるのを完全防止 */
   }
   body.discord-ui-mode #sidebar #userPanel {
     position: absolute !important;
@@ -201,7 +206,7 @@ body.discord-dark-theme #userPanel {
     left: -64px !important; /* 左のサーバーナビの下まで伸びて画面左端から8pxの位置にフィット */
     right: 8px !important;  /* サイドバー右端から8pxの位置 */
     width: auto !important;
-    z-index: 45 !important;
+    z-index: 50 !important;
     border-radius: 1rem !important; /* 角丸を美しく維持 */
     margin: 0 !important;
   }
@@ -528,10 +533,11 @@ body.discord-dark-theme #openSettingsBtn:hover {
       display: flex !important;
       padding-top: 4px !important; /* Discord本家準拠: DMアイコン上端とサーバーヘッダー高さを完全一致 */
     }
-    /* Discord本家準拠: PC表示時にチャンネルサイドバー左上を丸角(8px)にして上部タイトルバーと自然に調和 */
+    /* Discord本家準拠: PC表示時にチャンネルサイドバー左上を丸角(12px)にして上部タイトルバーと自然に調和 */
     body.discord-ui-mode #sidebar {
-      border-top-left-radius: 8px !important;
-      overflow: hidden !important;
+      border-top-left-radius: 12px !important;
+      overflow: visible !important;
+      z-index: 35 !important;
     }
 
     body.discord-ui-mode #backToServerListBtn {
@@ -1057,8 +1063,39 @@ body.discord-dark-theme #openSettingsBtn:hover {
       color: #dbdee1 !important;
     }
 
+    #discordTitleBar {
+      display: flex !important;
+      width: 100%;
+      height: 30px;
+      min-height: 30px;
+      user-select: none;
+      -webkit-user-select: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 50;
+      flex-shrink: 0;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      position: relative;
+    }
+
+
     /* =========================================================================
        Discord風 タイトルバー / トップバー (Windows版 & Web版 共通)
+    #discordTitleBar {
+      display: flex !important;
+      width: 100%;
+      height: 30px;
+      min-height: 30px;
+      user-select: none;
+      -webkit-user-select: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 50;
+      flex-shrink: 0;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      position: relative;
+      border-top-left-radius: 12px;
+    }
        ========================================================================= */
     #discordTitleBar {
       display: flex !important;
@@ -1191,8 +1228,9 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #111827 !important;
       color: #cbd5e1 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-      border-top-left-radius: 8px !important;
-      overflow: hidden !important;
+      border-top-left-radius: 12px !important;
+      overflow: visible !important;
+      z-index: 35 !important;
     }
     body.dark-server-theme.discord-ui-mode #serverHeader,
     body.dark-server-theme.discord-ui-mode #currentRoomHeader,
@@ -1325,8 +1363,9 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #2b2d31 !important;
       color: #dbdee1 !important;
       border-right: 1px solid #1f2023 !important;
-      border-top-left-radius: 8px !important;
-      overflow: hidden !important;
+      border-top-left-radius: 12px !important;
+      overflow: visible !important;
+      z-index: 35 !important;
     }
     body.discord-dark-theme.discord-ui-mode #serverHeader,
     body.discord-dark-theme.discord-ui-mode #currentRoomHeader,
@@ -1400,8 +1439,9 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #f1f5f9 !important;
       color: #1e293b !important;
       border-right: 1px solid #e2e8f0 !important;
-      border-top-left-radius: 8px !important;
-      overflow: hidden !important;
+      border-top-left-radius: 12px !important;
+      overflow: visible !important;
+      z-index: 35 !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #serverHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #currentRoomHeader,
@@ -1574,7 +1614,8 @@ body.discord-dark-theme #openSettingsBtn:hover {
         min-width: 0 !important;
         border-top-left-radius: 28px !important;
         box-shadow: none !important; /* 下部の余計な影を完全排除 */
-        overflow: hidden !important;
+        overflow: visible !important;
+        z-index: 35 !important;
       }
       body.discord-ui-mode.dark-server-theme #sidebar {
         box-shadow: none !important;

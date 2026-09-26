@@ -158,10 +158,11 @@ service cloud.firestore {
         allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
 
-      // 2. ユーザー情報 (Users & Profiles)
+      // 2. ユーザー情報 (Users & Profiles: IDOR保護 & Stored XSS防止)
       match /users/{userId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId))
+          && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || request.resource.data.avatarUrl == '' || request.resource.data.avatarUrl.matches('^https?://.*') || request.resource.data.avatarUrl.matches('^data:image/.*'));
       }
 
       match /userQuotas/{qUserId} {

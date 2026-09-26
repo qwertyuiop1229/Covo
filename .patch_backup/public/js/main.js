@@ -8574,10 +8574,6 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
     const sb = document.getElementById("sidebar");
     if (sb) sb.classList.remove("mobile-hidden");
   }
-
-  const mobileBottomNav = document.getElementById("mobileBottomNav");
-  if (mobileBottomNav) mobileBottomNav.style.display = "flex";
-
   const appContainer = document.getElementById("appContainer");
   if (appContainer) appContainer.classList.remove("hidden");
   const serverListScreen = document.getElementById("serverListScreen");
