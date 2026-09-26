@@ -165,27 +165,45 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomTitleText {
 body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
   color: #64748b !important;
 }
-/* ユーザーパネル (Discord風マイページ input_file_2.png 準拠) */
+/* ユーザーパネル (Discord風マイページ input_file_3.png 角丸カード準拠) */
 #userPanel {
-  background-color: #ebedef;
-  border-top: 1px solid #e2e8f0;
-  box-shadow: none;
-  padding: 0 0.5rem;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  padding: 0 0.65rem;
   height: 54px;
   min-height: 54px;
   display: flex;
   align-items: center;
-  border-radius: 0;
+  border-radius: 1rem !important; /* 角丸を完全に復元 */
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 body.dark-server-theme #userPanel {
   background-color: #162032 !important;
-  border-top-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
 }
 body.discord-dark-theme #userPanel {
-  background-color: #111214 !important;
-  border-top-color: #1f2023 !important;
+  background-color: #2b2d31 !important;
+  border-color: #383a40 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+}
+/* PC DiscordUIモード時: 左端のサーバー一覧レール(72px)の下まで横に大きく伸ばす */
+@media (min-width: 769px) {
+  body.discord-ui-mode #discordServerNav {
+    padding-bottom: 74px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
+  }
+  body.discord-ui-mode #sidebar #userPanel {
+    position: absolute !important;
+    bottom: 8px !important;
+    left: -64px !important; /* 左のサーバーナビの下まで伸びて画面左端から8pxの位置にフィット */
+    right: 8px !important;  /* サイドバー右端から8pxの位置 */
+    width: auto !important;
+    z-index: 45 !important;
+    border-radius: 1rem !important; /* 角丸を美しく維持 */
+    margin: 0 !important;
+  }
 }
 .user-panel-info {
   flex: 1;
@@ -1575,20 +1593,20 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #sidebar #userPanel {
         position: absolute !important;
         bottom: max(10px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100% !important;
+        left: -62px !important;
+        right: 8px !important;
+        width: auto !important;
         z-index: 50 !important;
         background-color: #ffffff !important;
-        border-top: 1px solid #e2e8f0 !important;
-        border-radius: 0 !important;
-        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04) !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 1rem !important; /* モバイルでも角丸を美しく維持 */
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
         margin: 0 !important;
       }
       body.discord-ui-mode.dark-server-theme #sidebar #userPanel {
         background-color: #162032 !important;
-        border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
       }
       /* ルームリスト全体の余白 */
       body.discord-ui-mode #sidebar .overflow-y-auto {

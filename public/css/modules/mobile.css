@@ -104,16 +104,12 @@
        Mobile Bottom Navigation & BottomSheet System
     ============================================= */
     :root {
-      /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-
-      /* ボトムナビゲーションの高さ計算（ベース50px + 下部セーフエリア） */
-      --mnav-base-h: 50px;
-      --mnav-total: calc(var(--mnav-base-h) + var(--safe-bottom));
-    }
+          /* すべてのiPhone / iPad / Android / PWA をサポートする正規Safe Area変数 */
+          --safe-top: env(safe-area-inset-top, 0px);
+          --safe-bottom: env(safe-area-inset-bottom, 0px);
+          --safe-left: env(safe-area-inset-left, 0px);
+          --safe-right: env(safe-area-inset-right, 0px);
+        }
 
     /* 汎用ボトムシート（Drawer）共通スタイル */
     .bottom-sheet-overlay {
@@ -221,51 +217,7 @@
         transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1) !important;
       }
     }
-    .mobile-nav-tab {
-      flex: 1 1 0;
-      height: var(--mnav-base-h);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: rgba(255,255,255,0.5);
-      border: none;
-      background: transparent;
-      padding: 0;
-      margin: 0;
-      transition: color 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      position: relative;
-      line-height: 1;
-    }
-    .mobile-nav-tab.active { color: rgba(255,255,255,0.97); }
-    .mobile-nav-tab i {
-      font-size: 1.1rem;
-      line-height: 1;
-      margin-bottom: 3px;
-    }
-    .mobile-nav-tab span {
-      font-size: 0.64rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      line-height: 1;
-    }
-    .mobile-notif-dot {
-      position: absolute;
-      top: 6px;
-      right: calc(50% - 14px);
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #ef4444;
-      border: 1.5px solid #1f2937;
-    }
-
-    /* チャット画面表示時はボトムナビを確実に完全非表示にして下部余白を消去 */
-    body.in-chat-view #mobileBottomNav {
-      display: none !important;
-    }
+    /* ボトムナビゲーション完全撤去に伴うスタイル整理 */
 
     /* 全画面スクリーン (プロフィール・通知・設定詳細: 最下部ホームバーまで完全カバー) */
     #mobileProfileScreen,
@@ -278,14 +230,7 @@
       box-sizing: border-box !important;
       background: #f8fafc !important;
     }
-    body.has-mobile-nav #mobileProfileScreen,
-    body.has-mobile-nav #mobileNotifScreen,
-    body.has-mobile-nav .mobile-settings-detail {
-      inset: 0 !important;
-      min-height: 100dvh !important;
-      height: 100dvh !important;
-      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
-    }
+    /* ボトムナビ完全撤去に伴い不要な余白クラスを無効化 */
     body.dark-server-theme #mobileProfileScreen,
     body.dark-server-theme #mobileNotifScreen,
     body.dark-server-theme .mobile-settings-detail {
@@ -534,12 +479,6 @@
       #settingsModal {
         display: none !important;
       }
-      #mobileBottomNav {
-        display: flex;
-      }
-      #serverListNotifBtn {
-        display: none !important;
-      }
       /* iOS PWA: body/htmlの背景をボトムナビと完全に同一色にしてツートン割れを根絶 */
       html, body {
         background-color: #0b0f19 !important;
@@ -570,25 +509,7 @@
         background-color: #1a202c !important;
       }
 
-      /* CSS変数で管理されるため、個別の高さ・パディングの上書きは不要 */
-
-      /* ★チャット画面のときだけ、ボトムナビを入力エリアと同じ背景色にして
-         「白い入力欄 ↔ 濃紺ナビ」の色段差（=影に見えていた線）を消す。
-         通常チャット=白、ダークチャット=#1a202c に合わせ、アイコンは濃色に。 */
-      body.in-chat-view #mobileBottomNav {
-        background: #ffffff !important;
-      }
-      body.in-chat-view .mobile-nav-tab { color: #9ca3af !important; }      /* 非アクティブ=薄灰 */
-      body.in-chat-view .mobile-nav-tab.active { color: #1f2937 !important; } /* アクティブ=濃色 */
-      body.in-chat-view .mobile-notif-dot { border-color: #ffffff !important; }
-
-      /* ダークモード+チャット時はナビもチャット背景(#1a202c)に合わせ、アイコンは明色 */
-      body.in-chat-view.dark-server-theme #mobileBottomNav {
-        background: #1a202c !important;
-      }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab { color: rgba(255,255,255,0.45) !important; }
-      body.in-chat-view.dark-server-theme .mobile-nav-tab.active { color: rgba(255,255,255,0.95) !important; }
-      body.in-chat-view.dark-server-theme .mobile-notif-dot { border-color: #1a202c !important; }
+      /* ボトムナビゲーション完全撤去により余白・ナビ背景色ルールを消去 */
 
       /* iOS Safari: フォーカス時の自動ズームを防ぐ（font-size 16px未満で発生） */
       input[type="text"],

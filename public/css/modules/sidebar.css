@@ -128,6 +128,7 @@
   background-color: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   color: #0f172a;
+  border-top-left-radius: 8px !important;
 }
 #serverNameDisplay {
   color: #0f172a !important;
@@ -429,7 +430,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
         border-top: none !important;
         background-color: #f3f4f6 !important;
       }
-
       /* iPhoneでの勝手なズーム拡大を防止 */
       input,
       textarea,
@@ -492,7 +492,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
     }
 
     @media (min-width: 768px) {
-      #mobileBottomNav { display: none !important; }
       #mobileBackButton {
         display: none !important;
       }
@@ -527,7 +526,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
 
     body.discord-ui-mode #discordServerNav {
       display: flex !important;
-      padding-top: 14px !important; /* PC時に個チャマークが上部天井にくっつくのを解消 */
+      padding-top: 4px !important; /* Discord本家準拠: DMアイコン上端とサーバーヘッダー高さを完全一致 */
+    }
+    /* Discord本家準拠: PC表示時にチャンネルサイドバー左上を丸角(8px)にして上部タイトルバーと自然に調和 */
+    body.discord-ui-mode #sidebar {
+      border-top-left-radius: 8px !important;
+      overflow: hidden !important;
     }
 
     body.discord-ui-mode #backToServerListBtn {
@@ -1170,7 +1174,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
     /* --- 1. ダークネイビー (Covoピュアネイビー: body.dark-server-theme) --- */
     body.dark-server-theme #discordTitleBar {
       background-color: #0b0f19 !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+      border-bottom: none !important;
       color: #94a3b8 !important;
     }
     body.dark-server-theme #discordTitleBar .header-notif-badge {
@@ -1187,6 +1191,8 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #111827 !important;
       color: #cbd5e1 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+      border-top-left-radius: 8px !important;
+      overflow: hidden !important;
     }
     body.dark-server-theme.discord-ui-mode #serverHeader,
     body.dark-server-theme.discord-ui-mode #currentRoomHeader,
@@ -1223,9 +1229,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.dark-server-theme.discord-ui-mode #discordHomeMembers {
       background: #111827 !important;
       border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
-    }
-    body.dark-server-theme.discord-ui-mode #mobileBottomNav {
-      background: #0b0f19 !important;
     }
     body.dark-server-theme.discord-ui-mode .topbar-btn {
       color: #94a3b8;
@@ -1304,7 +1307,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
     /* --- 2. Discordダーク (body.discord-dark-theme) --- */
     body.discord-dark-theme #discordTitleBar {
       background-color: #1e1f22 !important;
-      border-bottom: 1px solid #1f2023 !important;
+      border-bottom: none !important;
       color: #dbdee1 !important;
     }
     body.discord-dark-theme #discordTitleBar .header-notif-badge {
@@ -1322,6 +1325,8 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #2b2d31 !important;
       color: #dbdee1 !important;
       border-right: 1px solid #1f2023 !important;
+      border-top-left-radius: 8px !important;
+      overflow: hidden !important;
     }
     body.discord-dark-theme.discord-ui-mode #serverHeader,
     body.discord-dark-theme.discord-ui-mode #currentRoomHeader,
@@ -1340,9 +1345,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.discord-dark-theme.discord-ui-mode #discordHomeMembers {
       background: #2b2d31 !important;
       border-left: 1px solid #1f2023 !important;
-    }
-    body.discord-dark-theme.discord-ui-mode #mobileBottomNav {
-      background: #1e1f22 !important;
     }
     body.discord-dark-theme.discord-ui-mode .topbar-btn {
       color: #b5bac1;
@@ -1380,7 +1382,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
     /* --- 3. ライトモード (body:not(.dark-server-theme):not(.discord-dark-theme)) --- */
     body:not(.dark-server-theme):not(.discord-dark-theme) #discordTitleBar {
       background-color: #e2e8f0 !important;
-      border-bottom: 1px solid #cbd5e1 !important;
+      border-bottom: none !important;
       color: #475569 !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme) #discordTitleBar .header-notif-badge {
@@ -1398,6 +1400,8 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #f1f5f9 !important;
       color: #1e293b !important;
       border-right: 1px solid #e2e8f0 !important;
+      border-top-left-radius: 8px !important;
+      overflow: hidden !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #serverHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #currentRoomHeader,
@@ -1416,16 +1420,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeMembers {
       background: #f1f5f9 !important;
       border-left: 1px solid #e2e8f0 !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #mobileBottomNav {
-      background: #ffffff !important;
-      border-top: 1px solid #e2e8f0 !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .mobile-nav-tab {
-      color: #64748b !important;
-    }
-    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .mobile-nav-tab.active {
-      color: #1e293b !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode .discord-server-pill {
       background: #1e293b;

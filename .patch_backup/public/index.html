@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.232" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.233" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.232" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.233" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -2963,8 +2963,8 @@
             </div>
           </div>
 
-          <!-- ユーザー情報ミニバー (Discord本家完全準拠 input_file_2.png 仕様) -->
-          <div id="userPanel" class="mt-auto w-full h-[54px] px-2.5 py-1.5 border-t border-gray-200/80 dark:border-white/5 flex items-center justify-between cursor-pointer transition-colors bg-gray-100/90 dark:bg-[#111214] select-none flex-shrink-0 relative">
+          <!-- ユーザー情報ミニバー (Discord本家完全準拠 input_file_3.png 角丸カード仕様) -->
+          <div id="userPanel" class="user-panel-dock rounded-2xl flex items-center justify-between cursor-pointer transition-all bg-white dark:bg-[#2b2d31] select-none border border-gray-200/80 dark:border-white/10 shadow-md hover:border-gray-300 dark:hover:border-white/20">
             <!-- 左側: アバター + 名前 + ステータス -->
             <div class="flex items-center gap-2 min-w-0 flex-1 pl-0.5">
               <div class="avatar-placeholder relative w-8 h-8 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
@@ -3827,7 +3827,7 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.232"></script>
+  <script type="module" src="js/main.js?v=1.1.233"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

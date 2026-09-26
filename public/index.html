@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.233" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.234" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.233" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.234" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -746,11 +746,8 @@
   <div class="container">
     <!-- Discord風 カスタムタイトルバー / トップバー (Windows版 & Web版 共通) -->
     <div id="discordTitleBar" class="w-full h-[30px] select-none flex items-center justify-between z-50 flex-shrink-0" data-tauri-drag-region>
-      <!-- 左側: アプリ名 / ドラッグ領域 -->
-      <div class="flex items-center h-full px-3 gap-2" data-tauri-drag-region>
-        <span class="text-[11px] font-extrabold tracking-wider opacity-60 pointer-events-none" data-tauri-drag-region>Covo</span>
-      </div>
-
+      <!-- 左側: ドラッグ領域 (Discord本家準拠: 余計な文字なし) -->
+      <div class="flex items-center h-full px-3 gap-2" data-tauri-drag-region></div>
       <!-- 中央: 現在のコンテキスト（サーバー名 / フレンド / サーバーを探す） -->
       <div id="discordTitleBarContext" class="titlebar-center-context" data-tauri-drag-region>
         <span class="titlebar-context-icon" id="titleBarContextIcon"><i class="fas fa-comments"></i></span>
@@ -1198,13 +1195,17 @@
                   <div>
                     <p class="text-sm font-bold text-gray-800 dark:text-white">アバターアイコン</p>
                     <p class="text-xs text-gray-400 dark:text-slate-400 mt-0.5">クリックして画像を変更</p>
-                    <button id="resetAvatarButton" class="mt-2 px-3 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-transparent transition-all hidden">
-                      <i class="fas fa-undo mr-1"></i>リセット
-                    </button>
-                  </div>
-                </div>
-
-                <div class="space-y-4">
+                    <div class="flex items-center gap-2 mt-2 flex-wrap">
+                      <button id="resetAvatarButton" class="px-3 py-1 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-transparent transition-all hidden">
+                        <i class="fas fa-undo mr-1"></i>リセット
+                      </button>
+                      <button id="applyGoogleAvatarBtn" type="button" onclick="window.applyGoogleAvatar && window.applyGoogleAvatar()" class="px-3 py-1 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-full border border-indigo-200 dark:border-indigo-800/40 transition-all hidden flex items-center gap-1 cursor-pointer">
+                        <i class="fab fa-google text-[10px]"></i>Googleアイコンを適用
+                      </button>
+                    </div>
+                    </div>
+                    </div>
+                    <div class="space-y-4">
                   <!-- ニックネーム -->
                   <div>
                     <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム (表示名)</label>
@@ -3402,25 +3403,9 @@
           </div>
         </div>
         </div>
-    </div>
-    <!-- ===== Mobile Bottom Navigation (コンテナ内flex子要素として配置) ===== -->
-    <nav id="mobileBottomNav" role="navigation" aria-label="メインナビゲーション">
-      <button class="mobile-nav-tab active" id="mobileTabHome" onclick="switchMobileTab('home')" aria-label="ホーム">
-        <i class="fas fa-home"></i>
-        <span>ホーム</span>
-      </button>
-      <button class="mobile-nav-tab" id="mobileTabNotif" onclick="switchMobileTab('notif')" aria-label="通知">
-        <i class="fas fa-bell"></i>
-        <span>通知</span>
-      </button>
-      <button class="mobile-nav-tab" id="mobileTabYou" onclick="switchMobileTab('you')" aria-label="あなた">
-        <i class="fas fa-user"></i>
-        <span>あなた</span>
-      </button>
-    </nav>
-  </div>
-
-  <!-- カスタム確認ダイアログ -->
+        </div>
+        </div>
+        <!-- カスタム確認ダイアログ -->
   <div id="customConfirmModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[300] hidden">
     <div class="bg-white dark:bg-[#313338] rounded-2xl shadow-xl w-full max-w-sm p-6 modal-box confirm-box animate-pop-in border border-gray-200/80 dark:border-white/10 text-gray-800 dark:text-gray-200">
       <p id="customConfirmMessage" class="text-gray-800 dark:text-gray-100 font-bold mb-1 text-base leading-snug"></p>
@@ -3827,7 +3812,7 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.233"></script>
+  <script type="module" src="js/main.js?v=1.1.234"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4579,11 +4564,13 @@
         <div>
           <p class="text-sm font-bold text-gray-900 dark:text-white">アバターアイコン</p>
           <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">タップして画像を変更</p>
-          <button class="hidden mt-1.5 px-3 py-1 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-gray-200 dark:border-slate-700 cursor-pointer transition active:scale-95" id="mobileResetAvatarBtn"><i class="fas fa-undo mr-1"></i>リセット</button>
-        </div>
-      </div>
-
-      <div class="space-y-4">
+          <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+            <button class="hidden px-3 py-1 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-full border border-gray-200 dark:border-slate-700 cursor-pointer transition active:scale-95" id="mobileResetAvatarBtn"><i class="fas fa-undo mr-1"></i>リセット</button>
+            <button class="hidden px-3 py-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-full border border-indigo-200 dark:border-indigo-800/40 cursor-pointer transition active:scale-95 flex items-center gap-1" id="mobileApplyGoogleAvatarBtn" type="button" onclick="window.applyGoogleAvatar && window.applyGoogleAvatar()"><i class="fab fa-google text-[10px]"></i>Googleアイコンを適用</button>
+          </div>
+          </div>
+          </div>
+          <div class="space-y-4">
         <!-- ニックネーム -->
         <div>
           <label class="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">ニックネーム (表示名)</label>

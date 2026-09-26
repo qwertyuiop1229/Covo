@@ -466,7 +466,8 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       }
       const rel = friendRelationships && friendRelationships[uid];
       const nickname = data?.nickname || data?.displayName || cu?.nickname || (fallback.nickname && fallback.nickname !== 'ユーザー' ? fallback.nickname : (rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`)));
-      const avatarUrl = data?.avatarUrl !== undefined ? (data.avatarUrl || '') : (data?.photoURL !== undefined ? (data.photoURL || '') : (cu?.avatarUrl !== undefined ? (cu.avatarUrl || '') : (fallback.avatarUrl !== undefined ? (fallback.avatarUrl || '') : (rel?.targetAvatarUrl || ''))));
+      // ユーザーが手動設定またはリセットしたアバターを最優先し、勝手にGoogle photoURLで上書きしない
+      const avatarUrl = data?.avatarUrl !== undefined ? (data.avatarUrl || '') : (cu?.avatarUrl !== undefined ? (cu.avatarUrl || '') : (fallback.avatarUrl !== undefined ? (fallback.avatarUrl || '') : (rel?.targetAvatarUrl || '')));
       const email = data?.email || cu?.email || rel?.targetEmail || fallback.email || '';
       const customStatus = data?.customStatus || cu?.customStatus || null;
       const aboutMe = data?.aboutMe || '';
@@ -1177,14 +1178,35 @@ function initializeFirebase() {
           let initialNickname = null;
           let initialAvatarUrl = null;
           let initialAboutMe = "";
-          if (userProfileSnap && userProfileSnap.exists() && userProfileSnap.data().nickname) {
-            initialNickname = userProfileSnap.data().nickname;
-            initialAvatarUrl = userProfileSnap.data().avatarUrl || null;
-            initialAboutMe = userProfileSnap.data().aboutMe || "";
-          } else if (user.displayName) {
-            // Googleログイン等の場合、Googleの名前・アイコンを自動取得して初期プロファイルを自動生成
+          if (userProfileSnap && userProfileSnap.exists()) {
+            const pData = userProfileSnap.data();
+            if (pData.nickname) initialNickname = pData.nickname;
+            if (pData.avatarUrl !== undefined) initialAvatarUrl = pData.avatarUrl;
+            initialAboutMe = pData.aboutMe || "";
+          }
+          // ルートドキュメント (users/{uid}) からも既存のアバター・ニックネームを最優先確認
+          try {
+            const rootUserSnap = await getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null);
+            if (rootUserSnap && rootUserSnap.exists()) {
+              const rootData = rootUserSnap.data();
+              if (rootData.nickname && !initialNickname) initialNickname = rootData.nickname;
+              if (rootData.avatarUrl !== undefined && initialAvatarUrl === null) initialAvatarUrl = rootData.avatarUrl;
+              if (rootData.aboutMe && !initialAboutMe) initialAboutMe = rootData.aboutMe;
+              if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
+            }
+          } catch (_) {}
+          // キャッシュからも確認
+          if (initialAvatarUrl === null) {
+            const savedAvatar = localStorage.getItem('covo_cached_avatar_' + userId);
+            if (savedAvatar) initialAvatarUrl = savedAvatar;
+          }
+          if (!initialNickname && user.displayName) {
+            // Google新規ユーザー（プロフィール未作成時）のみ初期プロファイルを生成
             initialNickname = user.displayName.slice(0, 20);
-            initialAvatarUrl = user.photoURL || null;
+            // 既存アバターが設定されていない場合のみphotoURLを採用（既存アバターは絶対に上書きしない）
+            if (!initialAvatarUrl) {
+              initialAvatarUrl = user.photoURL || null;
+            }
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             await setDoc(profileDocRef, {
               nickname: initialNickname,
@@ -1192,12 +1214,11 @@ function initializeFirebase() {
               aboutMe: initialAboutMe,
               createdAt: serverTimestamp()
             }, { merge: true }).catch(() => {});
-          } else {
+          } else if (!initialNickname) {
             // タイムアウトまたはキャッシュ時の高速フォールバック復旧
             const savedNick = localStorage.getItem('covo_cached_nick_' + userId);
             if (savedNick) {
               initialNickname = savedNick;
-              initialAvatarUrl = localStorage.getItem('covo_cached_avatar_' + userId) || null;
             }
           }
           if (initialNickname) {
@@ -4664,24 +4685,7 @@ function updateSettingsSidebar() {
   __setAvatarImg(sa, userAvatarUrl, userNickname);
 }
 
-// ============ Mobile Bottom Nav ============
-if (window.matchMedia('(max-width: 768px)').matches) {
-  document.body.classList.add('has-mobile-nav');
-  // ナビを .container の最下子要素として移動（position:fixed をやめ、自然なflexで配置）
-  try {
-    const _mnav = document.getElementById('mobileBottomNav');
-    const _cont = document.querySelector('.container');
-    if (_mnav && _cont && _mnav.parentElement !== _cont) {
-      _cont.appendChild(_mnav);
-    }
-  } catch (_) { }
-}
-
-// ボトムナビ高さは :root の --mnav-total (= --mnav-h 44px + --mnav-safe) で一元管理。
-// --mnav-safe = min(env(safe-area-inset-bottom), 10px) なので iPhone の34px全量ではなく
-// 最大10pxだけホームインジケータ用に確保し、棒の無い端末では0になる。
-// position:fixed;inset:0 のコンテナがviewport全体を覆うので body背景漏れも発生しない。
-
+// ============ Mobile Profile & Modal Navigation ============
 window.openMobileProfileScreen = function () {
   updateMobileProfileScreen();
   const el = document.getElementById('mobileProfileScreen');
@@ -4690,7 +4694,6 @@ window.openMobileProfileScreen = function () {
     el.classList.add('active');
   }
 };
-
 window.closeMobileProfileScreen = function () {
   const el = document.getElementById('mobileProfileScreen');
   if (el) {
@@ -4700,12 +4703,13 @@ window.closeMobileProfileScreen = function () {
     }, 200);
   }
 };
-
 window.switchMobileTab = function (tab) {
   if (tab === 'you') {
     openMobileProfileScreen();
   } else if (tab === 'notif') {
     openNotifModal();
+  } else if (tab === 'home') {
+    if (typeof leaveServerView === 'function') leaveServerView();
   }
 };
 
@@ -5239,6 +5243,8 @@ function updateMobileProfileScreen() {
   const ni = document.getElementById('mobileNicknameInput');
   const mai = document.getElementById('mobileAboutMeInput');
   const mac = document.getElementById('mobileAboutMeCounter');
+  const mobResetBtn = document.getElementById('mobileResetAvatarBtn');
+  const mobApplyGoogleBtn = document.getElementById('mobileApplyGoogleAvatarBtn');
   if (ne) ne.textContent = userNickname || 'ユーザー';
   if (ae) __setAvatarImg(ae, userAvatarUrl, userNickname, { style: 'width:100%;height:100%;object-fit:cover;' });
   if (at) at.textContent = (userNickname || '?').charAt(0).toUpperCase();
@@ -5251,8 +5257,21 @@ function updateMobileProfileScreen() {
       };
       ap.src = userAvatarUrl;
       ap.style.display = '';
+      if (mobResetBtn) mobResetBtn.classList.remove('hidden');
     } else {
       ap.style.display = 'none';
+      if (mobResetBtn) mobResetBtn.classList.add('hidden');
+    }
+  }
+  // Googleアカウント連携アイコン適用ボタンの制御 (モバイル)
+  if (mobApplyGoogleBtn) {
+    const user = auth?.currentUser;
+    const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
+    const googlePhoto = googleData?.photoURL || user?.photoURL;
+    if (googlePhoto && googlePhoto !== userAvatarUrl) {
+      mobApplyGoogleBtn.classList.remove('hidden');
+    } else {
+      mobApplyGoogleBtn.classList.add('hidden');
     }
   }
   if (ni) ni.value = userNickname || '';
@@ -5589,9 +5608,36 @@ avatarUploadInput.addEventListener("change", (e) => {
   avatarUploadInput.value = '';
 });
 
+// Googleアイコン適用アクション
+window.applyGoogleAvatar = function () {
+  const user = auth?.currentUser;
+  if (!user) return;
+  const googleData = user.providerData?.find(p => p.providerId === 'google.com');
+  const googlePhoto = googleData?.photoURL || user.photoURL;
+  if (!googlePhoto) {
+    alertMessage("Googleアカウントのアイコンが見つかりませんでした", "warning");
+    return;
+  }
+  pendingAvatarUrl = googlePhoto;
+  const pcPreview = document.getElementById("settingsAvatarPreview");
+  const mobPreview = document.getElementById("mobileAvatarPreview");
+  const pcResetBtn = document.getElementById("resetAvatarButton");
+  const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
+  if (pcPreview) {
+    pcPreview.src = googlePhoto;
+    pcPreview.classList.remove("hidden");
+  }
+  if (mobPreview) {
+    mobPreview.src = googlePhoto;
+    mobPreview.classList.remove("hidden");
+  }
+  if (pcResetBtn) pcResetBtn.classList.remove("hidden");
+  if (mobResetBtn) mobResetBtn.classList.remove("hidden");
+  alertMessage("Googleアカウントのアイコンを選択しました。「保存」を押して確定してください", "success");
+};
+
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
-
 function openSettingsModal(tab) {
   if (!userNickname) return;
   switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
@@ -5605,6 +5651,17 @@ function openSettingsModal(tab) {
   }
   updateSettingsCustomStatusUI();
   pendingAvatarUrl = null;
+  const applyGoogleBtn = document.getElementById("applyGoogleAvatarBtn");
+  const user = auth?.currentUser;
+  const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
+  const googlePhoto = googleData?.photoURL || user?.photoURL;
+  if (applyGoogleBtn) {
+    if (googlePhoto && googlePhoto !== userAvatarUrl) {
+      applyGoogleBtn.classList.remove("hidden");
+    } else {
+      applyGoogleBtn.classList.add("hidden");
+    }
+  }
   if (isUsableAvatarUrl(userAvatarUrl)) {
     const _u = userAvatarUrl;
     try { settingsAvatarPreview.referrerPolicy = 'no-referrer'; } catch (_) { }
@@ -8517,10 +8574,6 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
     const sb = document.getElementById("sidebar");
     if (sb) sb.classList.remove("mobile-hidden");
   }
-
-  const mobileBottomNav = document.getElementById("mobileBottomNav");
-  if (mobileBottomNav) mobileBottomNav.style.display = "flex";
-
   const appContainer = document.getElementById("appContainer");
   if (appContainer) appContainer.classList.remove("hidden");
   const serverListScreen = document.getElementById("serverListScreen");
@@ -9578,7 +9631,8 @@ function renderDmConversationsList() {
       if (currentDmId !== dmId || !snap.exists()) return;
       const uData = snap.data();
       const updatedNick = uData.nickname || uData.displayName;
-      const updatedAvatar = uData.avatarUrl || uData.photoURL;
+      // 相手の手動設定アバターを優先し、勝手にGoogle photoURLで上書きしない
+      const updatedAvatar = uData.avatarUrl !== undefined ? uData.avatarUrl : (uData.photoURL || '');
       window.refreshCurrentDmParticipantUI(targetUid, {
         nickname: updatedNick,
         avatarUrl: updatedAvatar,
@@ -10335,9 +10389,6 @@ window.openDiscoverView = function () {
 
   const sidebar = document.getElementById("sidebar");
   if (sidebar) sidebar.classList.remove("mobile-hidden");
-  const mobileBottomNav = document.getElementById("mobileBottomNav");
-  if (mobileBottomNav) mobileBottomNav.style.display = "flex";
-
   const appContainer = document.getElementById("appContainer");
   if (appContainer) appContainer.classList.remove("hidden");
   const serverListScreen = document.getElementById("serverListScreen");
