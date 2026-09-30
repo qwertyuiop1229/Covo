@@ -288,6 +288,8 @@ fn show_main_window(app_handle: tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = window.emit("window-focused", ());
+        let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
     }
 }
 
@@ -1220,6 +1222,8 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                let _ = window.emit("window-focused", ());
+                                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                                 let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
                             }
                         }
@@ -1280,6 +1284,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                     "recovery" => {
@@ -1317,6 +1323,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                 })
@@ -1360,6 +1368,8 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+                let _ = window.emit("window-focused", ());
+                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                 let _ = window.emit("single-instance-opened", ());
             }
         }))

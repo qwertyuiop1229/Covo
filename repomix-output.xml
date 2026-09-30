@@ -2679,6 +2679,97 @@ exit
     }
 </file>
 
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+/**
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
+    return false;
+  }
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
 <file path="public/js/ui_helpers.js">
 /**
  * UI補助機能 (ui_helpers.js)
@@ -3029,919 +3120,6 @@ if (typeof window !== 'undefined') {
         </button>
         <div id="status" class="status-box">認証の準備中...</div>
     </div>
-</body>
-</html>
-</file>
-
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# GitHub Actions real-time build monitor
-
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# Repomix によるコードベース集約パッケージの自動生成
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-try {
-    npx --yes repomix
-    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
-} catch {
-    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
-}
-Write-Host ''
-
-# GitHub Actions real-time build monitor
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
-</file>
-
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-    }
-    async function triggerUpdateCheck() {
-      const btn = document.getElementById("btnUpdateCheck");
-      btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      logMessage("Checking for updates...");
-      try {
-        if (!invoke) throw new Error("Tauri API not found.");
-        const metadata = await invoke('plugin:updater|check');
-        if (metadata && metadata.available) {
-          logMessage(`Found v${metadata.version}. Downloading...`);
-          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
-          logMessage("Update complete. Restarting...");
-          btn.innerHTML = `完了 (再起動)`;
-          setTimeout(() => {
-            if (invoke) invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-            else window.location.reload();
-          }, 1500);
-        } else {
-          logMessage("No updates available.");
-          btn.innerHTML = `更新なし`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      } catch (err) {
-        logMessage(`Error: ${err.message || err}`, true);
-        btn.disabled = false;
-        btn.innerHTML = `失敗 (再試行)`;
-      }
-    }
-    async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('indexedDB' in window) {
-          indexedDB.deleteDatabase('covo_local_db');
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => {
-          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-        }, 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
-    }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
-      }
-    }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `失敗`;
-        }
-      }
-    }
-    if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const btn = document.getElementById(`btn-install-${data.tag}`);
-          if (btn) btn.innerHTML = `${data.progress}%`;
-          logMessage(`[${data.tag}] ${data.progress}%`);
-        }
-      });
-    }
-    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
-  </script>
 </body>
 </html>
 </file>
@@ -5185,6 +4363,828 @@ pub fn run() {
 }
 </file>
 
+<file path="deploy.ps1">
+# Covo Deploy Script
+# Usage: .\deploy.ps1       (interactive confirm)
+#        .\deploy.ps1 -y    (skip confirm)
+#        npm run deploy      (deploy update)
+
+param(
+    [switch]$y
+)
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+
+$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
+if (-not (Test-Path $versionJsonPath)) {
+    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
+    exit 1
+}
+
+$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$currentVersion = $versionData.version
+Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
+
+$versionParts = $currentVersion.Split('.')
+if ($versionParts.Length -ne 3) {
+    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
+    exit 1
+}
+
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+$patch = [int]$versionParts[2] + 1
+$newVersion = "$major.$minor.$patch"
+$tagName    = "v$newVersion"
+
+Write-Host "New version : $newVersion" -ForegroundColor Green
+Write-Host "Tag name    : $tagName"    -ForegroundColor Green
+Write-Host ''
+
+if (-not $y) {
+    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
+    try {
+        $confirm = [Console]::ReadLine()
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
+            exit 0
+        }
+    } catch {
+        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
+Write-Host ''
+
+# [0/5] Tailwind CSS
+Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
+
+# [1/5] version.json + tauri.conf.json + index.html
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
+
+$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
+if (Test-Path $indexHtmlPath) {
+    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
+    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
+
+$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
+if (Test-Path $tauriConfPath) {
+    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
+    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
+        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
+} else {
+    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
+}
+
+# [2/5] git commit
+Write-Host '[2/5] Committing changes...' -ForegroundColor Green
+git add -A
+git commit -m "Release v$newVersion"
+
+# [3/5] git tag
+Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
+git tag $tagName
+
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+firebase deploy --only "hosting,firestore:rules,database"
+
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# GitHub Actions real-time build monitor
+
+
+# [5/5] git push
+Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
+git push origin HEAD --tags
+
+Write-Host ''
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# Repomix によるコードベース集約パッケージの自動生成
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+try {
+    npx --yes repomix
+    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
+} catch {
+    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
+}
+Write-Host ''
+
+# GitHub Actions real-time build monitor
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# ===========================================================================
+# GitHub Actions real-time build monitor
+# ===========================================================================
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
+Write-Host ''
+
+$REPO = 'qwertyuiop1229/Covo'
+
+# Retrieve GITHUB_TOKEN directly from environment or registry
+$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+
+# Move cursor up N lines (ANSI)
+function Move-CursorUp {
+    param([int]$Lines)
+    if ($Lines -gt 0) {
+        $esc = [char]27
+        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
+        [Console]::Write($seq)
+    }
+}
+
+# ASCII progress bar  [####....] 64%
+function Draw-Bar {
+    param([int]$Pct, [int]$W = 24)
+    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
+    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
+    $empty  = $W - $filled
+    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
+}
+
+# GitHub REST API helper
+function Invoke-GHApi {
+    param([string]$Path)
+    $url     = 'https://api.github.com' + $Path
+    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
+    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
+}
+
+function Get-LatestRun {
+    param([string]$Tag)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    if (-not $res) { return $null }
+    $run = $res.workflow_runs | Where-Object {
+        ($_.head_branch -eq $Tag) -or
+        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
+        ($_.display_title -like ('*' + $Tag + '*'))
+    } | Select-Object -First 1
+    return $run
+}
+
+function Get-RunJobs {
+    param([string]$RunId)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
+    if ($res -and $res.jobs) { return @($res.jobs) }
+    return @()
+}
+
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
+$run = $null
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 3
+    $run = Get-LatestRun -Tag $tagName
+    if ($run) { break }
+    if ($global:RateLimitHit) { break }
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
+}
+
+if (-not $run) {
+    Write-Host ''
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    exit 0
+}
+
+$runId  = $run.id
+$runUrl = $run.html_url
+Write-Host ''
+Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ''
+
+
+$StepDefs = @(
+    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
+    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
+    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
+    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
+    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
+)
+$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
+
+$Spinners   = @('-', '\', '|', '/')
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
+
+Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
+Write-Host ''
+
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
+
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
+
+    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+    $firstDraw = $false
+
+    if ($job) {
+        $steps = @($job.steps)
+        $completedWeight    = 0
+        $completedStepCount = 0
+        $currentLabel       = ''
+        $currentStep        = $null
+        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
+
+        if ($steps) {
+            foreach ($step in $steps) {
+                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
+                $w   = if ($def) { $def.Weight } else { 2 }
+                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
+                    $completedWeight    += $w
+                    $completedStepCount++
+                } elseif ($step.status -eq 'in_progress') {
+                    $completedWeight += [int]($w * 0.5)
+                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
+                }
+            }
+        }
+
+        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
+        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
+        $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'Preparing logs...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
+            } catch {}
+        }
+
+        if ($jobStatus -eq 'completed') {
+            if ($jobConclusion -eq 'success') {
+                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
+            } else {
+                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
+            }
+        } elseif ($jobStatus -eq 'queued') {
+            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
+        } else {
+            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
+        }
+
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
+
+        Write-Host $l1 -ForegroundColor $col
+        Write-Host $l2 -ForegroundColor White
+        Write-Host $l3 -ForegroundColor DarkCyan
+        Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
+
+        if ($jobStatus -eq 'completed') {
+            Write-Host ''
+            if ($jobConclusion -eq 'success') {
+                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
+                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
+            } else {
+                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
+            }
+            Write-Host ''
+            break
+        }
+
+    } else {
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+    }
+
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
+}
+</file>
+
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/font-awesome.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    .bg-dark-800 { background-color: #2b2d31; }
+    .bg-dark-700 { background-color: #313338; }
+    .hover\:bg-dark-700:hover { background-color: #313338; }
+    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
+    .active\:bg-dark-900:active { background-color: #1e1f22; }
+    .bg-brand-500 { background-color: #5865F2; }
+    .text-brand-500 { color: #5865F2; }
+    .hover\:bg-brand-600:hover { background-color: #4752C4; }
+    .active\:bg-brand-600:active { background-color: #4752C4; }
+    ::selection { background-color: #5865F2; color: #ffffff; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+    <!-- クイックアクションパネル -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+    </div>
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+    }
+    async function triggerUpdateCheck() {
+      const btn = document.getElementById("btnUpdateCheck");
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      logMessage("Checking for updates...");
+      try {
+        if (!invoke) throw new Error("Tauri API not found.");
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata && metadata.available) {
+          logMessage(`Found v${metadata.version}. Downloading...`);
+          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
+          logMessage("Update complete. Restarting...");
+          btn.innerHTML = `完了 (再起動)`;
+          setTimeout(() => {
+            if (invoke) invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+            else window.location.reload();
+          }, 1500);
+        } else {
+          logMessage("No updates available.");
+          btn.innerHTML = `更新なし`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      } catch (err) {
+        logMessage(`Error: ${err.message || err}`, true);
+        btn.disabled = false;
+        btn.innerHTML = `失敗 (再試行)`;
+      }
+    }
+    async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => {
+          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+        }, 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+    function forceQuitApp() {
+      if (invoke) {
+        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+      }
+    }
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+        if (releases.length < 10) releasesHasMore = false;
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `失敗`;
+        }
+      }
+    }
+    if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const btn = document.getElementById(`btn-install-${data.tag}`);
+          if (btn) btn.innerHTML = `${data.progress}%`;
+          logMessage(`[${data.tag}] ${data.progress}%`);
+        }
+      });
+    }
+    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
+  </script>
+</body>
+</html>
+</file>
+
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -6118,6 +6118,230 @@ pub fn run() {
     body.discord-dark-theme #userProfileBanner {
       background-color: var(--user-banner-color, #2b2d31);
     }
+</file>
+
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
+  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
+    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
+  }
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  // 1. コードブロック退避（コピーボタン付き）
+  const codeBlocks = [];
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
+    return id;
+  });
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
+      }
+    }
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!cleanUrl) return rawUrl;
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
+    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
+      return escapeHtml(rawUrl);
+    }
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  return escapedText;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
 </file>
 
 <file path="public/css/modules/base.css">
@@ -7055,230 +7279,6 @@ if (typeof window !== 'undefined') {
     restoreAllLocalData,
     clearAllLocalData
   };
-}
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
-    if (!isSafeHttp && !isSafeDataImage) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
-  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
-    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
-  }
-  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
-  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
-  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
-  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  // 1. コードブロック退避（コピーボタン付き）
-  const codeBlocks = [];
-  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1.trim());
-    codeBlocks.push(
-      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
-        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
-          `<span>Code</span>` +
-          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
-            `<i class="far fa-copy"></i> コピー` +
-          `</button>` +
-        `</div>` +
-        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
-      `</div>`
-    );
-    return id;
-  });
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
-    }
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
-      }
-    }
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    if (!cleanUrl) return rawUrl;
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
-    }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
-    }
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  // 5. 書式装飾
-  // スポイラー記法 (||ネタバレ||)
-  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
-  let mentionCount = 0;
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    if (mentionCount >= 10) return match;
-    mentionCount++;
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  return escapedText;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
 }
 </file>
 
@@ -10509,6 +10509,513 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 </file>
 
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // アプリ全体管理者 (Super Admin / Global Admin)
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    // ログイン許可リスト管理者 (List Admin)
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          (
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
+            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
+          )
+        )
+      );
+    }
+
+    // サーバーオーナー判定
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+        )
+      );
+    }
+
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定 (Settings)
+      match /settings/{docId} {
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+      
+      // ログイン許可リスト (Allowed Emails)
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000 &&
+          (!('category' in request.resource.data) ||
+           request.resource.data.category in ['bug', 'feature', 'other']);
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ
+      match /error_reports/{docId} {
+        allow create, update: if
+          request.resource.data.message is string &&
+          request.resource.data.message.size() > 0 &&
+          request.resource.data.message.size() <= 8000;
+        allow read: if isAuthenticated();
+        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫
+      match /recovery_vault/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+      }
+
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow create, delete: if isGlobalAdmin(appId);
+        allow update: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid == userDocId &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
+           request.resource.data.used == true);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false;
+      }
+
+      // 招待コードインデックス (逆引き)
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報 (Users & Profiles: IDOR保護 & Stored XSS防止)
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId))
+          && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || request.resource.data.avatarUrl == '' || request.resource.data.avatarUrl.matches('^https?://.*') || request.resource.data.avatarUrl.matches('^data:image/.*'));
+      }
+
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
+      match /users/{userId}/private/{docId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // フレンド関係性 (Relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
+      match /dm_channels/{dmId} {
+        allow read: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+          dmId.matches('^' + request.auth.uid + '_.*') ||
+          dmId.matches('^.*_' + request.auth.uid + '$')
+        );
+        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
+        allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+
+        match /keys/{keyUserId} {
+          allow read: if isAuthenticated() && (
+            isGlobalAdmin(appId) ||
+            request.auth.uid == keyUserId ||
+            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+            dmId.matches('^' + request.auth.uid + '_.*') ||
+            dmId.matches('^.*_' + request.auth.uid + '$')
+          );
+          allow write: if isAuthenticated() &&
+            (isGlobalAdmin(appId) ||
+             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
+             dmId.matches('^' + request.auth.uid + '_.*') ||
+             dmId.matches('^.*_' + request.auth.uid + '$'));
+        }
+      }
+
+      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
+      match /device_transfers/{sessionCode} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
+        );
+        allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        match /{subcollection}/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定、削除後の完了読み取りを許容)
+      match /p2p_log_sync/{syncId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          resource == null ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.requesterUid == request.auth.uid &&
+            (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == null ||
+             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
+             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
+        allow update: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
+        match /{subcollection}/{docId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // 3. グローバルオンライン状態 (Status)
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
+      match /calls/{callId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
+        );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            (
+              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            )
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
+      match /fileshares/{shareId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
+        );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            (
+              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            )
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
+
+      match /servers/{serverId} {
+        allow read: if isAuthenticated();
+
+        // サーバー作成: 自分自身を管理者・初期参加者として作成
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
+
+        // サーバー設定の更新:
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
+
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
+          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
+
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
+
+        // サーバー削除: サーバーオーナーまたは全体管理者のみ
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+
+        // サーバー内の秘密情報 (パスワードハッシュ等)
+        match /secrets/{docId} {
+          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧 (Channels / Rooms)
+        match /rooms/{roomId} {
+          allow read: if isAuthenticated();
+          allow create, delete: if isServerAdmin(appId, serverId);
+          allow update: if isServerAdmin(appId, serverId) || (
+            isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+          );
+
+          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
+          match /messages/{messageId} {
+            allow read: if isAuthenticated();
+            allow create: if isAuthenticated() &&
+              (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
+               (request.resource.data.senderId == request.auth.uid &&
+                exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+                request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
+              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
+              (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
+
+            allow update: if isAuthenticated() && (
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
+                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
+              || isGlobalAdmin(appId)
+            );
+
+            allow delete: if isAuthenticated() && (
+              resource.data.senderId == request.auth.uid ||
+              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+          }
+
+          // 既読レシート (Read Receipts)
+          match /readReceipts/{receiptUserId} {
+            allow read: if isAuthenticated();
+            allow create, update: if isAuthenticated() &&
+              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow delete: if isAuthenticated() &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
+          match /roomKeys/{keyId} {
+            allow read, write: if isAuthenticated() && (
+              isGlobalAdmin(appId) ||
+              isServerAdmin(appId, serverId) ||
+              (exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+            );
+          }
+
+          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
+          match /rescueRequests/{reqUserId} {
+            allow read, delete: if isAuthenticated() && (
+              request.auth.uid == reqUserId ||
+              isServerAdmin(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+            allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
+          }
+
+          // タイピングインジケーター (Typing)
+          match /typing/{userId} {
+            allow read: if isAuthenticated();
+            allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+          }
+        }
+
+        // サーバー別プロフィール (Profiles)
+        match /profiles/{profileUserId} {
+          allow read: if isAuthenticated();
+          allow create, update: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
+          allow delete: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ (Stamps)
+        match /stamps/{stampId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 &&
+            request.resource.data.name.size() <= 32 &&
+            request.resource.data.url is string &&
+            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // スタンプグループ (Stamp Groups)
+        match /stampGroups/{groupId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string;
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // 招待コード (Invite Codes)
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId);
+          allow write: if isServerAdmin(appId, serverId);
+        }
+      }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read, delete: if isAuthenticated();
+        allow create, update: if isAuthenticated() &&
+          request.resource.data.fromUid == request.auth.uid &&
+          request.resource.data.toUid is string;
+      }
+    }
+
+    // ルート直下 VC シグナリング (フォールバック用)
+    match /vc_signaling/{sigDocId} {
+      allow read, delete: if isAuthenticated();
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.fromUid == request.auth.uid &&
+        request.resource.data.toUid is string;
+    }
+
+  }
+}
+</file>
+
 <file path="public/css/modules/sidebar.css">
 /* --- メンバーリスト・プロフィール・アクティブパネル用スタイル (Discord完全準拠) --- */
     #membersSidebar {
@@ -10667,9 +11174,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
   background-color: #ffffff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  padding: 0 0.65rem;
-  height: 54px;
-  min-height: 54px;
+  padding: 0 0.75rem;
+  height: 58px;
+  min-height: 58px;
   display: flex;
   align-items: center;
   border-radius: 1rem !important; /* 角丸を完全に復元 */
@@ -10689,7 +11196,7 @@ body.discord-dark-theme #userPanel {
 /* PC DiscordUIモード時: 左端のサーバー一覧レール(72px)の下まで横に大きく伸ばす */
 @media (min-width: 769px) {
   body.discord-ui-mode #discordServerNav {
-    padding-bottom: 74px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
+    padding-bottom: 78px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
     z-index: 20 !important;
   }
   body.discord-ui-mode #sidebar {
@@ -11010,6 +11517,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       border-top-left-radius: 12px !important;
       overflow: visible !important;
       z-index: 35 !important;
+    }
+    /* 個チャ(DM)時・サーバー時共通: サーバーレールとの境目の左上角を美しく角丸化 */
+    body.discord-ui-mode #serverHeader,
+    body.discord-ui-mode #discordHomeSidebar,
+    body.discord-ui-mode #discordHomeSidebar > div:first-child {
+      border-top-left-radius: 12px !important;
     }
     body.discord-ui-mode #backToServerListBtn {
       display: none !important; /* Discord風ヘッダーのため不要 */
@@ -11667,10 +12180,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.dark-server-theme.discord-ui-mode #serverHeader,
     body.dark-server-theme.discord-ui-mode #currentRoomHeader,
     body.dark-server-theme.discord-ui-mode #discordDmHeader,
-    body.dark-server-theme.discord-ui-mode #discordDiscoverHeader {
+    body.dark-server-theme.discord-ui-mode #discordDiscoverHeader,
+    body.dark-server-theme.discord-ui-mode #discordHomeSidebar,
+    body.dark-server-theme.discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #111827 !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
       color: #f8fafc !important;
+      border-top-left-radius: 12px !important;
     }
     body.dark-server-theme #serverNameDisplay {
       color: #f8fafc !important;
@@ -11800,10 +12316,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.discord-dark-theme.discord-ui-mode #serverHeader,
     body.discord-dark-theme.discord-ui-mode #currentRoomHeader,
     body.discord-dark-theme.discord-ui-mode #discordDmHeader,
-    body.discord-dark-theme.discord-ui-mode #discordDiscoverHeader {
+    body.discord-dark-theme.discord-ui-mode #discordDiscoverHeader,
+    body.discord-dark-theme.discord-ui-mode #discordHomeSidebar,
+    body.discord-dark-theme.discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #313338 !important;
       border-bottom: 1px solid #1f2023 !important;
       color: #f2f3f5 !important;
+      border-top-left-radius: 12px !important;
     }
     body.discord-dark-theme.discord-ui-mode #discordDmHomeView,
     body.discord-dark-theme.discord-ui-mode #discordDiscoverView,
@@ -11874,10 +12393,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #serverHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #currentRoomHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHeader,
-    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverHeader {
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverHeader,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeSidebar,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #ffffff !important;
       border-bottom: 1px solid #e2e8f0 !important;
       color: #0f172a !important;
+      border-top-left-radius: 12px !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHomeView,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverView,
@@ -12028,6 +12550,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
         opacity: 1 !important;
       }
       /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
+      body.discord-ui-mode #sidebar,
+      body.discord-ui-mode #serverHeader,
+      body.discord-ui-mode #discordHomeSidebar,
+      body.discord-ui-mode #discordHomeSidebar > div:first-child {
+        border-top-left-radius: 28px !important;
+      }
       body.discord-ui-mode #sidebar {
         position: relative !important;
         left: auto !important;
@@ -12037,7 +12565,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
         max-width: calc(100% - 70px) !important;
         display: flex !important;
         min-width: 0 !important;
-        border-top-left-radius: 28px !important;
         box-shadow: none !important; /* 下部の余計な影を完全排除 */
         overflow: visible !important;
         z-index: 35 !important;
@@ -13122,513 +13649,6 @@ html.dark .server-menu-item.text-rose-500:hover {
 #ssContentArea::-webkit-scrollbar-thumb {
   background: rgba(128,128,128,0.3);
   border-radius: 4px;
-}
-</file>
-
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // ========================================================================
-    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
-    // ========================================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // アプリ全体管理者 (Super Admin / Global Admin)
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    // ログイン許可リスト管理者 (List Admin)
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          (
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
-            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
-          )
-        )
-      );
-    }
-
-    // サーバーオーナー判定
-    function isServerOwner(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-        )
-      );
-    }
-
-    // ========================================================================
-    // 📁 各コレクションのセキュリティルール
-    // ========================================================================
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定 (Settings)
-      match /settings/{docId} {
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-      
-      // ログイン許可リスト (Allowed Emails)
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000 &&
-          (!('category' in request.resource.data) ||
-           request.resource.data.category in ['bug', 'feature', 'other']);
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ
-      match /error_reports/{docId} {
-        allow create, update: if
-          request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
-        allow read: if isAuthenticated();
-        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫
-      match /recovery_vault/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
-      }
-
-      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow create, delete: if isGlobalAdmin(appId);
-        allow update: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid == userDocId &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
-           request.resource.data.used == true);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // モデレーション監査ログ (Audit Logs)
-      match /audit_logs/{logId} {
-        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
-        allow create: if isAuthenticated();
-        allow update, delete: if false;
-      }
-
-      // 招待コードインデックス (逆引き)
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報 (Users & Profiles: IDOR保護 & Stored XSS防止)
-      match /users/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId))
-          && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || request.resource.data.avatarUrl == '' || request.resource.data.avatarUrl.matches('^https?://.*') || request.resource.data.avatarUrl.matches('^data:image/.*'));
-      }
-
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
-      match /users/{userId}/private/{docId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // フレンド関係性 (Relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
-      match /dm_channels/{dmId} {
-        allow read: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
-          dmId.matches('^' + request.auth.uid + '_.*') ||
-          dmId.matches('^.*_' + request.auth.uid + '$')
-        );
-        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-
-        match /keys/{keyUserId} {
-          allow read: if isAuthenticated() && (
-            isGlobalAdmin(appId) ||
-            request.auth.uid == keyUserId ||
-            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-            dmId.matches('^' + request.auth.uid + '_.*') ||
-            dmId.matches('^.*_' + request.auth.uid + '$')
-          );
-          allow write: if isAuthenticated() &&
-            (isGlobalAdmin(appId) ||
-             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
-        }
-      }
-
-      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
-      match /device_transfers/{sessionCode} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
-        );
-        allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
-        match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定、削除後の完了読み取りを許容)
-      match /p2p_log_sync/{syncId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          resource == null ||
-          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
-          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
-        );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.requesterUid == request.auth.uid &&
-            (!('dmId' in request.resource.data) ||
-             request.resource.data.dmId == null ||
-             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
-             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
-          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
-        );
-        match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // 3. グローバルオンライン状態 (Status)
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
-      match /calls/{callId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
-          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
-          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
-        );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            (
-              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
-               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
-               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
-            )
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-            request.resource.data.caller.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
-      match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
-          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
-        );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            (
-              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
-               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
-            )
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-            request.resource.data.sender.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
-        }
-      }
-
-      // ========================================================================
-      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
-      // ========================================================================
-
-      match /servers/{serverId} {
-        allow read: if isAuthenticated();
-
-        // サーバー作成: 自分自身を管理者・初期参加者として作成
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.serverAdmins == [request.auth.uid] &&
-            request.resource.data.joinedUsers == [request.auth.uid]));
-
-        // サーバー設定の更新:
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
-
-        allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
-
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
-
-        // サーバー削除: サーバーオーナーまたは全体管理者のみ
-        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-
-        // サーバー内の秘密情報 (パスワードハッシュ等)
-        match /secrets/{docId} {
-          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧 (Channels / Rooms)
-        match /rooms/{roomId} {
-          allow read: if isAuthenticated();
-          allow create, delete: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
-            isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
-          );
-
-          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
-          match /messages/{messageId} {
-            allow read: if isAuthenticated();
-            allow create: if isAuthenticated() &&
-              (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
-               (request.resource.data.senderId == request.auth.uid &&
-                exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-                request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
-              (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
-
-            allow update: if isAuthenticated() && (
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
-               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
-                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
-              || isGlobalAdmin(appId)
-            );
-
-            allow delete: if isAuthenticated() && (
-              resource.data.senderId == request.auth.uid ||
-              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
-              isServerAdmin(appId, serverId) ||
-              isServerOwner(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-          }
-
-          // 既読レシート (Read Receipts)
-          match /readReceipts/{receiptUserId} {
-            allow read: if isAuthenticated();
-            allow create, update: if isAuthenticated() &&
-              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
-            allow delete: if isAuthenticated() &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
-          match /roomKeys/{keyId} {
-            allow read, write: if isAuthenticated() && (
-              isGlobalAdmin(appId) ||
-              isServerAdmin(appId, serverId) ||
-              (exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
-            );
-          }
-
-          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
-          match /rescueRequests/{reqUserId} {
-            allow read, delete: if isAuthenticated() && (
-              request.auth.uid == reqUserId ||
-              isServerAdmin(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-            allow create, update: if isAuthenticated() && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
-          }
-
-          // タイピングインジケーター (Typing)
-          match /typing/{userId} {
-            allow read: if isAuthenticated();
-            allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-          }
-        }
-
-        // サーバー別プロフィール (Profiles)
-        match /profiles/{profileUserId} {
-          allow read: if isAuthenticated();
-          allow create, update: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
-          allow delete: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ (Stamps)
-        match /stamps/{stampId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string &&
-            request.resource.data.name.size() > 0 &&
-            request.resource.data.name.size() <= 32 &&
-            request.resource.data.url is string &&
-            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // スタンプグループ (Stamp Groups)
-        match /stampGroups/{groupId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string;
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // 招待コード (Invite Codes)
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
-        }
-      }
-
-      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
-      match /vc_signaling/{sigDocId} {
-        allow read, delete: if isAuthenticated();
-        allow create, update: if isAuthenticated() &&
-          request.resource.data.fromUid == request.auth.uid &&
-          request.resource.data.toUid is string;
-      }
-    }
-
-    // ルート直下 VC シグナリング (フォールバック用)
-    match /vc_signaling/{sigDocId} {
-      allow read, delete: if isAuthenticated();
-      allow create, update: if isAuthenticated() &&
-        request.resource.data.fromUid == request.auth.uid &&
-        request.resource.data.toUid is string;
-    }
-
-  }
 }
 </file>
 
@@ -19649,13 +19669,13 @@ import {
   deleteToken,
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
-import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
+import * as LocalStore from './local_store.js?v=1.1.235';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.235';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -19784,6 +19804,18 @@ function isTransientTelemetryError(args) {
       str.includes('network-request-failed') ||
       str.includes('fetching auth token failed') ||
       str.includes('rtdb sdk read warning: timeout') ||
+      str.includes('usecache') ||
+      str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
+      str.includes('offline mode') ||
+      str.includes('admin check skipped') ||
+      str.includes('allowedemails check skipped') ||
+      str.includes('list admin check skipped') ||
+      str.includes('profile check skipped') ||
+      str.includes('geostudy') ||
+      str.includes('image load failed') ||
+      str.includes('fcm initialization error') ||
+      str.includes('messaging/token-subscribe-failed') ||
+      str.includes('permission_denied') ||
       str.includes('wakelock取得失敗: permission was denied') ||
       str.includes('permission was denied') ||
       str.includes('切断検知') ||
@@ -19792,6 +19824,7 @@ function isTransientTelemetryError(args) {
       str.includes('pdfjslib is not defined') ||
       str.includes('到着を待機します') ||
       str.includes('dm鍵を生成済みです') ||
+      str.includes('importing binding name') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
@@ -20586,35 +20619,20 @@ function initializeFirebase() {
           const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await withTimeout(
             Promise.all([
               getDoc(adminDocRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("Admin check skipped (offline mode)");
-                } else {
-                  console.error("Admin check error:", e);
-                }
+                // オフライン・初期接続待機時は正常なフォールバックのためテレメトリ収集を抑制
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("Admin check notice:", e?.message || e);
                 return null;
               }),
               getDoc(configRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("allowedEmails check skipped (offline mode)");
-                } else {
-                  console.error("allowedEmails check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("allowedEmails check notice:", e?.message || e);
                 return null;
               }),
               getDoc(listAdminRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("list admin check skipped (offline mode)");
-                } else {
-                  console.error("list admin check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("list admin check notice:", e?.message || e);
                 return null;
               }),
               getDoc(userProfileRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("profile check skipped (offline mode)");
-                } else {
-                  console.error("profile check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("profile check notice:", e?.message || e);
                 return null;
               })
             ]),
@@ -20950,12 +20968,15 @@ function updateUserPanelUI() {
   if (userNickname) {
     userPanelName.textContent = userNickname;
     const curStatus = window._currentUserCustomStatus;
+    // Discord本家準拠: ステメがなければ「オンライン」等の文字は出さず、名前のみスッキリ中央表示
     if (curStatus && curStatus.text) {
-      userPanelId.textContent = `${curStatus.emoji || '💬'} ${curStatus.text}`;
+      const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
+      userPanelId.textContent = `${emojiPrefix}${curStatus.text}`;
       userPanelId.className = 'user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate';
+      userPanelId.style.display = '';
     } else {
-      userPanelId.textContent = 'オンライン';
-      userPanelId.className = 'user-panel-id text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate';
+      userPanelId.textContent = '';
+      userPanelId.style.display = 'none';
     }
     if (userAvatarUrl) {
       __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
@@ -24557,6 +24578,29 @@ async function startPresenceSystem() {
   _lastReportedStatusStr = null;
   const initialPresenceState = document.visibilityState === 'hidden' ? 'away' : 'online';
   updateUserStatus(initialPresenceState).catch(() => {});
+  // 🌟 ユーザーアクティビティ検知（マウス移動・キー入力・スクロール等で操作中のオンラインを常に完全維持）
+  let _lastActivityHeartbeat = 0;
+  window._onPresenceUserActivity = () => {
+    const now = Date.now();
+    if (now - _lastActivityHeartbeat > 15000) {
+      _lastActivityHeartbeat = now;
+      stopOfflineTimer();
+      resetAwayTimer();
+      if (document.visibilityState === 'visible' && userId) {
+        updateUserStatus('online');
+      }
+    }
+  };
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, window._onPresenceUserActivity, { passive: true });
+  });
+  // 2分ごとのアクティブキープアライブ（画面表示中に他端末から勝手にオフライン化されるのを完全防止）
+  if (window._presenceKeepAliveTimer) clearInterval(window._presenceKeepAliveTimer);
+  window._presenceKeepAliveTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && userId) {
+      updateUserStatus('online', true);
+    }
+  }, 2 * 60 * 1000);
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
     const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue, off } =
@@ -24584,7 +24628,7 @@ async function startPresenceSystem() {
         window._lastConnectedLogTime = window._lastConnectedLogTime || 0;
         if (now - window._lastConnectedLogTime > 3000) {
           window._lastConnectedLogTime = now;
-          console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
+          if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
         }
         // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
         _lastReportedStatusStr = null;
@@ -24967,8 +25011,26 @@ const handleAvatarResetAction = async () => {
     if (resetAvatarBtnEl) resetAvatarBtnEl.classList.add("hidden");
     const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
     if (mobResetBtn) mobResetBtn.classList.add("hidden");
+    // 🌟 全画面UI・キャッシュを即座にリセット反映
+    const myProfile = window._userProfileCache?.get(userId);
+    if (myProfile) myProfile.avatarUrl = '';
+    const selfInCached = cachedUsers.find(u => u.id === userId);
+    if (selfInCached) selfInCached.avatarUrl = '';
+    if (Array.isArray(lastMessagesData)) {
+      lastMessagesData.forEach(m => {
+        if (m.senderId === userId || m.userId === userId) {
+          m.senderAvatarUrl = null;
+        }
+      });
+    }
     updateUserPanelUI();
-    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+    updateSettingsSidebar();
+    updateMobileProfileScreen();
+    renderMembersList(cachedUsers);
+    renderMessagesWithReadReceipts();
+    if (typeof renderServerList === 'function') renderServerList();
+    if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
     if (settingsMsgEl) {
       settingsMsgEl.textContent = "アイコンをリセットしました";
       settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
@@ -25034,10 +25096,49 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+      try {
+        if (userAvatarUrl) {
+          localStorage.setItem('covo_cached_avatar_' + userId, userAvatarUrl);
+          localStorage.removeItem('covo_avatar_cleared_' + userId);
+        }
+        localStorage.setItem('covo_cached_nick_' + userId, userNickname);
+      } catch (_) {}
+      // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
+      const myProfile = {
+        id: userId,
+        uid: userId,
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || '',
+        email: userAuthEmail,
+        aboutMe: userAboutMe,
+        customStatus: window._currentUserCustomStatus || null,
+        status: 'online'
+      };
+      window._userProfileCache?.set(userId, myProfile);
+      const selfInCached = cachedUsers.find(u => u.id === userId);
+      if (selfInCached) {
+        selfInCached.nickname = userNickname;
+        selfInCached.avatarUrl = userAvatarUrl || '';
+        selfInCached.aboutMe = userAboutMe;
+      }
+      if (Array.isArray(lastMessagesData)) {
+        lastMessagesData.forEach(m => {
+          if (m.senderId === userId || m.userId === userId) {
+            m.senderNickname = userNickname;
+            m.senderAvatarUrl = userAvatarUrl;
+          }
+        });
+      }
       const hdrTitle = document.getElementById("headerTitle");
       if (hdrTitle) hdrTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
       updateUserPanelUI();
-      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+      updateSettingsSidebar();
+      updateMobileProfileScreen();
+      renderMembersList(cachedUsers);
+      renderMessagesWithReadReceipts();
+      if (typeof renderServerList === 'function') renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "保存しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-emerald-600 font-bold";
@@ -26142,7 +26243,13 @@ window.openCustomStatusModal = function () {
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
   const currentStatus = window._currentUserCustomStatus || {};
   if (textInput) textInput.value = currentStatus.text || "";
-  if (emojiDisplay) emojiDisplay.textContent = currentStatus.emoji || "💬";
+  if (emojiDisplay) {
+    if (currentStatus.emoji && currentStatus.emoji !== "💬") {
+      emojiDisplay.textContent = currentStatus.emoji;
+    } else {
+      emojiDisplay.innerHTML = '<i class="far fa-smile text-gray-400 text-sm"></i>';
+    }
+  }
   // 過去のステータス履歴の即時描画
   renderCustomStatusHistoryUI();
   openModal(modal);
@@ -26329,12 +26436,19 @@ function updateSettingsCustomStatusUI() {
   const mobileTextDisplay = document.getElementById('mobileCustomStatusTextDisplay');
   const cur = window._currentUserCustomStatus;
   if (cur && cur.text) {
-    if (emojiDisplay) emojiDisplay.textContent = cur.emoji || '💬';
+    const emojiPrefix = cur.emoji ? `${cur.emoji} ` : '';
+    if (emojiDisplay) {
+      if (cur.emoji) {
+        emojiDisplay.textContent = cur.emoji;
+      } else {
+        emojiDisplay.innerHTML = '<i class="far fa-comment-dots text-gray-400"></i>';
+      }
+    }
     if (textDisplay) textDisplay.textContent = cur.text;
     if (clearBtn) clearBtn.classList.remove('hidden');
-    if (mobileTextDisplay) mobileTextDisplay.textContent = `${cur.emoji || '💬'} ${cur.text}`;
+    if (mobileTextDisplay) mobileTextDisplay.textContent = `${emojiPrefix}${cur.text}`;
   } else {
-    if (emojiDisplay) emojiDisplay.textContent = '💬';
+    if (emojiDisplay) emojiDisplay.innerHTML = '<i class="far fa-comment-dots text-gray-400"></i>';
     if (textDisplay) textDisplay.textContent = '未設定';
     if (clearBtn) clearBtn.classList.add('hidden');
     if (mobileTextDisplay) mobileTextDisplay.textContent = '未設定';
@@ -26364,7 +26478,9 @@ window.saveCustomStatus = async function () {
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
   const btn = document.getElementById("saveCustomStatusBtn");
   const text = textInput?.value.trim() || "";
-  const emoji = emojiDisplay?.textContent.trim() || "💬";
+  const rawEmoji = emojiDisplay?.textContent.trim() || "";
+  // 💬 や空アイコンなら絵文字なし（テキストのみ）として保存
+  const emoji = (rawEmoji === "💬" || !rawEmoji) ? "" : rawEmoji;
   if (btn) btn.disabled = true;
   try {
     const customStatus = text ? {
@@ -26390,7 +26506,15 @@ window.saveCustomStatus = async function () {
         await remove(ref(rtdb, `status/${userId}/customStatus`));
       }
     } catch (rtdbErr) { }
+    // 3. 🌟 自分自身の全画面UIを即座に再読み込みなしで更新
+    updateUserPanelUI();
     updateSettingsCustomStatusUI();
+    updateMobileProfileScreen();
+    const selfInCached = cachedUsers.find(u => u.id === userId);
+    if (selfInCached) selfInCached.customStatus = customStatus;
+    const selfProf = window._userProfileCache?.get(userId);
+    if (selfProf) selfProf.customStatus = customStatus;
+    renderMembersList(cachedUsers);
     closeCustomStatusModal();
     alertMessage("カスタムステータスを更新しました！", "success");
   } catch (err) {
@@ -26473,6 +26597,13 @@ function stopPresenceSystem() {
   stopHeartbeat();
   _beaconSent = false;
   if (_idTokenRefreshTimer) { clearInterval(_idTokenRefreshTimer); _idTokenRefreshTimer = null; }
+  if (window._presenceKeepAliveTimer) { clearInterval(window._presenceKeepAliveTimer); window._presenceKeepAliveTimer = null; }
+  if (window._onPresenceUserActivity) {
+    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceUserActivity);
+    });
+    window._onPresenceUserActivity = null;
+  }
   _cachedIdToken = null;
   if (window._connectedRefUnsub) {
     window._connectedRefUnsub();
@@ -26740,12 +26871,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // Just in case, the Auth observer handles actual db fetching
 });
-async function updateUserStatus(state) {
+async function updateUserStatus(state, force = false) {
   if (!userId || !userNickname) return;
   const activeChannelId = currentRoomId || currentDmId || null;
-  // 差分チェック（同じ状態ならスキップ）
+  // 差分チェック（forceがtrueでない限り、同じ状態ならスキップ）
   const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl, customStatus: window._currentUserCustomStatus || null });
-  if (_lastReportedStatusStr === currentStatusStr) return;
+  if (!force && _lastReportedStatusStr === currentStatusStr) return;
   _lastReportedStatusStr = currentStatusStr;
   try {
     const { ref, update, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -27093,8 +27224,15 @@ function subscribeToUserStatus() {
       if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
       const statusTextElement = document.getElementById('userPanelId');
       if (statusTextElement) {
-        statusTextElement.textContent = myDisplayState === 'online' ? 'オンライン' : (myDisplayState === 'away' ? '離席中' : 'オフライン');
-        statusTextElement.className = `user-panel-id text-[11px] font-medium truncate ${myDisplayState === 'online' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-500 dark:text-slate-400'}`;
+        const curStatus = window._currentUserCustomStatus;
+        if (curStatus && curStatus.text) {
+          const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
+          statusTextElement.textContent = `${emojiPrefix}${curStatus.text}`;
+          statusTextElement.style.display = '';
+        } else {
+          statusTextElement.textContent = '';
+          statusTextElement.style.display = 'none';
+        }
       }
     }
     return { ...u, computedState };
@@ -27152,22 +27290,18 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      if (member.computedState === 'away' || member.computedState === 'offline') {
-        const statusText = document.createElement("div");
-        statusText.className = "member-status-text";
-        const cachedProf = window._userProfileCache?.get(member.id);
-        const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
-        const tsMs = parseTimestampToMs(tsRaw);
-        const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
-        statusText.textContent = timeStr ? `${timeStr}にアクティブ` : (member.computedState === 'away' ? '離席中' : 'オフライン');
-        info.appendChild(statusText);
-      }
-      // カスタムステータス (ステメ) の表示
+      // Discord本家完全準拠: メンバー一覧ではオフライン時の長文アクティブ表記を廃止しスッキリ1行化
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
-        customStatusDiv.innerHTML = `<span>${escapeHtml(member.customStatus.emoji || '💬')}</span><span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
+        const emojiHtml = member.customStatus.emoji ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
+        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
         info.appendChild(customStatusDiv);
+      } else if (member.computedState === 'away') {
+        const statusText = document.createElement("div");
+        statusText.className = "member-status-text";
+        statusText.textContent = '離席中';
+        info.appendChild(statusText);
       }
       item.appendChild(avatar);
       item.appendChild(info);
@@ -27187,13 +27321,13 @@ function formatTimeAgo(timestamp) {
   if (!pastMs || pastMs <= 0) return "";
   const now = Date.now();
   const diffInSeconds = Math.floor((now - pastMs) / 1000);
-  if (diffInSeconds < 0) return "たった今";
-  if (diffInSeconds < 60) return "数秒前";
+  if (diffInSeconds < 60) return "たった今";
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes}分前`;
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) return `${diffInHours}時間前`;
   const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays === 1) return "昨日";
   if (diffInDays < 30) return `${diffInDays}日前`;
   const diffInMonths = Math.floor(diffInDays / 30);
   if (diffInMonths < 12) return `${diffInMonths}か月前`;
@@ -36413,7 +36547,7 @@ async function updateReadReceiptForCurrentUser() {
   } catch (error) { }
 }
 async function setTypingStatus(isTyping) {
-  if ((!currentRoomId && !currentDmId) || !userId || !appId) return;
+  if ((!currentDmId && (!currentServerId || !currentRoomId)) || !userId || !appId) return;
   try {
     const { ref, set, remove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -42092,7 +42226,7 @@ async function initializeFCM() {
     // Service Worker を明示的に登録
     if ('serviceWorker' in navigator) {
       const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
-      console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
+      if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
       // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
       const sendUserIdToSW = () => {
         const sw = navigator.serviceWorker.controller;
@@ -42160,7 +42294,7 @@ async function initializeFCM() {
             serviceWorkerRegistration: swReg
           });
           if (token && userId) {
-            console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
+            if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
             currentFcmToken = token;
             const userRef = doc(db, `artifacts/${appId}/users`, userId);
             // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
@@ -46116,13 +46250,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.235" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.236" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.235" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.236" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -46314,6 +46448,15 @@ window._subscribeVcSidebarStates = function(serverId) {
         s.includes('notallowederror') ||
         (s.includes('failed to fetch') && (s.includes('chrome-extension') || s.includes('adblock'))) ||
         (s.includes('script error') && (!src || src === 'unknown' || src === '::')) ||
+        s.includes('usecache') ||
+        s.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
+        s.includes('receiving end does not exist') ||
+        s.includes('could not establish connection') ||
+        s.includes('offline mode') ||
+        s.includes('admin check skipped') ||
+        s.includes('allowedemails check skipped') ||
+        s.includes('list admin check skipped') ||
+        s.includes('profile check skipped') ||
         s.includes('requested device not found') ||
         s.includes('notfounderror') ||
         s.includes('devicesnotfounderror') ||
@@ -46331,6 +46474,11 @@ window._subscribeVcSidebarStates = function(serverId) {
         s.includes('pdfjslib is not defined') ||
         s.includes('到着を待機します') ||
         s.includes('dm鍵を生成済みです') ||
+        s.includes('geostudy') ||
+        s.includes('image load failed') ||
+        s.includes('fcm initialization error') ||
+        s.includes('messaging/token-subscribe-failed') ||
+        s.includes('importing binding name') ||
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
@@ -46562,6 +46710,11 @@ window._subscribeVcSidebarStates = function(serverId) {
         if (isExt) {
           try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
           return; // 拡張機能のエラーはコンソール・ログ・画面へ出さずに完全消音
+        }
+        // ネットワーク切断やブラウザ一時停止などのノイズも消音
+        if (_isIgnoredEarlyError(msg, '', r)) {
+          try { e.preventDefault(); } catch (_) {}
+          return;
         }
         const logLine = `Uncaught (in promise) ${msg}`;
         window._pushCovoLog('ERR', logLine);
@@ -48896,9 +49049,9 @@ window._subscribeVcSidebarStates = function(serverId) {
               <div class="avatar-placeholder relative w-8 h-8 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
                 <div class="status-indicator status-online" id="userPanelStatus"></div>
               </div>
-              <div class="user-panel-info flex flex-col min-w-0 flex-1 leading-tight">
+              <div class="user-panel-info flex flex-col justify-center min-w-0 flex-1 leading-tight">
                 <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-white truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[11px] font-medium text-emerald-600 dark:text-emerald-400 truncate" id="userPanelId">オンライン</div>
+                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId" style="display: none;"></div>
               </div>
             </div>
             <!-- 右側: Discord風コントロールボタン群 (マイク^, ヘッドフォンv, 設定) -->
@@ -49690,13 +49843,13 @@ window._subscribeVcSidebarStates = function(serverId) {
     </div>
   </div>
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
-    if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.235"></script>
+  <script type="module" src="js/main.js?v=1.1.236"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -51050,11 +51203,11 @@ window._subscribeVcSidebarStates = function(serverId) {
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-300 mb-1.5">いま何してる？（ステータスメッセージ）</label>
           <div class="flex items-center gap-2 bg-gray-50 dark:bg-[#1e1f22] p-2 rounded-2xl border border-gray-200 dark:border-white/10 focus-within:ring-2 focus-within:ring-indigo-500/30 transition shadow-inner">
-            <button type="button" id="customStatusEmojiBtn" onclick="toggleStatusEmojiPicker(event)" class="w-9 h-9 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#383a40] text-lg flex items-center justify-center shadow-xs transition flex-shrink-0">
-              <span id="customStatusSelectedEmoji">💬</span>
+            <button type="button" id="customStatusEmojiBtn" onclick="toggleStatusEmojiPicker(event)" class="w-9 h-9 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#383a40] text-lg flex items-center justify-center shadow-xs transition flex-shrink-0" title="絵文字を選択 (任意)">
+              <span id="customStatusSelectedEmoji"><i class="far fa-smile text-gray-400 text-sm"></i></span>
             </button>
             <input type="text" id="customStatusTextInput" maxlength="100" placeholder="作業中、ゲーム中、お腹すいた..." class="flex-1 bg-transparent border-none text-base text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-1 font-medium" />
-            <button type="button" onclick="document.getElementById('customStatusTextInput').value=''; document.getElementById('customStatusSelectedEmoji').textContent='💬';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 text-xs">
+            <button type="button" onclick="document.getElementById('customStatusTextInput').value=''; document.getElementById('customStatusSelectedEmoji').innerHTML='<i class=\'far fa-smile text-gray-400 text-sm\'></i>';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 text-xs">
               クリア
             </button>
           </div>
@@ -51094,7 +51247,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.235",
+  "version": "1.1.236",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -51151,7 +51304,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.235",
+  "version": "1.1.236",
   "force": false
 }
 </file>
