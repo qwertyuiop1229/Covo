@@ -83,27 +83,16 @@ const VC_ICE_SERVERS = [
   { urls: 'stun:openrelay.metered.ca:3478' },
   { urls: 'stun:openrelay.metered.ca:80' },
   {
-    urls: 'turn:openrelay.metered.ca:3478',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:3478?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
+    urls: [
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:80',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:5349?transport=tcp'
+    ],
     username: 'openrelayproject',
     credential: 'openrelayproject'
   }
@@ -6542,6 +6531,24 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       }
     }).catch(() => {});
   }
+  const statusDivider = document.getElementById("userProfileCustomStatusDivider");
+  const aboutDivider = document.getElementById("userProfileAboutMeDivider");
+  const quickInput = document.getElementById("userProfileQuickMsgInput");
+  if (quickInput) {
+    quickInput.value = "";
+    quickInput.placeholder = `@${safeName} へのメッセージ`;
+    const quickForm = quickInput.closest('form');
+    if (quickForm) quickForm.style.display = isSelf ? 'none' : '';
+  }
+
+  const updateProfileDividers = () => {
+    const hasStatus = customStatusWrap && !customStatusWrap.classList.contains("hidden");
+    const hasAbout = aboutMeWrap && !aboutMeWrap.classList.contains("hidden");
+    const hasJoined = joinedWrap && !joinedWrap.classList.contains("hidden");
+    if (statusDivider) statusDivider.classList.toggle("hidden", !hasStatus);
+    if (aboutDivider) aboutDivider.classList.toggle("hidden", !(hasAbout || (hasJoined && hasStatus)));
+  };
+
   // 前のユーザーのカスタムステータス残留を完全防止（キャッシュがあれば即時適用、なければ非表示に初期化）
   if (customStatusWrap) {
     const cachedTarget = cachedUsers.find(u => u.id === targetUid) || window._userProfileCache?.get(targetUid);
@@ -6562,6 +6569,8 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       if (statusTextEl) statusTextEl.textContent = "";
     }
   }
+  updateProfileDividers();
+
   // 🚀 タップ直後に0msで即座にモーダルを表示（通信待ちによるタップ無反応バグを完全解消）
   openModal(modal);
   // バックグラウンドで非同期に最新ユーザー詳細（ステメ・自己紹介・メンバーになった日等）を取得して反映
@@ -6571,7 +6580,10 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
       const snap = await getDoc(userDocRef);
       if (snap.exists() && _currentProfileTargetUser?.uid === targetUid) {
         const uData = snap.data();
-        if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
+        if (uData.nickname && nameEl) {
+          nameEl.textContent = uData.nickname;
+          if (quickInput) quickInput.placeholder = `@${uData.nickname} へのメッセージ`;
+        }
         if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
           __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
         }
@@ -6607,6 +6619,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           joinedDateEl.textContent = dt;
           joinedWrap.classList.remove("hidden");
         }
+        updateProfileDividers();
       }
     } catch (err) {
       console.warn("Failed to fetch popout user profile:", err);
@@ -8409,13 +8422,13 @@ function subscribeToUserStatus() {
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
         const emojiHtml = (member.customStatus.emoji && member.customStatus.emoji !== '💬') ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
         let extraTimeStr = '';
+        const cachedProf = window._userProfileCache?.get(member.id);
+        const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+        const tsMs = parseTimestampToMs(tsRaw);
+        const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
         if (member.computedState === 'away') {
-          extraTimeStr = ' <span class="opacity-75 font-normal">• 離席中</span>';
+          extraTimeStr = timeStr ? ` <span class="opacity-75 font-normal">• 離席中 (${timeStr})</span>` : ' <span class="opacity-75 font-normal">• 離席中</span>';
         } else if (member.computedState === 'offline') {
-          const cachedProf = window._userProfileCache?.get(member.id);
-          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
-          const tsMs = parseTimestampToMs(tsRaw);
-          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
           if (timeStr) extraTimeStr = ` <span class="opacity-75 font-normal">• ${timeStr}</span>`;
         }
         customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>${extraTimeStr}`;
@@ -8423,13 +8436,13 @@ function subscribeToUserStatus() {
       } else if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
         statusText.className = "member-status-text";
+        const cachedProf = window._userProfileCache?.get(member.id);
+        const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+        const tsMs = parseTimestampToMs(tsRaw);
+        const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
         if (member.computedState === 'away') {
-          statusText.textContent = '離席中';
+          statusText.textContent = timeStr ? `離席中 (${timeStr})` : '離席中';
         } else {
-          const cachedProf = window._userProfileCache?.get(member.id);
-          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
-          const tsMs = parseTimestampToMs(tsRaw);
-          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
           statusText.textContent = timeStr || 'オフライン';
         }
         info.appendChild(statusText);
@@ -11104,6 +11117,11 @@ window.toggleUserPanelMic = async function (e) {
     micSlash.classList.toggle('hidden', !_isAudioMuted);
     micSlash.style.display = _isAudioMuted ? 'flex' : 'none';
   }
+
+  // Discord完全準拠: スピーカーミュート(Deafen)中にマイクミュートを解除した場合、スピーカーミュートも自動連動解除
+  if (!_isAudioMuted && _isUserPanelDeafened) {
+    window.toggleUserPanelDeafen();
+  }
 };
 
 window.toggleUserPanelDeafen = function (e) {
@@ -11123,14 +11141,30 @@ window.toggleUserPanelDeafen = function (e) {
     deafenSlash.classList.toggle('hidden', !_isUserPanelDeafened);
     deafenSlash.style.display = _isUserPanelDeafened ? 'flex' : 'none';
   }
-  // 全リモート音声のミュート切り替え
+
+  // 1. P2P モードのリモート音声をミュート/解除
   if (window._voiceEngine && window._voiceEngine._audioElements) {
     window._voiceEngine._audioElements.forEach(audioEl => {
       if (audioEl) audioEl.muted = _isUserPanelDeafened;
     });
   }
+  // 2. Agora SFU モードのリモートオーディオトラックを音量 0 / 100 に連動
+  if (window._voiceEngine && window._voiceEngine._agoraRemote) {
+    window._voiceEngine._agoraRemote.forEach(remoteUser => {
+      if (remoteUser && remoteUser.audioTrack) {
+        try {
+          remoteUser.audioTrack.setVolume(_isUserPanelDeafened ? 0 : 100);
+        } catch (_) {}
+      }
+    });
+  }
   const remAudio = document.getElementById('remoteAudio');
   if (remAudio) remAudio.muted = _isUserPanelDeafened;
+
+  // 3. Discord完全準拠: スピーカーミュート時はマイクも自動的にミュート状態に連動
+  if (_isUserPanelDeafened && !_isAudioMuted) {
+    window.toggleUserPanelMic();
+  }
 };
 
 // Discord input_file_2.png 準拠の音声クイックメニュー
@@ -11172,9 +11206,63 @@ window.closeUserAudioQuickMenu = function () {
   document.getElementById('qaOutputDeviceSubmenu')?.classList.add('hidden');
 };
 
+// 🌟 プルダウン・ポップオーバーのスマート外側クリック & Escキー閉鎖処理 (Discord/LINE完全準拠)
 document.addEventListener('click', (e) => {
+  // 1. 音声クイックメニュー
   if (!e.target.closest('#userAudioQuickMenu') && !e.target.closest('#userPanelMicMenuBtn') && !e.target.closest('#userPanelDeafenMenuBtn')) {
     window.closeUserAudioQuickMenu();
+  }
+  // 2. プロフィールポップアウトの3点リーダーメニュー
+  if (!e.target.closest('#upMoreMenuPopover') && !e.target.closest('#upBannerMoreBtn')) {
+    if (typeof window.closeUpMoreMenu === 'function') window.closeUpMoreMenu();
+  }
+  // 3. 通話デバイス設定メニュー
+  const callDevMenu = document.getElementById('callDeviceMenu');
+  if (callDevMenu && !callDevMenu.classList.contains('hidden')) {
+    if (!e.target.closest('#callDeviceMenu') && !e.target.closest('#callDeviceSettingsBtn') && !e.target.closest('#vcBarDeviceBtn') && !e.target.closest('#callPipDeviceBtn')) {
+      callDevMenu.classList.add('hidden');
+    }
+  }
+  // 4. カスタムドロップダウン (covo-custom-select)
+  document.querySelectorAll('.covo-custom-select.open').forEach(sel => {
+    if (!sel.contains(e.target)) sel.classList.remove('open');
+  });
+});
+
+// Escキーで開いているポップオーバー/メニューを階層順に閉じる
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    // 1. 最優先: サブメニュー・ポップオーバー
+    const upMore = document.getElementById('upMoreMenuPopover');
+    if (upMore && !upMore.classList.contains('hidden')) {
+      e.stopPropagation();
+      window.closeUpMoreMenu();
+      return;
+    }
+    const audioMenu = document.getElementById('userAudioQuickMenu');
+    if (audioMenu && !audioMenu.classList.contains('hidden')) {
+      e.stopPropagation();
+      window.closeUserAudioQuickMenu();
+      return;
+    }
+    const callDevMenu = document.getElementById('callDeviceMenu');
+    if (callDevMenu && !callDevMenu.classList.contains('hidden')) {
+      e.stopPropagation();
+      callDevMenu.classList.add('hidden');
+      return;
+    }
+    const serverMenu = document.getElementById('serverMenuDropdown');
+    if (serverMenu && !serverMenu.classList.contains('hidden')) {
+      e.stopPropagation();
+      if (typeof window.closeServerMenu === 'function') window.closeServerMenu();
+      return;
+    }
+    const openSelect = document.querySelector('.covo-custom-select.open');
+    if (openSelect) {
+      e.stopPropagation();
+      openSelect.classList.remove('open');
+      return;
+    }
   }
 });
 
@@ -11729,6 +11817,12 @@ async function openServerSettings() {
     const el = document.getElementById(tabId);
     if (el) el.style.display = hasAdminRights ? "" : "none";
   });
+
+  // サーバー保管ポリシー初期値設定
+  const retentionSel = document.getElementById("serverMessageRetentionSelect");
+  if (retentionSel) {
+    retentionSel.value = currentServerData?.messageRetentionPolicy || "keep_all";
+  }
 
   // モバイルドリルダウンのリセット
   goBackSsMobileMenu();
@@ -13367,6 +13461,118 @@ document.getElementById("deleteServerBtn")?.addEventListener("click", async () =
   finally { if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden"); }
 });
 
+// ===== サーバーメッセージ自動消去 / D1キャッシュ管理 =====
+window.saveServerRetentionPolicy = async function () {
+  if (!currentServerId) return;
+  const isOwner = currentServerData?.createdBy === userId ||
+    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  if (!isOwner && !isAdmin) {
+    alertMessage("設定を変更できるのはサーバー管理者のみです", "error");
+    return;
+  }
+  const retentionSel = document.getElementById("serverMessageRetentionSelect");
+  const policy = retentionSel?.value || "keep_all";
+  const btn = document.getElementById("saveRetentionPolicyBtn");
+  const origHtml = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin text-xs"></i> 保存中...`;
+  }
+  try {
+    await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
+      messageRetentionPolicy: policy
+    });
+    currentServerData = { ...currentServerData, messageRetentionPolicy: policy };
+    alertMessage("保管ポリシーを保存しました", "success");
+  } catch (err) {
+    console.error("saveServerRetentionPolicy error:", err);
+    alertMessage("保管ポリシーの保存に失敗しました", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+};
+
+window.executeManualServerPrune = async function () {
+  if (!currentServerId) return;
+  const isOwner = currentServerData?.createdBy === userId ||
+    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
+  if (!isOwner && !isAdmin) {
+    alertMessage("メッセージ整理を実行できるのはサーバー管理者のみです", "error");
+    return;
+  }
+  const policy = document.getElementById("serverMessageRetentionSelect")?.value || currentServerData?.messageRetentionPolicy || "prune_100";
+  let desc = "サーバーの全チャンネルから、設定された保管ポリシーに基づいて古いメッセージと添付キャッシュを整理します。";
+  if (policy === 'prune_100') desc = "各チャンネルの最新100件を超える古いメッセージおよび添付ファイルを一括整理します。";
+  else if (policy === 'days_30') desc = "30日以上前のメッセージおよび添付ファイルを一括整理します。";
+  else if (policy === 'days_7') desc = "7日以上前のメッセージおよび添付ファイルを一括整理します。";
+
+  if (!await showCustomConfirm("今すぐメッセージと添付キャッシュを整理しますか？", "今すぐ整理", "キャンセル", desc)) {
+    return;
+  }
+
+  const btn = document.getElementById("triggerManualPruneBtn");
+  const origHtml = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin text-xs"></i> 整理中...`;
+  }
+
+  try {
+    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
+    if (!idToken) throw new Error("認証トークンを取得できませんでした");
+
+    const snap = await getDocs(collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms`));
+    const roomIds = [];
+    snap.forEach(d => roomIds.push(d.id));
+
+    let totalPruned = 0;
+    let totalDeletedFiles = 0;
+
+    for (const rId of roomIds) {
+      try {
+        const res = await fetch(`${WORKER_BASE_URL}/api/pruneChannelMessages`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${idToken}`
+          },
+          body: JSON.stringify({
+            appId,
+            serverId: currentServerId,
+            roomId: rId,
+            forcePrune: true,
+            retentionPolicy: policy
+          })
+        });
+        if (res.ok) {
+          const d = await res.json().catch(() => ({}));
+          totalPruned += (d.prunedCount || 0);
+          totalDeletedFiles += (d.deletedFiles || 0);
+        }
+      } catch (rErr) {
+        console.warn(`[Prune] room ${rId} prune failed:`, rErr);
+      }
+    }
+
+    if (totalPruned > 0 || totalDeletedFiles > 0) {
+      alertMessage(`メッセージ ${totalPruned}件、添付ファイル ${totalDeletedFiles}件を整理しました`, "success");
+    } else {
+      alertMessage("整理対象の超過メッセージはありませんでした", "info");
+    }
+  } catch (err) {
+    console.error("executeManualServerPrune error:", err);
+    alertMessage("メッセージ整理中にエラーが発生しました: " + (err.message || err), "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+};
+
 let isSendingMessage = false;
 // ===== サーバーカードコンテキストメニュー =====
 let serverCtxData = null;
@@ -13617,7 +13823,7 @@ function showCustomAlert(message) {
 window.showCustomConfirm = showCustomConfirm;
 window.showCustomAlert = showCustomAlert;
 
-window.showCustomPrompt = function (message, defaultValue = "", okText = "決定", cancelText = "キャンセル") {
+window.showCustomPrompt = function (message, defaultValue = "", okText = "決定", cancelText = "キャンセル", inputType = "text") {
   return new Promise(resolve => {
     const modal = document.getElementById("customPromptModal");
     const msgEl = document.getElementById("customPromptMessage");
@@ -13630,6 +13836,7 @@ window.showCustomPrompt = function (message, defaultValue = "", okText = "決定
     }
 
     msgEl.textContent = message;
+    inputEl.type = inputType || "text";
     inputEl.value = defaultValue || "";
     okBtn.textContent = okText;
     cancelBtn.textContent = cancelText;
@@ -13661,6 +13868,7 @@ window.showCustomPrompt = function (message, defaultValue = "", okText = "決定
     }
     function cleanup() {
       modal.classList.add("hidden");
+      inputEl.type = "text";
       okBtn.removeEventListener("click", onOk);
       cancelBtn.removeEventListener("click", onCancel);
       inputEl.removeEventListener("keydown", onKeyDown);
@@ -16410,6 +16618,10 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
+  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : (dmId ? "prune_100" : "keep_all");
+  // サーバー設定が全件保持 (keep_all) の場合は不要なAPIコールを行わず即時スキップ
+  if (policy === "keep_all") return;
+
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
   const now = Date.now();
   if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;
@@ -16429,7 +16641,8 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
         appId,
         serverId: serverId || null,
         roomId: roomId || null,
-        dmId: dmId || null
+        dmId: dmId || null,
+        retentionPolicy: policy
       }),
       keepalive: true
     }).then(async res => {
@@ -21149,9 +21362,12 @@ function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
       }
 
       let statusTextVal = "オフライン";
+      const tsRaw = member.last_changed || member.lastSeen || member.updatedAt || member.createdAt;
+      const tsMs = parseTimestampToMs(tsRaw);
+      const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
       if (member.computedState === 'online') statusTextVal = "オンライン";
-      else if (member.computedState === 'away') statusTextVal = "離席中";
-      else if (member.last_changed) statusTextVal = formatTimeAgo(member.last_changed);
+      else if (member.computedState === 'away') statusTextVal = timeStr ? `離席中 (${timeStr})` : "離席中";
+      else if (timeStr) statusTextVal = timeStr;
       const statusText = document.createElement("div");
       statusText.className = "call-picker-status";
       statusText.textContent = statusTextVal;
@@ -23976,11 +24192,12 @@ window.showAnnouncementModal = function (data, id, allList = null, currentIndex 
   // 本文のリッチフォーマット処理（Markdown風の箇条書き・太字・コード・リンク化）
   if (contentEl) {
     const rawText = current.content || "";
-    if (typeof escapeHtmlAndLinkUrls === 'function') {
-      contentEl.innerHTML = escapeHtmlAndLinkUrls(rawText);
-    } else {
-      contentEl.textContent = rawText;
-    }
+    let formatted = typeof escapeHtmlAndLinkUrls === 'function' ? escapeHtmlAndLinkUrls(rawText) : escapeHtml(rawText);
+    // 太字 **text**
+    formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-gray-900 dark:text-white">$1</strong>');
+    // インラインコード `code`
+    formatted = formatted.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 font-mono text-xs text-indigo-600 dark:text-indigo-400">$1</code>');
+    contentEl.innerHTML = formatted;
   }
 
   // カテゴリバッジ・アイコンのライト＆ダーク両対応スタイリング
@@ -25359,10 +25576,25 @@ document.addEventListener("keydown", (e) => {
       window.closeAvatarLightbox();
       return;
     }
-    // -1. ステメ絵文字ピッカー
+    // -1. ステメ絵文字ピッカー & 各種クイックポップオーバー
     const statusEmojiPopover = document.getElementById('statusEmojiPopover');
     if (statusEmojiPopover && statusEmojiPopover.style.display !== 'none') {
       statusEmojiPopover.style.display = 'none';
+      return;
+    }
+    const upMoreMenu = document.getElementById('upMoreMenuPopover');
+    if (upMoreMenu && !upMoreMenu.classList.contains('hidden')) {
+      upMoreMenu.classList.add('hidden');
+      return;
+    }
+    const audioQuickMenu = document.getElementById('userAudioQuickMenu');
+    if (audioQuickMenu && !audioQuickMenu.classList.contains('hidden')) {
+      audioQuickMenu.classList.add('hidden');
+      return;
+    }
+    const callDevMenu = document.getElementById('callDeviceMenu');
+    if (callDevMenu && !callDevMenu.classList.contains('hidden')) {
+      callDevMenu.classList.add('hidden');
       return;
     }
     // 0. 受信ボックスポップオーバー
@@ -25438,6 +25670,16 @@ document.addEventListener("keydown", (e) => {
       if (topModal.id === 'passwordResetModal') { window.closePasswordResetModal(); return; }
       if (topModal.id === 'changePasswordModal') { window.closeChangePasswordModal(); return; }
       if (topModal.id === 'recoveryKeyManagerModal') { window.closeRecoveryKeyManagerModal(); return; }
+      if (topModal.id === 'chatBackupViewerModal') { window.closeChatBackupViewerModal(); return; }
+      if (topModal.id === 'serverSettingsModal') {
+        if (typeof closeServerSettingsModal === 'function') closeServerSettingsModal();
+        else { topModal.classList.add('hidden'); topModal.style.display = 'none'; }
+        return;
+      }
+      if (topModal.id === 'iosPwaGuideModal') {
+        topModal.classList.add('hidden');
+        return;
+      }
       if (topModal.id === 'customPromptModal') {
         const cancelBtn = document.getElementById("customPromptCancel");
         if (cancelBtn) cancelBtn.click();
@@ -25445,7 +25687,7 @@ document.addEventListener("keydown", (e) => {
       }
       topModal.classList.add('hidden');
       if (topModal.style.display === 'flex') topModal.style.display = 'none';
-      }
+    }
       }
       });
       // ==========================================
@@ -25921,7 +26163,7 @@ function initPinLockSystem() {
       } else if (e.key === 'Backspace') {
         e.preventDefault();
         backspaceAppPinDigit();
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Delete' || e.key === 'Escape') {
         e.preventDefault();
         clearAppPinInput();
       }
@@ -25934,7 +26176,7 @@ function initPinLockSystem() {
       if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         inputSetupPinDigit(e.key);
-      } else if (e.key === 'Backspace') {
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
         backspaceSetupPinDigit();
       } else if (e.key === 'Escape') {
@@ -26022,9 +26264,16 @@ function initPinLockSystem() {
   setInterval(checkIdleTimeout, 10000);
   updatePinSettingsUI();
 
-  // 起動時の初期ロック確認
-  if (sessionStorage.getItem('covo_is_screen_locked') === '1') {
-    lockAppScreen();
+  // 起動時の初期ロック確認 (セッション維持または猶予時間切れを判定)
+  const hasPin = !!localStorage.getItem('covo_pin_hash');
+  if (hasPin) {
+    const isSessionLocked = sessionStorage.getItem('covo_is_screen_locked') === '1';
+    const graceSec = parseInt(localStorage.getItem('covo_lock_grace_sec') ?? '0', 10);
+    const blurTime = parseInt(localStorage.getItem('covo_app_blur_time') || '0', 10);
+    const isGraceExpired = (graceSec >= 0) && (blurTime === 0 || (Date.now() - blurTime >= graceSec * 1000));
+    if (isSessionLocked || isGraceExpired) {
+      lockAppScreen();
+    }
   }
 }
 // ==========================================
@@ -26252,39 +26501,65 @@ window.openChatBackupViewerFilePicker = function () {
     try {
       if (file.name.endsWith('.covo-backup')) {
         const text = await file.text();
-        const backupData = JSON.parse(text);
+        let backupData;
+        try {
+          backupData = JSON.parse(text);
+        } catch (_) {
+          alertMessage('バックアップファイルの形式が無効です（JSONパース失敗）', 'error');
+          return;
+        }
         if (!backupData.covoBackup || !backupData.salt || !backupData.iv || !backupData.data) {
           alertMessage('無効なCovoバックアップファイル形式です。', 'error');
           return;
         }
-        const passphrase = await window.showCustomPrompt(`「${backupData.roomName || file.name}」の復号パスフレーズ:`, '', '復号して開く', 'キャンセル');
-        if (!passphrase) return;
-        const salt = new Uint8Array(_b64ToAb(backupData.salt));
-        const iv = new Uint8Array(_b64ToAb(backupData.iv));
-        const cipherBytes = _b64ToAb(backupData.data);
-        const aesKey = await _derivePassphraseKey(passphrase, salt);
-        let decryptedBuf;
-        try {
-          decryptedBuf = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            aesKey,
-            cipherBytes
+
+        // パスワード入力画面（伏字 & 再試行可能）
+        let decryptedPayload = null;
+        while (!decryptedPayload) {
+          const passphrase = await window.showCustomPrompt(
+            `「${backupData.roomName || file.name}」の復号パスフレーズ:`,
+            '',
+            '復号して開く',
+            'キャンセル',
+            'password'
           );
-        } catch (_) {
-          alertMessage('パスフレーズが一致しないか、バックアップファイルが破損しています。', 'error');
-          return;
+          if (!passphrase) return; // ユーザーがキャンセルした場合は中止
+
+          try {
+            const salt = new Uint8Array(_b64ToAb(backupData.salt));
+            const iv = new Uint8Array(_b64ToAb(backupData.iv));
+            const cipherBytes = _b64ToAb(backupData.data);
+            const aesKey = await _derivePassphraseKey(passphrase, salt);
+            const decryptedBuf = await crypto.subtle.decrypt(
+              { name: 'AES-GCM', iv: iv },
+              aesKey,
+              cipherBytes
+            );
+            const decryptedJson = new TextDecoder().decode(decryptedBuf);
+            decryptedPayload = JSON.parse(decryptedJson);
+          } catch (_) {
+            alertMessage('パスフレーズが一致しません。もう一度お試しください。', 'error');
+          }
         }
-        const decryptedJson = new TextDecoder().decode(decryptedBuf);
-        const payload = JSON.parse(decryptedJson);
-        openChatBackupViewerModal(payload.roomName || file.name, payload.messages || [], payload.exportedAt);
+
+        const msgs = decryptedPayload.messages || [];
+        await _tryDecryptImportedMessages(msgs);
+        openChatBackupViewerModal(decryptedPayload.roomName || file.name, msgs, decryptedPayload.exportedAt, true);
+        alertMessage('暗号化バックアップを正常に復号して展開しました！', 'success');
       } else if (file.name.endsWith('.json')) {
         const text = await file.text();
         const payload = JSON.parse(text);
         const msgs = Array.isArray(payload) ? payload : (payload.messages || []);
-        openChatBackupViewerModal(payload.channel || payload.roomName || file.name, msgs, payload.exportedAt);
+        await _tryDecryptImportedMessages(msgs);
+        openChatBackupViewerModal(payload.channel || payload.roomName || file.name, msgs, payload.exportedAt, false);
+      } else if (file.name.endsWith('.md')) {
+        const text = await file.text();
+        const parsed = _parseCovoMdBackup(file.name, text);
+        openChatBackupViewerModal(parsed.title, parsed.messages, parsed.exportedAt, false);
       } else {
         const text = await file.text();
-        openTextFileAsViewer(file.name, text);
+        const parsed = _parseCovoTxtBackup(file.name, text);
+        openChatBackupViewerModal(parsed.title, parsed.messages, parsed.exportedAt, false);
       }
     } catch (err) {
       console.error('[Backup View Error]', err);
@@ -26294,22 +26569,200 @@ window.openChatBackupViewerFilePicker = function () {
   fileInp.click();
 };
 
-window.openChatBackupViewerModal = async function (title, messages, exportedAt) {
+// Covo エクスポート TXT のスマートパーサー
+function _parseCovoTxtBackup(filename, rawText) {
+  const lines = rawText.split(/\r?\n/);
+  let title = filename.replace(/\.[^/.]+$/, "");
+  let exportedAt = Date.now();
+  const messages = [];
+  let currentMsg = null;
+
+  // メッセージ行判定: [2026/09/30 21:01:23] 送信者名: 本文
+  const msgRegex = /^\[(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*?):\s*(.*)$/;
+  // ヘッダー判定: === Covo チャットログ: ... ===
+  const headerRegex = /^===\s*Covo\s*チャットログ:\s*(.*?)\s*===$/;
+  const exportDateRegex = /^エクスポート日時:\s*(.*?)$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // ヘッダー情報の抽出（メッセージには含めない）
+    const headerMatch = trimmed.match(headerRegex);
+    if (headerMatch) {
+      title = headerMatch[1];
+      continue;
+    }
+    const exportDateMatch = trimmed.match(exportDateRegex);
+    if (exportDateMatch) {
+      const parsedDate = new Date(exportDateMatch[1]).getTime();
+      if (!isNaN(parsedDate) && parsedDate > 0) exportedAt = parsedDate;
+      continue;
+    }
+    if (trimmed.startsWith('メッセージ件数:')) {
+      continue;
+    }
+
+    // メッセージ行のパース
+    const msgMatch = line.match(msgRegex);
+    if (msgMatch) {
+      if (currentMsg) messages.push(currentMsg);
+      const timeStr = msgMatch[1];
+      const sender = msgMatch[2].trim() || 'ユーザー';
+      let content = msgMatch[3];
+      const ts = new Date(timeStr).getTime() || Date.now();
+
+      let sticker = null;
+      let fileName = null;
+      // [スタンプ: 👍] の抽出
+      const stickerMatch = content.match(/^\[スタンプ:\s*(.*)\]$/);
+      if (stickerMatch) {
+        sticker = stickerMatch[1].trim();
+        content = '';
+      }
+      // [ファイル: photo.png] の抽出
+      const fileMatch = content.match(/^\[ファイル:\s*(.*)\]$/);
+      if (fileMatch) {
+        fileName = fileMatch[1].trim();
+        content = '';
+      }
+
+      currentMsg = {
+        id: `txt_${messages.length}_${Date.now()}`,
+        senderNickname: sender,
+        text: content,
+        sticker,
+        fileName,
+        timestamp: ts
+      };
+    } else if (currentMsg) {
+      // 直前メッセージの複数行本文
+      currentMsg.text = currentMsg.text ? `${currentMsg.text}\n${line}` : line;
+    } else {
+      // 形式に合わない一般的なテキスト行
+      messages.push({
+        id: `txt_raw_${messages.length}`,
+        senderNickname: 'ログ',
+        text: line,
+        timestamp: exportedAt
+      });
+    }
+  }
+  if (currentMsg) messages.push(currentMsg);
+  return { title, messages, exportedAt };
+}
+
+// Covo エクスポート Markdown のスマートパーサー
+function _parseCovoMdBackup(filename, rawText) {
+  const lines = rawText.split(/\r?\n/);
+  let title = filename.replace(/\.[^/.]+$/, "");
+  let exportedAt = Date.now();
+  const messages = [];
+  let currentMsg = null;
+
+  // # Covo チャット履歴: ...
+  const titleRegex = /^#\s*Covo\s*チャット履歴:\s*(.*)$/;
+  // ### 送信者  <small>(2026/09/30 21:01:23)</small>
+  const msgHeaderRegex = /^###\s+(.*?)(?:\s+<small>\((.*?)\)<\/small>)?$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === '---') continue;
+
+    const titleMatch = trimmed.match(titleRegex);
+    if (titleMatch) {
+      title = titleMatch[1];
+      continue;
+    }
+    if (trimmed.startsWith('- **エクスポート日時**:')) {
+      const dStr = trimmed.replace('- **エクスポート日時**:', '').trim();
+      const parsedDate = new Date(dStr).getTime();
+      if (!isNaN(parsedDate) && parsedDate > 0) exportedAt = parsedDate;
+      continue;
+    }
+    if (trimmed.startsWith('- **メッセージ数**:')) {
+      continue;
+    }
+
+    const msgHeaderMatch = line.match(msgHeaderRegex);
+    if (msgHeaderMatch) {
+      if (currentMsg) messages.push(currentMsg);
+      const sender = msgHeaderMatch[1].trim() || 'ユーザー';
+      const timeStr = msgHeaderMatch[2] ? msgHeaderMatch[2].trim() : '';
+      const ts = timeStr ? (new Date(timeStr).getTime() || Date.now()) : Date.now();
+      currentMsg = {
+        id: `md_${messages.length}_${Date.now()}`,
+        senderNickname: sender,
+        text: '',
+        sticker: null,
+        fileName: null,
+        fileData: null,
+        timestamp: ts
+      };
+    } else if (currentMsg) {
+      // スタンプの抽出: **[スタンプ]** 👍
+      const stickerMatch = trimmed.match(/^\*\*\[スタンプ\]\*\*\s*(.*)$/);
+      if (stickerMatch) {
+        currentMsg.sticker = stickerMatch[1].trim();
+        continue;
+      }
+      // ファイルリンクの抽出: 📁 [fileName](url)
+      const fileMatch = trimmed.match(/^📁\s*\[(.*?)\]\((.*?)\)$/);
+      if (fileMatch) {
+        currentMsg.fileName = fileMatch[1].trim();
+        currentMsg.fileData = fileMatch[2].trim() !== '#' ? fileMatch[2].trim() : null;
+        continue;
+      }
+      // 通常の本文行
+      currentMsg.text = currentMsg.text ? `${currentMsg.text}\n${line}` : line;
+    }
+  }
+  if (currentMsg) messages.push(currentMsg);
+  return { title, messages, exportedAt };
+}
+
+let _viewerExportedDateStr = '';
+let _viewerIsEncrypted = false;
+
+window.openChatBackupViewerModal = async function (title, messages, exportedAt, isEncrypted = false) {
   _cachedViewerMessages = messages || [];
+  _viewerIsEncrypted = isEncrypted;
+  _viewerExportedDateStr = exportedAt ? new Date(exportedAt).toLocaleDateString('ja-JP') : '';
+
   const modal = document.getElementById('chatBackupViewerModal');
   const titleEl = document.getElementById('viewerHeaderTitle');
-  const metaEl = document.getElementById('viewerHeaderMeta');
-  const dateStr = exportedAt ? new Date(exportedAt).toLocaleDateString('ja-JP') : '';
+  const searchInp = document.getElementById('viewerSearchInput');
+  const clearBtn = document.getElementById('viewerSearchClearBtn');
+  if (searchInp) searchInp.value = '';
+  if (clearBtn) clearBtn.classList.add('hidden');
+
   if (titleEl) titleEl.textContent = title || 'チャットバックアップ';
-  if (metaEl) metaEl.textContent = `${_cachedViewerMessages.length} 件のメッセージ ${dateStr ? `• ${dateStr}` : ''}`;
+  updateViewerHeaderMeta(_cachedViewerMessages.length, _cachedViewerMessages.length);
+
   if (modal) modal.classList.remove('hidden');
   await renderViewerTimeline(_cachedViewerMessages);
 };
+
+function updateViewerHeaderMeta(matchedCount, totalCount) {
+  const metaEl = document.getElementById('viewerHeaderMeta');
+  if (!metaEl) return;
+  const encBadge = _viewerIsEncrypted
+    ? `<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold mr-2"><i class="fas fa-lock text-[10px]"></i>暗号化保護</span>`
+    : '';
+  const countText = (matchedCount === totalCount)
+    ? `${totalCount} 件のメッセージ ${_viewerExportedDateStr ? `• ${_viewerExportedDateStr}` : ''}`
+    : `${matchedCount} 件ヒット / 全 ${totalCount} 件 ${_viewerExportedDateStr ? `• ${_viewerExportedDateStr}` : ''}`;
+  metaEl.innerHTML = `${encBadge}<span>${countText}</span>`;
+}
 
 window.closeChatBackupViewerModal = function () {
   const modal = document.getElementById('chatBackupViewerModal');
   if (modal) modal.classList.add('hidden');
   _cachedViewerMessages = [];
+  _viewerExportedDateStr = '';
+  _viewerIsEncrypted = false;
 };
 
 // 復号化ビューアのタイムライン描画 (いつものチャット画面と同じリッチスタイル)
@@ -26443,13 +26896,33 @@ function openTextFileAsViewer(filename, text) {
   openChatBackupViewerModal(filename, fakeMsgs, Date.now());
 }
 
+window.clearViewerSearch = function () {
+  const inp = document.getElementById('viewerSearchInput');
+  if (inp) {
+    inp.value = '';
+    filterViewerMessages('');
+  }
+};
+
 window.filterViewerMessages = function (query) {
+  const clearBtn = document.getElementById('viewerSearchClearBtn');
   const q = (query || '').toLowerCase().trim();
+  if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+
+  const totalCount = _cachedViewerMessages ? _cachedViewerMessages.length : 0;
   if (!q) {
+    updateViewerHeaderMeta(totalCount, totalCount);
     renderViewerTimeline(_cachedViewerMessages);
     return;
   }
-  const filtered = _cachedViewerMessages.filter(m => (m.text && m.text.toLowerCase().includes(q)) || (m.senderNickname && m.senderNickname.toLowerCase().includes(q)));
+  const filtered = _cachedViewerMessages.filter(m =>
+    (m.text && m.text.toLowerCase().includes(q)) ||
+    (m.senderNickname && m.senderNickname.toLowerCase().includes(q)) ||
+    (m.userNickname && m.userNickname.toLowerCase().includes(q)) ||
+    (m.fileName && m.fileName.toLowerCase().includes(q)) ||
+    (m.sticker && m.sticker.toLowerCase().includes(q))
+  );
+  updateViewerHeaderMeta(filtered.length, totalCount);
   renderViewerTimeline(filtered);
 };
 
@@ -26597,12 +27070,16 @@ window.saveViewerMessagesAsTxt = function () {
 // --- TURN / ICE サーバー設定 (VC_ICE_SERVERS はトップレベル先行定義済み) ---
 const VC_TURN_TEST_SERVERS = [
   {
-    urls: 'turn:openrelay.metered.ca:3478',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+    urls: [
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:3478?transport=tcp',
+      'turn:openrelay.metered.ca:3478',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:80',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:5349?transport=tcp'
+    ],
     username: 'openrelayproject',
     credential: 'openrelayproject'
   }
@@ -27324,7 +27801,33 @@ class VoiceEngine {
     if (rtcText) rtcText.textContent = isRelay ? 'P2P (TURNリレー強制) 移行中...' : 'P2P (直接優先) 移行中...';
     if (rtcBadge) rtcBadge.classList.add('reconnecting');
     this._forceTurnOnly = isRelay;
-    this._cleanupAllPeers();
+
+    // Discord / LINE 準拠: Make-Before-Break (接続確立猶予付き切替)
+    // 既存のピア接続とオーディオを即座に破棄せず、新接続が音声を受信するまで保持して音切れラグを撲滅
+    const oldPeers = new Map(this._peers);
+    const oldAudioElements = new Map(this._audioElements);
+    this._peers = new Map();
+    this._audioElements = new Map();
+
+    const cleanupOldPeers = () => {
+      oldPeers.forEach((p) => {
+        try { if (p.pc) p.pc.close(); } catch (_) {}
+        if (p.iceTimer) clearTimeout(p.iceTimer);
+        if (p.signalingTimer) clearTimeout(p.signalingTimer);
+      });
+      oldPeers.clear();
+      oldAudioElements.forEach((audioEl) => {
+        try {
+          audioEl.pause();
+          audioEl.srcObject = null;
+          audioEl.remove();
+        } catch (_) {}
+      });
+      oldAudioElements.clear();
+    };
+    // 最大3秒の猶予後に旧接続を完全破棄
+    const oldCleanupTimer = setTimeout(cleanupOldPeers, 3000);
+
     const others = Object.keys(currentStates || {}).filter(uid => uid !== this._myUid);
     for (const peerUid of others) {
       const iAmOfferer = this._myUid < peerUid;
@@ -27338,7 +27841,7 @@ class VoiceEngine {
     }
     this._modeSwitching = false;
     console.log(`[VoiceEngine] 🔄 P2Pポリシー切替完了: ${isRelay ? 'TURNリレー強制' : 'P2P直接優先'}`);
-    }
+  }
     async setChannelModeOverride(mode = 'auto') {
     if (!this.channelId) {
       throw new Error('通話チャンネルに参加していません');
@@ -27525,6 +28028,9 @@ class VoiceEngine {
           audioEl.style.display = 'none';
           document.body.appendChild(audioEl);
           this._audioElements.set(peerUid, audioEl);
+        }
+        if (typeof _isUserPanelDeafened !== 'undefined' && _isUserPanelDeafened) {
+          audioEl.muted = true;
         }
         audioEl.srcObject = e.streams[0];
         const playPromise = audioEl.play();
@@ -27932,6 +28438,9 @@ class VoiceEngine {
           console.warn('[VoiceEngine] Agora subscribe失敗:', e)
         );
         if (mediaType === 'audio' && user.audioTrack) {
+          if (typeof _isUserPanelDeafened !== 'undefined' && _isUserPanelDeafened) {
+            try { user.audioTrack.setVolume(0); } catch (_) {}
+          }
           const p = user.audioTrack.play();
           if (p && typeof p.catch === 'function') {
             p.catch(err => {

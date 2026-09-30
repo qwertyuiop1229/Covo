@@ -523,16 +523,32 @@
       font-size: 0.875rem;
       line-height: 1.65;
       color: #334155;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .whatsnew-body-box a {
+      color: #5865f2;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .whatsnew-body-box a:hover {
+      opacity: 0.8;
     }
     body.dark-server-theme .whatsnew-body-box {
       background-color: rgba(15, 23, 42, 0.6) !important;
       border-color: rgba(255, 255, 255, 0.06) !important;
       color: #cbd5e1 !important;
     }
+    body.dark-server-theme .whatsnew-body-box a {
+      color: #818cf8;
+    }
     body.discord-dark-theme .whatsnew-body-box {
       background-color: #1e1f22 !important;
       border-color: #1f2023 !important;
       color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .whatsnew-body-box a {
+      color: #5865f2;
     }
 
     .whatsnew-footer {

@@ -3740,7 +3740,7 @@ async function handleSetOffline(request, env) {
             if (!verifiedUser) {
               return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
             }
-            const { appId, serverId, roomId, dmId } = await request.json();
+            const { appId, serverId, roomId, dmId, forcePrune, retentionPolicy, maxKeep } = await request.json();
             if (!appId || (!dmId && (!serverId || !roomId))) {
               return new Response(JSON.stringify({ error: "Missing required parameters" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
             }
@@ -3831,16 +3831,43 @@ async function handleSetOffline(request, env) {
               const tB = b.timestamp || b.createdAt || 0;
               return tA - tB;
             });
-            const MAX_ALLOWED = 100;
+            const policy = retentionPolicy || "prune_100";
+            if (policy === "keep_all" && !forcePrune) {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, skipped: true }), {
+                status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              });
+            }
+
             // ピン留め（アナウンス）メッセージは自動プルーニングから保護し、通常メッセージのみを対象とする
             const unpinnedMsgs = msgsList.filter(m => !m.isPinned);
-            if (unpinnedMsgs.length <= MAX_ALLOWED) {
+            let excessMsgs = [];
+
+            if (policy === "days_7") {
+              const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+              excessMsgs = unpinnedMsgs.filter(m => {
+                const t = m.timestamp || m.createdAt || 0;
+                return t > 0 && t < cutoff;
+              });
+            } else if (policy === "days_30") {
+              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              excessMsgs = unpinnedMsgs.filter(m => {
+                const t = m.timestamp || m.createdAt || 0;
+                return t > 0 && t < cutoff;
+              });
+            } else {
+              // prune_100 またはデフォルト
+              const maxAllowed = typeof maxKeep === 'number' && maxKeep > 0 ? maxKeep : 100;
+              if (unpinnedMsgs.length > maxAllowed) {
+                const excessCount = unpinnedMsgs.length - maxAllowed;
+                excessMsgs = unpinnedMsgs.slice(0, excessCount);
+              }
+            }
+
+            if (excessMsgs.length === 0) {
               return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
               });
             }
-            const excessCount = unpinnedMsgs.length - MAX_ALLOWED;
-            const excessMsgs = unpinnedMsgs.slice(0, excessCount);
             let deletedFiles = 0;
             let prunedCount = 0;
             for (const msg of excessMsgs) {

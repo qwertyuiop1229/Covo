@@ -5195,6 +5195,970 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
 }
 </file>
 
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
+    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
+    }
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
+    }
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
+}
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    let fileEncoding = 'utf-8';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
+}
+run();
+</file>
+
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
+  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
+    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
+  }
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  // 1. コードブロック退避（コピーボタン付き）
+  const codeBlocks = [];
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
+    return id;
+  });
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
+      }
+    }
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!cleanUrl) return rawUrl;
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
+    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
+      return escapeHtml(rawUrl);
+    }
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  return escapedText;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      border-top-left-radius: 12px;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
+</file>
+
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -5228,10 +6192,14 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
       background-color: rgba(0, 0, 0, 0.75);
     }
     /* Discord本家のユーザーポップオーバーは画面全体を暗くしないため、
-       PC幅ではプロフィールカードの暗幕だけ弱める */
+       PC幅ではプロフィールカードの暗幕を完全に透明化して外側クリックで閉じる */
     @media (min-width: 768px) {
       #userProfileModal.modal-overlay {
-        background-color: transparent;
+        background-color: transparent !important;
+        pointer-events: auto !important;
+      }
+      #userProfileModal .user-profile-card {
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
       }
     }
     /* ドロップダウンコンテナのスタイル */
@@ -6127,970 +7095,6 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
     }
     body.discord-dark-theme #userProfileBanner {
       background-color: var(--user-banner-color, #2b2d31);
-    }
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
-    if (!isSafeHttp && !isSafeDataImage) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
-  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
-    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
-  }
-  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
-  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
-  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
-  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  // 1. コードブロック退避（コピーボタン付き）
-  const codeBlocks = [];
-  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1.trim());
-    codeBlocks.push(
-      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
-        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
-          `<span>Code</span>` +
-          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
-            `<i class="far fa-copy"></i> コピー` +
-          `</button>` +
-        `</div>` +
-        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
-      `</div>`
-    );
-    return id;
-  });
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
-    }
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
-      }
-    }
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    if (!cleanUrl) return rawUrl;
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
-    }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
-    }
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  // 5. 書式装飾
-  // スポイラー記法 (||ネタバレ||)
-  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
-  let mentionCount = 0;
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    if (mentionCount >= 10) return match;
-    mentionCount++;
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  return escapedText;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
-</file>
-
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      border-top-left-radius: 12px;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
-    .stamp-jump-anim {
-      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
     }
 </file>
 
@@ -11229,6 +11233,10 @@ body.discord-dark-theme #userPanel {
   overflow: hidden;
   margin-left: 0.35rem;
   margin-right: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 .user-panel-name {
   font-size: 0.85rem;
@@ -11239,15 +11247,26 @@ body.discord-dark-theme #userPanel {
   text-overflow: ellipsis;
   line-height: 1.2;
 }
-body.dark-server-theme .user-panel-name,
+body.dark-server-theme .user-panel-name {
+  color: #f8fafc !important;
+}
 body.discord-dark-theme .user-panel-name {
   color: #f2f3f5 !important;
 }
 .user-panel-id {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #64748b;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.dark-server-theme .user-panel-id {
+  color: #94a3b8 !important;
+}
+body.discord-dark-theme .user-panel-id {
+  color: #949ba4 !important;
 }
 /* ミュート・スピーカーオフ コントロール (Discord input_file_2.png 準拠) */
 .user-panel-ctrl-btn, .user-panel-chevron-btn {
@@ -16175,6 +16194,9 @@ export default {
       if (url.pathname === "/api/joinServer" && request.method === "POST") {
         return await handleJoinServer(request, env);
       }
+      if (url.pathname === "/api/inviteInfo" && (request.method === "GET" || request.method === "HEAD")) {
+        return await handleGetInviteInfo(request, env, url);
+      }
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
         return await handleSyncRtdb(request, env);
       }
@@ -16653,6 +16675,89 @@ function getRtdbBaseUrl(env, clientRtdbUrl) {
   return defaultRtdb;
 }
 // -------------------------------------------------------------
+// 招待コード情報取得 (未ログイン公開エンドポイント - Discord完全準拠)
+// -------------------------------------------------------------
+async function handleGetInviteInfo(request, env, url) {
+  const cors = getCorsHeaders(request);
+  try {
+    const code = (url.searchParams.get("code") || "").toUpperCase().trim();
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+    if (!code || !isValidAppId(appId, env) || !/^[A-Za-z0-9_\-]+$/.test(code)) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "無効な招待コードです" }), {
+        status: 400, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const adminToken = await getAdminTokenForFirestore(env);
+    if (!adminToken) {
+      return new Response(JSON.stringify({ success: false, error: "Server authentication failed" }), {
+        status: 500, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const projectId = env.FIREBASE_PROJECT_ID;
+    // 1. inviteIndex からサーバーIDを取得
+    const indexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/inviteIndex/${encodeURIComponent(code)}`;
+    const indexRes = await fetch(indexUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const indexData = await indexRes.json();
+    if (indexData.error || !indexData.fields || !indexData.fields.serverId) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "招待コードが見つかりません" }), {
+        status: 404, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const serverId = indexData.fields.serverId.stringValue;
+    // 2. 招待コードの有効期限と使用回数を検証
+    const invUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(code)}`;
+    const invRes = await fetch(invUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const invData = await invRes.json();
+    if (!invData.error && invData.fields) {
+      if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクは無効化されています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+      const expiresAt = invData.fields.expiresAt?.timestampValue;
+      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクの有効期限が切れています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+      const maxUses = parseInt(invData.fields.maxUses?.integerValue || "0", 10);
+      const uses = parseInt(invData.fields.uses?.integerValue || "0", 10);
+      if (maxUses > 0 && uses >= maxUses) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクは使用上限回数に達しています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+    }
+    // 3. サーバーの公開情報（名前・アイコン・人数）を取得
+    const srvUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`;
+    const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const srvData = await srvRes.json();
+    if (srvData.error || !srvData.fields) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "対象のサーバーが見つかりません" }), {
+        status: 404, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const serverName = srvData.fields.name?.stringValue || serverId;
+    const iconUrl = srvData.fields.iconUrl?.stringValue || null;
+    const memberCount = parseInt(srvData.fields.memberCount?.integerValue || (srvData.fields.joinedUsers?.arrayValue?.values?.length || 1).toString(), 10);
+    return new Response(JSON.stringify({
+      success: true,
+      valid: true,
+      code,
+      serverId,
+      serverName,
+      iconUrl,
+      memberCount
+    }), {
+      status: 200, headers: { ...cors, "Content-Type": "application/json" }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ success: false, error: err.toString() }), {
+      status: 500, headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+}
+// -------------------------------------------------------------
 // サーバー参加処理
 // -------------------------------------------------------------
 async function handleJoinServer(request, env) {
@@ -16774,22 +16879,20 @@ async function handleJoinServer(request, env) {
         if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
           return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
-        // 招待コードの uses をインクリメント (Precondition付きトランザクション風処理)
-        const updateTime = invData.updateTime;
+        // 招待コードの uses をアトミックにインクリメント (競合・不一致エラーを完全防止)
         const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
         const commitRes = await fetch(invTransformUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             writes: [{
-              update: {
-                name: invData.name,
-                fields: {
-                  ...invData.fields,
-                  uses: { integerValue: (parseInt(uses) + 1).toString() }
-                }
-              },
-              currentDocument: { updateTime: updateTime }
+              transform: {
+                document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(inviteCode)}`,
+                fieldTransforms: [{
+                  fieldPath: "uses",
+                  increment: { integerValue: "1" }
+                }]
+              }
             }]
           })
         });
@@ -16798,11 +16901,11 @@ async function handleJoinServer(request, env) {
           success = true;
           break;
         }
-      }
-      if (!success) {
+        }
+        if (!success) {
         return new Response(JSON.stringify({ success: false, error: "Conflict updating invite code, please try again" }), { status: 409, headers: { ...cors, "Content-Type": "application/json" } });
-      }
-      valid = true;
+        }
+        valid = true;
     }
     if (!valid) {
       return new Response(JSON.stringify({ success: false, error: "Authentication required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
@@ -20079,14 +20182,16 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
   const fetchPromise = (async () => {
     try {
       const cu = (cachedUsers || []).find(u => u.id === uid);
-      const uSnap = await getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null);
+      const [uSnap, pSnap, statusSnap] = await Promise.all([
+        getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null),
+        getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null),
+        getDoc(doc(db, `artifacts/${appId}/status`, uid)).catch(() => null)
+      ]);
       let data = uSnap && uSnap.exists() ? uSnap.data() : null;
-      if (!data || !data.nickname) {
-        const pSnap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null);
-        if (pSnap && pSnap.exists()) {
-          data = { ...(data || {}), ...pSnap.data() };
-        }
+      if (pSnap && pSnap.exists()) {
+        data = { ...(data || {}), ...pSnap.data() };
       }
+      const statusData = statusSnap && statusSnap.exists() ? statusSnap.data() : null;
       const rel = friendRelationships && friendRelationships[uid];
       const nickname = data?.nickname || data?.displayName || cu?.nickname || (fallback.nickname && fallback.nickname !== 'ユーザー' ? fallback.nickname : (rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`)));
       // ユーザーが手動設定またはリセットしたアバターを最優先し、勝手にGoogle photoURLで上書きしない
@@ -20094,6 +20199,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       const email = data?.email || cu?.email || rel?.targetEmail || fallback.email || '';
       const customStatus = data?.customStatus || cu?.customStatus || null;
       const aboutMe = data?.aboutMe || '';
+      const rawTimestamp = data?.last_changed || data?.lastSeen || statusData?.last_changed || statusData?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || cu?.lastSeen || null;
       const profile = {
         id: uid,
         uid: uid,
@@ -20102,9 +20208,9 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
         email,
         customStatus,
         aboutMe,
-        status: cu?.computedState || cu?.state || 'offline',
-        last_changed: data?.last_changed || data?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || null,
-        lastSeen: data?.lastSeen || data?.last_changed || data?.updatedAt || data?.createdAt || cu?.lastSeen || null
+        status: cu?.computedState || cu?.state || statusData?.state || 'offline',
+        last_changed: rawTimestamp,
+        lastSeen: rawTimestamp
       };
       window._userProfileCache.set(uid, profile);
       if (Array.isArray(cachedUsers)) {
@@ -20983,16 +21089,12 @@ function initializeFirebase() {
 function updateUserPanelUI() {
   if (userNickname) {
     userPanelName.textContent = userNickname;
-    const curStatus = window._currentUserCustomStatus;
-    // Discord本家準拠: ステメがなければ「オンライン」等の文字は出さず、名前のみスッキリ中央表示
-    if (curStatus && curStatus.text) {
-      const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
-      userPanelId.textContent = `${emojiPrefix}${curStatus.text}`;
-      userPanelId.className = 'user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate';
+    // Discord本家準拠: 左下ユーザーパネルはステメではなくオンライン/離席中/オフラインの状態を表示
+    const myState = (document.visibilityState === 'hidden' && !document.hasFocus()) ? 'away' : 'online';
+    const stateLabelMap = { online: 'オンライン', away: '離席中', offline: 'オフライン' };
+    if (userPanelId) {
+      userPanelId.textContent = stateLabelMap[myState] || 'オンライン';
       userPanelId.style.display = '';
-    } else {
-      userPanelId.textContent = '';
-      userPanelId.style.display = 'none';
     }
     if (userAvatarUrl) {
       __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
@@ -21001,7 +21103,7 @@ function updateUserPanelUI() {
     }
     const stat = document.createElement('div');
     stat.id = 'userPanelStatus';
-    stat.className = 'status-indicator status-online';
+    stat.className = `status-indicator status-${myState}`;
     userPanelAvatar.appendChild(stat);
     // サーバーリスト画面のアバターボタンも更新
     updateServerListUserBtn();
@@ -23917,6 +24019,7 @@ window.switchDiscordSettingsTab = function (tab) {
   if (nb) nb.classList.add('active');
   const smap = {
     profile: 'profileSection',
+    account: 'accountSection',
     privacy: 'privacySection',
     chatbackup: 'chatbackupSection',
     notif: 'notifSection',
@@ -24428,6 +24531,7 @@ window.goToServerRoom = async function (serverId, roomId) {
 window.openMobileDetail = function (type) {
   const m = {
     profile: 'mobileDetailProfile',
+    account: 'mobileDetailAccount',
     privacy: 'mobileDetailPrivacy',
     chatbackup: 'mobileDetailChatBackup',
     notif: 'mobileDetailNotif',
@@ -24895,9 +24999,87 @@ window.applyGoogleAvatar = function () {
 };
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
+let _profileInitialState = { nickname: '', aboutMe: '', avatarUrl: null };
+function checkProfileDirty() {
+  const pcNick = document.getElementById("settingsNicknameInput")?.value.trim() ?? "";
+  const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
+  const currentNick = pcNick || mobNick || "";
+  const pcAbout = document.getElementById("settingsAboutMeInput")?.value.trim() ?? "";
+  const mobAbout = document.getElementById("mobileAboutMeInput")?.value.trim() ?? "";
+  const currentAbout = pcAbout || mobAbout || "";
+  const isNickDirty = currentNick !== (_profileInitialState.nickname || "");
+  const isAboutDirty = currentAbout !== (_profileInitialState.aboutMe || "");
+  const isAvatarDirty = pendingAvatarUrl !== null;
+  const isDirty = isNickDirty || isAboutDirty || isAvatarDirty;
+  const saveBtn = document.getElementById("saveSettingsButton");
+  if (saveBtn) {
+    saveBtn.disabled = !isDirty;
+  }
+  const mobSaveBtn = document.getElementById("mobileProfileSaveBtn");
+  if (mobSaveBtn) {
+    mobSaveBtn.disabled = !isDirty;
+  }
+  const unsavedBar = document.getElementById("profileUnsavedBar");
+  if (unsavedBar) {
+    if (isDirty) {
+      unsavedBar.classList.remove("translate-y-24", "opacity-0", "pointer-events-none");
+      unsavedBar.classList.add("translate-y-0", "opacity-100", "pointer-events-auto");
+    } else {
+      unsavedBar.classList.add("translate-y-24", "opacity-0", "pointer-events-none");
+      unsavedBar.classList.remove("translate-y-0", "opacity-100", "pointer-events-auto");
+    }
+  }
+  return isDirty;
+}
+window.resetProfileChanges = function () {
+  const pcNick = document.getElementById("settingsNicknameInput");
+  const mobNick = document.getElementById("mobileNicknameInput");
+  if (pcNick) pcNick.value = _profileInitialState.nickname || "";
+  if (mobNick) mobNick.value = _profileInitialState.nickname || "";
+  const pcAbout = document.getElementById("settingsAboutMeInput");
+  const mobAbout = document.getElementById("mobileAboutMeInput");
+  if (pcAbout) pcAbout.value = _profileInitialState.aboutMe || "";
+  if (mobAbout) mobAbout.value = _profileInitialState.aboutMe || "";
+  const pcCounter = document.getElementById("settingsAboutMeCounter");
+  const mobCounter = document.getElementById("mobileAboutMeCounter");
+  if (pcCounter && pcAbout) pcCounter.textContent = `${pcAbout.value.length} / 300`;
+  if (mobCounter && mobAbout) mobCounter.textContent = `${mobAbout.value.length} / 300`;
+  pendingAvatarUrl = null;
+  if (_profileInitialState.avatarUrl) {
+    settingsAvatarPreview.src = _profileInitialState.avatarUrl;
+    settingsAvatarPreview.classList.remove("hidden");
+    resetAvatarButton?.classList.remove("hidden");
+  } else {
+    settingsAvatarPreview.classList.add("hidden");
+    resetAvatarButton?.classList.add("hidden");
+  }
+  checkProfileDirty();
+};
+window.tryCloseSettingsModal = function () {
+  if (checkProfileDirty()) {
+    const bar = document.getElementById('profileUnsavedBar');
+    if (bar) {
+      bar.classList.add('animate-shake');
+      setTimeout(() => bar.classList.remove('animate-shake'), 400);
+    }
+    showCustomConfirm(
+      '保存していない変更があります！\n変更を破棄して設定を閉じますか？',
+      '変更を破棄して閉じる',
+      '編集を続ける',
+      '未保存の変更'
+    ).then(confirmLeave => {
+      if (confirmLeave) {
+        window.resetProfileChanges();
+        settingsModalEl.classList.add("hidden");
+      }
+    });
+    return;
+  }
+  settingsModalEl.classList.add("hidden");
+};
 function openSettingsModal(tab) {
   if (!userNickname) return;
-  switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
+  switchDiscordSettingsTab(tab === "settings" ? "settings" : (tab === "account" ? "account" : "profile"));
   settingsNicknameInput.value = userNickname;
   settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
   const aboutMeInput = document.getElementById("settingsAboutMeInput");
@@ -24908,6 +25090,13 @@ function openSettingsModal(tab) {
   }
   updateSettingsCustomStatusUI();
   pendingAvatarUrl = null;
+  // 初期状態を記録して未保存変更判定に使用
+  _profileInitialState = {
+    nickname: userNickname || "",
+    aboutMe: userAboutMe || "",
+    avatarUrl: userAvatarUrl || null
+  };
+  checkProfileDirty();
   const applyGoogleBtn = document.getElementById("applyGoogleAvatarBtn");
   const user = auth?.currentUser;
   const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
@@ -25064,16 +25253,32 @@ if (resetAvatarBtnEl) {
 document.getElementById("mobileResetAvatarBtn")?.addEventListener("click", handleAvatarResetAction);
 if (closeSettingsBtnEl && settingsModalEl) {
   closeSettingsBtnEl.addEventListener("click", () => {
-    settingsModalEl.classList.add("hidden");
+    window.tryCloseSettingsModal();
   });
 }
 if (settingsModalEl) {
   settingsModalEl.addEventListener("click", (e) => {
     if (e.target === settingsModalEl) {
-      settingsModalEl.classList.add("hidden");
+      window.tryCloseSettingsModal();
       closeCropModal();
     }
   });
+}
+// プロフィール変更検知イベントのバインド
+if (settingsNicknameInpEl) {
+  settingsNicknameInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const aboutMeInpEl = document.getElementById("settingsAboutMeInput");
+if (aboutMeInpEl) {
+  aboutMeInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const mobNickInpEl = document.getElementById("mobileNicknameInput");
+if (mobNickInpEl) {
+  mobNickInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const mobAboutInpEl = document.getElementById("mobileAboutMeInput");
+if (mobAboutInpEl) {
+  mobAboutInpEl.addEventListener("input", () => checkProfileDirty());
 }
 if (saveSettingsBtnEl && settingsNicknameInpEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
@@ -25114,6 +25319,13 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
         }
         localStorage.setItem('covo_cached_nick_' + userId, userNickname);
       } catch (_) {}
+      _profileInitialState = {
+        nickname: userNickname,
+        aboutMe: userAboutMe,
+        avatarUrl: userAvatarUrl
+      };
+      pendingAvatarUrl = null;
+      checkProfileDirty();
       // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
       const myProfile = {
         id: userId,
@@ -25474,12 +25686,68 @@ window.getAvatarAccentColor = getAvatarAccentColor;
 // =========================================================================
 // 🌟 Discord準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様)
 // =========================================================================
-window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl, triggerEventOrEl = null) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
   if (!modal) return;
   const isSelf = targetUid === userId;
   _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  // PC表示時: Discord本家完全準拠のスマートポップアウトポジショニング
+  const cardEl = modal.querySelector('.user-profile-card');
+  if (cardEl && window.innerWidth >= 768) {
+    let targetEl = null;
+    if (triggerEventOrEl instanceof HTMLElement) {
+      targetEl = triggerEventOrEl;
+    } else if (triggerEventOrEl?.currentTarget instanceof HTMLElement) {
+      targetEl = triggerEventOrEl.currentTarget;
+    } else if (triggerEventOrEl?.target instanceof HTMLElement) {
+      targetEl = triggerEventOrEl.target;
+    } else if (window.event?.target instanceof HTMLElement) {
+      targetEl = window.event.target.closest('.msg-avatar, .member-item, .friend-card, .active-now-item, button, div') || window.event.target;
+    }
+    cardEl.style.position = 'fixed';
+    cardEl.style.zIndex = '100010';
+    cardEl.style.margin = '0';
+    if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
+      const rect = targetEl.getBoundingClientRect();
+      const popoutW = 320;
+      const popoutH = 460;
+      const margin = 12;
+      let left = 0;
+      if (rect.right + margin + popoutW <= window.innerWidth - 16) {
+        left = rect.right + margin;
+      } else if (rect.left - margin - popoutW >= 16) {
+        left = rect.left - margin - popoutW;
+      } else {
+        left = Math.max(16, Math.min(window.innerWidth - popoutW - 16, rect.left));
+      }
+      let top = rect.top;
+      if (top + popoutH > window.innerHeight - 16) {
+        top = window.innerHeight - popoutH - 16;
+      }
+      if (top < 16) {
+        top = 16;
+      }
+      cardEl.style.left = `${Math.round(left)}px`;
+      cardEl.style.top = `${Math.round(top)}px`;
+      cardEl.style.bottom = 'auto';
+      cardEl.style.right = 'auto';
+      cardEl.style.transform = '';
+    } else {
+      cardEl.style.left = '50%';
+      cardEl.style.top = '50%';
+      cardEl.style.transform = 'translate(-50%, -50%)';
+      cardEl.style.bottom = 'auto';
+      cardEl.style.right = 'auto';
+    }
+  } else if (cardEl) {
+    cardEl.style.position = '';
+    cardEl.style.left = '';
+    cardEl.style.top = '';
+    cardEl.style.bottom = '';
+    cardEl.style.right = '';
+    cardEl.style.transform = '';
+  }
   const bannerEl = document.getElementById("userProfileBanner");
   const avatarEl = document.getElementById("userProfileAvatar");
   const statusDot = document.getElementById("userProfileStatusDot");
@@ -25651,6 +25919,13 @@ window.closeUserProfileModal = function () {
   const modal = document.getElementById("userProfileModal");
   if (modal) modal.classList.add("hidden");
   window.closeUpMoreMenu();
+  const cardEl = modal?.querySelector('.user-profile-card');
+  if (cardEl) {
+    cardEl.style.position = '';
+    cardEl.style.left = '';
+    cardEl.style.top = '';
+    cardEl.style.transform = '';
+  }
   _currentProfileTargetUser = null;
 };
 window.toggleUpMoreMenu = function (e) {
@@ -27268,15 +27543,9 @@ function subscribeToUserStatus() {
       if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
       const statusTextElement = document.getElementById('userPanelId');
       if (statusTextElement) {
-        const curStatus = window._currentUserCustomStatus;
-        if (curStatus && curStatus.text) {
-          const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
-          statusTextElement.textContent = `${emojiPrefix}${curStatus.text}`;
-          statusTextElement.style.display = '';
-        } else {
-          statusTextElement.textContent = '';
-          statusTextElement.style.display = 'none';
-        }
+        const stateLabelMap = { online: 'オンライン', away: '離席中', offline: 'オフライン' };
+        statusTextElement.textContent = stateLabelMap[myDisplayState] || 'オンライン';
+        statusTextElement.style.display = '';
       }
     }
     return { ...u, computedState };
@@ -27347,12 +27616,22 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      // ステメがある場合はステメを表示、ない場合は「3時間前」「昨日」等の簡潔な経過時間を表示
+      // ステメがある場合はステメを表示し、オフライン時は最終ログイン時間も併記（Discord/LINE準拠）
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
         const emojiHtml = (member.customStatus.emoji && member.customStatus.emoji !== '💬') ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
-        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
+        let extraTimeStr = '';
+        if (member.computedState === 'away') {
+          extraTimeStr = ' <span class="opacity-75 font-normal">• 離席中</span>';
+        } else if (member.computedState === 'offline') {
+          const cachedProf = window._userProfileCache?.get(member.id);
+          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+          const tsMs = parseTimestampToMs(tsRaw);
+          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
+          if (timeStr) extraTimeStr = ` <span class="opacity-75 font-normal">• ${timeStr}</span>`;
+        }
+        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>${extraTimeStr}`;
         info.appendChild(customStatusDiv);
       } else if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
@@ -29703,49 +29982,102 @@ async function joinServerByInviteCode(code) {
   });
   enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
 }
-// 招待リンク (?invite=CODE) の Discord本家完全準拠 受諾カード表示 & 参加処理
+// 招待リンク (?invite=CODE) の Discord本家完全準拠 受諾カード表示 & 参加処理 (未ログイン/ログイン両対応)
 let _pendingDiscordInviteCode = null;
 async function handleUrlInviteCode(inviteCode) {
-  if (!inviteCode || !userId) return;
+  if (!inviteCode) return;
   const cleanCode = inviteCode.toUpperCase().trim();
+  _pendingDiscordInviteCode = cleanCode;
   try {
-    const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, cleanCode));
-    if (!indexSnap.exists()) {
+    let serverData = null;
+    let targetServerId = null;
+    let serverName = '';
+    let iconUrl = null;
+    let totalMembers = 1;
+    // 1. Worker APIから招待情報を安全に取得 (未ログイン・ログイン問わず100%取得可能)
+    try {
+      const res = await fetch(`${WORKER_BASE_URL}/api/inviteInfo?code=${encodeURIComponent(cleanCode)}&appId=${appId}`);
+      if (res.ok) {
+        const info = await res.json();
+        if (info.valid) {
+          targetServerId = info.serverId;
+          serverName = info.serverName;
+          iconUrl = info.iconUrl;
+          totalMembers = info.memberCount || 1;
+        } else {
+          alertMessage(info.error || `招待コード「${cleanCode}」は無効です`, 'warning');
+          return;
+        }
+      }
+    } catch (_) {}
+    // 2. ログイン済みなら直接Firestoreも参照して補完
+    if (userId && !targetServerId) {
+      const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, cleanCode)).catch(() => null);
+      if (indexSnap && indexSnap.exists()) {
+        targetServerId = indexSnap.data().serverId;
+        const sSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId)).catch(() => null);
+        if (sSnap && sSnap.exists()) {
+          serverData = sSnap.data();
+          serverName = serverData.name || targetServerId;
+          iconUrl = serverData.iconUrl || null;
+          totalMembers = Number.isFinite(serverData.memberCount) ? serverData.memberCount : (serverData.joinedUsers?.length || 1);
+        }
+      }
+    }
+    if (!targetServerId) {
       alertMessage(`招待コード「${cleanCode}」は見つかりませんでした`, 'error');
       return;
     }
-    const targetServerId = indexSnap.data().serverId;
-    const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId));
-    if (!serverSnap.exists()) {
-      alertMessage('対象のサーバーが見つかりませんでした', 'error');
-      return;
+    // 既に参加済みの場合
+    if (userId) {
+      if (!serverData) {
+        const sSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId)).catch(() => null);
+        if (sSnap && sSnap.exists()) serverData = sSnap.data();
+      }
+      if (serverData && serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+        alertMessage(`「${serverName || 'サーバー'}」に参加済みです`, 'info');
+        enterServer(targetServerId, serverData);
+        return;
+      }
     }
-    const serverData = serverSnap.data();
-    const serverName = serverData.name || targetServerId;
-    if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
-      alertMessage(`「${serverName}」に参加済みです`, 'info');
-      enterServer(targetServerId, serverData);
-      return;
-    }
-    _pendingDiscordInviteCode = cleanCode;
+    // Discord本家準拠の受諾モーダルを表示
     const modal = document.getElementById('discordInviteAcceptModal');
     const nameEl = document.getElementById('inviteAcceptServerName');
     const iconEl = document.getElementById('inviteAcceptServerIcon');
     const memberCountEl = document.getElementById('inviteAcceptMemberCount');
     const onlineCountEl = document.getElementById('inviteAcceptOnlineCount');
-    if (nameEl) nameEl.textContent = serverName;
+    const joinBtn = document.getElementById('inviteAcceptJoinBtn');
+    if (nameEl) nameEl.textContent = serverName || targetServerId;
     if (iconEl) {
-      if (serverData.iconUrl) {
-        iconEl.innerHTML = `<img src="${escapeHtml(serverData.iconUrl)}" class="w-full h-full object-cover" />`;
+      if (iconUrl) {
+        iconEl.innerHTML = `<img src="${escapeHtml(iconUrl)}" class="w-full h-full object-cover" />`;
       } else {
-        iconEl.textContent = serverName.charAt(0).toUpperCase();
+        iconEl.textContent = (serverName || targetServerId).charAt(0).toUpperCase();
       }
     }
-    const members = serverData.joinedUsers || [];
-    const totalMembers = Number.isFinite(serverData.memberCount) ? serverData.memberCount : members.length;
     if (memberCountEl) memberCountEl.textContent = `${totalMembers} メンバー`;
-    const onlineCount = (cachedUsers || []).filter(u => members.includes(u.id) && (u.computedState === 'online' || u.computedState === 'away')).length;
-    if (onlineCountEl) onlineCountEl.textContent = `${Math.max(1, onlineCount)} オンライン`;
+    if (onlineCountEl) {
+      const onlineCount = (cachedUsers || []).filter(u => serverData?.joinedUsers?.includes(u.id) && (u.computedState === 'online' || u.computedState === 'away')).length;
+      onlineCountEl.textContent = `${Math.max(1, onlineCount)} オンライン`;
+    }
+    if (joinBtn) {
+      if (userId) {
+        joinBtn.innerHTML = '<span>招待を受ける</span>';
+        joinBtn.onclick = () => window.confirmDiscordInviteAccept();
+      } else {
+        joinBtn.innerHTML = '<span>ログインして参加する</span>';
+        joinBtn.onclick = () => {
+          sessionStorage.setItem('covo_pending_invite', cleanCode);
+          window.closeDiscordInviteAcceptModal();
+          const authCont = document.getElementById('authContainer');
+          if (authCont) {
+            authCont.classList.remove('hidden');
+            const authMsg = document.getElementById('authMessage');
+            if (authMsg) authMsg.innerHTML = `<div class="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-700 dark:text-indigo-300 font-bold mb-2">「${escapeHtml(serverName || 'サーバー')}」に参加するにはログインしてください</div>`;
+          }
+        };
+      }
+    }
     if (modal) modal.classList.remove('hidden');
   } catch (err) {
     console.error('[Invite] handleUrlInviteCode error:', err);
@@ -44010,12 +44342,18 @@ window.saveViewerMessagesAsTxt = function () {
 // =========================================================================
 (async function bootstrapApp() {
   try {
-    // 未ログイン時の招待URL (?invite=CODE) パラメータ退避
+    // 招待URL (?invite=CODE) パラメータの自動検知
     try {
       const initParams = new URLSearchParams(window.location.search);
       const initInvite = initParams.get('invite');
       if (initInvite) {
         sessionStorage.setItem('covo_pending_invite', initInvite.toUpperCase().trim());
+        // 未ログイン時でも即座に招待受諾画面を表示
+        setTimeout(() => {
+          if (!userId && typeof handleUrlInviteCode === 'function') {
+            handleUrlInviteCode(initInvite);
+          }
+        }, 300);
       }
     } catch (_) {}
     // 0. 設定の初期化 (通知設定などの状態復元)
@@ -46334,13 +46672,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.237" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.238" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.237" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.238" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -47388,6 +47726,9 @@ window._subscribeVcSidebarStates = function(serverId) {
               <button class="settings-nav-item active" id="snav-profile" onclick="switchDiscordSettingsTab('profile')">
                 <i class="fas fa-user-circle fa-fw"></i>プロフィール
               </button>
+              <button class="settings-nav-item" id="snav-account" onclick="switchDiscordSettingsTab('account')">
+                <i class="fas fa-id-card fa-fw"></i>マイアカウント
+              </button>
               <button class="settings-nav-item" id="snav-privacy" onclick="switchDiscordSettingsTab('privacy')">
                 <i class="fas fa-lock fa-fw"></i>プライバシー & ロック
               </button>
@@ -47438,7 +47779,7 @@ window._subscribeVcSidebarStates = function(serverId) {
               <!-- 閉じるボタン -->
               <button class="settings-close-btn" id="closeSettingsButton"><i class="fas fa-times"></i></button>
               <!-- プロフィールセクション (Discord準拠) -->
-              <div id="profileSection" class="settings-content-section active">
+              <div id="profileSection" class="settings-content-section active relative pb-16">
                 <div class="settings-section-title">プロフィール</div>
                 <div class="flex items-center gap-5 mb-6">
                   <div class="w-20 h-20 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center text-3xl font-bold relative cursor-pointer group flex-shrink-0" id="avatarUploadTrigger">
@@ -47463,9 +47804,9 @@ window._subscribeVcSidebarStates = function(serverId) {
                         <i class="fab fa-google text-[10px]"></i>Googleアイコンを適用
                       </button>
                     </div>
-                    </div>
-                    </div>
-                    <div class="space-y-4">
+                  </div>
+                </div>
+                <div class="space-y-4">
                   <!-- ニックネーム -->
                   <div>
                     <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム (表示名)</label>
@@ -47501,12 +47842,38 @@ window._subscribeVcSidebarStates = function(serverId) {
                   </div>
                 </div>
                 <div id="settingsMessage" class="mt-4 text-sm font-medium text-center"></div>
-                <div class="mt-6">
-                  <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition-all shadow-xs active:scale-95">保存</button>
+                <div class="mt-6 flex items-center justify-between">
+                  <button id="saveSettingsButton" disabled class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none text-white text-sm font-bold rounded-xl transition-all shadow-xs active:scale-95">保存</button>
+                </div>
+                <!-- Discord本家風 未保存変更フローティングバー -->
+                <div id="profileUnsavedBar" class="absolute bottom-4 left-4 right-4 z-40 bg-[#111214] text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/10 flex items-center justify-between gap-4 transition-all duration-300 transform translate-y-24 opacity-0 pointer-events-none select-none">
+                  <span class="text-xs font-bold text-gray-200 flex items-center gap-2 truncate">
+                    <i class="fas fa-triangle-exclamation text-amber-400 flex-shrink-0"></i>
+                    <span class="truncate">気をつけて！ — 保存していない変更があります！</span>
+                  </span>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" onclick="window.resetProfileChanges && window.resetProfileChanges()" class="px-3 py-1.5 rounded-xl text-xs font-bold text-gray-300 hover:text-white hover:underline cursor-pointer">
+                      変更を破棄
+                    </button>
+                    <button type="button" onclick="document.getElementById('saveSettingsButton').click()" class="px-4 py-1.5 rounded-xl text-xs font-bold bg-[#248046] hover:bg-[#1a6334] text-white shadow-sm transition active:scale-95 cursor-pointer">
+                      変更を保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- マイアカウント セクション (新設) -->
+              <div id="accountSection" class="settings-content-section space-y-4">
+                <div class="settings-section-title">マイアカウント</div>
+                <!-- ユーザーカード -->
+                <div class="p-4 bg-gray-50 dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 flex items-center gap-4 transition-colors">
+                  <div class="w-16 h-16 rounded-full bg-slate-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm" id="accountSectionAvatarPreview">U</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-lg font-black text-gray-900 dark:text-white truncate" id="accountSectionName">User</div>
+                    <div class="text-xs text-gray-500 dark:text-slate-400 font-mono mt-0.5" id="accountSectionTag">user</div>
+                  </div>
                 </div>
                 <!-- アカウント & セキュリティ (ダークネイビー最適化・カード型デザイン) -->
-                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800/60 space-y-3.5">
-                  <div class="settings-section-title text-sm !mb-2">アカウント & セキュリティ</div>
+                <div class="space-y-3.5">
                   <!-- メールアドレス カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 transition-colors">
                     <div class="flex items-center gap-3 min-w-0">
@@ -49135,7 +49502,7 @@ window._subscribeVcSidebarStates = function(serverId) {
               </div>
               <div class="user-panel-info flex flex-col justify-center min-w-0 flex-1 leading-tight">
                 <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-white truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId" style="display: none;"></div>
+                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId">オンライン</div>
               </div>
             </div>
             <!-- 右側: Discord風コントロールボタン群 (マイク^, ヘッドフォンv, 設定) -->
@@ -49933,7 +50300,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.237"></script>
+  <script type="module" src="js/main.js?v=1.1.238"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -50562,6 +50929,11 @@ window._subscribeVcSidebarStates = function(serverId) {
           <span class="mobile-settings-row-text">プロフィール編集</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('account')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-id-card"></i></div>
+          <span class="mobile-settings-row-text">マイアカウント</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
         <div class="mobile-settings-row" onclick="openMobileDetail('privacy')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-lock"></i></div>
           <span class="mobile-settings-row-text">プライバシー & ロック</span>
@@ -50689,58 +51061,63 @@ window._subscribeVcSidebarStates = function(serverId) {
         </div>
       </div>
       <div id="mobileSettingsMessage" class="mt-3 text-sm text-center font-medium"></div>
-      <button class="w-full mt-4 p-3.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer active:scale-98" onclick="mobileProfileSave()">保存</button>
-      <!-- アカウント & セキュリティ (モバイル) -->
-      <div class="mt-6 pt-5 border-t border-gray-200 dark:border-slate-800/60">
-        <div class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">アカウント & セキュリティ</div>
-        <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-3.5 text-xs shadow-xs transition-colors">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500 dark:text-slate-400 font-medium">ログイン中:</span>
-            <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[200px]"></span>
-          </div>
-          <!-- Google連携 -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2.5">
-              <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
-                <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
-                <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-              </div>
-              <div>
-                <div class="font-bold text-gray-800 dark:text-white">Google アカウント</div>
-                <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
-              </div>
+      <button id="mobileProfileSaveBtn" disabled class="w-full mt-4 p-3.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer active:scale-98" onclick="mobileProfileSave()">保存</button>
+      </div>
+      </div>
+      <!-- Mobile Detail: Account (新設) -->
+      <div class="mobile-settings-detail" id="mobileDetailAccount">
+      <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAccount')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">マイアカウント</span>
+      </div>
+      <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
+      <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-3.5 text-xs shadow-xs transition-colors">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-gray-500 dark:text-slate-400 font-medium">メールアドレス:</span>
+          <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[200px]"></span>
+        </div>
+        <!-- Google連携 -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5">
+            <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
+              <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
+              <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
             </div>
-            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">連携する</button>
-          </div>
-          <!-- パスワード管理 (モバイル) -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
             <div>
-              <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
-                <i class="fas fa-lock text-slate-500"></i>パスワード
-                <span id="mobileAdminBypassBadge" class="hidden px-2 py-0.2 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">バイパス有効</span>
-              </div>
-              <div class="text-[10px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
+              <div class="font-bold text-gray-800 dark:text-white">Google アカウント</div>
+              <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
             </div>
-            <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">変更</button>
           </div>
-          <!-- 緊急リカバリーキー (モバイル) -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
-              <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
+          <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">連携する</button>
+        </div>
+        <!-- パスワード管理 (モバイル) -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div>
+            <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+              <i class="fas fa-lock text-slate-500"></i>パスワード
+              <span id="mobileAdminBypassBadge" class="hidden px-2 py-0.2 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">バイパス有効</span>
             </div>
-            <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
+            <div class="text-[10px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
           </div>
+          <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">変更</button>
+        </div>
+        <!-- 緊急リカバリーキー (モバイル) -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div>
+            <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
+            <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
+          </div>
+          <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
         </div>
       </div>
-    </div>
-  </div>
-  <!-- Mobile Detail: Privacy & PIN Lock -->
+      </div>
+      </div>
+      <!-- Mobile Detail: Privacy & PIN Lock -->
   <div class="mobile-settings-detail" id="mobileDetailPrivacy">
     <div class="mobile-detail-header">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailPrivacy')"><i class="fas fa-chevron-left"></i></div>
@@ -51128,9 +51505,15 @@ window._subscribeVcSidebarStates = function(serverId) {
         <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wide mb-1">メンバーになった日</div>
         <div id="userProfileJoinedDate" class="text-xs text-gray-800 dark:text-gray-200 font-medium">-</div>
       </div>
-      <!-- 8. 最下部: プロフィール全体を表示ボタン (Discord本家準拠。旧クイックメッセージ入力欄から変更) -->
-      <div class="p-3 pt-0 mt-auto">
-        <button type="button" id="userProfileViewFullBtn" onclick="window.openFullProfileFromPopout()" class="w-full py-2.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#2b2d31] text-gray-800 dark:text-white text-sm font-bold transition-colors cursor-pointer">
+      <!-- 8. 最下部: クイックメッセージ入力枠 (Discord本家完全準拠) -->
+      <div class="p-3 pt-0 mt-auto space-y-1.5">
+        <form onsubmit="event.preventDefault(); window.submitQuickDmMessage();" class="relative">
+          <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信" class="w-full pl-3 pr-8 py-2 bg-gray-100 dark:bg-[#111214] border border-gray-200 dark:border-white/5 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium select-text" />
+          <button type="submit" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-500 text-xs transition cursor-pointer">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </form>
+        <button type="button" id="userProfileViewFullBtn" onclick="window.openFullProfileFromPopout()" class="w-full py-1.5 text-center text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer">
           プロフィール全体を表示
         </button>
       </div>
@@ -51331,7 +51714,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.237",
+  "version": "1.1.238",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -51388,7 +51771,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.237",
+  "version": "1.1.238",
   "force": false
 }
 </file>
