@@ -31,10 +31,14 @@
       background-color: rgba(0, 0, 0, 0.75);
     }
     /* Discord本家のユーザーポップオーバーは画面全体を暗くしないため、
-       PC幅ではプロフィールカードの暗幕だけ弱める */
+       PC幅ではプロフィールカードの暗幕を完全に透明化して外側クリックで閉じる */
     @media (min-width: 768px) {
       #userProfileModal.modal-overlay {
-        background-color: transparent;
+        background-color: transparent !important;
+        pointer-events: auto !important;
+      }
+      #userProfileModal .user-profile-card {
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
       }
     }
     /* ドロップダウンコンテナのスタイル */

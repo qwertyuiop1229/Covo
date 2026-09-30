@@ -468,14 +468,16 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
   const fetchPromise = (async () => {
     try {
       const cu = (cachedUsers || []).find(u => u.id === uid);
-      const uSnap = await getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null);
+      const [uSnap, pSnap, statusSnap] = await Promise.all([
+        getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null),
+        getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null),
+        getDoc(doc(db, `artifacts/${appId}/status`, uid)).catch(() => null)
+      ]);
       let data = uSnap && uSnap.exists() ? uSnap.data() : null;
-      if (!data || !data.nickname) {
-        const pSnap = await getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null);
-        if (pSnap && pSnap.exists()) {
-          data = { ...(data || {}), ...pSnap.data() };
-        }
+      if (pSnap && pSnap.exists()) {
+        data = { ...(data || {}), ...pSnap.data() };
       }
+      const statusData = statusSnap && statusSnap.exists() ? statusSnap.data() : null;
       const rel = friendRelationships && friendRelationships[uid];
       const nickname = data?.nickname || data?.displayName || cu?.nickname || (fallback.nickname && fallback.nickname !== 'ユーザー' ? fallback.nickname : (rel?.targetNickname || fallback.nickname || (data?.email ? data.email.split('@')[0] : `ユーザー#${uid.substring(0, 4)}`)));
       // ユーザーが手動設定またはリセットしたアバターを最優先し、勝手にGoogle photoURLで上書きしない
@@ -484,6 +486,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       const customStatus = data?.customStatus || cu?.customStatus || null;
       const aboutMe = data?.aboutMe || '';
 
+      const rawTimestamp = data?.last_changed || data?.lastSeen || statusData?.last_changed || statusData?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || cu?.lastSeen || null;
       const profile = {
         id: uid,
         uid: uid,
@@ -492,9 +495,9 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
         email,
         customStatus,
         aboutMe,
-        status: cu?.computedState || cu?.state || 'offline',
-        last_changed: data?.last_changed || data?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || null,
-        lastSeen: data?.lastSeen || data?.last_changed || data?.updatedAt || data?.createdAt || cu?.lastSeen || null
+        status: cu?.computedState || cu?.state || statusData?.state || 'offline',
+        last_changed: rawTimestamp,
+        lastSeen: rawTimestamp
       };
 
       window._userProfileCache.set(uid, profile);
@@ -1431,16 +1434,12 @@ function initializeFirebase() {
 function updateUserPanelUI() {
   if (userNickname) {
     userPanelName.textContent = userNickname;
-    const curStatus = window._currentUserCustomStatus;
-    // Discord本家準拠: ステメがなければ「オンライン」等の文字は出さず、名前のみスッキリ中央表示
-    if (curStatus && curStatus.text) {
-      const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
-      userPanelId.textContent = `${emojiPrefix}${curStatus.text}`;
-      userPanelId.className = 'user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate';
+    // Discord本家準拠: 左下ユーザーパネルはステメではなくオンライン/離席中/オフラインの状態を表示
+    const myState = (document.visibilityState === 'hidden' && !document.hasFocus()) ? 'away' : 'online';
+    const stateLabelMap = { online: 'オンライン', away: '離席中', offline: 'オフライン' };
+    if (userPanelId) {
+      userPanelId.textContent = stateLabelMap[myState] || 'オンライン';
       userPanelId.style.display = '';
-    } else {
-      userPanelId.textContent = '';
-      userPanelId.style.display = 'none';
     }
     if (userAvatarUrl) {
       __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
@@ -1449,7 +1448,7 @@ function updateUserPanelUI() {
     }
     const stat = document.createElement('div');
     stat.id = 'userPanelStatus';
-    stat.className = 'status-indicator status-online';
+    stat.className = `status-indicator status-${myState}`;
     userPanelAvatar.appendChild(stat);
     // サーバーリスト画面のアバターボタンも更新
     updateServerListUserBtn();
@@ -4624,6 +4623,7 @@ window.switchDiscordSettingsTab = function (tab) {
 
   const smap = {
     profile: 'profileSection',
+    account: 'accountSection',
     privacy: 'privacySection',
     chatbackup: 'chatbackupSection',
     notif: 'notifSection',
@@ -5174,6 +5174,7 @@ window.goToServerRoom = async function (serverId, roomId) {
 window.openMobileDetail = function (type) {
   const m = {
     profile: 'mobileDetailProfile',
+    account: 'mobileDetailAccount',
     privacy: 'mobileDetailPrivacy',
     chatbackup: 'mobileDetailChatBackup',
     notif: 'mobileDetailNotif',
@@ -5669,9 +5670,88 @@ window.applyGoogleAvatar = function () {
 
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
+let _profileInitialState = { nickname: '', aboutMe: '', avatarUrl: null };
+function checkProfileDirty() {
+  const pcNick = document.getElementById("settingsNicknameInput")?.value.trim() ?? "";
+  const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
+  const currentNick = pcNick || mobNick || "";
+  const pcAbout = document.getElementById("settingsAboutMeInput")?.value.trim() ?? "";
+  const mobAbout = document.getElementById("mobileAboutMeInput")?.value.trim() ?? "";
+  const currentAbout = pcAbout || mobAbout || "";
+  const isNickDirty = currentNick !== (_profileInitialState.nickname || "");
+  const isAboutDirty = currentAbout !== (_profileInitialState.aboutMe || "");
+  const isAvatarDirty = pendingAvatarUrl !== null;
+  const isDirty = isNickDirty || isAboutDirty || isAvatarDirty;
+
+  const saveBtn = document.getElementById("saveSettingsButton");
+  if (saveBtn) {
+    saveBtn.disabled = !isDirty;
+  }
+  const mobSaveBtn = document.getElementById("mobileProfileSaveBtn");
+  if (mobSaveBtn) {
+    mobSaveBtn.disabled = !isDirty;
+  }
+  const unsavedBar = document.getElementById("profileUnsavedBar");
+  if (unsavedBar) {
+    if (isDirty) {
+      unsavedBar.classList.remove("translate-y-24", "opacity-0", "pointer-events-none");
+      unsavedBar.classList.add("translate-y-0", "opacity-100", "pointer-events-auto");
+    } else {
+      unsavedBar.classList.add("translate-y-24", "opacity-0", "pointer-events-none");
+      unsavedBar.classList.remove("translate-y-0", "opacity-100", "pointer-events-auto");
+    }
+  }
+  return isDirty;
+}
+window.resetProfileChanges = function () {
+  const pcNick = document.getElementById("settingsNicknameInput");
+  const mobNick = document.getElementById("mobileNicknameInput");
+  if (pcNick) pcNick.value = _profileInitialState.nickname || "";
+  if (mobNick) mobNick.value = _profileInitialState.nickname || "";
+  const pcAbout = document.getElementById("settingsAboutMeInput");
+  const mobAbout = document.getElementById("mobileAboutMeInput");
+  if (pcAbout) pcAbout.value = _profileInitialState.aboutMe || "";
+  if (mobAbout) mobAbout.value = _profileInitialState.aboutMe || "";
+  const pcCounter = document.getElementById("settingsAboutMeCounter");
+  const mobCounter = document.getElementById("mobileAboutMeCounter");
+  if (pcCounter && pcAbout) pcCounter.textContent = `${pcAbout.value.length} / 300`;
+  if (mobCounter && mobAbout) mobCounter.textContent = `${mobAbout.value.length} / 300`;
+  pendingAvatarUrl = null;
+  if (_profileInitialState.avatarUrl) {
+    settingsAvatarPreview.src = _profileInitialState.avatarUrl;
+    settingsAvatarPreview.classList.remove("hidden");
+    resetAvatarButton?.classList.remove("hidden");
+  } else {
+    settingsAvatarPreview.classList.add("hidden");
+    resetAvatarButton?.classList.add("hidden");
+  }
+  checkProfileDirty();
+};
+window.tryCloseSettingsModal = function () {
+  if (checkProfileDirty()) {
+    const bar = document.getElementById('profileUnsavedBar');
+    if (bar) {
+      bar.classList.add('animate-shake');
+      setTimeout(() => bar.classList.remove('animate-shake'), 400);
+    }
+    showCustomConfirm(
+      '保存していない変更があります！\n変更を破棄して設定を閉じますか？',
+      '変更を破棄して閉じる',
+      '編集を続ける',
+      '未保存の変更'
+    ).then(confirmLeave => {
+      if (confirmLeave) {
+        window.resetProfileChanges();
+        settingsModalEl.classList.add("hidden");
+      }
+    });
+    return;
+  }
+  settingsModalEl.classList.add("hidden");
+};
 function openSettingsModal(tab) {
   if (!userNickname) return;
-  switchDiscordSettingsTab(tab === "settings" ? "settings" : "profile");
+  switchDiscordSettingsTab(tab === "settings" ? "settings" : (tab === "account" ? "account" : "profile"));
   settingsNicknameInput.value = userNickname;
   settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
   const aboutMeInput = document.getElementById("settingsAboutMeInput");
@@ -5682,6 +5762,13 @@ function openSettingsModal(tab) {
   }
   updateSettingsCustomStatusUI();
   pendingAvatarUrl = null;
+  // 初期状態を記録して未保存変更判定に使用
+  _profileInitialState = {
+    nickname: userNickname || "",
+    aboutMe: userAboutMe || "",
+    avatarUrl: userAvatarUrl || null
+  };
+  checkProfileDirty();
   const applyGoogleBtn = document.getElementById("applyGoogleAvatarBtn");
   const user = auth?.currentUser;
   const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
@@ -5846,19 +5933,33 @@ document.getElementById("mobileResetAvatarBtn")?.addEventListener("click", handl
 
 if (closeSettingsBtnEl && settingsModalEl) {
   closeSettingsBtnEl.addEventListener("click", () => {
-    settingsModalEl.classList.add("hidden");
+    window.tryCloseSettingsModal();
   });
 }
-
 if (settingsModalEl) {
   settingsModalEl.addEventListener("click", (e) => {
     if (e.target === settingsModalEl) {
-      settingsModalEl.classList.add("hidden");
+      window.tryCloseSettingsModal();
       closeCropModal();
     }
   });
 }
-
+// プロフィール変更検知イベントのバインド
+if (settingsNicknameInpEl) {
+  settingsNicknameInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const aboutMeInpEl = document.getElementById("settingsAboutMeInput");
+if (aboutMeInpEl) {
+  aboutMeInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const mobNickInpEl = document.getElementById("mobileNicknameInput");
+if (mobNickInpEl) {
+  mobNickInpEl.addEventListener("input", () => checkProfileDirty());
+}
+const mobAboutInpEl = document.getElementById("mobileAboutMeInput");
+if (mobAboutInpEl) {
+  mobAboutInpEl.addEventListener("input", () => checkProfileDirty());
+}
 if (saveSettingsBtnEl && settingsNicknameInpEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
     const newName = settingsNicknameInpEl.value.trim();
@@ -5899,6 +6000,13 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
         }
         localStorage.setItem('covo_cached_nick_' + userId, userNickname);
       } catch (_) {}
+      _profileInitialState = {
+        nickname: userNickname,
+        aboutMe: userAboutMe,
+        avatarUrl: userAvatarUrl
+      };
+      pendingAvatarUrl = null;
+      checkProfileDirty();
       // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
       const myProfile = {
         id: userId,
@@ -6269,12 +6377,75 @@ window.getAvatarAccentColor = getAvatarAccentColor;
 // =========================================================================
 // 🌟 Discord準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様)
 // =========================================================================
-window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl) {
+window.openUserProfileModal = async function (targetUid, targetNickname, targetAvatarUrl, triggerEventOrEl = null) {
   if (!targetUid) return;
   const modal = document.getElementById("userProfileModal");
   if (!modal) return;
   const isSelf = targetUid === userId;
   _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+
+  // PC表示時: Discord本家完全準拠のスマートポップアウトポジショニング
+  const cardEl = modal.querySelector('.user-profile-card');
+  if (cardEl && window.innerWidth >= 768) {
+    let targetEl = null;
+    if (triggerEventOrEl instanceof HTMLElement) {
+      targetEl = triggerEventOrEl;
+    } else if (triggerEventOrEl?.currentTarget instanceof HTMLElement) {
+      targetEl = triggerEventOrEl.currentTarget;
+    } else if (triggerEventOrEl?.target instanceof HTMLElement) {
+      targetEl = triggerEventOrEl.target;
+    } else if (window.event?.target instanceof HTMLElement) {
+      targetEl = window.event.target.closest('.msg-avatar, .member-item, .friend-card, .active-now-item, button, div') || window.event.target;
+    }
+
+    cardEl.style.position = 'fixed';
+    cardEl.style.zIndex = '100010';
+    cardEl.style.margin = '0';
+
+    if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
+      const rect = targetEl.getBoundingClientRect();
+      const popoutW = 320;
+      const popoutH = 460;
+      const margin = 12;
+
+      let left = 0;
+      if (rect.right + margin + popoutW <= window.innerWidth - 16) {
+        left = rect.right + margin;
+      } else if (rect.left - margin - popoutW >= 16) {
+        left = rect.left - margin - popoutW;
+      } else {
+        left = Math.max(16, Math.min(window.innerWidth - popoutW - 16, rect.left));
+      }
+
+      let top = rect.top;
+      if (top + popoutH > window.innerHeight - 16) {
+        top = window.innerHeight - popoutH - 16;
+      }
+      if (top < 16) {
+        top = 16;
+      }
+
+      cardEl.style.left = `${Math.round(left)}px`;
+      cardEl.style.top = `${Math.round(top)}px`;
+      cardEl.style.bottom = 'auto';
+      cardEl.style.right = 'auto';
+      cardEl.style.transform = '';
+    } else {
+      cardEl.style.left = '50%';
+      cardEl.style.top = '50%';
+      cardEl.style.transform = 'translate(-50%, -50%)';
+      cardEl.style.bottom = 'auto';
+      cardEl.style.right = 'auto';
+    }
+  } else if (cardEl) {
+    cardEl.style.position = '';
+    cardEl.style.left = '';
+    cardEl.style.top = '';
+    cardEl.style.bottom = '';
+    cardEl.style.right = '';
+    cardEl.style.transform = '';
+  }
+
   const bannerEl = document.getElementById("userProfileBanner");
   const avatarEl = document.getElementById("userProfileAvatar");
   const statusDot = document.getElementById("userProfileStatusDot");
@@ -6447,6 +6618,13 @@ window.closeUserProfileModal = function () {
   const modal = document.getElementById("userProfileModal");
   if (modal) modal.classList.add("hidden");
   window.closeUpMoreMenu();
+  const cardEl = modal?.querySelector('.user-profile-card');
+  if (cardEl) {
+    cardEl.style.position = '';
+    cardEl.style.left = '';
+    cardEl.style.top = '';
+    cardEl.style.transform = '';
+  }
   _currentProfileTargetUser = null;
 };
 
@@ -8143,15 +8321,9 @@ function subscribeToUserStatus() {
       if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
       const statusTextElement = document.getElementById('userPanelId');
       if (statusTextElement) {
-        const curStatus = window._currentUserCustomStatus;
-        if (curStatus && curStatus.text) {
-          const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
-          statusTextElement.textContent = `${emojiPrefix}${curStatus.text}`;
-          statusTextElement.style.display = '';
-        } else {
-          statusTextElement.textContent = '';
-          statusTextElement.style.display = 'none';
-        }
+        const stateLabelMap = { online: 'オンライン', away: '離席中', offline: 'オフライン' };
+        statusTextElement.textContent = stateLabelMap[myDisplayState] || 'オンライン';
+        statusTextElement.style.display = '';
       }
     }
     return { ...u, computedState };
@@ -8231,12 +8403,22 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      // ステメがある場合はステメを表示、ない場合は「3時間前」「昨日」等の簡潔な経過時間を表示
+      // ステメがある場合はステメを表示し、オフライン時は最終ログイン時間も併記（Discord/LINE準拠）
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
         const emojiHtml = (member.customStatus.emoji && member.customStatus.emoji !== '💬') ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
-        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
+        let extraTimeStr = '';
+        if (member.computedState === 'away') {
+          extraTimeStr = ' <span class="opacity-75 font-normal">• 離席中</span>';
+        } else if (member.computedState === 'offline') {
+          const cachedProf = window._userProfileCache?.get(member.id);
+          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+          const tsMs = parseTimestampToMs(tsRaw);
+          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
+          if (timeStr) extraTimeStr = ` <span class="opacity-75 font-normal">• ${timeStr}</span>`;
+        }
+        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>${extraTimeStr}`;
         info.appendChild(customStatusDiv);
       } else if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
@@ -10770,49 +10952,107 @@ async function joinServerByInviteCode(code) {
   enterServer(foundServerId, { ...serverData, joinedUsers: [...(serverData.joinedUsers || []), userId] });
 }
 
-// 招待リンク (?invite=CODE) の Discord本家完全準拠 受諾カード表示 & 参加処理
+// 招待リンク (?invite=CODE) の Discord本家完全準拠 受諾カード表示 & 参加処理 (未ログイン/ログイン両対応)
 let _pendingDiscordInviteCode = null;
 async function handleUrlInviteCode(inviteCode) {
-  if (!inviteCode || !userId) return;
+  if (!inviteCode) return;
   const cleanCode = inviteCode.toUpperCase().trim();
+  _pendingDiscordInviteCode = cleanCode;
   try {
-    const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, cleanCode));
-    if (!indexSnap.exists()) {
+    let serverData = null;
+    let targetServerId = null;
+    let serverName = '';
+    let iconUrl = null;
+    let totalMembers = 1;
+
+    // 1. Worker APIから招待情報を安全に取得 (未ログイン・ログイン問わず100%取得可能)
+    try {
+      const res = await fetch(`${WORKER_BASE_URL}/api/inviteInfo?code=${encodeURIComponent(cleanCode)}&appId=${appId}`);
+      if (res.ok) {
+        const info = await res.json();
+        if (info.valid) {
+          targetServerId = info.serverId;
+          serverName = info.serverName;
+          iconUrl = info.iconUrl;
+          totalMembers = info.memberCount || 1;
+        } else {
+          alertMessage(info.error || `招待コード「${cleanCode}」は無効です`, 'warning');
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 2. ログイン済みなら直接Firestoreも参照して補完
+    if (userId && !targetServerId) {
+      const indexSnap = await getDoc(doc(db, `artifacts/${appId}/inviteIndex`, cleanCode)).catch(() => null);
+      if (indexSnap && indexSnap.exists()) {
+        targetServerId = indexSnap.data().serverId;
+        const sSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId)).catch(() => null);
+        if (sSnap && sSnap.exists()) {
+          serverData = sSnap.data();
+          serverName = serverData.name || targetServerId;
+          iconUrl = serverData.iconUrl || null;
+          totalMembers = Number.isFinite(serverData.memberCount) ? serverData.memberCount : (serverData.joinedUsers?.length || 1);
+        }
+      }
+    }
+
+    if (!targetServerId) {
       alertMessage(`招待コード「${cleanCode}」は見つかりませんでした`, 'error');
       return;
     }
-    const targetServerId = indexSnap.data().serverId;
-    const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId));
-    if (!serverSnap.exists()) {
-      alertMessage('対象のサーバーが見つかりませんでした', 'error');
-      return;
+
+    // 既に参加済みの場合
+    if (userId) {
+      if (!serverData) {
+        const sSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, targetServerId)).catch(() => null);
+        if (sSnap && sSnap.exists()) serverData = sSnap.data();
+      }
+      if (serverData && serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
+        alertMessage(`「${serverName || 'サーバー'}」に参加済みです`, 'info');
+        enterServer(targetServerId, serverData);
+        return;
+      }
     }
-    const serverData = serverSnap.data();
-    const serverName = serverData.name || targetServerId;
-    if (serverData.joinedUsers && serverData.joinedUsers.includes(userId)) {
-      alertMessage(`「${serverName}」に参加済みです`, 'info');
-      enterServer(targetServerId, serverData);
-      return;
-    }
-    _pendingDiscordInviteCode = cleanCode;
+
+    // Discord本家準拠の受諾モーダルを表示
     const modal = document.getElementById('discordInviteAcceptModal');
     const nameEl = document.getElementById('inviteAcceptServerName');
     const iconEl = document.getElementById('inviteAcceptServerIcon');
     const memberCountEl = document.getElementById('inviteAcceptMemberCount');
     const onlineCountEl = document.getElementById('inviteAcceptOnlineCount');
-    if (nameEl) nameEl.textContent = serverName;
+    const joinBtn = document.getElementById('inviteAcceptJoinBtn');
+    if (nameEl) nameEl.textContent = serverName || targetServerId;
     if (iconEl) {
-      if (serverData.iconUrl) {
-        iconEl.innerHTML = `<img src="${escapeHtml(serverData.iconUrl)}" class="w-full h-full object-cover" />`;
+      if (iconUrl) {
+        iconEl.innerHTML = `<img src="${escapeHtml(iconUrl)}" class="w-full h-full object-cover" />`;
       } else {
-        iconEl.textContent = serverName.charAt(0).toUpperCase();
+        iconEl.textContent = (serverName || targetServerId).charAt(0).toUpperCase();
       }
     }
-    const members = serverData.joinedUsers || [];
-    const totalMembers = Number.isFinite(serverData.memberCount) ? serverData.memberCount : members.length;
     if (memberCountEl) memberCountEl.textContent = `${totalMembers} メンバー`;
-    const onlineCount = (cachedUsers || []).filter(u => members.includes(u.id) && (u.computedState === 'online' || u.computedState === 'away')).length;
-    if (onlineCountEl) onlineCountEl.textContent = `${Math.max(1, onlineCount)} オンライン`;
+    if (onlineCountEl) {
+      const onlineCount = (cachedUsers || []).filter(u => serverData?.joinedUsers?.includes(u.id) && (u.computedState === 'online' || u.computedState === 'away')).length;
+      onlineCountEl.textContent = `${Math.max(1, onlineCount)} オンライン`;
+    }
+    if (joinBtn) {
+      if (userId) {
+        joinBtn.innerHTML = '<span>招待を受ける</span>';
+        joinBtn.onclick = () => window.confirmDiscordInviteAccept();
+      } else {
+        joinBtn.innerHTML = '<span>ログインして参加する</span>';
+        joinBtn.onclick = () => {
+          sessionStorage.setItem('covo_pending_invite', cleanCode);
+          window.closeDiscordInviteAcceptModal();
+          const authCont = document.getElementById('authContainer');
+          if (authCont) {
+            authCont.classList.remove('hidden');
+            const authMsg = document.getElementById('authMessage');
+            if (authMsg) authMsg.innerHTML = `<div class="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-700 dark:text-indigo-300 font-bold mb-2">「${escapeHtml(serverName || 'サーバー')}」に参加するにはログインしてください</div>`;
+          }
+        };
+      }
+    }
     if (modal) modal.classList.remove('hidden');
   } catch (err) {
     console.error('[Invite] handleUrlInviteCode error:', err);
@@ -26233,12 +26473,18 @@ window.saveViewerMessagesAsTxt = function () {
 // =========================================================================
 (async function bootstrapApp() {
   try {
-    // 未ログイン時の招待URL (?invite=CODE) パラメータ退避
+    // 招待URL (?invite=CODE) パラメータの自動検知
     try {
       const initParams = new URLSearchParams(window.location.search);
       const initInvite = initParams.get('invite');
       if (initInvite) {
         sessionStorage.setItem('covo_pending_invite', initInvite.toUpperCase().trim());
+        // 未ログイン時でも即座に招待受諾画面を表示
+        setTimeout(() => {
+          if (!userId && typeof handleUrlInviteCode === 'function') {
+            handleUrlInviteCode(initInvite);
+          }
+        }, 300);
       }
     } catch (_) {}
     // 0. 設定の初期化 (通知設定などの状態復元)

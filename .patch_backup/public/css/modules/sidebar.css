@@ -171,9 +171,9 @@ body:not(.dark-server-theme):not(.discord-dark-theme) #currentRoomIcon {
   background-color: #ffffff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  padding: 0 0.65rem;
-  height: 54px;
-  min-height: 54px;
+  padding: 0 0.75rem;
+  height: 58px;
+  min-height: 58px;
   display: flex;
   align-items: center;
   border-radius: 1rem !important; /* 角丸を完全に復元 */
@@ -193,7 +193,7 @@ body.discord-dark-theme #userPanel {
 /* PC DiscordUIモード時: 左端のサーバー一覧レール(72px)の下まで横に大きく伸ばす */
 @media (min-width: 769px) {
   body.discord-ui-mode #discordServerNav {
-    padding-bottom: 74px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
+    padding-bottom: 78px !important; /* サーバー追加ボタンと探索ボタンをuserPanelの直上に配置して被りを防止 */
     z-index: 20 !important;
   }
   body.discord-ui-mode #sidebar {
@@ -539,7 +539,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       overflow: visible !important;
       z-index: 35 !important;
     }
-
+    /* 個チャ(DM)時・サーバー時共通: サーバーレールとの境目の左上角を美しく角丸化 */
+    body.discord-ui-mode #serverHeader,
+    body.discord-ui-mode #discordHomeSidebar,
+    body.discord-ui-mode #discordHomeSidebar > div:first-child {
+      border-top-left-radius: 12px !important;
+    }
     body.discord-ui-mode #backToServerListBtn {
       display: none !important; /* Discord風ヘッダーのため不要 */
     }
@@ -1235,10 +1240,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.dark-server-theme.discord-ui-mode #serverHeader,
     body.dark-server-theme.discord-ui-mode #currentRoomHeader,
     body.dark-server-theme.discord-ui-mode #discordDmHeader,
-    body.dark-server-theme.discord-ui-mode #discordDiscoverHeader {
+    body.dark-server-theme.discord-ui-mode #discordDiscoverHeader,
+    body.dark-server-theme.discord-ui-mode #discordHomeSidebar,
+    body.dark-server-theme.discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #111827 !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
       color: #f8fafc !important;
+      border-top-left-radius: 12px !important;
     }
     body.dark-server-theme #serverNameDisplay {
       color: #f8fafc !important;
@@ -1370,10 +1378,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.discord-dark-theme.discord-ui-mode #serverHeader,
     body.discord-dark-theme.discord-ui-mode #currentRoomHeader,
     body.discord-dark-theme.discord-ui-mode #discordDmHeader,
-    body.discord-dark-theme.discord-ui-mode #discordDiscoverHeader {
+    body.discord-dark-theme.discord-ui-mode #discordDiscoverHeader,
+    body.discord-dark-theme.discord-ui-mode #discordHomeSidebar,
+    body.discord-dark-theme.discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #313338 !important;
       border-bottom: 1px solid #1f2023 !important;
       color: #f2f3f5 !important;
+      border-top-left-radius: 12px !important;
     }
     body.discord-dark-theme.discord-ui-mode #discordDmHomeView,
     body.discord-dark-theme.discord-ui-mode #discordDiscoverView,
@@ -1446,10 +1457,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #serverHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #currentRoomHeader,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHeader,
-    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverHeader {
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverHeader,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeSidebar,
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordHomeSidebar > div:first-child {
       background: #ffffff !important;
       border-bottom: 1px solid #e2e8f0 !important;
       color: #0f172a !important;
+      border-top-left-radius: 12px !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHomeView,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverView,
@@ -1603,6 +1617,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
         opacity: 1 !important;
       }
       /* モバイル時：#sidebarに左上角丸28pxを適用し、下の余白も不要な影ゼロで実装！ */
+      body.discord-ui-mode #sidebar,
+      body.discord-ui-mode #serverHeader,
+      body.discord-ui-mode #discordHomeSidebar,
+      body.discord-ui-mode #discordHomeSidebar > div:first-child {
+        border-top-left-radius: 28px !important;
+      }
       body.discord-ui-mode #sidebar {
         position: relative !important;
         left: auto !important;
@@ -1612,7 +1632,6 @@ body.discord-dark-theme #openSettingsBtn:hover {
         max-width: calc(100% - 70px) !important;
         display: flex !important;
         min-width: 0 !important;
-        border-top-left-radius: 28px !important;
         box-shadow: none !important; /* 下部の余計な影を完全排除 */
         overflow: visible !important;
         z-index: 35 !important;

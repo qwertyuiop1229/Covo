@@ -1098,6 +1098,50 @@ CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
 CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
 </file>
 
+<file path="src-tauri/capabilities/default.json">
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:app:default",
+    "core:path:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-request-user-attention",
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-minimized",
+    "updater:default",
+    "autostart:default",
+    "notification:default"
+  ]
+}
+</file>
+
 <file path="src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml">
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -1344,6 +1388,59 @@ scratch/
     "jimp": "^1.6.1"
   }
 }
+</file>
+
+<file path="patch.bat">
+@echo off
+chcp 65001 >nul
+title Covo AI パッチ適用マネージャー
+
+:MENU
+cls
+echo ============================================================
+echo   ⚡ Covo AI パッチ適用マネージャー
+echo ============================================================
+echo.
+echo   [1] クリップボードの修正コードを自動適用 (Enterを押すだけ)
+echo   [2] 直前の変更を取り消して元に戻す (Undo)
+echo   [3] 変更内容を確認する (git diff)
+echo   [4] 終了
+echo.
+echo ============================================================
+set "choice=1"
+set /p "choice=番号を入力してください (1-4) [初期値: 1]: "
+
+if "%choice%"=="1" goto APPLY
+if "%choice%"=="2" goto UNDO
+if "%choice%"=="3" goto DIFF
+if "%choice%"=="4" goto EXIT
+goto MENU
+
+:APPLY
+echo.
+node patch.js --apply
+echo.
+goto END
+
+:UNDO
+echo.
+node patch.js --undo
+echo.
+goto END
+
+:DIFF
+echo.
+git diff
+echo.
+goto END
+
+:END
+echo ------------------------------------------------------------
+pause
+goto MENU
+
+:EXIT
+exit
 </file>
 
 <file path="README.md">
@@ -1994,50 +2091,6 @@ database_name = "covo-db"
 database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </file>
 
-<file path="src-tauri/capabilities/default.json">
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "enables the default permissions",
-  "windows": [
-    "*"
-  ],
-  "permissions": [
-    "core:default",
-    "core:event:default",
-    "core:app:default",
-    "core:path:default",
-    "core:image:default",
-    "core:resources:default",
-    "core:menu:default",
-    "core:tray:default",
-    "core:webview:default",
-    "core:window:default",
-    "core:window:allow-set-focus",
-    "core:window:allow-request-user-attention",
-    "core:window:allow-create",
-    "core:window:allow-start-dragging",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-outer-position",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-close",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-minimize",
-    "core:window:allow-maximize",
-    "core:window:allow-unmaximize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-is-maximized",
-    "core:window:allow-is-minimized",
-    "updater:default",
-    "autostart:default",
-    "notification:default"
-  ]
-}
-</file>
-
 <file path="firebase.json">
 {
   "database": {
@@ -2128,59 +2181,6 @@ database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
   ],
   "fieldOverrides": []
 }
-</file>
-
-<file path="patch.bat">
-@echo off
-chcp 65001 >nul
-title Covo AI パッチ適用マネージャー
-
-:MENU
-cls
-echo ============================================================
-echo   ⚡ Covo AI パッチ適用マネージャー
-echo ============================================================
-echo.
-echo   [1] クリップボードの修正コードを自動適用 (Enterを押すだけ)
-echo   [2] 直前の変更を取り消して元に戻す (Undo)
-echo   [3] 変更内容を確認する (git diff)
-echo   [4] 終了
-echo.
-echo ============================================================
-set "choice=1"
-set /p "choice=番号を入力してください (1-4) [初期値: 1]: "
-
-if "%choice%"=="1" goto APPLY
-if "%choice%"=="2" goto UNDO
-if "%choice%"=="3" goto DIFF
-if "%choice%"=="4" goto EXIT
-goto MENU
-
-:APPLY
-echo.
-node patch.js --apply
-echo.
-goto END
-
-:UNDO
-echo.
-node patch.js --undo
-echo.
-goto END
-
-:DIFF
-echo.
-git diff
-echo.
-goto END
-
-:END
-echo ------------------------------------------------------------
-pause
-goto MENU
-
-:EXIT
-exit
 </file>
 
 <file path="public/css/modules/components.css">
@@ -3124,6 +3124,370 @@ if (typeof window !== 'undefined') {
 </html>
 </file>
 
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/font-awesome.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    .bg-dark-800 { background-color: #2b2d31; }
+    .bg-dark-700 { background-color: #313338; }
+    .hover\:bg-dark-700:hover { background-color: #313338; }
+    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
+    .active\:bg-dark-900:active { background-color: #1e1f22; }
+    .bg-brand-500 { background-color: #5865F2; }
+    .text-brand-500 { color: #5865F2; }
+    .hover\:bg-brand-600:hover { background-color: #4752C4; }
+    .active\:bg-brand-600:active { background-color: #4752C4; }
+    ::selection { background-color: #5865F2; color: #ffffff; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+    <!-- クイックアクションパネル -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+    </div>
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+    }
+    async function triggerUpdateCheck() {
+      const btn = document.getElementById("btnUpdateCheck");
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      logMessage("Checking for updates...");
+      try {
+        if (!invoke) throw new Error("Tauri API not found.");
+        const metadata = await invoke('plugin:updater|check');
+        if (metadata && metadata.available) {
+          logMessage(`Found v${metadata.version}. Downloading...`);
+          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
+          logMessage("Update complete. Restarting...");
+          btn.innerHTML = `完了 (再起動)`;
+          setTimeout(() => {
+            if (invoke) invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+            else window.location.reload();
+          }, 1500);
+        } else {
+          logMessage("No updates available.");
+          btn.innerHTML = `更新なし`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      } catch (err) {
+        logMessage(`Error: ${err.message || err}`, true);
+        btn.disabled = false;
+        btn.innerHTML = `失敗 (再試行)`;
+      }
+    }
+    async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => {
+          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+        }, 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+    function forceQuitApp() {
+      if (invoke) {
+        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+      }
+    }
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+        if (releases.length < 10) releasesHasMore = false;
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `失敗`;
+        }
+      }
+    }
+    if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const btn = document.getElementById(`btn-install-${data.tag}`);
+          if (btn) btn.innerHTML = `${data.progress}%`;
+          logMessage(`[${data.tag}] ${data.progress}%`);
+        }
+      });
+    }
+    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
+  </script>
+</body>
+</html>
+</file>
+
 <file path="src-tauri/src/lib.rs">
 use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
 use tauri::WebviewWindowBuilder;
@@ -3387,6 +3751,8 @@ fn show_main_window(app_handle: tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = window.emit("window-focused", ());
+        let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
     }
 }
 #[tauri::command]
@@ -4205,6 +4571,8 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                let _ = window.emit("window-focused", ());
+                                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                                 let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
                             }
                         }
@@ -4261,6 +4629,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                     "recovery" => {
@@ -4298,6 +4668,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                 })
@@ -4340,6 +4712,8 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+                let _ = window.emit("window-focused", ());
+                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                 let _ = window.emit("single-instance-opened", ());
             }
         }))
@@ -4819,370 +5193,6 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
     Start-Sleep -Seconds 1
     $secSinceLastPoll++
 }
-</file>
-
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデートを適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンをダウンロードして修復します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck()" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-    }
-    async function triggerUpdateCheck() {
-      const btn = document.getElementById("btnUpdateCheck");
-      btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      logMessage("Checking for updates...");
-      try {
-        if (!invoke) throw new Error("Tauri API not found.");
-        const metadata = await invoke('plugin:updater|check');
-        if (metadata && metadata.available) {
-          logMessage(`Found v${metadata.version}. Downloading...`);
-          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-          await invoke('plugin:updater|download_and_install', { onEvent: (e) => logMessage(`Progress: ${JSON.stringify(e)}`) });
-          logMessage("Update complete. Restarting...");
-          btn.innerHTML = `完了 (再起動)`;
-          setTimeout(() => {
-            if (invoke) invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-            else window.location.reload();
-          }, 1500);
-        } else {
-          logMessage("No updates available.");
-          btn.innerHTML = `更新なし`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      } catch (err) {
-        logMessage(`Error: ${err.message || err}`, true);
-        btn.disabled = false;
-        btn.innerHTML = `失敗 (再試行)`;
-      }
-    }
-    async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('indexedDB' in window) {
-          indexedDB.deleteDatabase('covo_local_db');
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => {
-          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-        }, 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
-    }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
-      }
-    }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `失敗`;
-        }
-      }
-    }
-    if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const btn = document.getElementById(`btn-install-${data.tag}`);
-          if (btn) btn.innerHTML = `${data.progress}%`;
-          logMessage(`[${data.tag}] ${data.progress}%`);
-        }
-      });
-    }
-    // loadPastReleases(); // 削除し、ボタンによる展開時に初回ロードするように変更
-  </script>
-</body>
-</html>
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -6344,6 +6354,415 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
+    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
+    }
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
+    }
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
+}
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    let fileEncoding = 'utf-8';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
+}
+run();
+</file>
+
 <file path="public/css/modules/base.css">
 /* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
     html, body {
@@ -7280,415 +7699,6 @@ if (typeof window !== 'undefined') {
     clearAllLocalData
   };
 }
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
 </file>
 
 <file path="public/firebase-messaging-sw.js">
@@ -20823,6 +20833,12 @@ function initializeFirebase() {
             }
             showServerList();
             startPresenceSystem();
+            // Windows版等で起動直後に確実にオンラインを反映
+            setTimeout(() => {
+              if (typeof handleWindowFocus === 'function' && document.visibilityState === 'visible') {
+                handleWindowFocus();
+              }
+            }, 300);
             initializeFCM();
             LocalStore.initLocalDB().catch(e => console.warn('[LocalStore] init error:', e));
             subscribeToFeatureFlags();
@@ -24574,33 +24590,27 @@ async function startPresenceSystem() {
   refreshCachedIdToken();
   if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
   _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
-  // 起動時に即座にオンライン状態を初期送信 (RTDBが接続待ちの間も確実にキューイング＆Firestoreバックアップ)
+  // 起動時に即座にオンライン状態を初期送信 (Windows版起動時は確実にオンラインとして通知)
   _lastReportedStatusStr = null;
-  const initialPresenceState = document.visibilityState === 'hidden' ? 'away' : 'online';
-  updateUserStatus(initialPresenceState).catch(() => {});
-  // 🌟 ユーザーアクティビティ検知（マウス移動・キー入力・スクロール等で操作中のオンラインを常に完全維持）
-  let _lastActivityHeartbeat = 0;
-  window._onPresenceUserActivity = () => {
-    const now = Date.now();
-    if (now - _lastActivityHeartbeat > 15000) {
-      _lastActivityHeartbeat = now;
-      stopOfflineTimer();
-      resetAwayTimer();
-      if (document.visibilityState === 'visible' && userId) {
-        updateUserStatus('online');
+  updateUserStatus('online', true).catch(() => {});
+  // 5分放置で離席中・オフラインになった後、ユーザーがクリックやキー操作で復帰した瞬間にオンライン復帰
+  if (window._onPresenceResumeAction) {
+    ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceResumeAction);
+    });
+  }
+  window._onPresenceResumeAction = () => {
+    if (document.visibilityState === 'visible') {
+      const myUser = (cachedUsers || []).find(u => u.id === userId);
+      const isAwayOrOffline = !myUser || myUser.computedState === 'away' || myUser.computedState === 'offline' || myUser.state === 'away' || myUser.state === 'offline';
+      if (isAwayOrOffline) {
+        handleWindowFocus();
       }
     }
   };
-  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
-    window.addEventListener(evt, window._onPresenceUserActivity, { passive: true });
+  ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, window._onPresenceResumeAction, { passive: true });
   });
-  // 2分ごとのアクティブキープアライブ（画面表示中に他端末から勝手にオフライン化されるのを完全防止）
-  if (window._presenceKeepAliveTimer) clearInterval(window._presenceKeepAliveTimer);
-  window._presenceKeepAliveTimer = setInterval(() => {
-    if (document.visibilityState === 'visible' && userId) {
-      updateUserStatus('online', true);
-    }
-  }, 2 * 60 * 1000);
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
     const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue, off } =
@@ -24630,11 +24640,12 @@ async function startPresenceSystem() {
           window._lastConnectedLogTime = now;
           if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
         }
-        // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
+        // 接続直後は強制的にステータスを再送信する（アプリ表示中は確実にオンライン）
         _lastReportedStatusStr = null;
-        const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
-        await updateUserStatus(currentState);
+        const currentState = (document.visibilityState === 'hidden' && !document.hasFocus()) ? 'away' : 'online';
+        await updateUserStatus(currentState, true);
         if (currentState === 'away') startOfflineTimer();
+        else resetAwayTimer();
         if (currentRoomId || currentDmId) resyncActiveRoomMessages();
       }
     };
@@ -25570,7 +25581,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     const cachedTarget = cachedUsers.find(u => u.id === targetUid) || window._userProfileCache?.get(targetUid);
     if (cachedTarget?.customStatus?.text) {
       customStatusWrap.classList.remove("hidden");
-      if (statusEmojiEl) statusEmojiEl.textContent = cachedTarget.customStatus.emoji || "💬";
+      if (statusEmojiEl) {
+        if (cachedTarget.customStatus.emoji && cachedTarget.customStatus.emoji !== "💬") {
+          statusEmojiEl.textContent = cachedTarget.customStatus.emoji;
+          statusEmojiEl.classList.remove("hidden");
+        } else {
+          statusEmojiEl.textContent = "";
+          statusEmojiEl.classList.add("hidden");
+        }
+      }
       if (statusTextEl) statusTextEl.textContent = cachedTarget.customStatus.text;
     } else {
       customStatusWrap.classList.add("hidden");
@@ -25595,7 +25614,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         }
         if (uData.customStatus && uData.customStatus.text) {
           if (customStatusWrap) customStatusWrap.classList.remove("hidden");
-          if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
+          if (statusEmojiEl) {
+            if (uData.customStatus.emoji && uData.customStatus.emoji !== "💬") {
+              statusEmojiEl.textContent = uData.customStatus.emoji;
+              statusEmojiEl.classList.remove("hidden");
+            } else {
+              statusEmojiEl.textContent = "";
+              statusEmojiEl.classList.add("hidden");
+            }
+          }
           if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
         } else {
           if (customStatusWrap) customStatusWrap.classList.add("hidden");
@@ -26604,6 +26631,12 @@ function stopPresenceSystem() {
     });
     window._onPresenceUserActivity = null;
   }
+  if (window._onPresenceResumeAction) {
+    ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceResumeAction);
+    });
+    window._onPresenceResumeAction = null;
+  }
   _cachedIdToken = null;
   if (window._connectedRefUnsub) {
     window._connectedRefUnsub();
@@ -26711,8 +26744,18 @@ async function resyncActiveRoomMessages() {
 function handleWindowFocus() {
   _beaconSent = false;
   stopOfflineTimer();
-  updateUserStatus('online');
+  _lastReportedStatusStr = null;
+  updateUserStatus('online', true);
   resetAwayTimer();
+  // 自端末のUIインジケーターを即座に緑にする
+  const statusElement = document.getElementById('userPanelStatus');
+  if (statusElement) statusElement.className = 'status-indicator status-online';
+  const selfInCached = (cachedUsers || []).find(u => u.id === userId);
+  if (selfInCached) {
+    selfInCached.state = 'online';
+    selfInCached.computedState = 'online';
+    if (typeof renderMembersList === 'function') renderMembersList(cachedUsers);
+  }
   if ((typeof currentRoomId !== 'undefined' && currentRoomId) || currentDmId) {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
@@ -26769,6 +26812,7 @@ function handleVisibilityChange() {
 function handlePageShow(e) {
   if (e.persisted) handleWindowFocus();
 }
+window.handleWindowFocus = handleWindowFocus;
 // Tauri ネイティブウィンドウフォーカス & 多重起動復帰イベントの連動
 if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen('window-focused', () => {
@@ -27242,7 +27286,20 @@ function subscribeToUserStatus() {
   const offlineMembers = processedUsers.filter(u => u.computedState === 'offline');
   onlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
   awayMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
-  offlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+  // 🌟 オフラインメンバーのソート: オフラインになってからの時間が短い人（直近アクティブ）から順に並べる
+  const getOfflineTime = (u) => {
+    const cachedProf = window._userProfileCache?.get(u.id);
+    const tsRaw = u.last_changed || u.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || u.updatedAt || u.createdAt;
+    return parseTimestampToMs(tsRaw);
+  };
+  offlineMembers.sort((a, b) => {
+    const timeA = getOfflineTime(a);
+    const timeB = getOfflineTime(b);
+    if (timeA !== timeB) {
+      return timeB - timeA; // 経過時間が短い（より最近アクティブだった）人を上に並べる
+    }
+    return (a.nickname || "").localeCompare(b.nickname || "");
+  });
   const createGroup = (title, members) => {
     if (members.length === 0) return;
     const titleDiv = document.createElement("div");
@@ -27290,17 +27347,25 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      // Discord本家完全準拠: メンバー一覧ではオフライン時の長文アクティブ表記を廃止しスッキリ1行化
+      // ステメがある場合はステメを表示、ない場合は「3時間前」「昨日」等の簡潔な経過時間を表示
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
-        const emojiHtml = member.customStatus.emoji ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
+        const emojiHtml = (member.customStatus.emoji && member.customStatus.emoji !== '💬') ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
         customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
         info.appendChild(customStatusDiv);
-      } else if (member.computedState === 'away') {
+      } else if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
         statusText.className = "member-status-text";
-        statusText.textContent = '離席中';
+        if (member.computedState === 'away') {
+          statusText.textContent = '離席中';
+        } else {
+          const cachedProf = window._userProfileCache?.get(member.id);
+          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+          const tsMs = parseTimestampToMs(tsRaw);
+          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
+          statusText.textContent = timeStr || 'オフライン';
+        }
         info.appendChild(statusText);
       }
       item.appendChild(avatar);
@@ -28076,8 +28141,10 @@ function createFriendCardHtml(friend, online) {
   const resolvedAvatar = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser.avatarUrl !== undefined ? targetUser.avatarUrl : (friend.targetAvatarUrl || ''));
   const safeName = escapeHtml(resolvedNick);
   const safeAvatar = isUsableAvatarUrl(resolvedAvatar) ? `<img src="${escapeHtml(resolvedAvatar)}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
-  const customStatusHtml = (cachedProf?.customStatus?.text || targetUser?.customStatus?.text || (friend.customStatus && friend.customStatus.text))
-    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).emoji || '💬')}</span><span class="truncate">${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).text)}</span></div>`
+  const curSt = cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus;
+  const curEmoji = (curSt?.emoji && curSt.emoji !== '💬') ? `<span>${escapeHtml(curSt.emoji)}</span>` : '';
+  const customStatusHtml = (curSt && curSt.text)
+    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">${curEmoji}<span class="truncate">${escapeHtml(curSt.text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
   return `
     <div class="friend-card" onclick="openUserProfileModal('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
@@ -28555,7 +28622,15 @@ function renderDmConversationsList() {
     const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
     const customText = document.getElementById('dmPanelCustomStatusText');
     if (newCustomStatus && newCustomStatus.text) {
-      if (customEmoji) customEmoji.textContent = newCustomStatus.emoji || '💬';
+      if (customEmoji) {
+        if (newCustomStatus.emoji && newCustomStatus.emoji !== '💬') {
+          customEmoji.textContent = newCustomStatus.emoji;
+          customEmoji.classList.remove('hidden');
+        } else {
+          customEmoji.textContent = '';
+          customEmoji.classList.add('hidden');
+        }
+      }
       if (customText) customText.textContent = newCustomStatus.text;
       if (customStatusWrap) customStatusWrap.classList.remove('hidden');
     } else if (customStatusWrap) {
@@ -28867,7 +28942,7 @@ function renderDmConversationsList() {
         <div class="dm-profile-divider"></div>
         <div class="my-3">
           <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
-            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
+            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0 hidden"></span>
             <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
           </div>
           <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
@@ -28926,7 +29001,15 @@ function renderDmConversationsList() {
         statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
       }
       if (prof.customStatus && prof.customStatus.text) {
-        if (customEmoji) customEmoji.textContent = prof.customStatus.emoji || '💬';
+        if (customEmoji) {
+          if (prof.customStatus.emoji && prof.customStatus.emoji !== '💬') {
+            customEmoji.textContent = prof.customStatus.emoji;
+            customEmoji.classList.remove('hidden');
+          } else {
+            customEmoji.textContent = '';
+            customEmoji.classList.add('hidden');
+          }
+        }
         if (customText) customText.textContent = prof.customStatus.text;
         if (customStatusWrap) customStatusWrap.classList.remove('hidden');
       } else if (customStatusWrap) {
@@ -29096,7 +29179,8 @@ window.renderDmActiveNowPanel = function () {
     if (isInVoice) {
       subtext = `<span class="text-emerald-500 font-semibold flex items-center gap-1"><i class="fas fa-volume-up text-[10px]"></i> ボイスチャンネルにて</span>`;
     } else if (u.customStatus?.text) {
-      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${escapeHtml(u.customStatus.emoji || '💬')} ${escapeHtml(u.customStatus.text)}</span>`;
+      const em = (u.customStatus.emoji && u.customStatus.emoji !== '💬') ? `${escapeHtml(u.customStatus.emoji)} ` : '';
+      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${em}${escapeHtml(u.customStatus.text)}</span>`;
     } else if (isAway) {
       subtext = `<span class="text-amber-500 font-semibold">離席中</span>`;
     }
@@ -32254,7 +32338,7 @@ window.renderDiscordServerNav = function () {
         const tsMs = parseTimestampToMs(tsRaw);
         if (tsMs > 0) {
           const timeStr = formatTimeAgo(tsMs);
-          if (timeStr) return `${timeStr}にアクティブ`;
+          if (timeStr) return timeStr;
         }
         return 'オフライン';
       };
@@ -46250,13 +46334,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.236" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.237" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.236" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.237" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -49849,7 +49933,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.236"></script>
+  <script type="module" src="js/main.js?v=1.1.237"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -51247,7 +51331,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.236",
+  "version": "1.1.237",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -51304,7 +51388,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.236",
+  "version": "1.1.237",
   "force": false
 }
 </file>

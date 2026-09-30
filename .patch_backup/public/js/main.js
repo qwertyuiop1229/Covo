@@ -1278,6 +1278,12 @@ function initializeFirebase() {
             showServerList();
 
             startPresenceSystem();
+            // Windows版等で起動直後に確実にオンラインを反映
+            setTimeout(() => {
+              if (typeof handleWindowFocus === 'function' && document.visibilityState === 'visible') {
+                handleWindowFocus();
+              }
+            }, 300);
             initializeFCM();
             LocalStore.initLocalDB().catch(e => console.warn('[LocalStore] init error:', e));
             subscribeToFeatureFlags();
@@ -5339,34 +5345,27 @@ async function startPresenceSystem() {
   refreshCachedIdToken();
   if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
   _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
-  // 起動時に即座にオンライン状態を初期送信 (RTDBが接続待ちの間も確実にキューイング＆Firestoreバックアップ)
+  // 起動時に即座にオンライン状態を初期送信 (Windows版起動時は確実にオンラインとして通知)
   _lastReportedStatusStr = null;
-  const initialPresenceState = document.visibilityState === 'hidden' ? 'away' : 'online';
-  updateUserStatus(initialPresenceState).catch(() => {});
-  // 🌟 ユーザーアクティビティ検知（マウス移動・キー入力・スクロール等で操作中のオンラインを常に完全維持）
-  let _lastActivityHeartbeat = 0;
-  window._onPresenceUserActivity = () => {
-    const now = Date.now();
-    if (now - _lastActivityHeartbeat > 15000) {
-      _lastActivityHeartbeat = now;
-      stopOfflineTimer();
-      resetAwayTimer();
-      if (document.visibilityState === 'visible' && userId) {
-        updateUserStatus('online');
+  updateUserStatus('online', true).catch(() => {});
+  // 5分放置で離席中・オフラインになった後、ユーザーがクリックやキー操作で復帰した瞬間にオンライン復帰
+  if (window._onPresenceResumeAction) {
+    ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceResumeAction);
+    });
+  }
+  window._onPresenceResumeAction = () => {
+    if (document.visibilityState === 'visible') {
+      const myUser = (cachedUsers || []).find(u => u.id === userId);
+      const isAwayOrOffline = !myUser || myUser.computedState === 'away' || myUser.computedState === 'offline' || myUser.state === 'away' || myUser.state === 'offline';
+      if (isAwayOrOffline) {
+        handleWindowFocus();
       }
     }
   };
-  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
-    window.addEventListener(evt, window._onPresenceUserActivity, { passive: true });
+  ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, window._onPresenceResumeAction, { passive: true });
   });
-  // 2分ごとのアクティブキープアライブ（画面表示中に他端末から勝手にオフライン化されるのを完全防止）
-  if (window._presenceKeepAliveTimer) clearInterval(window._presenceKeepAliveTimer);
-  window._presenceKeepAliveTimer = setInterval(() => {
-    if (document.visibilityState === 'visible' && userId) {
-      updateUserStatus('online', true);
-    }
-  }, 2 * 60 * 1000);
-
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
     const { ref, onDisconnect: rtdbOnDisconnect, serverTimestamp, onValue, off } =
@@ -5396,11 +5395,12 @@ async function startPresenceSystem() {
           window._lastConnectedLogTime = now;
           if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
         }
-        // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
+        // 接続直後は強制的にステータスを再送信する（アプリ表示中は確実にオンライン）
         _lastReportedStatusStr = null;
-        const currentState = document.visibilityState === 'hidden' ? 'away' : 'online';
-        await updateUserStatus(currentState);
+        const currentState = (document.visibilityState === 'hidden' && !document.hasFocus()) ? 'away' : 'online';
+        await updateUserStatus(currentState, true);
         if (currentState === 'away') startOfflineTimer();
+        else resetAwayTimer();
         if (currentRoomId || currentDmId) resyncActiveRoomMessages();
       }
     };
@@ -6376,7 +6376,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     const cachedTarget = cachedUsers.find(u => u.id === targetUid) || window._userProfileCache?.get(targetUid);
     if (cachedTarget?.customStatus?.text) {
       customStatusWrap.classList.remove("hidden");
-      if (statusEmojiEl) statusEmojiEl.textContent = cachedTarget.customStatus.emoji || "💬";
+      if (statusEmojiEl) {
+        if (cachedTarget.customStatus.emoji && cachedTarget.customStatus.emoji !== "💬") {
+          statusEmojiEl.textContent = cachedTarget.customStatus.emoji;
+          statusEmojiEl.classList.remove("hidden");
+        } else {
+          statusEmojiEl.textContent = "";
+          statusEmojiEl.classList.add("hidden");
+        }
+      }
       if (statusTextEl) statusTextEl.textContent = cachedTarget.customStatus.text;
     } else {
       customStatusWrap.classList.add("hidden");
@@ -6401,7 +6409,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         }
         if (uData.customStatus && uData.customStatus.text) {
           if (customStatusWrap) customStatusWrap.classList.remove("hidden");
-          if (statusEmojiEl) statusEmojiEl.textContent = uData.customStatus.emoji || "💬";
+          if (statusEmojiEl) {
+            if (uData.customStatus.emoji && uData.customStatus.emoji !== "💬") {
+              statusEmojiEl.textContent = uData.customStatus.emoji;
+              statusEmojiEl.classList.remove("hidden");
+            } else {
+              statusEmojiEl.textContent = "";
+              statusEmojiEl.classList.add("hidden");
+            }
+          }
           if (statusTextEl) statusTextEl.textContent = uData.customStatus.text;
         } else {
           if (customStatusWrap) customStatusWrap.classList.add("hidden");
@@ -7462,6 +7478,12 @@ function stopPresenceSystem() {
     });
     window._onPresenceUserActivity = null;
   }
+  if (window._onPresenceResumeAction) {
+    ['mousedown', 'keydown', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceResumeAction);
+    });
+    window._onPresenceResumeAction = null;
+  }
   _cachedIdToken = null;
   if (window._connectedRefUnsub) {
     window._connectedRefUnsub();
@@ -7573,8 +7595,18 @@ async function resyncActiveRoomMessages() {
 function handleWindowFocus() {
   _beaconSent = false;
   stopOfflineTimer();
-  updateUserStatus('online');
+  _lastReportedStatusStr = null;
+  updateUserStatus('online', true);
   resetAwayTimer();
+  // 自端末のUIインジケーターを即座に緑にする
+  const statusElement = document.getElementById('userPanelStatus');
+  if (statusElement) statusElement.className = 'status-indicator status-online';
+  const selfInCached = (cachedUsers || []).find(u => u.id === userId);
+  if (selfInCached) {
+    selfInCached.state = 'online';
+    selfInCached.computedState = 'online';
+    if (typeof renderMembersList === 'function') renderMembersList(cachedUsers);
+  }
   if ((typeof currentRoomId !== 'undefined' && currentRoomId) || currentDmId) {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
@@ -7631,6 +7663,7 @@ function handleVisibilityChange() {
 function handlePageShow(e) {
   if (e.persisted) handleWindowFocus();
 }
+window.handleWindowFocus = handleWindowFocus;
 // Tauri ネイティブウィンドウフォーカス & 多重起動復帰イベントの連動
 if (typeof window !== 'undefined' && window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen('window-focused', () => {
@@ -8127,10 +8160,22 @@ function subscribeToUserStatus() {
   const onlineMembers = processedUsers.filter(u => u.computedState === 'online');
   const awayMembers = processedUsers.filter(u => u.computedState === 'away');
   const offlineMembers = processedUsers.filter(u => u.computedState === 'offline');
-
   onlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
   awayMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
-  offlineMembers.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || ""));
+  // 🌟 オフラインメンバーのソート: オフラインになってからの時間が短い人（直近アクティブ）から順に並べる
+  const getOfflineTime = (u) => {
+    const cachedProf = window._userProfileCache?.get(u.id);
+    const tsRaw = u.last_changed || u.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || u.updatedAt || u.createdAt;
+    return parseTimestampToMs(tsRaw);
+  };
+  offlineMembers.sort((a, b) => {
+    const timeA = getOfflineTime(a);
+    const timeB = getOfflineTime(b);
+    if (timeA !== timeB) {
+      return timeB - timeA; // 経過時間が短い（より最近アクティブだった）人を上に並べる
+    }
+    return (a.nickname || "").localeCompare(b.nickname || "");
+  });
 
   const createGroup = (title, members) => {
     if (members.length === 0) return;
@@ -8186,17 +8231,25 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      // Discord本家完全準拠: メンバー一覧ではオフライン時の長文アクティブ表記を廃止しスッキリ1行化
+      // ステメがある場合はステメを表示、ない場合は「3時間前」「昨日」等の簡潔な経過時間を表示
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
-        const emojiHtml = member.customStatus.emoji ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
+        const emojiHtml = (member.customStatus.emoji && member.customStatus.emoji !== '💬') ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
         customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
         info.appendChild(customStatusDiv);
-      } else if (member.computedState === 'away') {
+      } else if (member.computedState === 'away' || member.computedState === 'offline') {
         const statusText = document.createElement("div");
         statusText.className = "member-status-text";
-        statusText.textContent = '離席中';
+        if (member.computedState === 'away') {
+          statusText.textContent = '離席中';
+        } else {
+          const cachedProf = window._userProfileCache?.get(member.id);
+          const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
+          const tsMs = parseTimestampToMs(tsRaw);
+          const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
+          statusText.textContent = timeStr || 'オフライン';
+        }
         info.appendChild(statusText);
       }
 
@@ -9055,8 +9108,10 @@ function createFriendCardHtml(friend, online) {
   const resolvedAvatar = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser.avatarUrl !== undefined ? targetUser.avatarUrl : (friend.targetAvatarUrl || ''));
   const safeName = escapeHtml(resolvedNick);
   const safeAvatar = isUsableAvatarUrl(resolvedAvatar) ? `<img src="${escapeHtml(resolvedAvatar)}" class="w-full h-full rounded-full object-cover">` : safeName.charAt(0).toUpperCase();
-  const customStatusHtml = (cachedProf?.customStatus?.text || targetUser?.customStatus?.text || (friend.customStatus && friend.customStatus.text))
-    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5"><span>${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).emoji || '💬')}</span><span class="truncate">${escapeHtml((cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus).text)}</span></div>`
+  const curSt = cachedProf?.customStatus || targetUser?.customStatus || friend.customStatus;
+  const curEmoji = (curSt?.emoji && curSt.emoji !== '💬') ? `<span>${escapeHtml(curSt.emoji)}</span>` : '';
+  const customStatusHtml = (curSt && curSt.text)
+    ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">${curEmoji}<span class="truncate">${escapeHtml(curSt.text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
   return `
     <div class="friend-card" onclick="openUserProfileModal('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
@@ -9563,7 +9618,15 @@ function renderDmConversationsList() {
     const customEmoji = document.getElementById('dmPanelCustomStatusEmoji');
     const customText = document.getElementById('dmPanelCustomStatusText');
     if (newCustomStatus && newCustomStatus.text) {
-      if (customEmoji) customEmoji.textContent = newCustomStatus.emoji || '💬';
+      if (customEmoji) {
+        if (newCustomStatus.emoji && newCustomStatus.emoji !== '💬') {
+          customEmoji.textContent = newCustomStatus.emoji;
+          customEmoji.classList.remove('hidden');
+        } else {
+          customEmoji.textContent = '';
+          customEmoji.classList.add('hidden');
+        }
+      }
       if (customText) customText.textContent = newCustomStatus.text;
       if (customStatusWrap) customStatusWrap.classList.remove('hidden');
     } else if (customStatusWrap) {
@@ -9889,7 +9952,7 @@ function renderDmConversationsList() {
         <div class="dm-profile-divider"></div>
         <div class="my-3">
           <div id="dmPanelCustomStatus" class="p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 mb-2">
-            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0">💬</span>
+            <span id="dmPanelCustomStatusEmoji" class="text-base flex-shrink-0 hidden"></span>
             <span id="dmPanelCustomStatusText" class="font-medium truncate select-text"></span>
           </div>
           <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1">自己紹介 (ABOUT ME)</div>
@@ -9948,7 +10011,15 @@ function renderDmConversationsList() {
         statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
       }
       if (prof.customStatus && prof.customStatus.text) {
-        if (customEmoji) customEmoji.textContent = prof.customStatus.emoji || '💬';
+        if (customEmoji) {
+          if (prof.customStatus.emoji && prof.customStatus.emoji !== '💬') {
+            customEmoji.textContent = prof.customStatus.emoji;
+            customEmoji.classList.remove('hidden');
+          } else {
+            customEmoji.textContent = '';
+            customEmoji.classList.add('hidden');
+          }
+        }
         if (customText) customText.textContent = prof.customStatus.text;
         if (customStatusWrap) customStatusWrap.classList.remove('hidden');
       } else if (customStatusWrap) {
@@ -10130,7 +10201,8 @@ window.renderDmActiveNowPanel = function () {
     if (isInVoice) {
       subtext = `<span class="text-emerald-500 font-semibold flex items-center gap-1"><i class="fas fa-volume-up text-[10px]"></i> ボイスチャンネルにて</span>`;
     } else if (u.customStatus?.text) {
-      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${escapeHtml(u.customStatus.emoji || '💬')} ${escapeHtml(u.customStatus.text)}</span>`;
+      const em = (u.customStatus.emoji && u.customStatus.emoji !== '💬') ? `${escapeHtml(u.customStatus.emoji)} ` : '';
+      subtext = `<span class="text-gray-600 dark:text-gray-300 font-medium truncate">${em}${escapeHtml(u.customStatus.text)}</span>`;
     } else if (isAway) {
       subtext = `<span class="text-amber-500 font-semibold">離席中</span>`;
     }
@@ -13561,7 +13633,7 @@ window.renderDiscordServerNav = function () {
         const tsMs = parseTimestampToMs(tsRaw);
         if (tsMs > 0) {
           const timeStr = formatTimeAgo(tsMs);
-          if (timeStr) return `${timeStr}にアクティブ`;
+          if (timeStr) return timeStr;
         }
         return 'オフライン';
       };

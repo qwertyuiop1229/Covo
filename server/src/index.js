@@ -104,6 +104,9 @@ export default {
       if (url.pathname === "/api/joinServer" && request.method === "POST") {
         return await handleJoinServer(request, env);
       }
+      if (url.pathname === "/api/inviteInfo" && (request.method === "GET" || request.method === "HEAD")) {
+        return await handleGetInviteInfo(request, env, url);
+      }
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
         return await handleSyncRtdb(request, env);
       }
@@ -611,6 +614,89 @@ function getRtdbBaseUrl(env, clientRtdbUrl) {
   return defaultRtdb;
 }
 // -------------------------------------------------------------
+// 招待コード情報取得 (未ログイン公開エンドポイント - Discord完全準拠)
+// -------------------------------------------------------------
+async function handleGetInviteInfo(request, env, url) {
+  const cors = getCorsHeaders(request);
+  try {
+    const code = (url.searchParams.get("code") || "").toUpperCase().trim();
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
+    if (!code || !isValidAppId(appId, env) || !/^[A-Za-z0-9_\-]+$/.test(code)) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "無効な招待コードです" }), {
+        status: 400, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const adminToken = await getAdminTokenForFirestore(env);
+    if (!adminToken) {
+      return new Response(JSON.stringify({ success: false, error: "Server authentication failed" }), {
+        status: 500, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const projectId = env.FIREBASE_PROJECT_ID;
+    // 1. inviteIndex からサーバーIDを取得
+    const indexUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/inviteIndex/${encodeURIComponent(code)}`;
+    const indexRes = await fetch(indexUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const indexData = await indexRes.json();
+    if (indexData.error || !indexData.fields || !indexData.fields.serverId) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "招待コードが見つかりません" }), {
+        status: 404, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const serverId = indexData.fields.serverId.stringValue;
+    // 2. 招待コードの有効期限と使用回数を検証
+    const invUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(code)}`;
+    const invRes = await fetch(invUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const invData = await invRes.json();
+    if (!invData.error && invData.fields) {
+      if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクは無効化されています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+      const expiresAt = invData.fields.expiresAt?.timestampValue;
+      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクの有効期限が切れています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+      const maxUses = parseInt(invData.fields.maxUses?.integerValue || "0", 10);
+      const uses = parseInt(invData.fields.uses?.integerValue || "0", 10);
+      if (maxUses > 0 && uses >= maxUses) {
+        return new Response(JSON.stringify({ success: false, valid: false, error: "この招待リンクは使用上限回数に達しています" }), {
+          status: 403, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
+    }
+    // 3. サーバーの公開情報（名前・アイコン・人数）を取得
+    const srvUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`;
+    const srvRes = await fetch(srvUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
+    const srvData = await srvRes.json();
+    if (srvData.error || !srvData.fields) {
+      return new Response(JSON.stringify({ success: false, valid: false, error: "対象のサーバーが見つかりません" }), {
+        status: 404, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+    const serverName = srvData.fields.name?.stringValue || serverId;
+    const iconUrl = srvData.fields.iconUrl?.stringValue || null;
+    const memberCount = parseInt(srvData.fields.memberCount?.integerValue || (srvData.fields.joinedUsers?.arrayValue?.values?.length || 1).toString(), 10);
+    return new Response(JSON.stringify({
+      success: true,
+      valid: true,
+      code,
+      serverId,
+      serverName,
+      iconUrl,
+      memberCount
+    }), {
+      status: 200, headers: { ...cors, "Content-Type": "application/json" }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ success: false, error: err.toString() }), {
+      status: 500, headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+}
+// -------------------------------------------------------------
 // サーバー参加処理
 // -------------------------------------------------------------
 async function handleJoinServer(request, env) {
@@ -749,38 +835,33 @@ async function handleJoinServer(request, env) {
           return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
         
-        // 招待コードの uses をインクリメント (Precondition付きトランザクション風処理)
-        const updateTime = invData.updateTime;
+        // 招待コードの uses をアトミックにインクリメント (競合・不一致エラーを完全防止)
         const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
         const commitRes = await fetch(invTransformUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             writes: [{
-              update: {
-                name: invData.name,
-                fields: {
-                  ...invData.fields,
-                  uses: { integerValue: (parseInt(uses) + 1).toString() }
-                }
-              },
-              currentDocument: { updateTime: updateTime }
+              transform: {
+                document: `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(inviteCode)}`,
+                fieldTransforms: [{
+                  fieldPath: "uses",
+                  increment: { integerValue: "1" }
+                }]
+              }
             }]
           })
         });
-        
         const commitData = await commitRes.json();
         if (!commitData.error) {
           success = true;
           break;
         }
-      }
-      
-      if (!success) {
+        }
+        if (!success) {
         return new Response(JSON.stringify({ success: false, error: "Conflict updating invite code, please try again" }), { status: 409, headers: { ...cors, "Content-Type": "application/json" } });
-      }
-      
-      valid = true;
+        }
+        valid = true;
     }
 
     if (!valid) {

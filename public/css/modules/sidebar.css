@@ -216,6 +216,10 @@ body.discord-dark-theme #userPanel {
   overflow: hidden;
   margin-left: 0.35rem;
   margin-right: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 .user-panel-name {
   font-size: 0.85rem;
@@ -226,15 +230,26 @@ body.discord-dark-theme #userPanel {
   text-overflow: ellipsis;
   line-height: 1.2;
 }
-body.dark-server-theme .user-panel-name,
+body.dark-server-theme .user-panel-name {
+  color: #f8fafc !important;
+}
 body.discord-dark-theme .user-panel-name {
   color: #f2f3f5 !important;
 }
 .user-panel-id {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #64748b;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.dark-server-theme .user-panel-id {
+  color: #94a3b8 !important;
+}
+body.discord-dark-theme .user-panel-id {
+  color: #949ba4 !important;
 }
 /* ミュート・スピーカーオフ コントロール (Discord input_file_2.png 準拠) */
 .user-panel-ctrl-btn, .user-panel-chevron-btn {
