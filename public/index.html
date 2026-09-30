@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.235" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.236" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.235" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.236" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -248,6 +248,15 @@
         s.includes('notallowederror') ||
         (s.includes('failed to fetch') && (s.includes('chrome-extension') || s.includes('adblock'))) ||
         (s.includes('script error') && (!src || src === 'unknown' || src === '::')) ||
+        s.includes('usecache') ||
+        s.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
+        s.includes('receiving end does not exist') ||
+        s.includes('could not establish connection') ||
+        s.includes('offline mode') ||
+        s.includes('admin check skipped') ||
+        s.includes('allowedemails check skipped') ||
+        s.includes('list admin check skipped') ||
+        s.includes('profile check skipped') ||
         s.includes('requested device not found') ||
         s.includes('notfounderror') ||
         s.includes('devicesnotfounderror') ||
@@ -265,6 +274,11 @@
         s.includes('pdfjslib is not defined') ||
         s.includes('到着を待機します') ||
         s.includes('dm鍵を生成済みです') ||
+        s.includes('geostudy') ||
+        s.includes('image load failed') ||
+        s.includes('fcm initialization error') ||
+        s.includes('messaging/token-subscribe-failed') ||
+        s.includes('importing binding name') ||
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
@@ -496,6 +510,11 @@
         if (isExt) {
           try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
           return; // 拡張機能のエラーはコンソール・ログ・画面へ出さずに完全消音
+        }
+        // ネットワーク切断やブラウザ一時停止などのノイズも消音
+        if (_isIgnoredEarlyError(msg, '', r)) {
+          try { e.preventDefault(); } catch (_) {}
+          return;
         }
         const logLine = `Uncaught (in promise) ${msg}`;
         window._pushCovoLog('ERR', logLine);
@@ -2971,9 +2990,9 @@
               <div class="avatar-placeholder relative w-8 h-8 rounded-full flex-shrink-0 bg-gray-700 text-white flex items-center justify-center font-bold text-sm" id="userPanelAvatar">
                 <div class="status-indicator status-online" id="userPanelStatus"></div>
               </div>
-              <div class="user-panel-info flex flex-col min-w-0 flex-1 leading-tight">
+              <div class="user-panel-info flex flex-col justify-center min-w-0 flex-1 leading-tight">
                 <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-white truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[11px] font-medium text-emerald-600 dark:text-emerald-400 truncate" id="userPanelId">オンライン</div>
+                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId" style="display: none;"></div>
               </div>
             </div>
             <!-- 右側: Discord風コントロールボタン群 (マイク^, ヘッドフォンv, 設定) -->
@@ -3806,13 +3825,13 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
-    if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.235"></script>
+  <script type="module" src="js/main.js?v=1.1.236"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5218,11 +5237,11 @@
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-300 mb-1.5">いま何してる？（ステータスメッセージ）</label>
           <div class="flex items-center gap-2 bg-gray-50 dark:bg-[#1e1f22] p-2 rounded-2xl border border-gray-200 dark:border-white/10 focus-within:ring-2 focus-within:ring-indigo-500/30 transition shadow-inner">
-            <button type="button" id="customStatusEmojiBtn" onclick="toggleStatusEmojiPicker(event)" class="w-9 h-9 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#383a40] text-lg flex items-center justify-center shadow-xs transition flex-shrink-0">
-              <span id="customStatusSelectedEmoji">💬</span>
+            <button type="button" id="customStatusEmojiBtn" onclick="toggleStatusEmojiPicker(event)" class="w-9 h-9 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-gray-100 dark:hover:bg-[#383a40] text-lg flex items-center justify-center shadow-xs transition flex-shrink-0" title="絵文字を選択 (任意)">
+              <span id="customStatusSelectedEmoji"><i class="far fa-smile text-gray-400 text-sm"></i></span>
             </button>
             <input type="text" id="customStatusTextInput" maxlength="100" placeholder="作業中、ゲーム中、お腹すいた..." class="flex-1 bg-transparent border-none text-base text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none px-1 font-medium" />
-            <button type="button" onclick="document.getElementById('customStatusTextInput').value=''; document.getElementById('customStatusSelectedEmoji').textContent='💬';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 text-xs">
+            <button type="button" onclick="document.getElementById('customStatusTextInput').value=''; document.getElementById('customStatusSelectedEmoji').innerHTML='<i class=\'far fa-smile text-gray-400 text-sm\'></i>';" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 text-xs">
               クリア
             </button>
           </div>

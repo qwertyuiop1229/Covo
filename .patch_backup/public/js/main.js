@@ -1178,6 +1178,8 @@ function initializeFirebase() {
           let initialNickname = null;
           let initialAvatarUrl = null;
           let initialAboutMe = "";
+          const isAvatarExplicitlyCleared = localStorage.getItem('covo_avatar_cleared_' + userId) === '1';
+
           if (userProfileSnap && userProfileSnap.exists()) {
             const pData = userProfileSnap.data();
             if (pData.nickname) initialNickname = pData.nickname;
@@ -1195,16 +1197,18 @@ function initializeFirebase() {
               if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
             }
           } catch (_) {}
-          // キャッシュからも確認
-          if (initialAvatarUrl === null) {
+          // キャッシュからも確認（明示的に削除された場合は復元しない）
+          if (initialAvatarUrl === null && !isAvatarExplicitlyCleared) {
             const savedAvatar = localStorage.getItem('covo_cached_avatar_' + userId);
             if (savedAvatar) initialAvatarUrl = savedAvatar;
           }
-          if (!initialNickname && user.displayName) {
-            // Google新規ユーザー（プロフィール未作成時）のみ初期プロファイルを生成
+          // タイムアウト等による一時的nullの誤上書き防止: ドキュメント未存在かつローカル未存在の真の新規ユーザーのみGoogle初期設定
+          const hasLocalCache = Boolean(localStorage.getItem('covo_cached_nick_' + userId));
+          const isConfirmedNewUser = (userProfileSnap && !userProfileSnap.exists()) && !hasLocalCache;
+
+          if (!initialNickname && user.displayName && isConfirmedNewUser) {
             initialNickname = user.displayName.slice(0, 20);
-            // 既存アバターが設定されていない場合のみphotoURLを採用（既存アバターは絶対に上書きしない）
-            if (!initialAvatarUrl) {
+            if (!initialAvatarUrl && !isAvatarExplicitlyCleared) {
               initialAvatarUrl = user.photoURL || null;
             }
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
@@ -2799,7 +2803,7 @@ window.loadAdminRecoveryUsers = async function () {
       const email = (data.email || '').toLowerCase().trim();
       const uid = d.id;
       let nickname = data.nickname || data.displayName || null;
-      let avatarUrl = data.avatarUrl || data.photoURL || '';
+      let avatarUrl = (data.avatarUrl !== undefined && data.avatarUrl !== null) ? data.avatarUrl : (data.photoURL || '');
       const activeReq = activeReqsMap.get(email) || activeReqsMap.get(uid) || null;
 
       const userObj = {
@@ -3602,8 +3606,8 @@ function makeEmailListItem(email, isSelf, onRemove) {
   const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
   // username: username → nickname → displayName の優先順で取得
   let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? (email ? `${email.split('@')[0]} (未設定)` : "未設定") : "未参加");
-  // iconUrl: iconUrl → avatarUrl → photoURL の優先順で取得
-  let iconUrl = userData?.iconUrl || userData?.avatarUrl || userData?.photoURL || null;
+  // iconUrl: ユーザー設定の avatarUrl を最優先し、未設定時のみ Google photoURL を参照
+  let iconUrl = (userData?.avatarUrl !== undefined && userData?.avatarUrl !== null) ? userData.avatarUrl : (userData?.iconUrl !== undefined ? userData.iconUrl : (userData?.photoURL || null));
 
   const avatar = document.createElement("div");
   avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-slate-700 text-gray-700 dark:text-gray-300";
@@ -5600,9 +5604,14 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
   }, 'image/jpeg', 0.95);
 });
 
-avatarUploadInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
+avatarUploadInput.addEventListener("change", async (e) => {
+  let file = e.target.files[0];
   if (!file) return;
+  // iPhone (iOS) で撮影された HEIC/HEIF 画像を JPEG へ自動変換
+  if (typeof processHeicFile === 'function') {
+    file = await processHeicFile(file);
+  }
+  if (typeof checkFileAllowed === 'function' && !checkFileAllowed(file)) return;
   const objectUrl = URL.createObjectURL(file);
   openAvatarCropModal(objectUrl);
   avatarUploadInput.value = '';
@@ -5745,39 +5754,55 @@ if (openSettingsBtnEl) {
 }
 
 // アイコンリセットボタン
-if (resetAvatarBtnEl) {
-  resetAvatarBtnEl.addEventListener("click", async () => {
-    const loadingOverlayEl = document.getElementById("loadingOverlay");
-    if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+const handleAvatarResetAction = async () => {
+  const loadingOverlayEl = document.getElementById("loadingOverlay");
+  if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+  try {
+    const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+    await updateDoc(userProfileRef, { avatarUrl: null });
+    const userRef = doc(db, `artifacts/${appId}/users`, userId);
+    await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+    userAvatarUrl = null;
+    pendingAvatarUrl = null;
+    // キャッシュを完全消去し、削除状態を明示記録して再読み込み時のGoogle写真復活を完全防止
     try {
-      const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-      await updateDoc(userProfileRef, { avatarUrl: null });
-      const userRef = doc(db, `artifacts/${appId}/users`, userId);
-      await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
-      userAvatarUrl = null;
-      pendingAvatarUrl = null;
-      const previewEl = document.getElementById("settingsAvatarPreview");
-      const textEl = document.getElementById("settingsAvatarText");
-      if (previewEl) previewEl.classList.add("hidden");
-      if (textEl && userNickname) textEl.textContent = userNickname.charAt(0).toUpperCase();
-      resetAvatarBtnEl.classList.add("hidden");
-      updateUserPanelUI();
-      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
-      if (settingsMsgEl) {
-        settingsMsgEl.textContent = "アイコンをリセットしました";
-        settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
-      }
-    } catch (e) {
-      console.error(e);
-      if (settingsMsgEl) {
-        settingsMsgEl.textContent = "リセットに失敗しました";
-        settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
-      }
-    } finally {
-      if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+      localStorage.removeItem('covo_cached_avatar_' + userId);
+      localStorage.setItem('covo_avatar_cleared_' + userId, '1');
+    } catch (_) {}
+    const previewEl = document.getElementById("settingsAvatarPreview");
+    const mobilePreviewEl = document.getElementById("mobileAvatarPreview");
+    const textEl = document.getElementById("settingsAvatarText");
+    const mobileTextEl = document.getElementById("mobileAvatarText");
+    if (previewEl) previewEl.classList.add("hidden");
+    if (mobilePreviewEl) mobilePreviewEl.style.display = "none";
+    if (textEl && userNickname) textEl.textContent = userNickname.charAt(0).toUpperCase();
+    if (mobileTextEl && userNickname) mobileTextEl.textContent = userNickname.charAt(0).toUpperCase();
+    if (resetAvatarBtnEl) resetAvatarBtnEl.classList.add("hidden");
+    const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
+    if (mobResetBtn) mobResetBtn.classList.add("hidden");
+    updateUserPanelUI();
+    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+    if (settingsMsgEl) {
+      settingsMsgEl.textContent = "アイコンをリセットしました";
+      settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
     }
-  });
+    alertMessage("アイコンをリセットしました", "info");
+  } catch (e) {
+    console.error(e);
+    if (settingsMsgEl) {
+      settingsMsgEl.textContent = "リセットに失敗しました";
+      settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+    }
+  } finally {
+    if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
+  }
+};
+
+if (resetAvatarBtnEl) {
+  resetAvatarBtnEl.addEventListener("click", handleAvatarResetAction);
 }
+// スマホ版プロフィール画面のリセットボタンにもリスナーを確実にバインド
+document.getElementById("mobileResetAvatarBtn")?.addEventListener("click", handleAvatarResetAction);
 
 if (closeSettingsBtnEl && settingsModalEl) {
   closeSettingsBtnEl.addEventListener("click", () => {
@@ -5811,9 +5836,12 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
     try {
       const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
-      if (pendingAvatarUrl) { updateData.avatarUrl = pendingAvatarUrl; }
+      if (pendingAvatarUrl) {
+        updateData.avatarUrl = pendingAvatarUrl;
+        unmarkAvatarAsInvalid(pendingAvatarUrl);
+        try { localStorage.removeItem('covo_avatar_cleared_' + userId); } catch (_) {}
+      }
       await setDoc(userProfileRef, updateData, { merge: true });
-
       const userRef = doc(db, `artifacts/${appId}/users`, userId);
       await setDoc(userRef, {
         email: userAuthEmail,
@@ -5821,7 +5849,6 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
         avatarUrl: pendingAvatarUrl || userAvatarUrl || null,
         aboutMe: newAboutMe
       }, { merge: true }).catch(console.error);
-
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
@@ -8119,28 +8146,35 @@ function formatTimeAgo(timestamp) {
 // Server Features
 // =========================================================================
 
-// 永続化された無効アバターURLリスト（リロード後も無駄な404リクエストを阻止）
-const _invalidAvatars = (() => {
-  try {
-    const raw = localStorage.getItem('covo_invalid_avatars');
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch (_) {
-    return new Set();
-  }
-})();
+// 一時的なネットワークエラーによるアバター永久ブラックリスト化を防止（メモリ内リトライマップ管理）
+const _invalidAvatars = new Set();
+const _avatarFailCounts = new Map();
 
 function markAvatarAsInvalid(url) {
+  if (!url || typeof url !== 'string') return;
+  const count = (_avatarFailCounts.get(url) || 0) + 1;
+  _avatarFailCounts.set(url, count);
+  // 3回以上連続で失敗した場合のみセッション内ブラックリストに登録
+  if (count >= 3) {
+    _invalidAvatars.add(url);
+  }
+}
+
+function unmarkAvatarAsInvalid(url) {
   if (!url) return;
-  _invalidAvatars.add(url);
-  try {
-    const arr = Array.from(_invalidAvatars).slice(-300);
-    localStorage.setItem('covo_invalid_avatars', JSON.stringify(arr));
-  } catch (_) {}
+  _invalidAvatars.delete(url);
+  _avatarFailCounts.delete(url);
 }
 
 function isUsableAvatarUrl(url) {
-  return !!url && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
+  return !!url && typeof url === 'string' && url.indexOf('res.cloudinary.com') < 0 && !_invalidAvatars.has(url);
 }
+
+// オンライン復帰時にアバター失敗カウントを全解除（回線復旧時の自己治癒）
+window.addEventListener('online', () => {
+  _invalidAvatars.clear();
+  _avatarFailCounts.clear();
+});
 
 // 欠落（404）ファイルURLの永続キャッシュ管理（リロード後も無駄な404通信を完全抑制）
 const _missingFilesSet = new Set();
@@ -8189,8 +8223,10 @@ function __setAvatarImg(container, url, name, opts) {
   img.referrerPolicy = 'no-referrer'; // リファラー送信を抑制
   if (className) img.className = className;
   if (styleStr) img.style.cssText = styleStr;
+  img.onload = function () {
+    unmarkAvatarAsInvalid(url);
+  };
   img.onerror = function () {
-    // 存在しない古いファイルや404時は即座に永続リストへ登録し、以降の全リクエストを完全遮断
     markAvatarAsInvalid(url);
     try { container.innerHTML = ''; container.textContent = initial; } catch (_) { }
   };
@@ -9631,8 +9667,8 @@ function renderDmConversationsList() {
       if (currentDmId !== dmId || !snap.exists()) return;
       const uData = snap.data();
       const updatedNick = uData.nickname || uData.displayName;
-      // 相手の手動設定アバターを優先し、勝手にGoogle photoURLで上書きしない
-      const updatedAvatar = uData.avatarUrl !== undefined ? uData.avatarUrl : (uData.photoURL || '');
+      // 相手の手動設定アバターを優先し、nullや空文字が設定されている場合は勝手にGoogle photoURLで上書きしない
+      const updatedAvatar = (uData.avatarUrl !== undefined && uData.avatarUrl !== null) ? uData.avatarUrl : (uData.photoURL || '');
       window.refreshCurrentDmParticipantUI(targetUid, {
         nickname: updatedNick,
         avatarUrl: updatedAvatar,
@@ -13499,9 +13535,14 @@ window.openNewServerIconPicker = function () {
   if (newFileInput) { isNewServerIconCrop = true; newFileInput.click(); }
 };
 
-function handleSIconFileChange(e) {
-  const file = e.target.files[0];
+async function handleSIconFileChange(e) {
+  let file = e.target.files[0];
   if (!file) return;
+  // iPhone (iOS) で撮影された HEIC/HEIF 画像を JPEG へ自動変換
+  if (typeof processHeicFile === 'function') {
+    file = await processHeicFile(file);
+  }
+  if (typeof checkFileAllowed === 'function' && !checkFileAllowed(file)) return;
   const objectUrl = URL.createObjectURL(file);
   sIconImage = new Image();
   sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };

@@ -65,14 +65,13 @@ import {
   deleteToken,
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
-
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js';
-import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
+import * as LocalStore from './local_store.js?v=1.1.235';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.235';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -201,6 +200,18 @@ function isTransientTelemetryError(args) {
       str.includes('network-request-failed') ||
       str.includes('fetching auth token failed') ||
       str.includes('rtdb sdk read warning: timeout') ||
+      str.includes('usecache') ||
+      str.includes('gighmmpiobklfepjocnamgkkbiglidom') ||
+      str.includes('offline mode') ||
+      str.includes('admin check skipped') ||
+      str.includes('allowedemails check skipped') ||
+      str.includes('list admin check skipped') ||
+      str.includes('profile check skipped') ||
+      str.includes('geostudy') ||
+      str.includes('image load failed') ||
+      str.includes('fcm initialization error') ||
+      str.includes('messaging/token-subscribe-failed') ||
+      str.includes('permission_denied') ||
       str.includes('wakelock取得失敗: permission was denied') ||
       str.includes('permission was denied') ||
       str.includes('切断検知') ||
@@ -209,6 +220,7 @@ function isTransientTelemetryError(args) {
       str.includes('pdfjslib is not defined') ||
       str.includes('到着を待機します') ||
       str.includes('dm鍵を生成済みです') ||
+      str.includes('importing binding name') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
@@ -1041,35 +1053,20 @@ function initializeFirebase() {
           const [adminSnap, configSnap, listAdminSnap, userProfileSnap] = await withTimeout(
             Promise.all([
               getDoc(adminDocRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("Admin check skipped (offline mode)");
-                } else {
-                  console.error("Admin check error:", e);
-                }
+                // オフライン・初期接続待機時は正常なフォールバックのためテレメトリ収集を抑制
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("Admin check notice:", e?.message || e);
                 return null;
               }),
               getDoc(configRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("allowedEmails check skipped (offline mode)");
-                } else {
-                  console.error("allowedEmails check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("allowedEmails check notice:", e?.message || e);
                 return null;
               }),
               getDoc(listAdminRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("list admin check skipped (offline mode)");
-                } else {
-                  console.error("list admin check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("list admin check notice:", e?.message || e);
                 return null;
               }),
               getDoc(userProfileRef).catch(e => {
-                if (e?.code === 'unavailable' || String(e?.message || '').includes('offline')) {
-                  console.warn("profile check skipped (offline mode)");
-                } else {
-                  console.error("profile check error:", e);
-                }
+                if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug("profile check notice:", e?.message || e);
                 return null;
               })
             ]),
@@ -1429,12 +1426,15 @@ function updateUserPanelUI() {
   if (userNickname) {
     userPanelName.textContent = userNickname;
     const curStatus = window._currentUserCustomStatus;
+    // Discord本家準拠: ステメがなければ「オンライン」等の文字は出さず、名前のみスッキリ中央表示
     if (curStatus && curStatus.text) {
-      userPanelId.textContent = `${curStatus.emoji || '💬'} ${curStatus.text}`;
+      const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
+      userPanelId.textContent = `${emojiPrefix}${curStatus.text}`;
       userPanelId.className = 'user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate';
+      userPanelId.style.display = '';
     } else {
-      userPanelId.textContent = 'オンライン';
-      userPanelId.className = 'user-panel-id text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate';
+      userPanelId.textContent = '';
+      userPanelId.style.display = 'none';
     }
     if (userAvatarUrl) {
       __setAvatarImg(userPanelAvatar, userAvatarUrl, userNickname, { className: 'w-full h-full rounded-full object-cover', style: '' });
@@ -5339,11 +5339,33 @@ async function startPresenceSystem() {
   refreshCachedIdToken();
   if (_idTokenRefreshTimer) clearInterval(_idTokenRefreshTimer);
   _idTokenRefreshTimer = setInterval(refreshCachedIdToken, 50 * 60 * 1000);
-
   // 起動時に即座にオンライン状態を初期送信 (RTDBが接続待ちの間も確実にキューイング＆Firestoreバックアップ)
   _lastReportedStatusStr = null;
   const initialPresenceState = document.visibilityState === 'hidden' ? 'away' : 'online';
   updateUserStatus(initialPresenceState).catch(() => {});
+  // 🌟 ユーザーアクティビティ検知（マウス移動・キー入力・スクロール等で操作中のオンラインを常に完全維持）
+  let _lastActivityHeartbeat = 0;
+  window._onPresenceUserActivity = () => {
+    const now = Date.now();
+    if (now - _lastActivityHeartbeat > 15000) {
+      _lastActivityHeartbeat = now;
+      stopOfflineTimer();
+      resetAwayTimer();
+      if (document.visibilityState === 'visible' && userId) {
+        updateUserStatus('online');
+      }
+    }
+  };
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, window._onPresenceUserActivity, { passive: true });
+  });
+  // 2分ごとのアクティブキープアライブ（画面表示中に他端末から勝手にオフライン化されるのを完全防止）
+  if (window._presenceKeepAliveTimer) clearInterval(window._presenceKeepAliveTimer);
+  window._presenceKeepAliveTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && userId) {
+      updateUserStatus('online', true);
+    }
+  }, 2 * 60 * 1000);
 
   // RTDBの接続状態を監視し、接続・再接続のたびにonDisconnectの再設定とオンライン状態の送信を行う
   try {
@@ -5372,7 +5394,7 @@ async function startPresenceSystem() {
         window._lastConnectedLogTime = window._lastConnectedLogTime || 0;
         if (now - window._lastConnectedLogTime > 3000) {
           window._lastConnectedLogTime = now;
-          console.log('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
+          if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('🔌 [通信状態] サーバーとのリアルタイム接続が確立されました');
         }
         // 接続直後は強制的にステータスを再送信する（バックグラウンド復帰時は離席中にする）
         _lastReportedStatusStr = null;
@@ -5780,8 +5802,26 @@ const handleAvatarResetAction = async () => {
     if (resetAvatarBtnEl) resetAvatarBtnEl.classList.add("hidden");
     const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
     if (mobResetBtn) mobResetBtn.classList.add("hidden");
+    // 🌟 全画面UI・キャッシュを即座にリセット反映
+    const myProfile = window._userProfileCache?.get(userId);
+    if (myProfile) myProfile.avatarUrl = '';
+    const selfInCached = cachedUsers.find(u => u.id === userId);
+    if (selfInCached) selfInCached.avatarUrl = '';
+    if (Array.isArray(lastMessagesData)) {
+      lastMessagesData.forEach(m => {
+        if (m.senderId === userId || m.userId === userId) {
+          m.senderAvatarUrl = null;
+        }
+      });
+    }
     updateUserPanelUI();
-    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
+    updateSettingsSidebar();
+    updateMobileProfileScreen();
+    renderMembersList(cachedUsers);
+    renderMessagesWithReadReceipts();
+    if (typeof renderServerList === 'function') renderServerList();
+    if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+    await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
     if (settingsMsgEl) {
       settingsMsgEl.textContent = "アイコンをリセットしました";
       settingsMsgEl.className = "text-center mt-2 text-sm text-gray-600";
@@ -5852,13 +5892,49 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
-
+      try {
+        if (userAvatarUrl) {
+          localStorage.setItem('covo_cached_avatar_' + userId, userAvatarUrl);
+          localStorage.removeItem('covo_avatar_cleared_' + userId);
+        }
+        localStorage.setItem('covo_cached_nick_' + userId, userNickname);
+      } catch (_) {}
+      // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
+      const myProfile = {
+        id: userId,
+        uid: userId,
+        nickname: userNickname,
+        avatarUrl: userAvatarUrl || '',
+        email: userAuthEmail,
+        aboutMe: userAboutMe,
+        customStatus: window._currentUserCustomStatus || null,
+        status: 'online'
+      };
+      window._userProfileCache?.set(userId, myProfile);
+      const selfInCached = cachedUsers.find(u => u.id === userId);
+      if (selfInCached) {
+        selfInCached.nickname = userNickname;
+        selfInCached.avatarUrl = userAvatarUrl || '';
+        selfInCached.aboutMe = userAboutMe;
+      }
+      if (Array.isArray(lastMessagesData)) {
+        lastMessagesData.forEach(m => {
+          if (m.senderId === userId || m.userId === userId) {
+            m.senderNickname = userNickname;
+            m.senderAvatarUrl = userAvatarUrl;
+          }
+        });
+      }
       const hdrTitle = document.getElementById("headerTitle");
       if (hdrTitle) hdrTitle.textContent = `${userNickname}${isAdmin ? " (管理者)" : ""}`;
       updateUserPanelUI();
-
-      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online');
-
+      updateSettingsSidebar();
+      updateMobileProfileScreen();
+      renderMembersList(cachedUsers);
+      renderMessagesWithReadReceipts();
+      if (typeof renderServerList === 'function') renderServerList();
+      if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
+      await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "保存しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-emerald-600 font-bold";
@@ -6984,17 +7060,19 @@ window.openCustomStatusModal = function () {
   const modal = document.getElementById("customStatusModal");
   if (!modal) return;
   closeUserProfileModal();
-
   const textInput = document.getElementById("customStatusTextInput");
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
-
   const currentStatus = window._currentUserCustomStatus || {};
   if (textInput) textInput.value = currentStatus.text || "";
-  if (emojiDisplay) emojiDisplay.textContent = currentStatus.emoji || "💬";
-
+  if (emojiDisplay) {
+    if (currentStatus.emoji && currentStatus.emoji !== "💬") {
+      emojiDisplay.textContent = currentStatus.emoji;
+    } else {
+      emojiDisplay.innerHTML = '<i class="far fa-smile text-gray-400 text-sm"></i>';
+    }
+  }
   // 過去のステータス履歴の即時描画
   renderCustomStatusHistoryUI();
-
   openModal(modal);
   setTimeout(() => textInput?.focus(), 100);
 };
@@ -7199,15 +7277,21 @@ function updateSettingsCustomStatusUI() {
   const textDisplay = document.getElementById('settingsCustomStatusTextDisplay');
   const clearBtn = document.getElementById('clearCustomStatusBtn');
   const mobileTextDisplay = document.getElementById('mobileCustomStatusTextDisplay');
-
   const cur = window._currentUserCustomStatus;
   if (cur && cur.text) {
-    if (emojiDisplay) emojiDisplay.textContent = cur.emoji || '💬';
+    const emojiPrefix = cur.emoji ? `${cur.emoji} ` : '';
+    if (emojiDisplay) {
+      if (cur.emoji) {
+        emojiDisplay.textContent = cur.emoji;
+      } else {
+        emojiDisplay.innerHTML = '<i class="far fa-comment-dots text-gray-400"></i>';
+      }
+    }
     if (textDisplay) textDisplay.textContent = cur.text;
     if (clearBtn) clearBtn.classList.remove('hidden');
-    if (mobileTextDisplay) mobileTextDisplay.textContent = `${cur.emoji || '💬'} ${cur.text}`;
+    if (mobileTextDisplay) mobileTextDisplay.textContent = `${emojiPrefix}${cur.text}`;
   } else {
-    if (emojiDisplay) emojiDisplay.textContent = '💬';
+    if (emojiDisplay) emojiDisplay.innerHTML = '<i class="far fa-comment-dots text-gray-400"></i>';
     if (textDisplay) textDisplay.textContent = '未設定';
     if (clearBtn) clearBtn.classList.add('hidden');
     if (mobileTextDisplay) mobileTextDisplay.textContent = '未設定';
@@ -7240,30 +7324,25 @@ window.saveCustomStatus = async function () {
   const textInput = document.getElementById("customStatusTextInput");
   const emojiDisplay = document.getElementById("customStatusSelectedEmoji");
   const btn = document.getElementById("saveCustomStatusBtn");
-
   const text = textInput?.value.trim() || "";
-  const emoji = emojiDisplay?.textContent.trim() || "💬";
-
+  const rawEmoji = emojiDisplay?.textContent.trim() || "";
+  // 💬 や空アイコンなら絵文字なし（テキストのみ）として保存
+  const emoji = (rawEmoji === "💬" || !rawEmoji) ? "" : rawEmoji;
   if (btn) btn.disabled = true;
-
   try {
     const customStatus = text ? {
       emoji,
       text,
       updatedAt: Date.now()
     } : null;
-
     window._currentUserCustomStatus = customStatus;
-
     if (text) {
       window.addCustomStatusHistory(emoji, text);
     }
-
     // 1. Firestore に保存
     await setDoc(doc(db, `artifacts/${appId}/users`, userId), {
       customStatus: customStatus || deleteField()
     }, { merge: true });
-
     // 2. RTDB に保存（リアルタイム反映）
     try {
       const { ref, set, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -7274,8 +7353,15 @@ window.saveCustomStatus = async function () {
         await remove(ref(rtdb, `status/${userId}/customStatus`));
       }
     } catch (rtdbErr) { }
-
+    // 3. 🌟 自分自身の全画面UIを即座に再読み込みなしで更新
+    updateUserPanelUI();
     updateSettingsCustomStatusUI();
+    updateMobileProfileScreen();
+    const selfInCached = cachedUsers.find(u => u.id === userId);
+    if (selfInCached) selfInCached.customStatus = customStatus;
+    const selfProf = window._userProfileCache?.get(userId);
+    if (selfProf) selfProf.customStatus = customStatus;
+    renderMembersList(cachedUsers);
     closeCustomStatusModal();
     alertMessage("カスタムステータスを更新しました！", "success");
   } catch (err) {
@@ -7369,6 +7455,13 @@ function stopPresenceSystem() {
   stopHeartbeat();
   _beaconSent = false;
   if (_idTokenRefreshTimer) { clearInterval(_idTokenRefreshTimer); _idTokenRefreshTimer = null; }
+  if (window._presenceKeepAliveTimer) { clearInterval(window._presenceKeepAliveTimer); window._presenceKeepAliveTimer = null; }
+  if (window._onPresenceUserActivity) {
+    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, window._onPresenceUserActivity);
+    });
+    window._onPresenceUserActivity = null;
+  }
   _cachedIdToken = null;
   if (window._connectedRefUnsub) {
     window._connectedRefUnsub();
@@ -7650,12 +7743,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Just in case, the Auth observer handles actual db fetching
 });
 
-async function updateUserStatus(state) {
+async function updateUserStatus(state, force = false) {
   if (!userId || !userNickname) return;
   const activeChannelId = currentRoomId || currentDmId || null;
-  // 差分チェック（同じ状態ならスキップ）
+  // 差分チェック（forceがtrueでない限り、同じ状態ならスキップ）
   const currentStatusStr = JSON.stringify({ state, roomId: activeChannelId, nickname: userNickname, avatarUrl: userAvatarUrl, customStatus: window._currentUserCustomStatus || null });
-  if (_lastReportedStatusStr === currentStatusStr) return;
+  if (!force && _lastReportedStatusStr === currentStatusStr) return;
   _lastReportedStatusStr = currentStatusStr;
   try {
     const { ref, update, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -8017,8 +8110,15 @@ function subscribeToUserStatus() {
       if (statusElement) statusElement.className = `status-indicator status-${myDisplayState}`;
       const statusTextElement = document.getElementById('userPanelId');
       if (statusTextElement) {
-        statusTextElement.textContent = myDisplayState === 'online' ? 'オンライン' : (myDisplayState === 'away' ? '離席中' : 'オフライン');
-        statusTextElement.className = `user-panel-id text-[11px] font-medium truncate ${myDisplayState === 'online' ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-gray-500 dark:text-slate-400'}`;
+        const curStatus = window._currentUserCustomStatus;
+        if (curStatus && curStatus.text) {
+          const emojiPrefix = curStatus.emoji ? `${curStatus.emoji} ` : '';
+          statusTextElement.textContent = `${emojiPrefix}${curStatus.text}`;
+          statusTextElement.style.display = '';
+        } else {
+          statusTextElement.textContent = '';
+          statusTextElement.style.display = 'none';
+        }
       }
     }
     return { ...u, computedState };
@@ -8086,22 +8186,18 @@ function subscribeToUserStatus() {
       userTag.textContent = `#${(member.id || '').slice(-4).toLowerCase()}`;
       name.appendChild(userTag);
       info.appendChild(name);
-      if (member.computedState === 'away' || member.computedState === 'offline') {
-        const statusText = document.createElement("div");
-        statusText.className = "member-status-text";
-        const cachedProf = window._userProfileCache?.get(member.id);
-        const tsRaw = member.last_changed || member.lastSeen || cachedProf?.last_changed || cachedProf?.lastSeen || member.updatedAt || member.createdAt;
-        const tsMs = parseTimestampToMs(tsRaw);
-        const timeStr = tsMs > 0 ? formatTimeAgo(tsMs) : '';
-        statusText.textContent = timeStr ? `${timeStr}にアクティブ` : (member.computedState === 'away' ? '離席中' : 'オフライン');
-        info.appendChild(statusText);
-      }
-      // カスタムステータス (ステメ) の表示
+      // Discord本家完全準拠: メンバー一覧ではオフライン時の長文アクティブ表記を廃止しスッキリ1行化
       if (member.customStatus && member.customStatus.text) {
         const customStatusDiv = document.createElement("div");
         customStatusDiv.className = "text-[10px] text-gray-400 dark:text-[#949ba4] truncate mt-0.5 flex items-center gap-1";
-        customStatusDiv.innerHTML = `<span>${escapeHtml(member.customStatus.emoji || '💬')}</span><span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
+        const emojiHtml = member.customStatus.emoji ? `<span>${escapeHtml(member.customStatus.emoji)}</span>` : '';
+        customStatusDiv.innerHTML = `${emojiHtml}<span class="truncate">${escapeHtml(member.customStatus.text)}</span>`;
         info.appendChild(customStatusDiv);
+      } else if (member.computedState === 'away') {
+        const statusText = document.createElement("div");
+        statusText.className = "member-status-text";
+        statusText.textContent = '離席中';
+        info.appendChild(statusText);
       }
 
       item.appendChild(avatar);
@@ -8126,13 +8222,13 @@ function formatTimeAgo(timestamp) {
   if (!pastMs || pastMs <= 0) return "";
   const now = Date.now();
   const diffInSeconds = Math.floor((now - pastMs) / 1000);
-  if (diffInSeconds < 0) return "たった今";
-  if (diffInSeconds < 60) return "数秒前";
+  if (diffInSeconds < 60) return "たった今";
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes}分前`;
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) return `${diffInHours}時間前`;
   const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays === 1) return "昨日";
   if (diffInDays < 30) return `${diffInDays}日前`;
   const diffInMonths = Math.floor(diffInDays / 30);
   if (diffInMonths < 12) return `${diffInMonths}か月前`;
@@ -18093,7 +18189,7 @@ async function updateReadReceiptForCurrentUser() {
 }
 
 async function setTypingStatus(isTyping) {
-  if ((!currentRoomId && !currentDmId) || !userId || !appId) return;
+  if ((!currentDmId && (!currentServerId || !currentRoomId)) || !userId || !appId) return;
   try {
     const { ref, set, remove, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -24230,8 +24326,7 @@ async function initializeFCM() {
     // Service Worker を明示的に登録
     if ('serviceWorker' in navigator) {
       const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
-      console.log('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
-
+      if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('⚙️ [システム] バックグラウンド処理(Service Worker)の登録が完了しました:', swRegistration);
       // ★ SWにuserIdとappIdを送る（SW側で自分のメッセージへの通知をスキップするため）
       const sendUserIdToSW = () => {
         const sw = navigator.serviceWorker.controller;
@@ -24302,7 +24397,7 @@ async function initializeFCM() {
             serviceWorkerRegistration: swReg
           });
           if (token && userId) {
-            console.log('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
+            if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📱 [通知] プッシュ通知用トークンを正常に取得しました:', token.substring(0, 20) + '...');
             currentFcmToken = token;
             const userRef = doc(db, `artifacts/${appId}/users`, userId);
             // トークンローテーション対応: 古いトークンを削除して新しいトークンを登録
