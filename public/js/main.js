@@ -4724,6 +4724,7 @@ function updateSettingsSidebar() {
 
 // ============ Mobile Profile & Modal Navigation ============
 window.openMobileProfileScreen = function () {
+  if (typeof initProfileState === 'function') initProfileState();
   updateMobileProfileScreen();
   const el = document.getElementById('mobileProfileScreen');
   if (el) {
@@ -5213,6 +5214,9 @@ window.openMobileDetail = function (type) {
   };
   const el = document.getElementById(m[type]);
   if (el) {
+    if (type === 'profile') {
+      if (typeof initProfileState === 'function') initProfileState();
+    }
     if (type === 'admin') {
       const container = document.getElementById('mobileAdminContainer');
       const shared = document.getElementById('adminPanelSharedContent');
@@ -5266,6 +5270,9 @@ window.openMobileDetail = function (type) {
 window.closeMobileDetail = function (id) {
   const el = document.getElementById(id);
   if (el) {
+    if (id === 'mobileDetailProfile' && typeof checkProfileDirty === 'function' && checkProfileDirty()) {
+      window.resetProfileChanges();
+    }
     el.classList.add('closing');
     setTimeout(() => {
       el.classList.remove('active', 'closing');
@@ -5334,13 +5341,31 @@ window.mobileProfileSave = async function () {
   const inp = document.getElementById('mobileNicknameInput');
   const aboutMeInp = document.getElementById('mobileAboutMeInput');
   const msg = document.getElementById('mobileSettingsMessage');
-  if (!inp || !inp.value.trim()) return;
+  const nickVal = inp?.value.trim() ?? "";
+  if (!nickVal) {
+    if (msg) {
+      msg.textContent = 'ニックネームを入力してください';
+      msg.className = "mt-3 text-sm text-center font-medium text-red-600";
+    }
+    return;
+  }
   const pcIn = document.getElementById('settingsNicknameInput');
-  if (pcIn) pcIn.value = inp.value.trim();
+  if (pcIn) pcIn.value = nickVal;
   const pcAboutMe = document.getElementById('settingsAboutMeInput');
   if (pcAboutMe && aboutMeInp) pcAboutMe.value = aboutMeInp.value.trim();
-  document.getElementById('saveSettingsButton').click();
-  if (msg) { msg.textContent = '保存しました'; msg.style.color = '#059669'; setTimeout(() => { msg.textContent = ''; }, 2000); }
+  
+  const saveBtn = document.getElementById('saveSettingsButton');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.click();
+  }
+  if (msg) {
+    msg.textContent = '保存中...';
+    msg.className = "mt-3 text-sm text-center font-medium text-gray-500";
+    setTimeout(() => {
+      if (msg.textContent === '保存中...') msg.textContent = '';
+    }, 2000);
+  }
 };
 
 const atm = document.getElementById('avatarUploadTriggerMobile');
@@ -5639,12 +5664,22 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
         ''
       );
       pendingAvatarUrl = fileUrl;
-      settingsAvatarPreview.src = fileUrl;
-      settingsAvatarPreview.classList.remove("hidden");
-      document.getElementById("resetAvatarButton").classList.remove("hidden");
+      if (settingsAvatarPreview) {
+        settingsAvatarPreview.src = fileUrl;
+        settingsAvatarPreview.classList.remove("hidden");
+      }
+      const mobPreview = document.getElementById("mobileAvatarPreview");
+      if (mobPreview) {
+        mobPreview.src = fileUrl;
+        mobPreview.style.display = "";
+        mobPreview.classList.remove("hidden");
+      }
+      document.getElementById("resetAvatarButton")?.classList.remove("hidden");
+      document.getElementById("mobileResetAvatarBtn")?.classList.remove("hidden");
       avatarCropModal.classList.add('hidden');
       cropImage = null;
-      alertMessage("アイコンを設定しました", "success");
+      checkProfileDirty();
+      alertMessage("アイコンを設定しました。「保存」を押して確定してください", "success");
     } catch (err) {
       console.error(err);
       alertMessage("アップロードに失敗しました: " + err.message, "error");
@@ -5688,23 +5723,75 @@ window.applyGoogleAvatar = function () {
   }
   if (mobPreview) {
     mobPreview.src = googlePhoto;
+    mobPreview.style.display = "";
     mobPreview.classList.remove("hidden");
   }
   if (pcResetBtn) pcResetBtn.classList.remove("hidden");
   if (mobResetBtn) mobResetBtn.classList.remove("hidden");
+  checkProfileDirty();
   alertMessage("Googleアカウントのアイコンを選択しました。「保存」を押して確定してください", "success");
 };
 
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
 let _profileInitialState = { nickname: '', aboutMe: '', avatarUrl: null };
+
+function initProfileState() {
+  const nick = userNickname || "";
+  const about = userAboutMe || "";
+  const avatar = userAvatarUrl || null;
+  pendingAvatarUrl = null;
+  _profileInitialState = {
+    nickname: nick,
+    aboutMe: about,
+    avatarUrl: avatar
+  };
+  const pcNick = document.getElementById("settingsNicknameInput");
+  const mobNick = document.getElementById("mobileNicknameInput");
+  if (pcNick && pcNick.value !== nick) pcNick.value = nick;
+  if (mobNick && mobNick.value !== nick) mobNick.value = nick;
+  const pcAbout = document.getElementById("settingsAboutMeInput");
+  const mobAbout = document.getElementById("mobileAboutMeInput");
+  if (pcAbout && pcAbout.value !== about) pcAbout.value = about;
+  if (mobAbout && mobAbout.value !== about) mobAbout.value = about;
+  const pcCounter = document.getElementById("settingsAboutMeCounter");
+  const mobCounter = document.getElementById("mobileAboutMeCounter");
+  if (pcCounter) pcCounter.textContent = `${about.length} / 300`;
+  if (mobCounter) mobCounter.textContent = `${about.length} / 300`;
+  checkProfileDirty();
+}
+
 function checkProfileDirty() {
-  const pcNick = document.getElementById("settingsNicknameInput")?.value.trim() ?? "";
-  const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
-  const currentNick = pcNick || mobNick || "";
-  const pcAbout = document.getElementById("settingsAboutMeInput")?.value.trim() ?? "";
-  const mobAbout = document.getElementById("mobileAboutMeInput")?.value.trim() ?? "";
-  const currentAbout = pcAbout || mobAbout || "";
+  const pcNickEl = document.getElementById("settingsNicknameInput");
+  const mobNickEl = document.getElementById("mobileNicknameInput");
+  let currentNick = "";
+  if (document.activeElement === mobNickEl && mobNickEl) {
+    currentNick = mobNickEl.value.trim();
+  } else if (document.activeElement === pcNickEl && pcNickEl) {
+    currentNick = pcNickEl.value.trim();
+  } else if (mobNickEl && mobNickEl.value.trim() !== (_profileInitialState.nickname || "")) {
+    currentNick = mobNickEl.value.trim();
+  } else if (pcNickEl && pcNickEl.value.trim() !== (_profileInitialState.nickname || "")) {
+    currentNick = pcNickEl.value.trim();
+  } else {
+    currentNick = (pcNickEl?.value.trim()) ?? (mobNickEl?.value.trim() ?? "");
+  }
+
+  const pcAboutEl = document.getElementById("settingsAboutMeInput");
+  const mobAboutEl = document.getElementById("mobileAboutMeInput");
+  let currentAbout = "";
+  if (document.activeElement === mobAboutEl && mobAboutEl) {
+    currentAbout = mobAboutEl.value.trim();
+  } else if (document.activeElement === pcAboutEl && pcAboutEl) {
+    currentAbout = pcAboutEl.value.trim();
+  } else if (mobAboutEl && mobAboutEl.value.trim() !== (_profileInitialState.aboutMe || "")) {
+    currentAbout = mobAboutEl.value.trim();
+  } else if (pcAboutEl && pcAboutEl.value.trim() !== (_profileInitialState.aboutMe || "")) {
+    currentAbout = pcAboutEl.value.trim();
+  } else {
+    currentAbout = (pcAboutEl?.value.trim()) ?? (mobAboutEl?.value.trim() ?? "");
+  }
+
   const isNickDirty = currentNick !== (_profileInitialState.nickname || "");
   const isAboutDirty = currentAbout !== (_profileInitialState.aboutMe || "");
   const isAvatarDirty = pendingAvatarUrl !== null;
@@ -5730,6 +5817,7 @@ function checkProfileDirty() {
   }
   return isDirty;
 }
+
 window.resetProfileChanges = function () {
   const pcNick = document.getElementById("settingsNicknameInput");
   const mobNick = document.getElementById("mobileNicknameInput");
@@ -5744,13 +5832,30 @@ window.resetProfileChanges = function () {
   if (pcCounter && pcAbout) pcCounter.textContent = `${pcAbout.value.length} / 300`;
   if (mobCounter && mobAbout) mobCounter.textContent = `${mobAbout.value.length} / 300`;
   pendingAvatarUrl = null;
+  const pcPreview = document.getElementById("settingsAvatarPreview");
+  const mobPreview = document.getElementById("mobileAvatarPreview");
+  const pcResetBtn = document.getElementById("resetAvatarButton");
+  const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
   if (_profileInitialState.avatarUrl) {
-    settingsAvatarPreview.src = _profileInitialState.avatarUrl;
-    settingsAvatarPreview.classList.remove("hidden");
-    resetAvatarButton?.classList.remove("hidden");
+    if (pcPreview) {
+      pcPreview.src = _profileInitialState.avatarUrl;
+      pcPreview.classList.remove("hidden");
+    }
+    if (mobPreview) {
+      mobPreview.src = _profileInitialState.avatarUrl;
+      mobPreview.style.display = "";
+      mobPreview.classList.remove("hidden");
+    }
+    if (pcResetBtn) pcResetBtn.classList.remove("hidden");
+    if (mobResetBtn) mobResetBtn.classList.remove("hidden");
   } else {
-    settingsAvatarPreview.classList.add("hidden");
-    resetAvatarButton?.classList.add("hidden");
+    if (pcPreview) pcPreview.classList.add("hidden");
+    if (mobPreview) {
+      mobPreview.style.display = "none";
+      mobPreview.classList.add("hidden");
+    }
+    if (pcResetBtn) pcResetBtn.classList.add("hidden");
+    if (mobResetBtn) mobResetBtn.classList.add("hidden");
   }
   checkProfileDirty();
 };
@@ -5779,23 +5884,9 @@ window.tryCloseSettingsModal = function () {
 function openSettingsModal(tab) {
   if (!userNickname) return;
   switchDiscordSettingsTab(tab === "settings" ? "settings" : (tab === "account" ? "account" : "profile"));
-  settingsNicknameInput.value = userNickname;
-  settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
-  const aboutMeInput = document.getElementById("settingsAboutMeInput");
-  const aboutMeCounter = document.getElementById("settingsAboutMeCounter");
-  if (aboutMeInput) {
-    aboutMeInput.value = userAboutMe || "";
-    if (aboutMeCounter) aboutMeCounter.textContent = `${aboutMeInput.value.length} / 300`;
-  }
+  initProfileState();
+  if (settingsAvatarText) settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
   updateSettingsCustomStatusUI();
-  pendingAvatarUrl = null;
-  // 初期状態を記録して未保存変更判定に使用
-  _profileInitialState = {
-    nickname: userNickname || "",
-    aboutMe: userAboutMe || "",
-    avatarUrl: userAvatarUrl || null
-  };
-  checkProfileDirty();
   const applyGoogleBtn = document.getElementById("applyGoogleAvatarBtn");
   const user = auth?.currentUser;
   const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
@@ -5900,6 +5991,8 @@ const handleAvatarResetAction = async () => {
     await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
     userAvatarUrl = null;
     pendingAvatarUrl = null;
+    _profileInitialState.avatarUrl = null;
+    checkProfileDirty();
     // キャッシュを完全消去し、削除状態を明示記録して再読み込み時のGoogle写真復活を完全防止
     try {
       localStorage.removeItem('covo_cached_avatar_' + userId);
@@ -5971,31 +6064,78 @@ if (settingsModalEl) {
     }
   });
 }
-// プロフィール変更検知イベントのバインド
+// プロフィール変更検知イベントのバインド（PCとモバイルの双方向同期付き）
 if (settingsNicknameInpEl) {
-  settingsNicknameInpEl.addEventListener("input", () => checkProfileDirty());
+  settingsNicknameInpEl.addEventListener("input", () => {
+    const mob = document.getElementById("mobileNicknameInput");
+    if (mob && mob.value !== settingsNicknameInpEl.value) {
+      mob.value = settingsNicknameInpEl.value;
+    }
+    checkProfileDirty();
+  });
 }
 const aboutMeInpEl = document.getElementById("settingsAboutMeInput");
 if (aboutMeInpEl) {
-  aboutMeInpEl.addEventListener("input", () => checkProfileDirty());
+  aboutMeInpEl.addEventListener("input", () => {
+    const mob = document.getElementById("mobileAboutMeInput");
+    if (mob && mob.value !== aboutMeInpEl.value) {
+      mob.value = aboutMeInpEl.value;
+    }
+    const pcCounter = document.getElementById("settingsAboutMeCounter");
+    const mobCounter = document.getElementById("mobileAboutMeCounter");
+    if (pcCounter) pcCounter.textContent = `${aboutMeInpEl.value.length} / 300`;
+    if (mobCounter) mobCounter.textContent = `${aboutMeInpEl.value.length} / 300`;
+    checkProfileDirty();
+  });
 }
 const mobNickInpEl = document.getElementById("mobileNicknameInput");
 if (mobNickInpEl) {
-  mobNickInpEl.addEventListener("input", () => checkProfileDirty());
+  mobNickInpEl.addEventListener("input", () => {
+    if (settingsNicknameInpEl && settingsNicknameInpEl.value !== mobNickInpEl.value) {
+      settingsNicknameInpEl.value = mobNickInpEl.value;
+    }
+    checkProfileDirty();
+  });
 }
 const mobAboutInpEl = document.getElementById("mobileAboutMeInput");
 if (mobAboutInpEl) {
-  mobAboutInpEl.addEventListener("input", () => checkProfileDirty());
+  mobAboutInpEl.addEventListener("input", () => {
+    const pc = document.getElementById("settingsAboutMeInput");
+    if (pc && pc.value !== mobAboutInpEl.value) {
+      pc.value = mobAboutInpEl.value;
+    }
+    const pcCounter = document.getElementById("settingsAboutMeCounter");
+    const mobCounter = document.getElementById("mobileAboutMeCounter");
+    if (pcCounter) pcCounter.textContent = `${mobAboutInpEl.value.length} / 300`;
+    if (mobCounter) mobCounter.textContent = `${mobAboutInpEl.value.length} / 300`;
+    checkProfileDirty();
+  });
 }
-if (saveSettingsBtnEl && settingsNicknameInpEl) {
+
+if (saveSettingsBtnEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
-    const newName = settingsNicknameInpEl.value.trim();
-    const newAboutMe = (document.getElementById("settingsAboutMeInput")?.value || "").trim();
+    const pcNick = settingsNicknameInpEl ? settingsNicknameInpEl.value.trim() : "";
+    const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
+    const newName = pcNick || mobNick;
+
+    const pcAboutEl = document.getElementById("settingsAboutMeInput");
+    const mobAboutEl = document.getElementById("mobileAboutMeInput");
+    let newAboutMe = (pcAboutEl?.value || "").trim();
+    if (document.activeElement === mobAboutEl && mobAboutEl) {
+      newAboutMe = mobAboutEl.value.trim();
+    } else if (!newAboutMe && mobAboutEl?.value.trim()) {
+      newAboutMe = mobAboutEl.value.trim();
+    }
 
     if (newName.length < 1 || newName.length > 20) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "1〜20文字で入力してください。";
         settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "1〜20文字で入力してください。";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-red-600";
       }
       return;
     }
@@ -6047,13 +6187,25 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
         }
         localStorage.setItem('covo_cached_nick_' + userId, userNickname);
       } catch (_) {}
+
+      // PC・モバイル両方の入力フォーム値を最新に同期
+      if (settingsNicknameInpEl) settingsNicknameInpEl.value = userNickname;
+      if (pcAboutEl) pcAboutEl.value = userAboutMe;
+      const mobNickInp = document.getElementById("mobileNicknameInput");
+      if (mobNickInp) mobNickInp.value = userNickname;
+      if (mobAboutEl) mobAboutEl.value = userAboutMe;
+      const pcCounter = document.getElementById("settingsAboutMeCounter");
+      const mobCounter = document.getElementById("mobileAboutMeCounter");
+      if (pcCounter) pcCounter.textContent = `${userAboutMe.length} / 300`;
+      if (mobCounter) mobCounter.textContent = `${userAboutMe.length} / 300`;
+
       _profileInitialState = {
         nickname: userNickname,
         aboutMe: userAboutMe,
         avatarUrl: userAvatarUrl
       };
       pendingAvatarUrl = null;
-      checkProfileDirty();
+
       // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
       const myProfile = {
         id: userId,
@@ -6090,17 +6242,35 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       if (typeof renderServerList === 'function') renderServerList();
       if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
       await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
+
+      // 保存完了後に未保存状態を再チェックし、保存ボタンを確実に無効化・未保存バーを閉じる
+      checkProfileDirty();
+
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "保存しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-emerald-600 font-bold";
       }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "保存しました";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-emerald-600 font-bold";
+        setTimeout(() => { if (mobMsg.textContent === "保存しました") mobMsg.textContent = ""; }, 2500);
+      }
       closeCropModal();
       alertMessage("プロフィールを保存しました", "success");
-      setTimeout(() => { if (settingsModalEl) settingsModalEl.classList.add("hidden"); }, 800);
+      setTimeout(() => {
+        if (settingsModalEl) settingsModalEl.classList.add("hidden");
+        if (typeof closeMobileDetail === 'function') closeMobileDetail('mobileDetailProfile');
+      }, 800);
     } catch (e) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "エラーが発生しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "エラーが発生しました";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-red-600";
       }
     } finally {
       if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
