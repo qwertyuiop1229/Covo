@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.239" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.240" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.239" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.240" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -53,17 +53,11 @@
       console.info = filterAgora(_origInfo);
       console.debug = filterAgora(_origDebug);
     })();
-  </script>
-  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
-  <script>
-    if (typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) {
-      AgoraRTC.setLogLevel(4); // 4: NONE (冗長な内部デバッグ・警告ログを完全消音)
-    }
-  </script>
-  <!-- heic2any -->
-  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-  <!-- Panzoom (画像拡大用) -->
-  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js" defer onload="if(typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) AgoraRTC.setLogLevel(4);"></script>
+  <!-- heic2any (遅延ロード) -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
+  <!-- Panzoom (画像拡大用・遅延ロード) -->
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" defer></script>
 
   <!-- Google tag (gtag.js) - Web版のみ読み込み（Tauriデスクトップ版でのTracking Prevention警告とストレージブロックを防止） -->
   <script>
@@ -529,21 +523,29 @@
         }
       });
     }
-    // 起動スプラッシュのセーフティタイマー（初期読み込み停滞・IndexedDBロック時のハングを完全防止）
+    // 起動スプラッシュのセーフティタイマー（auth-ready確定まで画面を維持し、タイトルバー浮き上がり・真っ暗フリーズを完全防止）
     setTimeout(function() {
       const splash = document.getElementById("appLoadingSplash");
       if (splash && document.body.classList.contains("auth-ready")) {
         splash.style.opacity = '0';
         setTimeout(function() { splash.remove(); }, 300);
       }
-    }, 1500);
+    }, 1200);
+    setTimeout(function() {
+      const splash = document.getElementById("appLoadingSplash");
+      if (splash && document.body.classList.contains("auth-ready")) {
+        splash.style.opacity = '0';
+        setTimeout(function() { splash.remove(); }, 300);
+      }
+    }, 3000);
+    // 最大セーフティ（通信遮断やオフライン時に8秒でフォールバック消去）
     setTimeout(function() {
       const splash = document.getElementById("appLoadingSplash");
       if (splash) {
         splash.style.opacity = '0';
         setTimeout(function() { splash.remove(); }, 300);
       }
-    }, 2800);
+    }, 8000);
     setTimeout(function() {
       const isUiVisible = document.body.classList.contains("auth-ready") ||
                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
@@ -3881,13 +3883,13 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
     if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.239"></script>
+  <script type="module" src="js/main.js?v=1.1.240"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5072,7 +5074,7 @@
   </div>
   <!-- Discord本家完全準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様) -->
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
-    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-2xl shadow-2xl w-full max-w-[320px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
+    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-2xl shadow-2xl w-full max-w-[320px] max-h-[min(580px,calc(100vh-32px))] overflow-y-auto custom-scrollbar modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
       <div id="userProfileBanner" class="h-24 relative flex-shrink-0 w-full" style="background-color: var(--user-banner-color, #376d49);">
         <!-- 右上ボタングループ & ポップオーバー (バナー内に美しく常駐) -->
@@ -5132,7 +5134,7 @@
         <!-- 自己紹介 (ある場合) -->
         <div id="userProfileAboutMeWrap" class="hidden">
           <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wider mb-1">自己紹介</div>
-          <div id="userProfileAboutMeText" class="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words select-text leading-relaxed"></div>
+          <div id="userProfileAboutMeText" class="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words select-text leading-relaxed max-h-[140px] overflow-y-auto custom-scrollbar pr-1"></div>
         </div>
         <div id="userProfileAboutMeDivider" class="h-px bg-gray-200/80 dark:bg-white/5 hidden"></div>
         <!-- メンバーになった日 -->

@@ -442,7 +442,8 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       nickname: currentServerNickname || userNickname || 'あなた',
       avatarUrl: userAvatarUrl || '',
       email: userAuthEmail || auth?.currentUser?.email || '',
-      customStatus: window._currentUserCustomStatus || null
+      customStatus: window._currentUserCustomStatus || null,
+      bannerColor: window._currentUserBannerColor || null
     };
   }
   if (!forceRefresh && window._userProfileCache.has(uid)) {
@@ -474,6 +475,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       const email = data?.email || cu?.email || rel?.targetEmail || fallback.email || '';
       const customStatus = data?.customStatus || cu?.customStatus || null;
       const aboutMe = data?.aboutMe || '';
+      const bannerColor = data?.bannerColor || cu?.bannerColor || null;
 
       const rawTimestamp = data?.last_changed || data?.lastSeen || statusData?.last_changed || statusData?.lastSeen || data?.updatedAt || data?.createdAt || cu?.last_changed || cu?.lastSeen || null;
       const profile = {
@@ -484,6 +486,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
         email,
         customStatus,
         aboutMe,
+        bannerColor,
         status: cu?.computedState || cu?.state || statusData?.state || 'offline',
         last_changed: rawTimestamp,
         lastSeen: rawTimestamp
@@ -750,6 +753,12 @@ let currentDmParticipants = [];
 let dmAndFriendsEnabled = false;
 let activeDmTab = 'online';
 let friendRelationships = {};
+function isUserBlocked(targetUid) {
+  if (!targetUid) return false;
+  const rel = friendRelationships?.[targetUid];
+  return rel?.status === 'blocked';
+}
+window.isUserBlocked = isUserBlocked;
 let dmConversations = {};
 let unsubscribeRelationships = null;
 let unsubscribeDmChannels = null;
@@ -893,10 +902,16 @@ function initializeFirebase() {
       app = initializeApp(firebaseConfig);
       try {
         db = initializeFirestore(app, {
-          localCache: memoryLocalCache()
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
       } catch (e) {
-        db = getFirestore(app);
+        try {
+          db = initializeFirestore(app, {
+            localCache: memoryLocalCache()
+          });
+        } catch (_) {
+          db = getFirestore(app);
+        }
       }
       auth = getAuth(app);
       auth.languageCode = 'ja';
@@ -979,10 +994,6 @@ function initializeFirebase() {
       if (_authHandlerBusy) return;
       _authHandlerBusy = true;
       loadingOverlay.classList.add("hidden");
-      window.__app_fully_loaded__ = true;
-      if (window.__TAURI__?.core?.invoke) {
-        window.__TAURI__.core.invoke('notify_app_loaded').catch(() => {});
-      }
       const splash = document.getElementById("appLoadingSplash");
       try {
 
@@ -998,6 +1009,38 @@ function initializeFirebase() {
           userAuthEmail = user.email;
           isAuthReady = true;
           updateAccountSecurityUI(user);
+
+          // 🚀 端末内ローカルキャッシュ（ニックネーム・アバター）があれば通信を待たずに画面を先行アンロック（Stale-While-Revalidate）
+          const cachedNick = localStorage.getItem('covo_cached_nick_' + userId);
+          const cachedAvatar = localStorage.getItem('covo_cached_avatar_' + userId);
+          const cachedAbout = localStorage.getItem('covo_cached_about_' + userId);
+          if (cachedNick && !document.body.classList.contains("auth-ready")) {
+            userNickname = cachedNick;
+            userAvatarUrl = cachedAvatar || null;
+            userAboutMe = cachedAbout || "";
+            headerTitle.textContent = `ニックネーム：${userNickname}`;
+            updateUserPanelUI();
+            document.body.classList.add("logged-in", "auth-ready");
+            if (splash) {
+              splash.style.opacity = '0';
+              setTimeout(() => splash.remove(), 300);
+            }
+            authContainer.classList.add("hidden");
+            nicknameContainer.classList.add("hidden");
+            const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
+            if (isDiscordMode) {
+              const sls = document.getElementById("serverListScreen");
+              if (sls) sls.classList.add("hidden");
+              appContainer.classList.remove("hidden");
+              setDiscordUIMode(true);
+            } else {
+              appContainer.classList.add("hidden");
+              const sls = document.getElementById("serverListScreen");
+              if (sls) sls.classList.remove("hidden");
+            }
+            showServerList();
+          }
+
           // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策・一時的通信切断時のエラー抑止）
           await user.getIdToken().catch(() => {});
           const rawEmail = user.email || "";
@@ -1008,8 +1051,8 @@ function initializeFirebase() {
           const isGoogleUser = providerIds.includes('google.com');
           const hasPasswordProvider = providerIds.includes('password');
 
-          // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
-          if (isGoogleUser && !hasPasswordProvider && cleanEmail) {
+          // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証（初回または未キャッシュ時のみ）
+          if (isGoogleUser && !hasPasswordProvider && cleanEmail && !cachedNick) {
             try {
               const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
               const existingUsersSnap = await withTimeoutCheck(getDocs(query(
@@ -1175,15 +1218,16 @@ function initializeFirebase() {
             if (pData.avatarUrl !== undefined) initialAvatarUrl = pData.avatarUrl;
             initialAboutMe = pData.aboutMe || "";
           }
-          // ルートドキュメント (users/{uid}) からも既存のアバター・ニックネームを最優先確認
+          // ルートドキュメント (users/{uid}) からも既存のアバター・ニックネーム・バナー色等を最優先確認 (最大2秒タイムアウト保護)
           try {
-            const rootUserSnap = await getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null);
+            const rootUserSnap = await withTimeout(getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null), 2000);
             if (rootUserSnap && rootUserSnap.exists()) {
               const rootData = rootUserSnap.data();
               if (rootData.nickname && !initialNickname) initialNickname = rootData.nickname;
               if (rootData.avatarUrl !== undefined && initialAvatarUrl === null) initialAvatarUrl = rootData.avatarUrl;
               if (rootData.aboutMe && !initialAboutMe) initialAboutMe = rootData.aboutMe;
               if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
+              if (rootData.bannerColor) window._currentUserBannerColor = rootData.bannerColor;
             }
           } catch (_) {}
           // キャッシュからも確認（明示的に削除された場合は復元しない）
@@ -1220,16 +1264,6 @@ function initializeFirebase() {
               if (initialAvatarUrl) localStorage.setItem('covo_cached_avatar_' + userId, initialAvatarUrl);
             } catch (_) {}
           }
-
-          // ルートの users/{uid} からも aboutMe と customStatus を確実に取得
-          try {
-            const rootUserSnap = await getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null);
-            if (rootUserSnap && rootUserSnap.exists()) {
-              const rootData = rootUserSnap.data();
-              if (rootData.aboutMe && !initialAboutMe) initialAboutMe = rootData.aboutMe;
-              if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
-            }
-          } catch (_) {}
 
           if (initialNickname) {
             userNickname = initialNickname;
@@ -1268,6 +1302,10 @@ function initializeFirebase() {
               if (sls) sls.classList.remove("hidden");
             }
             showServerList();
+            window.__app_fully_loaded__ = true;
+            if (window.__TAURI__?.core?.invoke) {
+              window.__TAURI__.core.invoke('notify_app_loaded').catch(() => {});
+            }
 
             startPresenceSystem();
             // Windows版等で起動直後に確実にオンラインを反映
@@ -5965,7 +6003,23 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
     try {
       const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+      const effectiveAvatar = pendingAvatarUrl || userAvatarUrl || null;
+      let determinedBannerColor = null;
+      try {
+        if (effectiveAvatar) {
+          determinedBannerColor = await getAvatarAccentColor(effectiveAvatar, userId);
+        } else {
+          determinedBannerColor = getHashColor(userId);
+        }
+      } catch (_) {
+        determinedBannerColor = getHashColor(userId);
+      }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
+      if (determinedBannerColor) {
+        updateData.bannerColor = determinedBannerColor;
+        window._currentUserBannerColor = determinedBannerColor;
+        try { localStorage.setItem('covo_cached_banner_' + userId, determinedBannerColor); } catch (_) {}
+      }
       if (pendingAvatarUrl) {
         updateData.avatarUrl = pendingAvatarUrl;
         unmarkAvatarAsInvalid(pendingAvatarUrl);
@@ -5973,12 +6027,16 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       }
       await setDoc(userProfileRef, updateData, { merge: true });
       const userRef = doc(db, `artifacts/${appId}/users`, userId);
-      await setDoc(userRef, {
+      const userDocData = {
         email: userAuthEmail,
         nickname: newName,
         avatarUrl: pendingAvatarUrl || userAvatarUrl || null,
         aboutMe: newAboutMe
-      }, { merge: true }).catch(console.error);
+      };
+      if (determinedBannerColor) {
+        userDocData.bannerColor = determinedBannerColor;
+      }
+      await setDoc(userRef, userDocData, { merge: true }).catch(console.error);
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
@@ -6394,7 +6452,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
       const rect = targetEl.getBoundingClientRect();
       const popoutW = 320;
-      const popoutH = 460;
+      const popoutH = (cardEl.offsetHeight && cardEl.offsetHeight > 100) ? cardEl.offsetHeight : 480;
       const margin = 12;
 
       let left = 0;
@@ -6408,7 +6466,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
 
       let top = rect.top;
       if (top + popoutH > window.innerHeight - 16) {
-        top = window.innerHeight - popoutH - 16;
+        top = Math.max(16, window.innerHeight - popoutH - 16);
       }
       if (top < 16) {
         top = 16;
@@ -6465,19 +6523,24 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
-  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
-  const instantColor = getInstantAccentColor(targetAvatarUrl, targetUid);
+  // 保存済みバナー色（Firestore/キャッシュ）がある場合はそれを最優先即時適用、なければ getInstantAccentColor
+  const userProfileCached = window._userProfileCache?.get(targetUid);
+  const localSavedBanner = (targetUid === userId) ? (window._currentUserBannerColor || localStorage.getItem('covo_cached_banner_' + userId)) : null;
+  const directBanner = cachedUser?.bannerColor || userProfileCached?.bannerColor || localSavedBanner || null;
+  const instantColor = directBanner || getInstantAccentColor(targetAvatarUrl, targetUid);
   if (bannerEl) {
     bannerEl.style.backgroundColor = instantColor;
     bannerEl.style.setProperty('--user-banner-color', instantColor);
   }
-  // アバターに応じたアクセントカラーを抽出しバナーに適用
-  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-    if (bannerEl && bannerColor) {
-      bannerEl.style.backgroundColor = bannerColor;
-      bannerEl.style.setProperty('--user-banner-color', bannerColor);
-    }
-  });
+  // 保存済みバナー色がない場合のみ、アバター画像からアクセントカラーを非同期抽出して適用
+  if (!directBanner) {
+    getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
+      if (bannerEl && bannerColor) {
+        bannerEl.style.backgroundColor = bannerColor;
+        bannerEl.style.setProperty('--user-banner-color', bannerColor);
+      }
+    });
+  }
   // 右上フレンドボタン状態同期
   if (upBannerFriendBtn) {
     if (isSelf) {
@@ -6571,8 +6634,20 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   }
   updateProfileDividers();
 
+  const clampCardPosition = () => {
+    if (cardEl && cardEl.style.position === 'fixed' && window.innerWidth >= 768) {
+      const actualH = cardEl.offsetHeight || 480;
+      let currentTop = parseFloat(cardEl.style.top) || 16;
+      if (currentTop + actualH > window.innerHeight - 16) {
+        currentTop = Math.max(16, window.innerHeight - actualH - 16);
+        cardEl.style.top = `${Math.round(currentTop)}px`;
+      }
+    }
+  };
+
   // 🚀 タップ直後に0msで即座にモーダルを表示（通信待ちによるタップ無反応バグを完全解消）
   openModal(modal);
+  requestAnimationFrame(() => clampCardPosition());
   // バックグラウンドで非同期に最新ユーザー詳細（ステメ・自己紹介・メンバーになった日等）を取得して反映
   (async () => {
     try {
@@ -6620,6 +6695,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
           joinedWrap.classList.remove("hidden");
         }
         updateProfileDividers();
+        requestAnimationFrame(() => clampCardPosition());
       }
     } catch (err) {
       console.warn("Failed to fetch popout user profile:", err);
@@ -6774,106 +6850,28 @@ window.getMutualFriends = async function (targetUid) {
         });
       }
 
-      // ─── ステップ B: 相手（other）のフレンド候補の完全収集 ───
-      const otherConfirmedFriendUids = new Set();
-      // B-1: 相手の relationships コレクション全件取得
-      try {
-        const otherRelSnap = await getDocs(collection(db, `artifacts/${appId}/users/${other}/relationships`));
-        otherRelSnap.docs.forEach(d => {
-          const data = d.data() || {};
-          if (!isBlockedOrPending(data.status) && isFriendStatus(data.status)) {
-            if (d.id && d.id !== me && d.id !== other) otherConfirmedFriendUids.add(d.id);
-            if (data.targetUid && data.targetUid !== me && data.targetUid !== other) otherConfirmedFriendUids.add(data.targetUid);
-            if (data.uid && data.uid !== me && data.uid !== other) otherConfirmedFriendUids.add(data.uid);
-            if (data.userId && data.userId !== me && data.userId !== other) otherConfirmedFriendUids.add(data.userId);
-            if (data.friendId && data.friendId !== me && data.friendId !== other) otherConfirmedFriendUids.add(data.friendId);
-          }
-        });
-      } catch (err) {
-        console.warn('[getMutualFriends] other relationships collection fetch notice:', err);
-      }
-      // B-2: 相手が参加している dm_channels からの相互フレンド検出
-      try {
-        const otherDmSnap = await getDocs(query(collection(db, `artifacts/${appId}/dm_channels`), where('participants', 'array-contains', other)));
-        otherDmSnap.docs.forEach(d => {
-          const pList = d.data()?.participants || [];
-          pList.forEach(pUid => {
-            if (pUid && pUid !== me && pUid !== other) {
-              otherConfirmedFriendUids.add(pUid);
-            }
-          });
-        });
-      } catch (_) {}
-
-      // ─── ステップ C: 共通フレンドの判定 & 双方向ダイレクト並列検証 ───
+      // ─── ステップ B: 共通サーバーメンバーシップによる共通フレンドの安全特定 ───
+      // （※Firestoreのセキュリティルール上、他人の relationships サブコレクションやDMは閲覧不可のため、
+      //   自分と相手の共通サーバー参加メンバーと自分のフレンド一覧を照合して安全かつ権限エラーゼロで判定）
       const mutualMap = new Map(); // cUid -> friendObj
-      // C-1: 相手の確認済みフレンドと自分のフレンドが一致しているものを即時追加
-      for (const [cUid, fObj] of myCandidateFriends) {
-        if (otherConfirmedFriendUids.has(cUid)) {
-          mutualMap.set(cUid, fObj);
-        }
-      }
-
-      // C-2: まだ確定していない自分のフレンド候補について、双方向ドキュメント＆DMを並列（Promise.all）チェック
-      const unconfirmedCandidates = Array.from(myCandidateFriends.entries()).filter(([cUid]) => !mutualMap.has(cUid));
-      if (unconfirmedCandidates.length > 0) {
-        const candidateCheckPromises = unconfirmedCandidates.map(async ([cUid, fObj]) => {
-          try {
-            // 3つのパス（相手→C、C→相手、相手とCのDMチャンネル）を並列で取得
-            const dmDocId = [other, cUid].sort().join('_');
-            const [relFromOtherSnap, relFromCandidateSnap, dmSnap] = await Promise.all([
-              getDoc(doc(db, `artifacts/${appId}/users/${other}/relationships/${cUid}`)).catch(() => null),
-              getDoc(doc(db, `artifacts/${appId}/users/${cUid}/relationships/${other}`)).catch(() => null),
-              getDoc(doc(db, `artifacts/${appId}/dm_channels/${dmDocId}`)).catch(() => null)
-            ]);
-            let isMutual = false;
-            if (relFromOtherSnap && relFromOtherSnap.exists()) {
-              const st = relFromOtherSnap.data()?.status;
-              if (!isBlockedOrPending(st) && isFriendStatus(st)) isMutual = true;
-            }
-            if (!isMutual && relFromCandidateSnap && relFromCandidateSnap.exists()) {
-              const st = relFromCandidateSnap.data()?.status;
-              if (!isBlockedOrPending(st) && isFriendStatus(st)) isMutual = true;
-            }
-            if (!isMutual && dmSnap && dmSnap.exists()) {
-              isMutual = true; // 相手とCの間にDMチャンネルが存在する＝フレンド
-            }
-            if (isMutual) {
-              mutualMap.set(cUid, fObj);
-            }
-          } catch (_) {}
-        });
-        await Promise.all(candidateCheckPromises);
-      }
-
-      // ─── ステップ D: 共通サーバーメンバーシップからの相互関係並列補完 ───
       if (Array.isArray(allServersCache)) {
         const mutualServers = allServersCache.filter(s =>
           (s.joinedUsers || []).includes(other) && (s.joinedUsers || []).includes(me)
         );
-        const serverCandidateUids = new Set();
+        const mutualServerMemberUids = new Set();
         mutualServers.forEach(s => {
           (s.joinedUsers || []).forEach(mUid => {
-            if (mUid && mUid !== me && mUid !== other && !mutualMap.has(mUid)) {
-              serverCandidateUids.add(mUid);
+            if (mUid && mUid !== me && mUid !== other) {
+              mutualServerMemberUids.add(mUid);
             }
           });
         });
-        if (serverCandidateUids.size > 0) {
-          const serverCheckPromises = Array.from(serverCandidateUids).map(async (mUid) => {
-            try {
-              // 自分が mUid とフレンド関係にあるか
-              const myRelSnap = await getDoc(doc(db, `artifacts/${appId}/users/${me}/relationships/${mUid}`)).catch(() => null);
-              if (myRelSnap && myRelSnap.exists() && !isBlockedOrPending(myRelSnap.data()?.status) && isFriendStatus(myRelSnap.data()?.status)) {
-                // さらに 相手が mUid とフレンドまたはDM関係にあるか
-                const otherRelSnap = await getDoc(doc(db, `artifacts/${appId}/users/${other}/relationships/${mUid}`)).catch(() => null);
-                if (otherRelSnap && otherRelSnap.exists() && !isBlockedOrPending(otherRelSnap.data()?.status) && isFriendStatus(otherRelSnap.data()?.status)) {
-                  mutualMap.set(mUid, { id: mUid, targetUid: mUid, status: 'friends' });
-                }
-              }
-            } catch (_) {}
-          });
-          await Promise.all(serverCheckPromises);
+
+        // 自分のフレンド候補の中で、相手と同席している共通メンバーを共通フレンドとして即時確定
+        for (const [cUid, fObj] of myCandidateFriends) {
+          if (mutualServerMemberUids.has(cUid)) {
+            mutualMap.set(cUid, fObj);
+          }
         }
       }
 
@@ -8299,8 +8297,52 @@ function subscribeToUserStatus() {
           });
           }).catch(e => console.error('[RTDB] subscribeToUserStatus error:', e));
           }
-          function renderMembersList(users) {
-          if (!membersList) return;
+function computeUserPresenceState(userOrUid) {
+  if (!userOrUid) return 'offline';
+  let u = null;
+  let uid = null;
+  if (typeof userOrUid === 'string') {
+    uid = userOrUid;
+    u = (cachedUsers || []).find(cu => cu.id === uid) || window._userProfileCache?.get(uid);
+  } else {
+    u = userOrUid;
+    uid = u.id || u.uid;
+  }
+  if (!u && uid) {
+    u = (cachedUsers || []).find(cu => cu.id === uid) || window._userProfileCache?.get(uid);
+  }
+  if (!u) return 'offline';
+
+  // 自分自身はアプリ表示中なら常にonline
+  if (uid === userId) {
+    return (document.visibilityState === 'visible') ? 'online' : (u.state || u.status || 'offline');
+  }
+
+  let rawState = u.state || u.status || u.computedState || 'offline';
+  if (rawState !== 'online' && rawState !== 'away') {
+    return 'offline';
+  }
+
+  const tsMs = parseTimestampToMs(u.last_changed || u.lastSeen || u.updatedAt || u.createdAt);
+  if (tsMs > 0) {
+    const timeDiff = Date.now() - tsMs;
+    // 離席中 (away) は15分以上更新が途絶えたら自動的にオフライン化
+    if (rawState === 'away' && timeDiff > 15 * 60 * 1000) {
+      return 'offline';
+    }
+    // オンライン状態でも35分以上通信が確認できなければ切断とみなしてオフライン化
+    if (timeDiff > 35 * 60 * 1000) {
+      return 'offline';
+    }
+    return rawState;
+  }
+  // 時刻情報が一切存在しない過去のゾンビデータはオフライン判定
+  return 'offline';
+}
+window.computeUserPresenceState = computeUserPresenceState;
+
+function renderMembersList(users) {
+  if (!membersList) return;
   membersList.innerHTML = "";
   // サーバーメンバーのみ表示（currentServerData がない場合は全員）
   const serverMemberIds = currentServerData?.joinedUsers || null;
@@ -8308,24 +8350,8 @@ function subscribeToUserStatus() {
     ? users.filter(u => serverMemberIds.includes(u.id))
     : users;
   const processedUsers = filtered.map(u => {
-    let computedState = u.state || u.status || 'offline';
-    // RTDB形式(Unix ms整数)、Firestore形式、マップ、文字列等あらゆる形式を正確にUnixミリ秒に解決
-    const tsMs = parseTimestampToMs(u.last_changed || u.lastSeen || u.updatedAt || u.createdAt);
-    if (computedState === 'online' || computedState === 'away') {
-      if (tsMs > 0) {
-        const timeDiff = Date.now() - tsMs;
-        // 離席中 (away) は15分以上更新が途絶えたら自動的にオフライン化
-        if (computedState === 'away' && timeDiff > 15 * 60 * 1000) {
-          computedState = 'offline';
-        } else if (timeDiff > 35 * 60 * 1000) {
-          // オンライン状態でも35分以上通信が確認できなければ切断とみなしてオフライン化
-          computedState = 'offline';
-        }
-      } else {
-        // 時刻情報が一切存在しない過去のゾンビデータや未ログインユーザーは即座にオフラインと判定
-        computedState = 'offline';
-      }
-    }
+    const computedState = computeUserPresenceState(u);
+    u.computedState = computedState;
     // update own UI status indicator here (自分が最前面アクティブ時やアプリ表示中はオンラインを安定維持)
     if (u.id === userId) {
       const isSelfActive = (document.visibilityState === 'visible');
@@ -9056,6 +9082,23 @@ function updateDmViewVisibility() {
 function subscribeToRelationships() {
   if (unsubscribeRelationships) { unsubscribeRelationships(); unsubscribeRelationships = null; }
   if (!userId) return;
+
+  // 1. IndexedDB (LocalStore) から保存済みフレンドを先行読み出し（起動時の0人表示を完全防止）
+  if (typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
+    LocalStore.getAllFriends().then(cachedList => {
+      if (Array.isArray(cachedList) && cachedList.length > 0 && (!friendRelationships || Object.keys(friendRelationships).length === 0)) {
+        if (!friendRelationships) friendRelationships = {};
+        cachedList.forEach(item => {
+          const id = item.id || item.targetUid;
+          if (id) friendRelationships[id] = item;
+        });
+        renderFriendTabs();
+        updateDmPendingBadges();
+      }
+    }).catch(() => {});
+  }
+
+  // 2. Firestore リアルタイム同期
   try {
     const relCol = collection(db, `artifacts/${appId}/users/${userId}/relationships`);
     unsubscribeRelationships = onSnapshot(relCol, (snap) => {
@@ -9180,8 +9223,8 @@ function renderFriendTabs() {
   }
 
   const isOnline = (uid) => {
-    const u = cachedUsers.find(cu => cu.id === uid);
-    return u && (u.computedState === 'online' || u.computedState === 'away' || u.state === 'online' || u.state === 'away');
+    const st = computeUserPresenceState(uid);
+    return st === 'online' || st === 'away';
   };
 
   const onlineFriends = friends.filter(f => isOnline(f.targetUid));
@@ -9585,7 +9628,7 @@ function subscribeToDmChannels() {
             const dmData = change.doc.data();
             const dmId = change.doc.id;
             const otherUid = (dmData.participants || []).find(id => id !== userId);
-            if (!otherUid) return;
+            if (!otherUid || isUserBlocked(otherUid)) return;
 
             const lastAt = typeof dmData.lastMessageAt === 'number' ? dmData.lastMessageAt : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
             const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
@@ -9663,7 +9706,8 @@ function renderDmConversationsList() {
     const nickname = cachedProf?.nickname || targetUser.nickname || rel?.targetNickname || 'ユーザー';
     const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser?.avatarUrl !== undefined ? targetUser.avatarUrl : (rel?.targetAvatarUrl || ''));
     const isActive = currentDmId === dm.id;
-    const isOnline = targetUser.computedState === 'online' || targetUser.state === 'online' || targetUser.status === 'online';
+    const presenceState = computeUserPresenceState(otherUid);
+    const isOnline = presenceState === 'online' || presenceState === 'away';
     if (!cachedProf) {
       window.getUserProfile(otherUid).then(() => renderDmConversationsList()).catch(() => {});
     }
@@ -9673,21 +9717,21 @@ function renderDmConversationsList() {
     const bySelf = dm.lastMessageSender && dm.lastMessageSender === userId;
     const isUnread = Boolean(lastMsgAt > lastRead && isNotCurrent && !bySelf);
     if (isUnread) hasAnyDmUnread = true;
-    // 最新メッセージプレビューの復号・サニタイズ処理
+    const dmUnreadCount = (typeof unreadCounts !== 'undefined' && unreadCounts[`dm_${dm.id}`]) ? unreadCounts[`dm_${dm.id}`] : (dm.unreadCount || (isUnread ? 1 : 0));
+    // 最新メッセージプレビューの復号・サニタイズ処理 (キャッシュ済みの鍵のみ即時復号し、無駄な全件通信を抑止)
     let previewText = dm._decryptedPreview || dm.lastMessageText || '会話を始めましょう';
     if (dm.lastMessageText && typeof isEncrypted === 'function' && isEncrypted(dm.lastMessageText) && !dm._decryptedPreview) {
-      previewText = 'メッセージ';
-      _getDmKeyWithWait(dm.id, dm.participants || [userId, otherUid], 1000).then(dmKey => {
-        if (dmKey) {
-          _decryptDmText(dm.lastMessageText, dmKey).then(dec => {
-            if (dec && !dec.startsWith('（復号化エラー')) {
-              dm._decryptedPreview = dec;
-              const previewEl = document.getElementById(`dm-preview-${dm.id}`);
-              if (previewEl) previewEl.textContent = dec;
-            }
-          }).catch(() => {});
-        }
-      }).catch(() => {});
+      if (_e2ee?.dmKeyCache?.[dm.id]) {
+        _decryptDmText(dm.lastMessageText, _e2ee.dmKeyCache[dm.id]).then(dec => {
+          if (dec && !dec.startsWith('（復号化エラー')) {
+            dm._decryptedPreview = dec;
+            const previewEl = document.getElementById(`dm-preview-${dm.id}`);
+            if (previewEl) previewEl.textContent = dec;
+          }
+        }).catch(() => {});
+      } else {
+        previewText = 'メッセージ';
+      }
     }
     return `
       <div class="dm-sidebar-item group ${isActive ? 'active' : ''} ${isUnread ? 'has-unread' : ''}" onclick="openDm('${escapeHtml(otherUid)}', '${_jsq(nickname)}', '${_jsq(avatarUrl)}')">
@@ -9703,7 +9747,7 @@ function renderDmConversationsList() {
         </div>
         ${isUnread ? `
           <div class="dm-unread-badge-wrap flex-shrink-0 flex items-center ml-auto">
-            <span class="dm-unread-badge">${(dm.unreadCount && dm.unreadCount > 1) ? (dm.unreadCount > 99 ? '99+' : dm.unreadCount) : '1'}</span>
+            <span class="dm-unread-badge">${dmUnreadCount > 99 ? '99+' : dmUnreadCount}</span>
           </div>
         ` : ''}
         <button class="dm-close-btn flex-shrink-0 ml-1" title="非表示" onclick="event.stopPropagation(); hideDmConversation('${escapeHtml(dm.id)}')">
@@ -10335,7 +10379,7 @@ window.renderDmActiveNowPanel = function () {
   const activeCandidates = [];
   candidateUids.forEach(uid => {
     const u = (cachedUsers || []).find(cu => cu.id === uid) || window._userProfileCache?.get(uid);
-    const state = u?.computedState || u?.state || u?.status || 'offline';
+    const state = computeUserPresenceState(u || uid);
     if (state === 'online' || state === 'away') {
       const affinityScore = calculateUserAffinity(uid);
       const sharedServers = joinedServers.filter(s => (s.joinedUsers || []).includes(uid));
@@ -14955,6 +14999,7 @@ async function subscribeToMessagesRTDB() {
       return;
     }
     if (data.senderId !== userId) {
+      if (isUserBlocked(data.senderId)) return;
       let bodyText = data.text;
       try {
         if (isEncrypted(bodyText)) {
@@ -16686,6 +16731,13 @@ async function sendMessage() {
   const snapServerData = currentServerData;
   const snapServerNickname = currentServerNickname;
   const snapReplyTo = replyingToMessage;
+  if (snapDmId) {
+    const targetDmUid = snapDmParticipants.find(p => p !== userId);
+    if (targetDmUid && isUserBlocked(targetDmUid)) {
+      alertMessage("ブロックしているユーザーにはメッセージを送信できません", "warning");
+      return;
+    }
+  }
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
   if (text && text.length > 10000) {
     alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
@@ -17061,6 +17113,10 @@ async function sendMessage() {
     // Snapshot room-state before any await — prevents race condition where the
     // user navigates to another room while a background upload is in progress.
     const snapDmParticipants = destSnapshot?.snapDmParticipants ?? (currentDmParticipants ? [...currentDmParticipants] : []);
+    if (snapDmId) {
+      const targetDmUid = snapDmParticipants.find(p => p !== userId);
+      if (targetDmUid && isUserBlocked(targetDmUid)) return;
+    }
     const snapMembers = destSnapshot?.snapMembers ?? ((currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : []);
     const snapServerData = destSnapshot?.snapServerData ?? currentServerData;
     const snapServerNickname = destSnapshot?.snapServerNickname ?? currentServerNickname;
@@ -19916,6 +19972,7 @@ async function notifyNewMessage({
   targetAvatarUrl = null
 } = {}) {
   const notifKey = messageId || `${channelId}_${text}_${senderName}`;
+  if (isDm && targetUid && isUserBlocked(targetUid)) return;
   if (_notifiedMessageIds.has(notifKey)) return;
   _notifiedMessageIds.add(notifKey);
   setTimeout(() => _notifiedMessageIds.delete(notifKey), 10000);
@@ -21286,6 +21343,13 @@ function initCallListener() {
         if (change.type === 'added') {
           const data = change.doc.data();
           if (data.status === 'ringing') {
+            const callerUid = data.caller?.uid;
+            if (callerUid && isUserBlocked(callerUid)) {
+              import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js').then(({ doc, updateDoc }) => {
+                updateDoc(doc(db, 'artifacts', appId, 'calls', change.doc.id), { status: 'declined' }).catch(() => {});
+              });
+              return;
+            }
             const isCurrentlyInCall = Boolean(_callId || (window._voiceEngine && window._voiceEngine.isActive && window._voiceEngine.channelId && window._voiceEngine.channelId.startsWith('call_')));
             if (isCurrentlyInCall) {
               // 通話中のため自動的にbusy（お話し中）を相手へ返答
@@ -21307,8 +21371,8 @@ function initCallListener() {
 function _renderPickerMembers(listContainer, memberIds, onClickCallback) {
   listContainer.innerHTML = '';
   const processedMembers = memberIds.map(uid => {
-    const user = (cachedUsers || []).find(u => u.id === uid) || { id: uid };
-    let computedState = user.computedState || user.state || 'offline';
+    const user = (cachedUsers || []).find(u => u.id === uid) || window._userProfileCache?.get(uid) || { id: uid };
+    const computedState = computeUserPresenceState(user);
     return { ...user, id: uid, computedState };
   });
   const onlineMembers = processedMembers.filter(u => u.computedState === 'online' || u.computedState === 'away');
@@ -21886,6 +21950,7 @@ function _fsPickFileAndSend(targetUid, targetName) {
 }
 async function startFileShare(targetUid, targetName, file) {
   if (_fsId) { alertMessage('別のファイル送信が進行中です', 'error'); return; }
+  if (isUserBlocked(targetUid)) { alertMessage('ブロックしているユーザーにはファイルを送信できません', 'warning'); return; }
   _fsRole = 'sender';
   const { doc, setDoc, collection, serverTimestamp, onSnapshot, addDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
   try {
@@ -22115,6 +22180,11 @@ async function initFileShareListener() {
       if (ch.type === 'added') {
         const d = ch.doc.data();
         if (_fsId) return; // 既に処理中
+        const senderUid = d.sender?.uid;
+        if (senderUid && isUserBlocked(senderUid)) {
+          _fsDecline(ch.doc.id);
+          return;
+        }
         _fsShowIncoming(ch.doc.id, d);
       }
     });
@@ -22366,6 +22436,10 @@ async function fetchAgoraToken(channelName, uid) {
 
 async function startCall(uid, name, avatar) {
   if (_callId) return;
+  if (isUserBlocked(uid)) {
+    alertMessage("ブロックしているユーザーには通話を発信できません", "warning");
+    return;
+  }
   if (window._voiceEngine && window._voiceEngine.isActive) {
     if (window._voiceEngine.channelId && !window._voiceEngine.channelId.startsWith('call_')) {
       const ok = await showCustomConfirm('ボイスチャンネルに参加中です。ボイスチャンネルから切断して通話を開始しますか？', '通話を開始', 'キャンセル');

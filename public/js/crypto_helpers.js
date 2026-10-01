@@ -578,7 +578,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
       const b64Wrapped = _abToB64(wrapped);
       writes.push(setDoc(
-        doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/__escrow__`),
+        doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`),
         { 
           versions: { [version]: b64Wrapped },
           latestVersion: version,
@@ -1047,7 +1047,33 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             return keysObj;
           }
         }
-        // 2) 自分宛ての鍵が見つからない、または秘密鍵で復号できなかった場合
+        // 2) 自分宛ての鍵が見つからない、または秘密鍵で復号できなかった場合: 本人プライベートバックアップから自律復旧を試行
+        try {
+          const myPrivKeySnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${currentUid}/private/dmKeys/${cleanDmId}`)).catch(() => null);
+          if (myPrivKeySnap && myPrivKeySnap.exists()) {
+            const pData = myPrivKeySnap.data() || {};
+            const privVersions = pData.versions || (pData.wrappedKey ? { "1": pData.wrappedKey } : {});
+            for (const ver in privVersions) {
+              try {
+                const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, _e2ee.privateKey, _b64ToAb(privVersions[ver]));
+                keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+              } catch (_) {}
+            }
+            const validP = Object.keys(keysObj).filter(k => k !== '_dmId');
+            if (validP.length > 0) {
+              const activeVer = pData.latestVersion || validP[0];
+              keysObj.latest = keysObj[activeVer] || keysObj[validP[0]];
+              keysObj.latestVersion = activeVer;
+              _e2ee.dmKeyCache[cleanDmId] = keysObj;
+              if (otherUid) {
+                _backfillDmKeysForParticipant(cleanDmId, otherUid).catch(() => {});
+              }
+              return keysObj;
+            }
+          }
+        } catch (_) {}
+
+        // 3) それでも鍵がない場合: 相手が既に作成済みか確認し救済を要求
         if (otherUid && !forceGenerateNew) {
           const otherWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${otherUid}`)).catch(() => null);
           if (otherWrapSnap && otherWrapSnap.exists()) {
@@ -1110,6 +1136,19 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         if (writePromises.length > 0) {
           await Promise.all(writePromises);
+        }
+        // 本人プライベートバックアップにも確実に保存
+        if (_e2ee.publicKey) {
+          try {
+            const myWrap = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, _e2ee.publicKey, rawKey);
+            const b64MyWrap = _abToB64(myWrap);
+            setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${currentUid}/private/dmKeys/${cleanDmId}`), {
+              versions: { [newVerStr]: b64MyWrap },
+              latestVersion: newVerStr,
+              wrappedKey: b64MyWrap,
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(() => {});
+          } catch (_) {}
         }
         keysObj[newVerStr] = newKey;
         keysObj.latest = newKey;

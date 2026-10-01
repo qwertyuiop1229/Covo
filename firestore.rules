@@ -153,7 +153,7 @@ service cloud.firestore {
       // 招待コードインデックス (逆引き)
       match /inviteIndex/{code} {
         allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId);
+        allow create: if isServerAdmin(appId, request.resource.data.serverId) || isServerMember(appId, request.resource.data.serverId);
         allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
         allow delete: if isServerAdmin(appId, resource.data.serverId);
       }
@@ -177,7 +177,7 @@ service cloud.firestore {
       }
 
       // E2EE 秘密鍵バックアップ (本人のみ読み書き)
-      match /users/{userId}/private/{docId} {
+      match /users/{userId}/private/{document=**} {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
@@ -475,11 +475,12 @@ service cloud.firestore {
           allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
         }
 
-        // 招待コード (Invite Codes)
+        // 招待コード (Invite Codes: メンバーによる招待画面表示・コード発行に対応)
         match /inviteCodes/{code} {
           allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId);
-          allow write: if isServerAdmin(appId, serverId);
+          allow list: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
+          allow update, delete: if isServerAdmin(appId, serverId);
         }
       }
 
