@@ -56,6 +56,18 @@ service cloud.firestore {
       );
     }
 
+    // サーバーメンバー判定 (サーバー参加者またはサーバー管理者)
+    function isServerMember(appId, serverId) {
+      return isAuthenticated() && (
+        isServerAdmin(appId, serverId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          ('joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+           request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+        )
+      );
+    }
+
     // ========================================================================
     // 📁 各コレクションのセキュリティルール
     // ========================================================================
