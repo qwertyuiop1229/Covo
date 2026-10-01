@@ -10794,6 +10794,18 @@ service cloud.firestore {
       );
     }
 
+    // サーバーメンバー判定 (サーバー参加者またはサーバー管理者)
+    function isServerMember(appId, serverId) {
+      return isAuthenticated() && (
+        isServerAdmin(appId, serverId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          ('joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+           request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+        )
+      );
+    }
+
     // ========================================================================
     // 📁 各コレクションのセキュリティルール
     // ========================================================================
@@ -24335,6 +24347,7 @@ function updateSettingsSidebar() {
 }
 // ============ Mobile Profile & Modal Navigation ============
 window.openMobileProfileScreen = function () {
+  if (typeof initProfileState === 'function') initProfileState();
   updateMobileProfileScreen();
   const el = document.getElementById('mobileProfileScreen');
   if (el) {
@@ -24788,6 +24801,9 @@ window.openMobileDetail = function (type) {
   };
   const el = document.getElementById(m[type]);
   if (el) {
+    if (type === 'profile') {
+      if (typeof initProfileState === 'function') initProfileState();
+    }
     if (type === 'admin') {
       const container = document.getElementById('mobileAdminContainer');
       const shared = document.getElementById('adminPanelSharedContent');
@@ -24840,6 +24856,9 @@ window.openMobileDetail = function (type) {
 window.closeMobileDetail = function (id) {
   const el = document.getElementById(id);
   if (el) {
+    if (id === 'mobileDetailProfile' && typeof checkProfileDirty === 'function' && checkProfileDirty()) {
+      window.resetProfileChanges();
+    }
     el.classList.add('closing');
     setTimeout(() => {
       el.classList.remove('active', 'closing');
@@ -24906,13 +24925,30 @@ window.mobileProfileSave = async function () {
   const inp = document.getElementById('mobileNicknameInput');
   const aboutMeInp = document.getElementById('mobileAboutMeInput');
   const msg = document.getElementById('mobileSettingsMessage');
-  if (!inp || !inp.value.trim()) return;
+  const nickVal = inp?.value.trim() ?? "";
+  if (!nickVal) {
+    if (msg) {
+      msg.textContent = 'ニックネームを入力してください';
+      msg.className = "mt-3 text-sm text-center font-medium text-red-600";
+    }
+    return;
+  }
   const pcIn = document.getElementById('settingsNicknameInput');
-  if (pcIn) pcIn.value = inp.value.trim();
+  if (pcIn) pcIn.value = nickVal;
   const pcAboutMe = document.getElementById('settingsAboutMeInput');
   if (pcAboutMe && aboutMeInp) pcAboutMe.value = aboutMeInp.value.trim();
-  document.getElementById('saveSettingsButton').click();
-  if (msg) { msg.textContent = '保存しました'; msg.style.color = '#059669'; setTimeout(() => { msg.textContent = ''; }, 2000); }
+  const saveBtn = document.getElementById('saveSettingsButton');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.click();
+  }
+  if (msg) {
+    msg.textContent = '保存中...';
+    msg.className = "mt-3 text-sm text-center font-medium text-gray-500";
+    setTimeout(() => {
+      if (msg.textContent === '保存中...') msg.textContent = '';
+    }, 2000);
+  }
 };
 const atm = document.getElementById('avatarUploadTriggerMobile');
 if (atm) atm.addEventListener('click', () => document.getElementById('avatarUploadInput').click());
@@ -25189,12 +25225,22 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
         ''
       );
       pendingAvatarUrl = fileUrl;
-      settingsAvatarPreview.src = fileUrl;
-      settingsAvatarPreview.classList.remove("hidden");
-      document.getElementById("resetAvatarButton").classList.remove("hidden");
+      if (settingsAvatarPreview) {
+        settingsAvatarPreview.src = fileUrl;
+        settingsAvatarPreview.classList.remove("hidden");
+      }
+      const mobPreview = document.getElementById("mobileAvatarPreview");
+      if (mobPreview) {
+        mobPreview.src = fileUrl;
+        mobPreview.style.display = "";
+        mobPreview.classList.remove("hidden");
+      }
+      document.getElementById("resetAvatarButton")?.classList.remove("hidden");
+      document.getElementById("mobileResetAvatarBtn")?.classList.remove("hidden");
       avatarCropModal.classList.add('hidden');
       cropImage = null;
-      alertMessage("アイコンを設定しました", "success");
+      checkProfileDirty();
+      alertMessage("アイコンを設定しました。「保存」を押して確定してください", "success");
     } catch (err) {
       console.error(err);
       alertMessage("アップロードに失敗しました: " + err.message, "error");
@@ -25236,22 +25282,70 @@ window.applyGoogleAvatar = function () {
   }
   if (mobPreview) {
     mobPreview.src = googlePhoto;
+    mobPreview.style.display = "";
     mobPreview.classList.remove("hidden");
   }
   if (pcResetBtn) pcResetBtn.classList.remove("hidden");
   if (mobResetBtn) mobResetBtn.classList.remove("hidden");
+  checkProfileDirty();
   alertMessage("Googleアカウントのアイコンを選択しました。「保存」を押して確定してください", "success");
 };
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
 let _profileInitialState = { nickname: '', aboutMe: '', avatarUrl: null };
+function initProfileState() {
+  const nick = userNickname || "";
+  const about = userAboutMe || "";
+  const avatar = userAvatarUrl || null;
+  pendingAvatarUrl = null;
+  _profileInitialState = {
+    nickname: nick,
+    aboutMe: about,
+    avatarUrl: avatar
+  };
+  const pcNick = document.getElementById("settingsNicknameInput");
+  const mobNick = document.getElementById("mobileNicknameInput");
+  if (pcNick && pcNick.value !== nick) pcNick.value = nick;
+  if (mobNick && mobNick.value !== nick) mobNick.value = nick;
+  const pcAbout = document.getElementById("settingsAboutMeInput");
+  const mobAbout = document.getElementById("mobileAboutMeInput");
+  if (pcAbout && pcAbout.value !== about) pcAbout.value = about;
+  if (mobAbout && mobAbout.value !== about) mobAbout.value = about;
+  const pcCounter = document.getElementById("settingsAboutMeCounter");
+  const mobCounter = document.getElementById("mobileAboutMeCounter");
+  if (pcCounter) pcCounter.textContent = `${about.length} / 300`;
+  if (mobCounter) mobCounter.textContent = `${about.length} / 300`;
+  checkProfileDirty();
+}
 function checkProfileDirty() {
-  const pcNick = document.getElementById("settingsNicknameInput")?.value.trim() ?? "";
-  const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
-  const currentNick = pcNick || mobNick || "";
-  const pcAbout = document.getElementById("settingsAboutMeInput")?.value.trim() ?? "";
-  const mobAbout = document.getElementById("mobileAboutMeInput")?.value.trim() ?? "";
-  const currentAbout = pcAbout || mobAbout || "";
+  const pcNickEl = document.getElementById("settingsNicknameInput");
+  const mobNickEl = document.getElementById("mobileNicknameInput");
+  let currentNick = "";
+  if (document.activeElement === mobNickEl && mobNickEl) {
+    currentNick = mobNickEl.value.trim();
+  } else if (document.activeElement === pcNickEl && pcNickEl) {
+    currentNick = pcNickEl.value.trim();
+  } else if (mobNickEl && mobNickEl.value.trim() !== (_profileInitialState.nickname || "")) {
+    currentNick = mobNickEl.value.trim();
+  } else if (pcNickEl && pcNickEl.value.trim() !== (_profileInitialState.nickname || "")) {
+    currentNick = pcNickEl.value.trim();
+  } else {
+    currentNick = (pcNickEl?.value.trim()) ?? (mobNickEl?.value.trim() ?? "");
+  }
+  const pcAboutEl = document.getElementById("settingsAboutMeInput");
+  const mobAboutEl = document.getElementById("mobileAboutMeInput");
+  let currentAbout = "";
+  if (document.activeElement === mobAboutEl && mobAboutEl) {
+    currentAbout = mobAboutEl.value.trim();
+  } else if (document.activeElement === pcAboutEl && pcAboutEl) {
+    currentAbout = pcAboutEl.value.trim();
+  } else if (mobAboutEl && mobAboutEl.value.trim() !== (_profileInitialState.aboutMe || "")) {
+    currentAbout = mobAboutEl.value.trim();
+  } else if (pcAboutEl && pcAboutEl.value.trim() !== (_profileInitialState.aboutMe || "")) {
+    currentAbout = pcAboutEl.value.trim();
+  } else {
+    currentAbout = (pcAboutEl?.value.trim()) ?? (mobAboutEl?.value.trim() ?? "");
+  }
   const isNickDirty = currentNick !== (_profileInitialState.nickname || "");
   const isAboutDirty = currentAbout !== (_profileInitialState.aboutMe || "");
   const isAvatarDirty = pendingAvatarUrl !== null;
@@ -25290,13 +25384,30 @@ window.resetProfileChanges = function () {
   if (pcCounter && pcAbout) pcCounter.textContent = `${pcAbout.value.length} / 300`;
   if (mobCounter && mobAbout) mobCounter.textContent = `${mobAbout.value.length} / 300`;
   pendingAvatarUrl = null;
+  const pcPreview = document.getElementById("settingsAvatarPreview");
+  const mobPreview = document.getElementById("mobileAvatarPreview");
+  const pcResetBtn = document.getElementById("resetAvatarButton");
+  const mobResetBtn = document.getElementById("mobileResetAvatarBtn");
   if (_profileInitialState.avatarUrl) {
-    settingsAvatarPreview.src = _profileInitialState.avatarUrl;
-    settingsAvatarPreview.classList.remove("hidden");
-    resetAvatarButton?.classList.remove("hidden");
+    if (pcPreview) {
+      pcPreview.src = _profileInitialState.avatarUrl;
+      pcPreview.classList.remove("hidden");
+    }
+    if (mobPreview) {
+      mobPreview.src = _profileInitialState.avatarUrl;
+      mobPreview.style.display = "";
+      mobPreview.classList.remove("hidden");
+    }
+    if (pcResetBtn) pcResetBtn.classList.remove("hidden");
+    if (mobResetBtn) mobResetBtn.classList.remove("hidden");
   } else {
-    settingsAvatarPreview.classList.add("hidden");
-    resetAvatarButton?.classList.add("hidden");
+    if (pcPreview) pcPreview.classList.add("hidden");
+    if (mobPreview) {
+      mobPreview.style.display = "none";
+      mobPreview.classList.add("hidden");
+    }
+    if (pcResetBtn) pcResetBtn.classList.add("hidden");
+    if (mobResetBtn) mobResetBtn.classList.add("hidden");
   }
   checkProfileDirty();
 };
@@ -25325,23 +25436,9 @@ window.tryCloseSettingsModal = function () {
 function openSettingsModal(tab) {
   if (!userNickname) return;
   switchDiscordSettingsTab(tab === "settings" ? "settings" : (tab === "account" ? "account" : "profile"));
-  settingsNicknameInput.value = userNickname;
-  settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
-  const aboutMeInput = document.getElementById("settingsAboutMeInput");
-  const aboutMeCounter = document.getElementById("settingsAboutMeCounter");
-  if (aboutMeInput) {
-    aboutMeInput.value = userAboutMe || "";
-    if (aboutMeCounter) aboutMeCounter.textContent = `${aboutMeInput.value.length} / 300`;
-  }
+  initProfileState();
+  if (settingsAvatarText) settingsAvatarText.textContent = userNickname.charAt(0).toUpperCase();
   updateSettingsCustomStatusUI();
-  pendingAvatarUrl = null;
-  // 初期状態を記録して未保存変更判定に使用
-  _profileInitialState = {
-    nickname: userNickname || "",
-    aboutMe: userAboutMe || "",
-    avatarUrl: userAvatarUrl || null
-  };
-  checkProfileDirty();
   const applyGoogleBtn = document.getElementById("applyGoogleAvatarBtn");
   const user = auth?.currentUser;
   const googleData = user?.providerData?.find(p => p.providerId === 'google.com');
@@ -25440,6 +25537,8 @@ const handleAvatarResetAction = async () => {
     await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
     userAvatarUrl = null;
     pendingAvatarUrl = null;
+    _profileInitialState.avatarUrl = null;
+    checkProfileDirty();
     // キャッシュを完全消去し、削除状態を明示記録して再読み込み時のGoogle写真復活を完全防止
     try {
       localStorage.removeItem('covo_cached_avatar_' + userId);
@@ -25509,30 +25608,75 @@ if (settingsModalEl) {
     }
   });
 }
-// プロフィール変更検知イベントのバインド
+// プロフィール変更検知イベントのバインド（PCとモバイルの双方向同期付き）
 if (settingsNicknameInpEl) {
-  settingsNicknameInpEl.addEventListener("input", () => checkProfileDirty());
+  settingsNicknameInpEl.addEventListener("input", () => {
+    const mob = document.getElementById("mobileNicknameInput");
+    if (mob && mob.value !== settingsNicknameInpEl.value) {
+      mob.value = settingsNicknameInpEl.value;
+    }
+    checkProfileDirty();
+  });
 }
 const aboutMeInpEl = document.getElementById("settingsAboutMeInput");
 if (aboutMeInpEl) {
-  aboutMeInpEl.addEventListener("input", () => checkProfileDirty());
+  aboutMeInpEl.addEventListener("input", () => {
+    const mob = document.getElementById("mobileAboutMeInput");
+    if (mob && mob.value !== aboutMeInpEl.value) {
+      mob.value = aboutMeInpEl.value;
+    }
+    const pcCounter = document.getElementById("settingsAboutMeCounter");
+    const mobCounter = document.getElementById("mobileAboutMeCounter");
+    if (pcCounter) pcCounter.textContent = `${aboutMeInpEl.value.length} / 300`;
+    if (mobCounter) mobCounter.textContent = `${aboutMeInpEl.value.length} / 300`;
+    checkProfileDirty();
+  });
 }
 const mobNickInpEl = document.getElementById("mobileNicknameInput");
 if (mobNickInpEl) {
-  mobNickInpEl.addEventListener("input", () => checkProfileDirty());
+  mobNickInpEl.addEventListener("input", () => {
+    if (settingsNicknameInpEl && settingsNicknameInpEl.value !== mobNickInpEl.value) {
+      settingsNicknameInpEl.value = mobNickInpEl.value;
+    }
+    checkProfileDirty();
+  });
 }
 const mobAboutInpEl = document.getElementById("mobileAboutMeInput");
 if (mobAboutInpEl) {
-  mobAboutInpEl.addEventListener("input", () => checkProfileDirty());
+  mobAboutInpEl.addEventListener("input", () => {
+    const pc = document.getElementById("settingsAboutMeInput");
+    if (pc && pc.value !== mobAboutInpEl.value) {
+      pc.value = mobAboutInpEl.value;
+    }
+    const pcCounter = document.getElementById("settingsAboutMeCounter");
+    const mobCounter = document.getElementById("mobileAboutMeCounter");
+    if (pcCounter) pcCounter.textContent = `${mobAboutInpEl.value.length} / 300`;
+    if (mobCounter) mobCounter.textContent = `${mobAboutInpEl.value.length} / 300`;
+    checkProfileDirty();
+  });
 }
-if (saveSettingsBtnEl && settingsNicknameInpEl) {
+if (saveSettingsBtnEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
-    const newName = settingsNicknameInpEl.value.trim();
-    const newAboutMe = (document.getElementById("settingsAboutMeInput")?.value || "").trim();
+    const pcNick = settingsNicknameInpEl ? settingsNicknameInpEl.value.trim() : "";
+    const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
+    const newName = pcNick || mobNick;
+    const pcAboutEl = document.getElementById("settingsAboutMeInput");
+    const mobAboutEl = document.getElementById("mobileAboutMeInput");
+    let newAboutMe = (pcAboutEl?.value || "").trim();
+    if (document.activeElement === mobAboutEl && mobAboutEl) {
+      newAboutMe = mobAboutEl.value.trim();
+    } else if (!newAboutMe && mobAboutEl?.value.trim()) {
+      newAboutMe = mobAboutEl.value.trim();
+    }
     if (newName.length < 1 || newName.length > 20) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "1〜20文字で入力してください。";
         settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "1〜20文字で入力してください。";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-red-600";
       }
       return;
     }
@@ -25584,13 +25728,22 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
         }
         localStorage.setItem('covo_cached_nick_' + userId, userNickname);
       } catch (_) {}
+      // PC・モバイル両方の入力フォーム値を最新に同期
+      if (settingsNicknameInpEl) settingsNicknameInpEl.value = userNickname;
+      if (pcAboutEl) pcAboutEl.value = userAboutMe;
+      const mobNickInp = document.getElementById("mobileNicknameInput");
+      if (mobNickInp) mobNickInp.value = userNickname;
+      if (mobAboutEl) mobAboutEl.value = userAboutMe;
+      const pcCounter = document.getElementById("settingsAboutMeCounter");
+      const mobCounter = document.getElementById("mobileAboutMeCounter");
+      if (pcCounter) pcCounter.textContent = `${userAboutMe.length} / 300`;
+      if (mobCounter) mobCounter.textContent = `${userAboutMe.length} / 300`;
       _profileInitialState = {
         nickname: userNickname,
         aboutMe: userAboutMe,
         avatarUrl: userAvatarUrl
       };
       pendingAvatarUrl = null;
-      checkProfileDirty();
       // 🌟 自分自身の全画面UI・キャッシュを即座に再読み込みなしで更新
       const myProfile = {
         id: userId,
@@ -25627,17 +25780,33 @@ if (saveSettingsBtnEl && settingsNicknameInpEl) {
       if (typeof renderServerList === 'function') renderServerList();
       if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
       await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
+      // 保存完了後に未保存状態を再チェックし、保存ボタンを確実に無効化・未保存バーを閉じる
+      checkProfileDirty();
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "保存しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-emerald-600 font-bold";
       }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "保存しました";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-emerald-600 font-bold";
+        setTimeout(() => { if (mobMsg.textContent === "保存しました") mobMsg.textContent = ""; }, 2500);
+      }
       closeCropModal();
       alertMessage("プロフィールを保存しました", "success");
-      setTimeout(() => { if (settingsModalEl) settingsModalEl.classList.add("hidden"); }, 800);
+      setTimeout(() => {
+        if (settingsModalEl) settingsModalEl.classList.add("hidden");
+        if (typeof closeMobileDetail === 'function') closeMobileDetail('mobileDetailProfile');
+      }, 800);
     } catch (e) {
       if (settingsMsgEl) {
         settingsMsgEl.textContent = "エラーが発生しました";
         settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
+      }
+      const mobMsg = document.getElementById("mobileSettingsMessage");
+      if (mobMsg) {
+        mobMsg.textContent = "エラーが発生しました";
+        mobMsg.className = "mt-3 text-sm text-center font-medium text-red-600";
       }
     } finally {
       if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
@@ -47391,6 +47560,65 @@ window._subscribeVcSidebarStates = function(serverId) {
 })();
 </file>
 
+<file path="src-tauri/tauri.conf.json">
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Covo",
+  "version": "1.1.241",
+  "identifier": "com.simplechat.desktop",
+  "build": {
+    "frontendDist": "../public",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Covo",
+        "width": 1000,
+        "height": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://download.agora.io https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com https://www.recaptcha.net https://apis.google.com https://www.google-analytics.com https://*.googleapis.com https://*.firebasedatabase.app https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com; frame-src 'self' https://www.google.com https://recaptcha.google.com https://*.firebaseapp.com https://*.firebasedatabase.app https://*.firebaseio.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' tauri: asset: http://asset.localhost https://asset.localhost data: blob: https://* http://localhost:* http://127.0.0.1:*; media-src 'self' tauri: asset: data: blob: https://*; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost ws: wss: https://* http://127.0.0.1:*; worker-src 'self' blob: https://cdnjs.cloudflare.com https://download.agora.io;",
+      "dangerousDisableAssetCspModification": true
+    },
+    "withGlobalTauri": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/qwertyuiop1229/Covo/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVERjY0RTU1QjU4QjlCOTYKUldTV200dTFWVTcyWGRJaEEzaEQyL29tVHFjMVZoT2JaeTlxalZ1b0daUkZoOWMyRndDSWRNVncK"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": "v1Compatible",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "Japanese"
+        ]
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
+</file>
+
 <file path="public/index.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -47425,13 +47653,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.240" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.241" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.240" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.241" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -51089,7 +51317,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.240"></script>
+  <script type="module" src="js/main.js?v=1.1.241"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -52504,68 +52732,9 @@ window._subscribeVcSidebarStates = function(serverId) {
 </html>
 </file>
 
-<file path="src-tauri/tauri.conf.json">
-{
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Covo",
-  "version": "1.1.240",
-  "identifier": "com.simplechat.desktop",
-  "build": {
-    "frontendDist": "../public",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "Covo",
-        "width": 1000,
-        "height": 700,
-        "resizable": true,
-        "fullscreen": false,
-        "decorations": false,
-        "dragDropEnabled": false
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://download.agora.io https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://www.gstatic.com https://www.googletagmanager.com https://www.google.com https://www.recaptcha.net https://apis.google.com https://www.google-analytics.com https://*.googleapis.com https://*.firebasedatabase.app https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com; frame-src 'self' https://www.google.com https://recaptcha.google.com https://*.firebaseapp.com https://*.firebasedatabase.app https://*.firebaseio.com; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' tauri: asset: http://asset.localhost https://asset.localhost data: blob: https://* http://localhost:* http://127.0.0.1:*; media-src 'self' tauri: asset: data: blob: https://*; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost tauri: http://tauri.localhost https://tauri.localhost ws: wss: https://* http://127.0.0.1:*; worker-src 'self' blob: https://cdnjs.cloudflare.com https://download.agora.io;",
-      "dangerousDisableAssetCspModification": true
-    },
-    "withGlobalTauri": true
-  },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://github.com/qwertyuiop1229/Covo/releases/latest/download/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVERjY0RTU1QjU4QjlCOTYKUldTV200dTFWVTcyWGRJaEEzaEQyL29tVHFjMVZoT2JaeTlxalZ1b0daUkZoOWMyRndDSWRNVncK"
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "createUpdaterArtifacts": "v1Compatible",
-    "windows": {
-      "nsis": {
-        "languages": [
-          "Japanese"
-        ]
-      }
-    },
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  }
-}
-</file>
-
 <file path="public/version.json">
 {
-  "version": "1.1.240",
+  "version": "1.1.241",
   "force": false
 }
 </file>
