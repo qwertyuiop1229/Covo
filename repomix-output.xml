@@ -15158,12 +15158,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白是正） */
+      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、ユーザーパネルと美しく調和する下部余白） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
         padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-bottom: 64px !important;
+        padding-bottom: calc(74px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5) !important;
         z-index: 30;
         background: transparent !important;
         border-right: none !important;
@@ -15228,12 +15228,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       }
       /* ルームリスト（下部ユーザーバーの直上でピタッと止まる適正パディング） */
       body.discord-ui-mode #sidebar #roomList {
-        padding-bottom: 64px !important;
+        padding-bottom: calc(74px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5) !important;
       }
-      /* 下部ユーザーミニバー（角丸カードデザインを保持したまま画面下ギリギリに配置） */
+      /* 下部ユーザーミニバー（角丸カードデザインを保持しつつ、ホームバーや底フチにめり込まない絶妙なフロート配置） */
       body.discord-ui-mode #sidebar #userPanel {
         position: absolute !important;
-        bottom: 2px !important;
+        bottom: max(8px, calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5 + 4px)) !important;
         left: -62px !important;
         right: 8px !important;
         width: auto !important;
@@ -47570,7 +47570,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.244",
+  "version": "1.1.245",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -47659,13 +47659,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.244" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.245" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.244" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.245" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -51315,7 +51315,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.244"></script>
+  <script type="module" src="js/main.js?v=1.1.245"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -52732,7 +52732,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.244",
+  "version": "1.1.245",
   "force": false
 }
 </file>
