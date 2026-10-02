@@ -1565,12 +1565,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白是正） */
+      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、ユーザーパネルと美しく調和する下部余白） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
         padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-bottom: 64px !important;
+        padding-bottom: calc(74px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5) !important;
         z-index: 30;
         background: transparent !important;
         border-right: none !important;
@@ -1635,12 +1635,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       }
       /* ルームリスト（下部ユーザーバーの直上でピタッと止まる適正パディング） */
       body.discord-ui-mode #sidebar #roomList {
-        padding-bottom: 64px !important;
+        padding-bottom: calc(74px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5) !important;
       }
-      /* 下部ユーザーミニバー（角丸カードデザインを保持したまま画面下ギリギリに配置） */
+      /* 下部ユーザーミニバー（角丸カードデザインを保持しつつ、ホームバーや底フチにめり込まない絶妙なフロート配置） */
       body.discord-ui-mode #sidebar #userPanel {
         position: absolute !important;
-        bottom: 2px !important;
+        bottom: max(8px, calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) * 0.5 + 4px)) !important;
         left: -62px !important;
         right: 8px !important;
         width: auto !important;

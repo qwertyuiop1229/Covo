@@ -1,9 +1,6 @@
 {
-  "date": "2026-10-02T09:11:27.680Z",
+  "date": "2026-10-02T09:19:34.672Z",
   "files": [
-    "public/index.html",
-    "public/css/modules/base.css",
-    "public/css/modules/sidebar.css",
-    "public/css/modules/mobile.css"
+    "public/css/modules/sidebar.css"
   ]
 }
