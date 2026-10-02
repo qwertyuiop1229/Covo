@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.237" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.243" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.237" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.243" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -54,16 +54,11 @@
       console.debug = filterAgora(_origDebug);
     })();
   </script>
-  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js"></script>
-  <script>
-    if (typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) {
-      AgoraRTC.setLogLevel(4); // 4: NONE (冗長な内部デバッグ・警告ログを完全消音)
-    }
-  </script>
-  <!-- heic2any -->
-  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-  <!-- Panzoom (画像拡大用) -->
-  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js" defer onload="if(typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) AgoraRTC.setLogLevel(4);"></script>
+  <!-- heic2any (遅延ロード) -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
+  <!-- Panzoom (画像拡大用・遅延ロード) -->
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" defer></script>
 
   <!-- Google tag (gtag.js) - Web版のみ読み込み（Tauriデスクトップ版でのTracking Prevention警告とストレージブロックを防止） -->
   <script>
@@ -529,21 +524,29 @@
         }
       });
     }
-    // 起動スプラッシュのセーフティタイマー（初期読み込み停滞・IndexedDBロック時のハングを完全防止）
+    // 起動スプラッシュのセーフティタイマー（auth-ready確定まで画面を維持し、タイトルバー浮き上がり・真っ暗フリーズを完全防止）
     setTimeout(function() {
       const splash = document.getElementById("appLoadingSplash");
       if (splash && document.body.classList.contains("auth-ready")) {
         splash.style.opacity = '0';
         setTimeout(function() { splash.remove(); }, 300);
       }
-    }, 1500);
+    }, 1200);
+    setTimeout(function() {
+      const splash = document.getElementById("appLoadingSplash");
+      if (splash && document.body.classList.contains("auth-ready")) {
+        splash.style.opacity = '0';
+        setTimeout(function() { splash.remove(); }, 300);
+      }
+    }, 3000);
+    // 最大セーフティ（通信遮断やオフライン時に8秒でフォールバック消去）
     setTimeout(function() {
       const splash = document.getElementById("appLoadingSplash");
       if (splash) {
         splash.style.opacity = '0';
         setTimeout(function() { splash.remove(); }, 300);
       }
-    }, 2800);
+    }, 8000);
     setTimeout(function() {
       const isUiVisible = document.body.classList.contains("auth-ready") ||
                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
@@ -1144,6 +1147,9 @@
               <button class="settings-nav-item active" id="snav-profile" onclick="switchDiscordSettingsTab('profile')">
                 <i class="fas fa-user-circle fa-fw"></i>プロフィール
               </button>
+              <button class="settings-nav-item" id="snav-account" onclick="switchDiscordSettingsTab('account')">
+                <i class="fas fa-id-card fa-fw"></i>マイアカウント
+              </button>
               <button class="settings-nav-item" id="snav-privacy" onclick="switchDiscordSettingsTab('privacy')">
                 <i class="fas fa-lock fa-fw"></i>プライバシー & ロック
               </button>
@@ -1197,7 +1203,7 @@
               <button class="settings-close-btn" id="closeSettingsButton"><i class="fas fa-times"></i></button>
 
               <!-- プロフィールセクション (Discord準拠) -->
-              <div id="profileSection" class="settings-content-section active">
+              <div id="profileSection" class="settings-content-section active relative pb-16">
                 <div class="settings-section-title">プロフィール</div>
                 <div class="flex items-center gap-5 mb-6">
                   <div class="w-20 h-20 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-white flex items-center justify-center text-3xl font-bold relative cursor-pointer group flex-shrink-0" id="avatarUploadTrigger">
@@ -1222,15 +1228,14 @@
                         <i class="fab fa-google text-[10px]"></i>Googleアイコンを適用
                       </button>
                     </div>
-                    </div>
-                    </div>
-                    <div class="space-y-4">
+                  </div>
+                </div>
+                <div class="space-y-4">
                   <!-- ニックネーム -->
                   <div>
                     <label class="block text-gray-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-2" for="settingsNicknameInput">ニックネーム (表示名)</label>
                     <input type="text" id="settingsNicknameInput" placeholder="ニックネーム" class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-base font-medium" />
                   </div>
-
                   <!-- カスタムステータス (ステメ) 設定カード -->
                   <div class="p-4 bg-gray-50 dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 transition-colors">
                     <div class="flex items-center gap-3 min-w-0">
@@ -1251,7 +1256,6 @@
                       </button>
                     </div>
                   </div>
-
                   <!-- 自己紹介 (About Me) -->
                   <div>
                     <div class="flex items-center justify-between mb-2">
@@ -1261,16 +1265,39 @@
                     <textarea id="settingsAboutMeInput" rows="3" maxlength="300" placeholder="自己紹介を入力してください..." class="w-full p-3 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700/60 rounded-xl text-gray-800 dark:text-white text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all resize-none"></textarea>
                   </div>
                 </div>
-
                 <div id="settingsMessage" class="mt-4 text-sm font-medium text-center"></div>
-                <div class="mt-6">
-                  <button id="saveSettingsButton" class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition-all shadow-xs active:scale-95">保存</button>
+                <div class="mt-6 flex items-center justify-between">
+                  <button id="saveSettingsButton" disabled class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none text-white text-sm font-bold rounded-xl transition-all shadow-xs active:scale-95">保存</button>
                 </div>
-
+                <!-- Discord本家風 未保存変更フローティングバー -->
+                <div id="profileUnsavedBar" class="absolute bottom-4 left-4 right-4 z-40 bg-[#111214] text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/10 flex items-center justify-between gap-4 transition-all duration-300 transform translate-y-24 opacity-0 pointer-events-none select-none">
+                  <span class="text-xs font-bold text-gray-200 flex items-center gap-2 truncate">
+                    <i class="fas fa-triangle-exclamation text-amber-400 flex-shrink-0"></i>
+                    <span class="truncate">気をつけて！ — 保存していない変更があります！</span>
+                  </span>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" onclick="window.resetProfileChanges && window.resetProfileChanges()" class="px-3 py-1.5 rounded-xl text-xs font-bold text-gray-300 hover:text-white hover:underline cursor-pointer">
+                      変更を破棄
+                    </button>
+                    <button type="button" onclick="document.getElementById('saveSettingsButton').click()" class="px-4 py-1.5 rounded-xl text-xs font-bold bg-[#248046] hover:bg-[#1a6334] text-white shadow-sm transition active:scale-95 cursor-pointer">
+                      変更を保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- マイアカウント セクション (新設) -->
+              <div id="accountSection" class="settings-content-section space-y-4">
+                <div class="settings-section-title">マイアカウント</div>
+                <!-- ユーザーカード -->
+                <div class="p-4 bg-gray-50 dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 flex items-center gap-4 transition-colors">
+                  <div class="w-16 h-16 rounded-full bg-slate-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm" id="accountSectionAvatarPreview">U</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-lg font-black text-gray-900 dark:text-white truncate" id="accountSectionName">User</div>
+                    <div class="text-xs text-gray-500 dark:text-slate-400 font-mono mt-0.5" id="accountSectionTag">user</div>
+                  </div>
+                </div>
                 <!-- アカウント & セキュリティ (ダークネイビー最適化・カード型デザイン) -->
-                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800/60 space-y-3.5">
-                  <div class="settings-section-title text-sm !mb-2">アカウント & セキュリティ</div>
-                  
+                <div class="space-y-3.5">
                   <!-- メールアドレス カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 transition-colors">
                     <div class="flex items-center gap-3 min-w-0">
@@ -1284,7 +1311,6 @@
                     </div>
                     <span id="settingsEmailVerifiedBadge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex-shrink-0">認証済み</span>
                   </div>
-
                   <!-- Google 連携 カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
@@ -1310,7 +1336,6 @@
                       連携する
                     </button>
                   </div>
-
                   <!-- パスワード管理 カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
@@ -1329,7 +1354,6 @@
                       パスワードを変更
                     </button>
                   </div>
-
                   <!-- リカバリーキー カード -->
                   <div class="bg-gray-50 dark:bg-slate-900/80 rounded-2xl p-4 border border-gray-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3 flex-wrap transition-colors">
                     <div class="flex items-center gap-3">
@@ -1347,7 +1371,6 @@
                   </div>
                 </div>
               </div>
-
               <!-- 設定セクション (settingsSection) -->
 
               <!-- 管理者セクション (adminNavSection) -->
@@ -2772,6 +2795,42 @@
                       class="w-full bg-gray-800 hover:bg-gray-700 dark:bg-white/10 dark:hover:bg-white/20 text-white font-bold py-3 rounded-xl text-sm transition-all cursor-pointer">パスワード変更</button>
                   </form>
                 </div>
+
+                <!-- メッセージ自動消去 / D1キャッシュ管理 (ライフサイクル設定) -->
+                <div class="pt-6 border-t border-gray-200 dark:border-white/10 mt-6">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i class="fas fa-clock-rotate-left text-indigo-500"></i>
+                    <label class="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">メッセージ自動消去 / D1キャッシュ管理</label>
+                  </div>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+                    サーバー内のメッセージ保管期間およびCloudflare D1 / KV添付ファイルの自動整理ポリシーを設定します。
+                  </p>
+                  <div class="space-y-3">
+                    <div>
+                      <label class="text-[11px] font-bold text-gray-500 dark:text-gray-400 block mb-1">自動消去・保管ポリシー</label>
+                      <div class="relative">
+                        <select id="serverMessageRetentionSelect" class="w-full py-2.5 pl-3 pr-8 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all appearance-none cursor-pointer font-medium shadow-xs">
+                          <option value="keep_all">全件保持 (自動消去なし)</option>
+                          <option value="prune_100">最新100件超過分を自動消去 (推奨・高速)</option>
+                          <option value="days_30">30日経過したメッセージを自動消去</option>
+                          <option value="days_7">7日経過したメッセージを自動消去 (高セキュリティ)</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                          <i class="fas fa-chevron-down text-xs"></i>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                      <button id="saveRetentionPolicyBtn" onclick="saveServerRetentionPolicy()" type="button" class="flex-1 bg-[#5865f2] hover:bg-[#4752c4] text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-98">
+                        <i class="fas fa-save text-xs"></i> ポリシーを保存
+                      </button>
+                      <button id="triggerManualPruneBtn" onclick="executeManualServerPrune()" type="button" class="px-4 py-2.5 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 text-gray-700 dark:text-gray-200 font-bold rounded-xl text-xs transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-98" title="古いメッセージと添付キャッシュを即時整理">
+                        <i class="fas fa-broom text-xs"></i> 今すぐ整理
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="pt-6 border-t border-red-100 dark:border-red-900/30 mt-6">
                   <button id="deleteServerBtn"
                     class="w-full bg-red-50 hover:bg-red-500 dark:bg-rose-500/10 dark:hover:bg-rose-600 text-red-600 dark:text-rose-400 hover:text-white dark:hover:text-white font-bold py-3 rounded-xl text-sm transition-all border border-red-200 dark:border-rose-500/20 hover:border-transparent cursor-pointer">
@@ -2992,7 +3051,7 @@
               </div>
               <div class="user-panel-info flex flex-col justify-center min-w-0 flex-1 leading-tight">
                 <div class="user-panel-name text-xs font-bold text-gray-900 dark:text-white truncate" id="userPanelName">User</div>
-                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId" style="display: none;"></div>
+                <div class="user-panel-id text-[11px] font-medium text-gray-500 dark:text-slate-400 truncate" id="userPanelId">オンライン</div>
               </div>
             </div>
             <!-- 右側: Discord風コントロールボタン群 (マイク^, ヘッドフォンv, 設定) -->
@@ -3825,13 +3884,13 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
     if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.237"></script>
+  <script type="module" src="js/main.js?v=1.1.243"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4351,8 +4410,11 @@
       <!-- 検索バー -->
       <div class="p-3 bg-gray-50/60 dark:bg-slate-950/40 border-b border-gray-200/60 dark:border-slate-800 flex-shrink-0">
         <div class="relative">
-          <input type="text" id="viewerSearchInput" oninput="filterViewerMessages(this.value)" placeholder="メッセージを検索..." class="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-base text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+          <input type="text" id="viewerSearchInput" oninput="filterViewerMessages(this.value)" placeholder="メッセージやファイルを検索..." class="w-full pl-8 pr-8 py-1.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium" />
           <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+          <button id="viewerSearchClearBtn" onclick="clearViewerSearch()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs cursor-pointer p-0.5" title="検索をクリア">
+            <i class="fas fa-times-circle"></i>
+          </button>
         </div>
       </div>
       <!-- メッセージタイムライン表示エリア -->
@@ -4487,6 +4549,11 @@
           <span class="mobile-settings-row-text">プロフィール編集</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <div class="mobile-settings-row" onclick="openMobileDetail('account')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-id-card"></i></div>
+          <span class="mobile-settings-row-text">マイアカウント</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
         <div class="mobile-settings-row" onclick="openMobileDetail('privacy')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-lock"></i></div>
           <span class="mobile-settings-row-text">プライバシー & ロック</span>
@@ -4618,63 +4685,63 @@
       </div>
 
       <div id="mobileSettingsMessage" class="mt-3 text-sm text-center font-medium"></div>
-      <button class="w-full mt-4 p-3.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer active:scale-98" onclick="mobileProfileSave()">保存</button>
-
-      <!-- アカウント & セキュリティ (モバイル) -->
-      <div class="mt-6 pt-5 border-t border-gray-200 dark:border-slate-800/60">
-        <div class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">アカウント & セキュリティ</div>
-        <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-3.5 text-xs shadow-xs transition-colors">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500 dark:text-slate-400 font-medium">ログイン中:</span>
-            <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[200px]"></span>
-          </div>
-
-          <!-- Google連携 -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2.5">
-              <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
-                <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
-                <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-              </div>
-              <div>
-                <div class="font-bold text-gray-800 dark:text-white">Google アカウント</div>
-                <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
-              </div>
+      <button id="mobileProfileSaveBtn" disabled class="w-full mt-4 p-3.5 bg-gray-900 hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer active:scale-98" onclick="mobileProfileSave()">保存</button>
+      </div>
+      </div>
+      <!-- Mobile Detail: Account (新設) -->
+      <div class="mobile-settings-detail" id="mobileDetailAccount">
+      <div class="mobile-detail-header">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAccount')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">マイアカウント</span>
+      </div>
+      <div style="padding:1.25rem;padding-bottom:max(24px, calc(1.25rem + var(--safe-bottom, env(safe-area-inset-bottom, 0px))))">
+      <div class="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 space-y-3.5 text-xs shadow-xs transition-colors">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-gray-500 dark:text-slate-400 font-medium">メールアドレス:</span>
+          <span id="mobileSettingsEmailDisplay" class="text-xs font-mono font-bold text-gray-800 dark:text-white truncate max-w-[200px]"></span>
+        </div>
+        <!-- Google連携 -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5">
+            <div id="mobileSettingsGoogleIconWrap" class="w-7 h-7 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 flex items-center justify-center flex-shrink-0 relative overflow-hidden shadow-xs">
+              <img id="mobileSettingsGoogleAvatar" src="" class="w-full h-full object-cover hidden" alt="Google Avatar" />
+              <svg id="mobileSettingsGoogleSvgIcon" class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
             </div>
-            <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">連携する</button>
-          </div>
-
-          <!-- パスワード管理 (モバイル) -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
             <div>
-              <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
-                <i class="fas fa-lock text-slate-500"></i>パスワード
-                <span id="mobileAdminBypassBadge" class="hidden px-2 py-0.2 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">バイパス有効</span>
-              </div>
-              <div class="text-[10px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
+              <div class="font-bold text-gray-800 dark:text-white">Google アカウント</div>
+              <div id="mobileSettingsGoogleEmail" class="text-[10px] text-gray-500 dark:text-slate-400 font-mono">未連携</div>
             </div>
-            <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">変更</button>
           </div>
-
-          <!-- 緊急リカバリーキー (モバイル) -->
-          <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
-              <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
+          <button id="mobileSettingsGoogleLinkBtn" onclick="toggleGoogleLinkAction()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">連携する</button>
+        </div>
+        <!-- パスワード管理 (モバイル) -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div>
+            <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
+              <i class="fas fa-lock text-slate-500"></i>パスワード
+              <span id="mobileAdminBypassBadge" class="hidden px-2 py-0.2 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">バイパス有効</span>
             </div>
-            <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
+            <div class="text-[10px] text-gray-500 dark:text-slate-400 font-mono tracking-widest mt-0.5">••••••••••••</div>
           </div>
+          <button onclick="openChangePasswordModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">変更</button>
+        </div>
+        <!-- 緊急リカバリーキー (モバイル) -->
+        <div class="pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div>
+            <div class="font-bold text-gray-800 dark:text-white flex items-center gap-1"><i class="fas fa-shield-halved text-amber-500"></i>リカバリーキー</div>
+            <div class="text-[10px] text-gray-500 dark:text-slate-400">メール不要の復旧キー</div>
+          </div>
+          <button onclick="openRecoveryKeyManagerModal()" class="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 shadow-xs transition active:scale-95">管理</button>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Mobile Detail: Privacy & PIN Lock -->
+      </div>
+      </div>
+      <!-- Mobile Detail: Privacy & PIN Lock -->
   <div class="mobile-settings-detail" id="mobileDetailPrivacy">
     <div class="mobile-detail-header">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailPrivacy')"><i class="fas fa-chevron-left"></i></div>
@@ -5008,39 +5075,37 @@
   </div>
   <!-- Discord本家完全準拠 ユーザーポップアウト (#userProfileModal - input_file_0.png仕様) -->
   <div id="userProfileModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4 select-none" onclick="if(event.target===this) closeUserProfileModal()">
-    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-3xl shadow-2xl w-full max-w-[320px] overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
-      <!-- スマホ用ボトムシートドラッグハンドル -->
-      <div class="bottom-sheet-handle w-10 h-1 bg-white/40 dark:bg-white/20 rounded-full mx-auto my-2 md:hidden"></div>
+    <div class="user-profile-card bg-white dark:bg-[#232428] rounded-2xl shadow-2xl w-full max-w-[320px] max-h-[min(580px,calc(100vh-32px))] overflow-y-auto custom-scrollbar modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-100 flex flex-col" onclick="event.stopPropagation()">
       <!-- 1. バナーヘッダー (抽出アクセントカラー) -->
-      <div id="userProfileBanner" class="h-20 relative flex-shrink-0" style="background-color: var(--user-banner-color, #376d49);">
-      </div>
-      <!-- 右上ボタングループ & ポップオーバー (アバターより確実に前面の z-50) -->
-      <div class="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-50 select-none">
-        <button id="upBannerFriendBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="フレンドアクション">
-          <i class="fas fa-user-plus"></i>
-        </button>
-        <div class="relative">
-          <button id="upBannerMoreBtn" class="w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer" title="その他のオプション" onclick="window.toggleUpMoreMenu(event)">
-            <i class="fas fa-ellipsis"></i>
+      <div id="userProfileBanner" class="h-24 relative flex-shrink-0 w-full" style="background-color: var(--user-banner-color, #376d49);">
+        <!-- 右上ボタングループ & ポップオーバー (バナー内に美しく常駐) -->
+        <div class="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-30 select-none">
+          <button id="upBannerFriendBtn" class="w-8 h-8 rounded-full bg-black/45 hover:bg-black/70 backdrop-blur-xs text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer active:scale-95" title="フレンドアクション">
+            <i class="fas fa-user-plus"></i>
           </button>
-          <div id="upMoreMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold">
-            <button onclick="window.openFullProfileFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-              <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+          <div class="relative">
+            <button id="upBannerMoreBtn" class="w-8 h-8 rounded-full bg-black/45 hover:bg-black/70 backdrop-blur-xs text-white flex items-center justify-center text-xs transition shadow-xs cursor-pointer active:scale-95" title="その他のオプション" onclick="window.toggleUpMoreMenu(event)">
+              <i class="fas fa-ellipsis"></i>
             </button>
-            <button onclick="window.openDmFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-              <i class="fas fa-comment-dots w-4 text-center"></i> メッセージ
-            </button>
-            <button onclick="window.openCallFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
-              <i class="fas fa-phone w-4 text-center"></i> 音声通話
-            </button>
-            <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
-            <button onclick="window.blockUserFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
-              <i class="fas fa-ban w-4 text-center"></i> ブロック
-            </button>
+            <div id="upMoreMenuPopover" class="hidden absolute top-full right-0 mt-1.5 w-44 bg-white dark:bg-[#111214] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl p-1 z-50 text-xs font-semibold" onclick="event.stopPropagation()">
+              <button onclick="window.openFullProfileFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+                <i class="fas fa-id-card w-4 text-center"></i> プロフィール全体を表示
+              </button>
+              <button onclick="window.openDmFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+                <i class="fas fa-comment-dots w-4 text-center"></i> メッセージ
+              </button>
+              <button onclick="window.openCallFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg text-left text-gray-800 dark:text-gray-200 cursor-pointer">
+                <i class="fas fa-phone w-4 text-center"></i> 音声通話
+              </button>
+              <div class="h-px bg-gray-100 dark:bg-white/5 my-1"></div>
+              <button onclick="window.blockUserFromPopout(); window.closeUpMoreMenu();" class="w-full flex items-center gap-2 p-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 rounded-lg text-left cursor-pointer">
+                <i class="fas fa-ban w-4 text-center"></i> ブロック
+              </button>
+            </div>
           </div>
         </div>
       </div>
-      <!-- 2. アバター (バナーに食い込み: z-20でバナーより前面へ確実に配置) -->
+      <!-- 2. アバター (バナーに食い込み) -->
       <div class="px-4 relative z-20 flex items-end justify-between -mt-10 mb-2 flex-shrink-0">
         <div class="relative group cursor-pointer" onclick="openUserProfileAvatarLightbox()" title="アイコンをクリックして拡大">
           <div id="userProfileAvatar" class="w-20 h-20 rounded-full border-[5px] border-white dark:border-[#232428] shadow-lg bg-gray-700 text-white font-black text-2xl flex items-center justify-center overflow-hidden transition-transform duration-200 group-hover:scale-105">
@@ -5051,36 +5116,46 @@
       </div>
       <!-- 3. ユーザーネーム & タグ -->
       <div class="px-4 mb-2.5 flex-shrink-0">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight">ユーザー</h3>
-          <i class="fas fa-file-lines text-xs text-gray-400 opacity-60 cursor-pointer hover:opacity-100 transition-opacity" onclick="window.openFullProfileFromPopout()" title="メモ / 詳細プロフィール"></i>
+        <h3 id="userProfileName" class="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-tight truncate">ユーザー</h3>
+        <div class="text-xs text-[#949ba4] font-mono font-medium mt-0.5 select-text" id="userProfileTag">0000</div>
+        <!-- 4. 共通サーバー・共通フレンド数 -->
+        <div class="flex items-center gap-2 text-xs text-[#949ba4] font-medium mt-1.5" id="userProfileMutualServersSummary">
+          <i class="fas fa-server text-[11px]"></i>
+          <span id="userProfileMutualServersCountText">1個の共通サーバー</span>
         </div>
-        <div class="text-xs text-[#949ba4] font-mono font-medium mt-0.5" id="userProfileTag">0000</div>
       </div>
-      <!-- 4. 共通サーバー数 (本家の並び順に合わせ、ステータスより先に表示) -->
-      <div class="px-4 mb-2.5 flex items-center gap-2 text-xs text-[#949ba4] font-medium" id="userProfileMutualServersSummary">
-        <i class="fas fa-server text-[11px]"></i>
-        <span id="userProfileMutualServersCountText">1個の共通サーバー</span>
+      <!-- 5. Discord完全準拠 インナーカードセクション -->
+      <div class="mx-3.5 mb-3.5 p-3 rounded-2xl bg-gray-50 dark:bg-[#111214]/60 border border-gray-200/60 dark:border-white/5 space-y-2.5 user-profile-inner-card flex-shrink-0">
+        <!-- カスタムステータス (ある場合) -->
+        <div id="userProfileCustomStatusWrap" class="text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2 select-text">
+          <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
+          <span id="userProfileStatusText" class="font-medium truncate select-text"></span>
+        </div>
+        <div id="userProfileCustomStatusDivider" class="h-px bg-gray-200/80 dark:bg-white/5 hidden"></div>
+        <!-- 自己紹介 (ある場合) -->
+        <div id="userProfileAboutMeWrap" class="hidden">
+          <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wider mb-1">自己紹介</div>
+          <div id="userProfileAboutMeText" class="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words select-text leading-relaxed max-h-[140px] overflow-y-auto custom-scrollbar pr-1"></div>
+        </div>
+        <div id="userProfileAboutMeDivider" class="h-px bg-gray-200/80 dark:bg-white/5 hidden"></div>
+        <!-- メンバーになった日 -->
+        <div id="userProfileJoinedWrap" class="hidden">
+          <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wider mb-1">メンバーになった日</div>
+          <div id="userProfileJoinedDate" class="text-xs text-gray-700 dark:text-gray-300 font-medium">-</div>
+        </div>
+        <!-- クイックメッセージ入力枠 -->
+        <form onsubmit="event.preventDefault(); window.submitQuickDmMessage();" class="relative pt-0.5">
+          <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信" class="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#1e1f22] border border-gray-200 dark:border-white/10 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium select-text" />
+          <button type="submit" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-500 text-xs transition cursor-pointer" title="メッセージを送信">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </form>
       </div>
-      <!-- 5. カスタムステータス (ある場合) -->
-      <div id="userProfileCustomStatusWrap" class="mx-4 mb-2.5 p-2 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 text-xs text-gray-800 dark:text-gray-200 hidden flex items-center gap-2">
-        <span id="userProfileStatusEmoji" class="text-base flex-shrink-0">💬</span>
-        <span id="userProfileStatusText" class="font-medium truncate select-text"></span>
-      </div>
-      <!-- 6. 自己紹介 (ある場合のみ表示) -->
-      <div id="userProfileAboutMeWrap" class="mx-4 mb-2.5 p-2.5 rounded-xl bg-gray-50 dark:bg-[#1e1f22] border border-gray-100 dark:border-white/5 hidden">
-        <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wide mb-1">自己紹介</div>
-        <div id="userProfileAboutMeText" class="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words select-text"></div>
-      </div>
-      <!-- 7. メンバーになった日 -->
-      <div id="userProfileJoinedWrap" class="px-4 mb-3 hidden">
-        <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wide mb-1">メンバーになった日</div>
-        <div id="userProfileJoinedDate" class="text-xs text-gray-800 dark:text-gray-200 font-medium">-</div>
-      </div>
-      <!-- 8. 最下部: プロフィール全体を表示ボタン (Discord本家準拠。旧クイックメッセージ入力欄から変更) -->
-      <div class="p-3 pt-0 mt-auto">
-        <button type="button" id="userProfileViewFullBtn" onclick="window.openFullProfileFromPopout()" class="w-full py-2.5 rounded-xl bg-gray-100 dark:bg-[#1e1f22] hover:bg-gray-200 dark:hover:bg-[#2b2d31] text-gray-800 dark:text-white text-sm font-bold transition-colors cursor-pointer">
-          プロフィール全体を表示
+      <!-- 最下部: プロフィール全体を表示 -->
+      <div class="px-3.5 pb-3 mt-auto">
+        <button type="button" id="userProfileViewFullBtn" onclick="window.openFullProfileFromPopout()" class="w-full py-1 text-center text-gray-500 hover:text-gray-900 dark:text-[#949ba4] dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5">
+          <span>プロフィール全体を表示</span>
+          <i class="fas fa-chevron-right text-[9px] opacity-60"></i>
         </button>
       </div>
     </div>

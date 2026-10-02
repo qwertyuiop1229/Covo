@@ -216,6 +216,10 @@ body.discord-dark-theme #userPanel {
   overflow: hidden;
   margin-left: 0.35rem;
   margin-right: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 .user-panel-name {
   font-size: 0.85rem;
@@ -226,15 +230,26 @@ body.discord-dark-theme #userPanel {
   text-overflow: ellipsis;
   line-height: 1.2;
 }
-body.dark-server-theme .user-panel-name,
+body.dark-server-theme .user-panel-name {
+  color: #f8fafc !important;
+}
 body.discord-dark-theme .user-panel-name {
   color: #f2f3f5 !important;
 }
 .user-panel-id {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #64748b;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.dark-server-theme .user-panel-id {
+  color: #94a3b8 !important;
+}
+body.discord-dark-theme .user-panel-id {
+  color: #949ba4 !important;
 }
 /* ミュート・スピーカーオフ コントロール (Discord input_file_2.png 準拠) */
 .user-panel-ctrl-btn, .user-panel-chevron-btn {
@@ -1071,8 +1086,10 @@ body.discord-dark-theme #openSettingsBtn:hover {
     #discordTitleBar {
       display: flex !important;
       width: 100%;
-      height: 30px;
-      min-height: 30px;
+      height: calc(30px + env(safe-area-inset-top, 0px));
+      min-height: calc(30px + env(safe-area-inset-top, 0px));
+      padding-top: env(safe-area-inset-top, 0px);
+      box-sizing: border-box;
       user-select: none;
       -webkit-user-select: none;
       align-items: center;
@@ -1083,38 +1100,15 @@ body.discord-dark-theme #openSettingsBtn:hover {
       position: relative;
     }
 
-
-    /* =========================================================================
-       Discord風 タイトルバー / トップバー (Windows版 & Web版 共通)
-    #discordTitleBar {
-      display: flex !important;
-      width: 100%;
-      height: 30px;
-      min-height: 30px;
-      user-select: none;
-      -webkit-user-select: none;
-      align-items: center;
-      justify-content: space-between;
-      z-index: 50;
-      flex-shrink: 0;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-      position: relative;
-      border-top-left-radius: 12px;
+    /* Discord本家完全準拠: サーバーナビ右隣のチャンネル/DMエリアの左上角丸 (添付画像2準拠) */
+    body.discord-ui-mode #sidebar,
+    body.discord-ui-mode #serverHeader,
+    body.discord-ui-mode #discordHomeSidebar,
+    body.discord-ui-mode #discordHomeSidebar > div:first-child {
+      border-top-left-radius: 10px;
     }
-       ========================================================================= */
-    #discordTitleBar {
-      display: flex !important;
-      width: 100%;
-      height: 30px;
-      min-height: 30px;
-      user-select: none;
-      -webkit-user-select: none;
-      align-items: center;
-      justify-content: space-between;
-      z-index: 50;
-      flex-shrink: 0;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-      position: relative;
+    body.discord-ui-mode #sidebar {
+      overflow: hidden;
     }
 
     /* タイトルバー内のアクションボタン (受信ボックス・ヘルプなど) */
@@ -1947,18 +1941,20 @@ body.discord-dark-theme #openSettingsBtn:hover {
       transform: scale(1.01);
     }
 
-    /* 未ログイン時の完全表示制御（認証確定前はスプラッシュ表示、認証確定後かつ未ログイン時のみログイン画面を表示） */
+    /* 未ログイン時の完全表示制御（認証確定前はスプラッシュ表示、タイトルバーの浮き上がりも完全防止） */
     body:not(.auth-ready) #appContainer,
     body:not(.auth-ready) #serverListScreen,
     body:not(.auth-ready) #globalAppHeader,
     body:not(.auth-ready) #nicknameContainer,
-    body:not(.auth-ready) #authContainer {
+    body:not(.auth-ready) #authContainer,
+    body:not(.auth-ready) #discordTitleBar {
       display: none !important;
     }
     body.auth-ready:not(.logged-in):not(.needs-nickname) #appContainer,
     body.auth-ready:not(.logged-in):not(.needs-nickname) #serverListScreen,
     body.auth-ready:not(.logged-in):not(.needs-nickname) #globalAppHeader,
-    body.auth-ready:not(.logged-in):not(.needs-nickname) #nicknameContainer {
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #nicknameContainer,
+    body.auth-ready:not(.logged-in):not(.needs-nickname) #discordTitleBar {
       display: none !important;
     }
     body.auth-ready:not(.logged-in):not(.needs-nickname) #authContainer {
