@@ -1565,12 +1565,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白是正） */
+      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白80px） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
         padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-bottom: 64px !important;
+        padding-bottom: max(80px, calc(80px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
         z-index: 30;
         background: transparent !important;
         border-right: none !important;
@@ -1633,21 +1633,21 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode.dark-server-theme #sidebar {
         box-shadow: none !important;
       }
-      /* ルームリスト（下部ユーザーバーの直上でピタッと止まる適正パディング） */
+      /* ルームリスト（下部ユーザーバーに隠れないよう80pxパディングを確保） */
       body.discord-ui-mode #sidebar #roomList {
-        padding-bottom: 64px !important;
+        padding-bottom: 80px !important;
       }
-      /* 下部ユーザーミニバー（角丸カードデザインを保持したまま画面下ギリギリに配置） */
+      /* 下部ユーザーミニバー（最前面に浮き出て、サーバーが増えても隠れない） */
       body.discord-ui-mode #sidebar #userPanel {
         position: absolute !important;
-        bottom: 2px !important;
+        bottom: max(10px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
         left: -62px !important;
         right: 8px !important;
         width: auto !important;
         z-index: 50 !important;
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
-        border-radius: 1rem !important; /* 角丸カードデザインを完全に保持 */
+        border-radius: 1rem !important; /* モバイルでも角丸を美しく維持 */
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
         margin: 0 !important;
       }
@@ -1670,10 +1670,10 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordDiscoverHeader,
       body.discord-ui-mode #discordDmHeader,
       #currentRoomHeader {
-        padding-top: max(8px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
         padding-bottom: 0 !important;
-        height: calc(48px + max(8px, var(--safe-top, env(safe-area-inset-top, 0px)))) !important;
-        min-height: calc(48px + max(8px, var(--safe-top, env(safe-area-inset-top, 0px)))) !important;
+        height: calc(48px + env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(48px + env(safe-area-inset-top, 0px)) !important;
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;

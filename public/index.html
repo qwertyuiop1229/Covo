@@ -15,7 +15,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>Covo</title>
@@ -30,15 +30,15 @@
   <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png?v=6" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.246" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.247" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.246" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.247" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -89,9 +89,10 @@
 
 <body>
   <script>
-    // iPad / タブレットのスクロール機構安全化 (CSS base.css の overflow/overscroll 設定と調和)
+    // iPadのみ全体スクロールを完全に固定する
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
-      document.documentElement.classList.add('ipad-device');
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+      document.body.style.setProperty('overflow', 'hidden', 'important');
     }
     // meta theme-color と html の背景色を動的に完全同期させるシステム
     function updateMetaThemeColor() {
@@ -176,14 +177,23 @@
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: false });
 
-    // iPhone / iOS PWA での二重タップズーム防止（フォームや拡大プレビュー、ボタン操作を妨げない安全な実装）
-    document.addEventListener('touchstart', function(event) {
-      if (event.touches.length > 1) {
-        const inZoomable = event.target.closest('#imageLightbox, #avatarCropModal, #stampCropModal, .pswp, .zoomable');
-        if (!inZoomable) {
-          event.preventDefault();
-        }
+    // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
+    document.addEventListener('touchmove', function(event) {
+      if (event.scale !== undefined && event.scale !== 1) {
+        event.preventDefault();
       }
+      if (event.touches && event.touches.length > 1) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(event) {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
     }, { passive: false });
     // =========================================================================
     // 🛡️ 最強フェイルセーフ：画面真っ白・起動フリーズを完全防止するシステムリカバリー＆ウォッチドッグ
@@ -802,8 +812,8 @@
 
     <!-- メインコンテンツエリア -->
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
-      <!-- 認証フォーム (統合スマート認証・大手サービス準拠: セーフエリア対応) -->
-      <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full" style="padding-top: max(1.5rem, env(safe-area-inset-top, 0px)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));">
+      <!-- 認証フォーム (統合スマート認証・大手サービス準拠) -->
+      <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
         <div class="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100 dark:border-slate-800 text-gray-800 dark:text-gray-200">
 
           <div class="text-center mb-6">
@@ -1102,8 +1112,8 @@
         </div>
       </div>
 
-      <!-- ニックネーム設定コンテナ (初回用: セーフエリア対応) -->
-      <div id="nicknameContainer" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden" style="padding-top: max(1.5rem, env(safe-area-inset-top, 0px)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));">
+      <!-- ニックネーム設定コンテナ (初回用) -->
+      <div id="nicknameContainer" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box animate-pop-in">
           <h2 class="text-2xl font-bold mb-6 text-gray-800">
             ニックネームを設定
@@ -3878,7 +3888,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.246"></script>
+  <script type="module" src="js/main.js?v=1.1.247"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
