@@ -2258,460 +2258,6 @@ database_name = "covo-db"
 database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </file>
 
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-
-# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-try {
-    npx --yes repomix
-    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
-} catch {
-    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
-}
-Write-Host ''
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
-</file>
-
 <file path="firestore.indexes.json">
 {
   "indexes": [
@@ -4695,6 +4241,460 @@ pub fn run() {
 }
 </file>
 
+<file path="deploy.ps1">
+# Covo Deploy Script
+# Usage: .\deploy.ps1       (interactive confirm)
+#        .\deploy.ps1 -y    (skip confirm)
+#        npm run deploy      (deploy update)
+
+param(
+    [switch]$y
+)
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+
+$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
+if (-not (Test-Path $versionJsonPath)) {
+    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
+    exit 1
+}
+
+$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$currentVersion = $versionData.version
+Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
+
+$versionParts = $currentVersion.Split('.')
+if ($versionParts.Length -ne 3) {
+    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
+    exit 1
+}
+
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+$patch = [int]$versionParts[2] + 1
+$newVersion = "$major.$minor.$patch"
+$tagName    = "v$newVersion"
+
+Write-Host "New version : $newVersion" -ForegroundColor Green
+Write-Host "Tag name    : $tagName"    -ForegroundColor Green
+Write-Host ''
+
+if (-not $y) {
+    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
+    try {
+        $confirm = [Console]::ReadLine()
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
+            exit 0
+        }
+    } catch {
+        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
+Write-Host ''
+
+# [0/5] Tailwind CSS
+Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
+
+# [1/5] version.json + tauri.conf.json + index.html
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
+
+$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
+if (Test-Path $indexHtmlPath) {
+    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
+    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
+
+$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
+if (Test-Path $tauriConfPath) {
+    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
+    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
+        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
+} else {
+    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
+}
+
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+
+# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+try {
+    npx --yes repomix
+    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
+} catch {
+    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
+}
+Write-Host ''
+
+# [2/5] git commit
+Write-Host '[2/5] Committing changes...' -ForegroundColor Green
+git add -A
+git commit -m "Release v$newVersion"
+
+# [3/5] git tag
+Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
+git tag $tagName
+
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+firebase deploy --only "hosting,firestore:rules,database"
+
+# [5/5] git push
+Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
+git push origin HEAD --tags
+
+Write-Host ''
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# ===========================================================================
+# GitHub Actions real-time build monitor
+# ===========================================================================
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
+Write-Host ''
+
+$REPO = 'qwertyuiop1229/Covo'
+
+# Retrieve GITHUB_TOKEN directly from environment or registry
+$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+
+# Move cursor up N lines (ANSI)
+function Move-CursorUp {
+    param([int]$Lines)
+    if ($Lines -gt 0) {
+        $esc = [char]27
+        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
+        [Console]::Write($seq)
+    }
+}
+
+# ASCII progress bar  [####....] 64%
+function Draw-Bar {
+    param([int]$Pct, [int]$W = 24)
+    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
+    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
+    $empty  = $W - $filled
+    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
+}
+
+# GitHub REST API helper
+function Invoke-GHApi {
+    param([string]$Path)
+    $url     = 'https://api.github.com' + $Path
+    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
+    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
+}
+
+function Get-LatestRun {
+    param([string]$Tag)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    if (-not $res) { return $null }
+    $run = $res.workflow_runs | Where-Object {
+        ($_.head_branch -eq $Tag) -or
+        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
+        ($_.display_title -like ('*' + $Tag + '*'))
+    } | Select-Object -First 1
+    return $run
+}
+
+function Get-RunJobs {
+    param([string]$RunId)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
+    if ($res -and $res.jobs) { return @($res.jobs) }
+    return @()
+}
+
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
+$run = $null
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 3
+    $run = Get-LatestRun -Tag $tagName
+    if ($run) { break }
+    if ($global:RateLimitHit) { break }
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
+}
+
+if (-not $run) {
+    Write-Host ''
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    exit 0
+}
+
+$runId  = $run.id
+$runUrl = $run.html_url
+Write-Host ''
+Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ''
+
+
+$StepDefs = @(
+    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
+    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
+    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
+    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
+    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
+)
+$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
+
+$Spinners   = @('-', '\', '|', '/')
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
+
+Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
+Write-Host ''
+
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
+
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
+
+    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+    $firstDraw = $false
+
+    if ($job) {
+        $steps = @($job.steps)
+        $completedWeight    = 0
+        $completedStepCount = 0
+        $currentLabel       = ''
+        $currentStep        = $null
+        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
+
+        if ($steps) {
+            foreach ($step in $steps) {
+                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
+                $w   = if ($def) { $def.Weight } else { 2 }
+                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
+                    $completedWeight    += $w
+                    $completedStepCount++
+                } elseif ($step.status -eq 'in_progress') {
+                    $completedWeight += [int]($w * 0.5)
+                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
+                }
+            }
+        }
+
+        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
+        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
+        $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'Preparing logs...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
+            } catch {}
+        }
+
+        if ($jobStatus -eq 'completed') {
+            if ($jobConclusion -eq 'success') {
+                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
+            } else {
+                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
+            }
+        } elseif ($jobStatus -eq 'queued') {
+            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
+        } else {
+            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
+        }
+
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
+
+        Write-Host $l1 -ForegroundColor $col
+        Write-Host $l2 -ForegroundColor White
+        Write-Host $l3 -ForegroundColor DarkCyan
+        Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
+
+        if ($jobStatus -eq 'completed') {
+            Write-Host ''
+            if ($jobConclusion -eq 'success') {
+                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
+                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
+            } else {
+                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
+            }
+            Write-Host ''
+            break
+        }
+
+    } else {
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+    }
+
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
+}
+</file>
+
 <file path="patch.js">
 #!/usr/bin/env node
 /**
@@ -5837,638 +5837,6 @@ if (typeof window !== 'undefined') {
   window.getEmojiHtml = getEmojiHtml;
   window._twemojiParse = _twemojiParse;
   window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
-}
-</file>
-
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-let _dbInstance = null;
-let _dbInitPromise = null;
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) {
-    try {
-      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
-        throw new Error("Connection closed");
-      }
-      return _dbInstance;
-    } catch (_) {
-      _dbInstance = null;
-      _dbInitPromise = null;
-    }
-  }
-  if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        try { _dbInstance.close(); } catch (_) {}
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      _dbInstance.onclose = () => {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-    req.onerror = () => {
-      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
-    };
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
-    };
-  });
-  return _dbInitPromise;
-}
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-function _extractMsgTimestamp(obj) {
-  if (!obj) return Date.now();
-  const ts = obj.timestamp ?? obj.createdAt;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = new Date(ts).getTime();
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (ts && typeof ts === 'object') {
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
-    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
-  }
-  return Date.now();
-}
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
-      if (cleanMsg._originalText) {
-        cleanMsg.text = cleanMsg._originalText;
-      }
-      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
-        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
-      }
-      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-        cleanMsg._decrypted = false;
-      }
-      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        resolve(false);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve(false);
-    }
-  });
-}
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
-        if (cleanMsg._originalText) {
-          cleanMsg.text = cleanMsg._originalText;
-        }
-        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
-          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
-        }
-        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-          cleanMsg._decrypted = false;
-        }
-        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        resolve(false);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        resolve([]);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve([]);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend) return;
-  const uid = friend.uid || friend.targetUid || friend.id;
-  if (!uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put({ ...friend, uid });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (!f) continue;
-        const uid = f.uid || f.targetUid || f.id;
-        if (uid) store.put({ ...f, uid });
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-/**
- * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
- * @returns {Promise<boolean>}
- */
-export async function clearAllLocalData() {
-  if (typeof caches !== 'undefined' && caches.delete) {
-    caches.delete('covo_media_cache_v1').catch(() => {});
-  }
-  const db = await initLocalDB();
-  if (!db) return false;
-  return new Promise((resolve) => {
-    try {
-      const stores = ["messages", "channels", "friends", "settings"];
-      const tx = db.transaction(stores, "readwrite");
-      for (const storeName of stores) {
-        if (db.objectStoreNames.contains(storeName)) {
-          tx.objectStore(storeName).clear();
-        }
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] clearAllLocalData exception:", e);
-      resolve(false);
-    }
-  });
-}
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData,
-    clearAllLocalData
-  };
 }
 </file>
 
@@ -7873,6 +7241,638 @@ self.addEventListener('notificationclick', (event) => {
       background: rgba(255, 255, 255, 0.08) !important;
       color: #f1f5f9 !important;
     }
+</file>
+
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+let _dbInstance = null;
+let _dbInitPromise = null;
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) {
+    try {
+      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
+        throw new Error("Connection closed");
+      }
+      return _dbInstance;
+    } catch (_) {
+      _dbInstance = null;
+      _dbInitPromise = null;
+    }
+  }
+  if (_dbInitPromise) return _dbInitPromise;
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
+      }
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        try { _dbInstance.close(); } catch (_) {}
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      _dbInstance.onclose = () => {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+    req.onerror = () => {
+      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
+    };
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
+    };
+  });
+  return _dbInitPromise;
+}
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
+      if (cleanMsg._originalText) {
+        cleanMsg.text = cleanMsg._originalText;
+      }
+      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+      }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        resolve(false);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve(false);
+    }
+  });
+}
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
+        if (cleanMsg._originalText) {
+          cleanMsg.text = cleanMsg._originalText;
+        }
+        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
+        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        resolve(false);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        resolve([]);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve([]);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend) return;
+  const uid = friend.uid || friend.targetUid || friend.id;
+  if (!uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put({ ...friend, uid });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (!f) continue;
+        const uid = f.uid || f.targetUid || f.id;
+        if (uid) store.put({ ...f, uid });
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
+  }
+}
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  if (typeof caches !== 'undefined' && caches.delete) {
+    caches.delete('covo_media_cache_v1').catch(() => {});
+  }
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData,
+    clearAllLocalData
+  };
+}
 </file>
 
 <file path="public/css/modules/base.css">
@@ -20110,25 +20110,28 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 import {
   getDatabase,
-  ref as rtdbRef,
-  set as rtdbSet,
-  get as rtdbGet,
-  update as rtdbUpdate,
-  remove as rtdbRemove,
-  onValue as rtdbOnValue,
-  off as rtdbOff,
-  onChildAdded as rtdbOnChildAdded,
-  onChildChanged as rtdbOnChildChanged,
-  onChildRemoved as rtdbOnChildRemoved,
+  ref,
+  set,
+  get,
+  update,
+  remove,
+  onValue,
+  off,
+  onChildAdded,
+  onChildChanged,
+  onChildRemoved,
+  orderByChild,
+  limitToLast,
+  limitToFirst,
+  onDisconnect,
   query as rtdbQuery,
-  limitToLast as rtdbLimitToLast,
-  limitToFirst as rtdbLimitToFirst,
-  orderByChild as rtdbOrderByChild,
   startAt as rtdbStartAt,
   endAt as rtdbEndAt,
-  serverTimestamp as rtdbServerTimestamp,
-  onDisconnect as rtdbOnDisconnect
+  serverTimestamp as rtdbServerTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
+const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
+const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
 import * as LocalStore from './local_store.js?v=1.1.235';
 import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
@@ -27535,12 +27538,8 @@ async function resyncActiveRoomMessages() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
-    } else if (allLoadedMessages.length > 0) {
-      if (!isStillActive()) return;
-      allLoadedMessages = [];
-      lastMessagesData = [];
-      messagesIndexMap = {};
-      renderMessagesWithReadReceipts();
+    } else if (allLoadedMessages.length > 0 && !snapshot.exists()) {
+      // ネットワーク瞬断時の一時的な未取得で画面のメッセージを消去しないよう保護
     }
   } catch (e) {
     console.warn('[RTDB] resyncActiveRoomMessages failed:', e);
@@ -34328,27 +34327,33 @@ async function subscribeToMessagesRTDB(session) {
       }
       } catch (_) {}
       };
+      if (!isStillActive()) {
+        return;
+      }
       const unsubAdded = onChildAdded(q, handleAdded);
       const unsubChanged = onChildChanged(q, handleChanged);
       const unsubRemoved = onChildRemoved(q, handleRemoved);
+      if (!isStillActive()) {
+        try { off(q); } catch (_) {}
+        return;
+      }
       const activeServerId = currentServerId;
-  const activeRoomId = currentRoomId;
-  const activeDmId = currentDmId;
-  if (window.typingUnsubscribe) {
-    try { window.typingUnsubscribe(); } catch(_) {}
-    window.typingUnsubscribe = null;
-    typingUnsubscribe = null;
-  }
-  const indicator = document.getElementById('typingIndicator');
-  if (indicator) {
-    indicator.textContent = '';
-    indicator.classList.add('hidden');
-  }
-  const typingPath = activeServerId
-    ? `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/typing`
-    : `artifacts/${appId}/dm_typing/${activeDmId}`;
-  const typingRef = ref(rtdb, typingPath);
-  const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const activeRoomId = currentRoomId;
+      const activeDmId = currentDmId;
+      if (window.typingUnsubscribe) {
+      try { window.typingUnsubscribe(); } catch(_) {}
+      window.typingUnsubscribe = null;
+      typingUnsubscribe = null;
+      }
+      const indicator = document.getElementById('typingIndicator');
+      if (indicator) {
+      indicator.textContent = '';
+      indicator.classList.add('hidden');
+      }
+      const typingPath = activeServerId
+      ? `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/typing`
+      : `artifacts/${appId}/dm_typing/${activeDmId}`;
+      const typingRef = ref(rtdb, typingPath);
   const onTyping = onValue(typingRef, (snap) => {
     // 登録時のルーム/サーバー/DMと現在のアクティブ状態が完全一致しない場合は無視してインジケータを隠す
     if (currentServerId !== activeServerId || currentRoomId !== activeRoomId || currentDmId !== activeDmId) {
@@ -47790,7 +47795,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.248",
+  "version": "1.1.249",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -47879,13 +47884,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.248" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.249" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.248" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.249" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -51544,7 +51549,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.248"></script>
+  <script type="module" src="js/main.js?v=1.1.249"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -52961,7 +52966,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.248",
+  "version": "1.1.249",
   "force": false
 }
 </file>

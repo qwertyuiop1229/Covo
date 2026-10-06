@@ -7911,27 +7911,41 @@ async function resyncActiveRoomMessages() {
   const now = Date.now();
   if (now - _lastResyncAt < 2000) return; // 2秒以内の連続再取得通信をブロック
   _lastResyncAt = now;
+  // 🔒 セッションIDとチャンネル識別子のスナップショット（非同期処理中の別部屋移動による混入を100%防止）
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   try {
-    const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const basePath = currentServerId
-      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
-      : `artifacts/${appId}/dm_messages/${currentDmId}`;
-    const messagesRef = ref(rtdb, basePath);
-    const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(25));
-    const snapshot = await get(q);
-    const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+    if (!isStillActive()) return;
+    const basePath = targetServerId
+      ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`
+      : `artifacts/${appId}/dm_messages/${targetDmId}`;
+    const messagesRef = rtdbRef(rtdb, basePath);
+    const q = rtdbQuery(messagesRef, rtdbOrderByChild('timestamp'), rtdbLimitToLast(25));
+    const snapshot = await rtdbGet(q);
+    if (!isStillActive()) return;
+    const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
     if (snapshot.exists()) {
       const data = snapshot.val();
       const docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
       docs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      if (currentServerId) {
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
-      } else if (currentDmId) {
-        await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
+      if (targetServerId) {
+        const _members = (targetServerData && targetServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, targetServerId, targetRoomId, _members).catch(() => {});
+      } else if (targetDmId) {
+        await _decryptDmMessagesInPlace(docs, targetDmId, targetDmParticipants).catch(() => {});
       }
-
+      if (!isStillActive()) return;
       let changed = false;
       docs.forEach(msg => {
         const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -7953,6 +7967,7 @@ async function resyncActiveRoomMessages() {
           changed = true;
         }
       }
+      if (!isStillActive()) return;
       if (changed || allLoadedMessages.length === docs.length) {
         allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         lastMessagesData = [...allLoadedMessages];
@@ -7962,7 +7977,7 @@ async function resyncActiveRoomMessages() {
         updateReadReceiptForCurrentUser();
       }
     } else if (allLoadedMessages.length > 0) {
-      // サーバー上に1件もメッセージが存在しない場合（画面表示のみクリアし、ローカルIndexedDBの永続データは消去しない）
+      if (!isStillActive()) return;
       allLoadedMessages = [];
       lastMessagesData = [];
       messagesIndexMap = {};
@@ -10814,31 +10829,25 @@ window.initiateMigrationReceive = async function() {
       }
     };
 
-    onSnapshot(transferRef, async (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.offer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
-      }
-    }, (err) => {
-      console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
-    });
     const pendingCandidates = [];
     onSnapshot(transferRef, async (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
-      if (data.offer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        while (pendingCandidates.length > 0) {
-          const cand = pendingCandidates.shift();
-          try { await pc.addIceCandidate(cand); } catch(e){}
+      if (data.offer && !pc.currentRemoteDescription && pc.signalingState === 'stable') {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          while (pendingCandidates.length > 0) {
+            const cand = pendingCandidates.shift();
+            try { await pc.addIceCandidate(cand); } catch(e){}
+          }
+          if (pc.signalingState === 'have-remote-offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+          }
+        } catch (mErr) {
+          console.warn('[Migration] Offer handling error:', mErr);
         }
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
       }
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
@@ -14920,28 +14929,37 @@ async function loadOlderMessages() {
   if (!hasMoreOlderMessages || isLoadingOlderMessages) return;
   if (allLoadedMessages.length === 0) return;
   isLoadingOlderMessages = true;
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const spinner = document.getElementById('topLoadingSpinner');
   const spinnerText = document.getElementById('topLoadingSpinnerText');
   if (spinnerText) spinnerText.textContent = "読み込み中...";
   if (spinner) spinner.style.display = 'flex';
-
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
-
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
-
   const mergeAndRender = async (docs) => {
-    if (!docs || docs.length === 0) return false;
-    await LocalStore.upsertMessagesBatch(docs);
+    if (!docs || docs.length === 0 || !isStillActive()) return false;
+    LocalStore.upsertMessagesBatch(docs).catch(() => {});
     await decryptInPlace(docs);
-
+    if (!isStillActive()) return false;
     allLoadedMessages = [...docs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -14953,7 +14971,6 @@ async function loadOlderMessages() {
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
     renderMessagesWithReadReceipts();
     return true;
   };
@@ -18539,32 +18556,40 @@ async function jumpToUnloadedMessage(msgId) {
   if (!msgId) return;
   const modal = document.getElementById("messagePreviewModal");
   if (modal) modal.classList.add("hidden");
-
   let existingEl = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
   if (existingEl) {
     doJumpHighlight(existingEl);
     return;
   }
-
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const spinner = document.getElementById('topLoadingSpinner');
   const spinnerText = document.getElementById('topLoadingSpinnerText');
   if (spinnerText) spinnerText.textContent = "過去ログをロード中...";
   if (spinner) spinner.style.display = 'flex';
-
   const _exitBtn = document.getElementById('jumpModeExitBtn');
   if (_exitBtn) {
     _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
     _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
   }
-
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
 
@@ -28679,6 +28704,7 @@ class VoiceEngine {
       }
     }
     try {
+      if (!peerInfo || !peerInfo.pc || peerInfo.pc.signalingState === 'closed') return;
       await peerInfo.pc.setRemoteDescription(
         new RTCSessionDescription({ type: 'offer', sdp: data.sdp })
       );
@@ -28686,12 +28712,17 @@ class VoiceEngine {
         const cand = peerInfo.pendingCandidates.shift();
         try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
       }
+      if (peerInfo.pc.signalingState !== 'have-remote-offer') return;
       const answer = await peerInfo.pc.createAnswer();
+      if (peerInfo.pc.signalingState !== 'have-remote-offer') return;
       await peerInfo.pc.setLocalDescription(answer);
       await this._sendSignal(fromUid, { type: 'answer', sdp: answer.sdp });
       console.log(`[VoiceEngine] 📥 Offer受信 → Answer送信 to ${fromUid.slice(0,8)}`);
     } catch(e) {
-      console.error('[VoiceEngine] Answer作成失敗:', e);
+      const msg = String(e?.message || '');
+      if (!msg.includes('Called in wrong state') && !msg.includes('no pending remote description')) {
+        console.error('[VoiceEngine] Answer作成失敗:', e);
+      }
     }
   }
 
