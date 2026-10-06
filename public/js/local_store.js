@@ -14,20 +14,26 @@ let _dbInitPromise = null;
  * @returns {Promise<IDBDatabase>}
  */
 export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
+  if (_dbInstance) {
+    try {
+      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
+        throw new Error("Connection closed");
+      }
+      return _dbInstance;
+    } catch (_) {
+      _dbInstance = null;
+      _dbInitPromise = null;
+    }
+  }
   if (_dbInitPromise) return _dbInitPromise;
-
   _dbInitPromise = new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') {
       console.warn("[LocalStore] IndexedDB is not supported in this environment");
       return resolve(null);
     }
-
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-
     req.onupgradeneeded = (e) => {
       const db = req.result;
-
       // 1. messages: メッセージ履歴
       if (!db.objectStoreNames.contains("messages")) {
         const msgStore = db.createObjectStore("messages", { keyPath: "id" });
@@ -35,44 +41,46 @@ export async function initLocalDB() {
         msgStore.createIndex("timestamp", "timestamp", { unique: false });
         msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
       }
-
       // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
       if (!db.objectStoreNames.contains("channels")) {
         db.createObjectStore("channels", { keyPath: "id" });
       }
-
       // 3. friends: フレンドリスト・関係性キャッシュ
       if (!db.objectStoreNames.contains("friends")) {
         const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
         friendStore.createIndex("status", "status", { unique: false });
       }
-
       // 4. settings: 設定・ローカルキー・キャッシュ
       if (!db.objectStoreNames.contains("settings")) {
         db.createObjectStore("settings", { keyPath: "key" });
       }
     };
-
     req.onsuccess = () => {
       _dbInstance = req.result;
       _dbInstance.onversionchange = () => {
-        _dbInstance.close();
+        try { _dbInstance.close(); } catch (_) {}
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      _dbInstance.onclose = () => {
         _dbInstance = null;
         _dbInitPromise = null;
       };
       resolve(_dbInstance);
     };
-
     req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
+      _dbInstance = null;
+      _dbInitPromise = null;
       resolve(null);
     };
-
     req.onblocked = () => {
       console.warn("[LocalStore] IndexedDB open blocked by another tab");
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
     };
   });
-
   return _dbInitPromise;
 }
 
@@ -120,11 +128,13 @@ export async function putMessage(msg) {
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
         resolve(false);
       };
     } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve(false);
     }
   });
@@ -161,16 +171,17 @@ export async function upsertMessagesBatch(msgs) {
       }
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
         resolve(false);
       };
     } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve(false);
     }
   });
 }
-
 /**
  * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
  * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
@@ -182,17 +193,14 @@ export async function getMessages(channelId, beforeTs = null, limit = 50) {
   if (!channelId) return [];
   const db = await initLocalDB();
   if (!db) return [];
-
   return new Promise((resolve) => {
     try {
       const tx = db.transaction("messages", "readonly");
       const store = tx.objectStore("messages");
       const index = store.index("channel_ts");
-
       const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
       const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
       const req = index.openCursor(range, "prev"); // 新しい順に探索
-
       const results = [];
       req.onsuccess = (e) => {
         const cursor = e.target.result;
@@ -206,11 +214,13 @@ export async function getMessages(channelId, beforeTs = null, limit = 50) {
         }
       };
       req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
         resolve([]);
       };
     } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve([]);
     }
   });

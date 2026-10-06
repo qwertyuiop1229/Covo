@@ -2351,6 +2351,28 @@ if (Test-Path $tauriConfPath) {
     Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
 }
 
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+
+# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+try {
+    npx --yes repomix
+    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
+} catch {
+    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
+}
+Write-Host ''
+
 # [2/5] git commit
 Write-Host '[2/5] Committing changes...' -ForegroundColor Green
 git add -A
@@ -2363,18 +2385,6 @@ git tag $tagName
 # [4/5] Firebase
 Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
 firebase deploy --only "hosting,firestore:rules,database"
-
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# GitHub Actions real-time build monitor
-
 
 # [5/5] git push
 Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
@@ -2389,20 +2399,6 @@ Write-Host ''
 Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
 Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
 Write-Host ''
-
-# Repomix によるコードベース集約パッケージの自動生成
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-try {
-    npx --yes repomix
-    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
-} catch {
-    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
-}
-Write-Host ''
-
-# GitHub Actions real-time build monitor
 Write-Host '====================================' -ForegroundColor Cyan
 Write-Host '  Deploy complete!' -ForegroundColor Green
 Write-Host "  Version : $newVersion" -ForegroundColor Green
@@ -5858,7 +5854,17 @@ let _dbInitPromise = null;
  * @returns {Promise<IDBDatabase>}
  */
 export async function initLocalDB() {
-  if (_dbInstance) return _dbInstance;
+  if (_dbInstance) {
+    try {
+      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
+        throw new Error("Connection closed");
+      }
+      return _dbInstance;
+    } catch (_) {
+      _dbInstance = null;
+      _dbInitPromise = null;
+    }
+  }
   if (_dbInitPromise) return _dbInitPromise;
   _dbInitPromise = new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') {
@@ -5892,18 +5898,27 @@ export async function initLocalDB() {
     req.onsuccess = () => {
       _dbInstance = req.result;
       _dbInstance.onversionchange = () => {
-        _dbInstance.close();
+        try { _dbInstance.close(); } catch (_) {}
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      _dbInstance.onclose = () => {
         _dbInstance = null;
         _dbInitPromise = null;
       };
       resolve(_dbInstance);
     };
     req.onerror = () => {
-      console.error("[LocalStore] Failed to open IndexedDB:", req.error);
+      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
+      _dbInstance = null;
+      _dbInitPromise = null;
       resolve(null);
     };
     req.onblocked = () => {
       console.warn("[LocalStore] IndexedDB open blocked by another tab");
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
     };
   });
   return _dbInitPromise;
@@ -5951,11 +5966,13 @@ export async function putMessage(msg) {
       store.put(cleanMsg);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => {
-        console.warn("[LocalStore] putMessage failed:", tx.error);
         resolve(false);
       };
     } catch (e) {
-      console.warn("[LocalStore] Transaction error in putMessage:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve(false);
     }
   });
@@ -5991,11 +6008,13 @@ export async function upsertMessagesBatch(msgs) {
       }
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => {
-        console.warn("[LocalStore] upsertMessagesBatch error:", tx.error);
         resolve(false);
       };
     } catch (e) {
-      console.warn("[LocalStore] upsertMessagesBatch exception:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve(false);
     }
   });
@@ -6032,11 +6051,13 @@ export async function getMessages(channelId, beforeTs = null, limit = 50) {
         }
       };
       req.onerror = () => {
-        console.warn("[LocalStore] getMessages failed:", req.error);
         resolve([]);
       };
     } catch (e) {
-      console.warn("[LocalStore] getMessages exception:", e);
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
       resolve([]);
     }
   });
@@ -6694,9 +6715,18 @@ messaging.onBackgroundMessage((payload) => {
         { action: 'open', title: '開く' }
       ]
     };
-  }
-  return self.registration.showNotification(title, notificationOptions);
-});
+    }
+    const showPromise = self.registration.showNotification(title, notificationOptions);
+    // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に自動消去
+    if (data.type !== 'incoming_call') {
+    setTimeout(() => {
+      self.registration.getNotifications({ tag: notificationOptions.tag }).then(notifs => {
+        notifs.forEach(n => n.close());
+      }).catch(() => {});
+    }, 7000);
+    }
+    return showPromise;
+    });
 // ─── 通知クリック ───────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -8391,7 +8421,7 @@ self.addEventListener('notificationclick', (event) => {
       inset: 0 !important;
       min-height: 100dvh !important;
       height: 100dvh !important;
-      padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
+      padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom, 0px))) !important;
       box-sizing: border-box !important;
       background: #f8fafc !important;
     }
@@ -9837,12 +9867,20 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
       if (_e2ee._roomKeyPromises[roomId]) return _e2ee._roomKeyPromises[roomId];
-      _e2ee._roomKeyPromises[roomId] = (async () => {
+      const promise = (async () => {
         const res = await __getOrCreateRoomKeyImpl(serverId, roomId, memberIds);
-        if (!res) delete _e2ee._roomKeyPromises[roomId];
+        if (!res) {
+          // 未取得・待機時は2.5秒間ネガティブキャッシュを保持し、メッセージごとのFirestore乱打を防止
+          setTimeout(() => {
+            if (_e2ee._roomKeyPromises[roomId] === promise) {
+              delete _e2ee._roomKeyPromises[roomId];
+            }
+          }, 2500);
+        }
         return res;
       })();
-      return _e2ee._roomKeyPromises[roomId];
+      _e2ee._roomKeyPromises[roomId] = promise;
+      return promise;
     }
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
@@ -9916,6 +9954,52 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               _e2ee.roomKeyCache[roomId] = keysObj;
               return keysObj;
             }
+          }
+        }
+        // 2.5) 自端末の鍵で復号できない場合、管理者のエスクロー秘密鍵（合鍵）による自動修復
+        if (Object.keys(keysObj).length === 0 && _getIsAdmin()) {
+          try {
+            const escrowPriv = await _getEscrowPrivateKey();
+            if (escrowPriv) {
+              const escrowWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)).catch(() => null);
+              if (escrowWrapSnap && escrowWrapSnap.exists()) {
+                const eData = escrowWrapSnap.data() || {};
+                const eVersions = eData.versions || (eData.wrappedKey ? { [currentVer || "1"]: eData.wrappedKey } : {});
+                for (const ver in eVersions) {
+                  try {
+                    const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPriv, _b64ToAb(eVersions[ver]));
+                    const importedKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                    keysObj[ver] = importedKey;
+                    // 自端末用に再暗号化して保存（自己治癒）
+                    if (_e2ee.publicKey) {
+                      const myWrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, _e2ee.publicKey, raw);
+                      setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`), {
+                        versions: { [ver]: _abToB64(myWrapped) },
+                        latestVersion: ver,
+                        wrappedKey: _abToB64(myWrapped),
+                        updatedAt: serverTimestamp()
+                      }, { merge: true }).catch(() => {});
+                    }
+                  } catch (_) {}
+                }
+                const activeVer = eData.latestVersion ? String(eData.latestVersion) : currentVer;
+                if (keysObj[activeVer]) {
+                  keysObj.latest = keysObj[activeVer];
+                  keysObj.latestVersion = activeVer;
+                } else if (Object.keys(keysObj).length > 0) {
+                  const sortedVers = Object.keys(keysObj).sort((a, b) => Number(b) - Number(a));
+                  keysObj.latest = keysObj[sortedVers[0]];
+                  keysObj.latestVersion = sortedVers[0];
+                }
+                if (keysObj.latest) {
+                  _e2ee.roomKeyCache[roomId] = keysObj;
+                  console.log(`[E2EE] エスクロー合鍵からルーム鍵を自己修復・復号しました (room=${roomId})`);
+                  return keysObj;
+                }
+              }
+            }
+          } catch (escrowErr) {
+            console.warn('[E2EE] エスクロー自己修復エラー:', escrowErr);
           }
         }
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
@@ -10118,12 +10202,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
     }
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
-          if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
-          // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
-          await _getOrCreateRoomKey(serverId, roomId, memberIds || []).catch(() => null);
-          await Promise.all(messages.map(async (m) => {
-            if (!m) return;
-            // リプライ引用先テキストが暗号化されていた場合の安全な復号
+      if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
+      // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
+      const rKey = await _getOrCreateRoomKey(serverId, roomId, memberIds || []).catch(() => null);
+      await Promise.all(messages.map(async (m) => {
+        if (!m) return;
+        // リプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
           if (!m.replyTo._originalText) {
             m.replyTo._originalText = m.replyTo.text;
@@ -10142,6 +10226,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         const textToDecrypt = m._originalText || m.text;
         if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
+        if (!rKey) {
+          // 鍵が未到着の段階ではエラー文字列で上書きせず、後からの自己治癒復号に備えて状態を維持
+          m._decrypted = false;
+          return;
+        }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
           if (decrypted && decrypted.startsWith("（復号化エラー：")) {
@@ -15158,12 +15247,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordHomeMembers {
         display: none !important;
       }
-      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白是正） */
+      /* #discordServerNav（添付画像準拠の幅70px & アイコン48px、下部スクロール余白80px） */
       body.discord-ui-mode #discordServerNav {
         width: 70px !important;
         min-width: 70px !important;
         padding-top: max(12px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
-        padding-bottom: 64px !important;
+        padding-bottom: max(80px, calc(80px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))) !important;
         z-index: 30;
         background: transparent !important;
         border-right: none !important;
@@ -15226,21 +15315,21 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode.dark-server-theme #sidebar {
         box-shadow: none !important;
       }
-      /* ルームリスト（下部ユーザーバーの直上でピタッと止まる適正パディング） */
+      /* ルームリスト（下部ユーザーバーに隠れないよう80pxパディングを確保） */
       body.discord-ui-mode #sidebar #roomList {
-        padding-bottom: 64px !important;
+        padding-bottom: 80px !important;
       }
-      /* 下部ユーザーミニバー（角丸カードデザインを保持したまま画面下ギリギリに配置） */
+      /* 下部ユーザーミニバー（最前面に浮き出て、サーバーが増えても隠れない） */
       body.discord-ui-mode #sidebar #userPanel {
         position: absolute !important;
-        bottom: 2px !important;
+        bottom: max(10px, var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
         left: -62px !important;
         right: 8px !important;
         width: auto !important;
         z-index: 50 !important;
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
-        border-radius: 1rem !important; /* 角丸カードデザインを完全に保持 */
+        border-radius: 1rem !important; /* モバイルでも角丸を美しく維持 */
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
         margin: 0 !important;
       }
@@ -15262,10 +15351,10 @@ body.discord-dark-theme #openSettingsBtn:hover {
       body.discord-ui-mode #discordDiscoverHeader,
       body.discord-ui-mode #discordDmHeader,
       #currentRoomHeader {
-        padding-top: max(8px, var(--safe-top, env(safe-area-inset-top, 0px))) !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
         padding-bottom: 0 !important;
-        height: calc(48px + max(8px, var(--safe-top, env(safe-area-inset-top, 0px)))) !important;
-        min-height: calc(48px + max(8px, var(--safe-top, env(safe-area-inset-top, 0px)))) !important;
+        height: calc(48px + env(safe-area-inset-top, 0px)) !important;
+        min-height: calc(48px + env(safe-area-inset-top, 0px)) !important;
         display: flex !important;
         align-items: center !important;
         justify-content: space-between !important;
@@ -20019,6 +20108,27 @@ import {
   deleteToken,
   isSupported
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
+import {
+  getDatabase,
+  ref as rtdbRef,
+  set as rtdbSet,
+  get as rtdbGet,
+  update as rtdbUpdate,
+  remove as rtdbRemove,
+  onValue as rtdbOnValue,
+  off as rtdbOff,
+  onChildAdded as rtdbOnChildAdded,
+  onChildChanged as rtdbOnChildChanged,
+  onChildRemoved as rtdbOnChildRemoved,
+  query as rtdbQuery,
+  limitToLast as rtdbLimitToLast,
+  limitToFirst as rtdbLimitToFirst,
+  orderByChild as rtdbOrderByChild,
+  startAt as rtdbStartAt,
+  endAt as rtdbEndAt,
+  serverTimestamp as rtdbServerTimestamp,
+  onDisconnect as rtdbOnDisconnect
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
 import * as LocalStore from './local_store.js?v=1.1.235';
 import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
@@ -20164,6 +20274,12 @@ function isTransientTelemetryError(args) {
       str.includes('到着を待機します') ||
       str.includes('dm鍵を生成済みです') ||
       str.includes('importing binding name') ||
+      str.includes('failed to obtain primary lease') ||
+      str.includes('the database connection is closing') ||
+      str.includes('error thrown when writing to indexeddb') ||
+      str.includes('error thrown when reading from indexeddb') ||
+      str.includes('no pending remote description') ||
+      str.includes('called in wrong state: stable') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
@@ -24478,23 +24594,16 @@ window.__globalRoomsCache = window.__globalRoomsCache || {};
 function updateGlobalNotifUI() {
   try {
     let items = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
-    items = items.filter(it => it.serverId !== currentServerId);
-    Object.keys(unreadCounts).forEach(rid => {
-      if (rid === currentRoomId) {
-        unreadCounts[rid] = 0;
-        const badge = document.getElementById(`unread-badge-${rid}`);
-        if (badge) badge.style.display = 'none';
-      } else if (unreadCounts[rid] > 0) {
-        items.push({
-          serverId: currentServerId,
-          serverName: currentServerData?.name || currentServerId,
-          roomId: rid,
-          roomName: roomNames[rid] || rid,
-          lastAt: Date.now()
-        });
-      }
-    });
-    localStorage.setItem('covo_global_items', JSON.stringify(items));
+    // 現在フォーカスして開いているチャンネルのアイテムがあれば消去
+    const curChannelKey = currentRoomId || (currentDmId ? `dm_${currentDmId}` : null);
+    if (curChannelKey && document.visibilityState === 'visible' && document.hasFocus()) {
+      items = items.filter(it => {
+        if (currentDmId && it.isDm && it.dmId === currentDmId) return false;
+        if (currentServerId && !it.isDm && it.serverId === currentServerId && it.roomId === currentRoomId) return false;
+        return true;
+      });
+      localStorage.setItem('covo_global_items', JSON.stringify(items));
+    }
     renderNotifList(items);
     if (isTauri && window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => { });
@@ -24753,7 +24862,10 @@ function renderNotifList(items) {
   const badge = document.getElementById('globalUnreadBadge');
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
   const headerBadges = document.querySelectorAll('.header-notif-badge');
-  headerBadges.forEach(b => { b.style.display = count > 0 ? 'block' : 'none'; });
+  headerBadges.forEach(b => {
+    b.style.display = count > 0 ? 'block' : 'none';
+    b.classList.toggle('hidden', count === 0);
+  });
   if (isTauri && window.__TAURI__?.core?.invoke) {
     window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
     document.title = 'Covo';
@@ -27358,26 +27470,41 @@ async function resyncActiveRoomMessages() {
   const now = Date.now();
   if (now - _lastResyncAt < 2000) return; // 2秒以内の連続再取得通信をブロック
   _lastResyncAt = now;
+  // 🔒 セッションIDとチャンネル識別子のスナップショット（非同期処理中の別部屋移動による混入を100%防止）
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   try {
-    const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const basePath = currentServerId
-      ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
-      : `artifacts/${appId}/dm_messages/${currentDmId}`;
-    const messagesRef = ref(rtdb, basePath);
-    const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(25));
-    const snapshot = await get(q);
-    const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+    if (!isStillActive()) return;
+    const basePath = targetServerId
+      ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`
+      : `artifacts/${appId}/dm_messages/${targetDmId}`;
+    const messagesRef = rtdbRef(rtdb, basePath);
+    const q = rtdbQuery(messagesRef, rtdbOrderByChild('timestamp'), rtdbLimitToLast(25));
+    const snapshot = await rtdbGet(q);
+    if (!isStillActive()) return;
+    const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
     if (snapshot.exists()) {
       const data = snapshot.val();
       const docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
       docs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-      if (currentServerId) {
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        await decryptMessagesInPlace(docs, currentServerId, currentRoomId, _members).catch(() => {});
-      } else if (currentDmId) {
-        await _decryptDmMessagesInPlace(docs, currentDmId, currentDmParticipants).catch(() => {});
+      if (targetServerId) {
+        const _members = (targetServerData && targetServerData.joinedUsers) || [];
+        await decryptMessagesInPlace(docs, targetServerId, targetRoomId, _members).catch(() => {});
+      } else if (targetDmId) {
+        await _decryptDmMessagesInPlace(docs, targetDmId, targetDmParticipants).catch(() => {});
       }
+      if (!isStillActive()) return;
       let changed = false;
       docs.forEach(msg => {
         const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
@@ -27399,6 +27526,7 @@ async function resyncActiveRoomMessages() {
           changed = true;
         }
       }
+      if (!isStillActive()) return;
       if (changed || allLoadedMessages.length === docs.length) {
         allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         lastMessagesData = [...allLoadedMessages];
@@ -27408,7 +27536,7 @@ async function resyncActiveRoomMessages() {
         updateReadReceiptForCurrentUser();
       }
     } else if (allLoadedMessages.length > 0) {
-      // サーバー上に1件もメッセージが存在しない場合（画面表示のみクリアし、ローカルIndexedDBの永続データは消去しない）
+      if (!isStillActive()) return;
       allLoadedMessages = [];
       lastMessagesData = [];
       messagesIndexMap = {};
@@ -27570,7 +27698,6 @@ async function _getOrInitRTDB() {
     } catch (_) {}
   }
   if (!app) return null;
-  const { getDatabase } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
   _rtdb = getDatabase(app, firebaseConfig.databaseURL);
   return _rtdb;
 }
@@ -29361,6 +29488,24 @@ function renderDmConversationsList() {
 };
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (!targetUid || targetUid === userId) return;
+  const currentSession = ++_activeChannelSessionId;
+  if (window.rtdbMessagesUnsub) {
+    try { window.rtdbMessagesUnsub(); } catch (_) {}
+    window.rtdbMessagesUnsub = null;
+  }
+  if (unsubscribeMessages) {
+    try { unsubscribeMessages(); } catch (_) {}
+    unsubscribeMessages = null;
+  }
+  if (readReceiptsUnsubscribe) {
+    try { readReceiptsUnsubscribe(); } catch (_) {}
+    readReceiptsUnsubscribe = null;
+  }
+  if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
+  allLoadedMessages = [];
+  lastMessagesData = [];
+  messagesIndexMap = {};
+  clearMessagesDOM();
   const dmId = [userId, targetUid].sort().join('_');
   // 能動的にDMを開いた場合は非表示リストから即座に復帰
   try {
@@ -30048,31 +30193,25 @@ window.initiateMigrationReceive = async function() {
         await addDoc(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/receiver_candidates`), ev.candidate.toJSON());
       }
     };
-    onSnapshot(transferRef, async (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.offer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
-      }
-    }, (err) => {
-      console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
-    });
     const pendingCandidates = [];
     onSnapshot(transferRef, async (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
-      if (data.offer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        while (pendingCandidates.length > 0) {
-          const cand = pendingCandidates.shift();
-          try { await pc.addIceCandidate(cand); } catch(e){}
+      if (data.offer && !pc.currentRemoteDescription && pc.signalingState === 'stable') {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          while (pendingCandidates.length > 0) {
+            const cand = pendingCandidates.shift();
+            try { await pc.addIceCandidate(cand); } catch(e){}
+          }
+          if (pc.signalingState === 'have-remote-offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+          }
+        } catch (mErr) {
+          console.warn('[Migration] Offer handling error:', mErr);
         }
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await updateDoc(transferRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
       }
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
@@ -33826,24 +33965,37 @@ async function loadOlderMessages() {
   if (!hasMoreOlderMessages || isLoadingOlderMessages) return;
   if (allLoadedMessages.length === 0) return;
   isLoadingOlderMessages = true;
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const spinner = document.getElementById('topLoadingSpinner');
   const spinnerText = document.getElementById('topLoadingSpinnerText');
   if (spinnerText) spinnerText.textContent = "読み込み中...";
   if (spinner) spinner.style.display = 'flex';
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
   const mergeAndRender = async (docs) => {
-    if (!docs || docs.length === 0) return false;
-    await LocalStore.upsertMessagesBatch(docs);
+    if (!docs || docs.length === 0 || !isStillActive()) return false;
+    LocalStore.upsertMessagesBatch(docs).catch(() => {});
     await decryptInPlace(docs);
+    if (!isStillActive()) return false;
     allLoadedMessages = [...docs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -33934,19 +34086,23 @@ async function loadOlderMessages() {
   if (spinner) spinner.style.display = 'none';
   allowPagination = true;
 }
+let _activeChannelSessionId = 0;
 function subscribeToMessages() {
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
   allLoadedMessages = [];
+  lastMessagesData = [];
+  messagesIndexMap = {};
   hasMoreOlderMessages = true;
   isLoadingOlderMessages = false;
   rtdbMessagesLimit = 20;
   hideTerminalBanner();
   const spinner = document.getElementById('topLoadingSpinner');
   if (spinner) spinner.style.display = 'none';
-  subscribeToMessagesRTDB();
+  subscribeToMessagesRTDB(_activeChannelSessionId);
 }
-async function subscribeToMessagesRTDB() {
+async function subscribeToMessagesRTDB(session) {
+  const targetSession = session || _activeChannelSessionId;
   // 🔒 レースコンディション防止: 非同期待機中の部屋移動に備え、対象チャンネル識別子を即座に同期キャプチャ
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
@@ -33957,16 +34113,15 @@ async function subscribeToMessagesRTDB() {
   const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const basePath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages` : `artifacts/${appId}/dm_messages/${targetDmId}`;
   const isStillActive = () => (
+    _activeChannelSessionId === targetSession &&
     currentServerId === targetServerId &&
     currentRoomId === targetRoomId &&
     currentDmId === targetDmId
   );
-  const { ref, onChildAdded, onChildChanged, onChildRemoved, query: rtdbQuery, limitToLast, limitToFirst, orderByChild, startAt, endAt, off, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-  if (!isStillActive()) return;
   const rtdb = await _getOrInitRTDB();
   if (!isStillActive()) return;
-  const messagesRef = ref(rtdb, basePath);
-  const q = rtdbQuery(messagesRef, orderByChild('timestamp'), limitToLast(rtdbMessagesLimit));
+  const messagesRef = rtdbRef(rtdb, basePath);
+  const q = rtdbQuery(messagesRef, rtdbOrderByChild('timestamp'), rtdbLimitToLast(rtdbMessagesLimit));
   const decryptInPlace = async (list) => {
     if (!list || list.length === 0 || !isStillActive()) return;
     if (targetServerId) {
@@ -33994,20 +34149,21 @@ async function subscribeToMessagesRTDB() {
   } catch (localErr) {
     console.warn('[LocalStore] initial load error:', localErr);
   }
-  // STEP 2: 通信量極小化 Delta Sync（RTDBとの安全なマージ同期 ＆ メッセージ保持）
+  // STEP 2: 通信量極小化 Delta Sync（RTDBとの安全なマージ同期・非ブロッキング実行でUI詰まりを解消）
   const performDeltaSync = async () => {
     try {
-      const snap = await get(q);
+      const snapPromise = rtdbGet(q);
+      const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+      const snap = await Promise.race([snapPromise, timeoutPromise]);
       if (!isStillActive()) return;
-      if (snap.exists()) {
+      if (snap && snap.exists()) {
         const d = snap.val();
         const rtdbDocs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
         rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-        await LocalStore.upsertMessagesBatch(rtdbDocs);
+        LocalStore.upsertMessagesBatch(rtdbDocs).catch(() => {});
         if (!isStillActive()) return;
         await decryptInPlace(rtdbDocs);
         if (!isStillActive()) return;
-        // ローカル過去ログを破壊せず安全にマージ
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
           if (idx >= 0) allLoadedMessages[idx] = msg;
@@ -34021,8 +34177,7 @@ async function subscribeToMessagesRTDB() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       } else {
-        // サーバー上に1件もメッセージがない場合は画面表示キャッシュのみをクリア（ローカルIndexedDBの永続データは保護）
-        if (allLoadedMessages.length > 0) {
+        if (allLoadedMessages.length > 0 && snap) {
           allLoadedMessages = [];
           lastMessagesData = [];
           messagesIndexMap = {};
@@ -34030,11 +34185,9 @@ async function subscribeToMessagesRTDB() {
           renderMessagesWithReadReceipts();
         }
       }
-    } catch (err) {
-      console.warn('[RTDB] Delta Sync error:', err);
-    }
+    } catch (_) {}
   };
-  performDeltaSync();
+  performDeltaSync(); // UIをブロックせず非同期に実行
   let initialLoadTimeout = null;
   let buffer = [];
   let isInitialPhase = true;
@@ -34269,6 +34422,24 @@ async function subscribeToMessagesRTDB() {
 }
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
+  const currentSession = ++_activeChannelSessionId;
+  if (window.rtdbMessagesUnsub) {
+    try { window.rtdbMessagesUnsub(); } catch (_) {}
+    window.rtdbMessagesUnsub = null;
+  }
+  if (unsubscribeMessages) {
+    try { unsubscribeMessages(); } catch (_) {}
+    unsubscribeMessages = null;
+  }
+  if (readReceiptsUnsubscribe) {
+    try { readReceiptsUnsubscribe(); } catch (_) {}
+    readReceiptsUnsubscribe = null;
+  }
+  if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
+  allLoadedMessages = [];
+  lastMessagesData = [];
+  messagesIndexMap = {};
+  clearMessagesDOM();
   if (window._activeDmUserDocUnsub) { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
   if (currentServerId && roomId) {
     try {
@@ -34420,6 +34591,9 @@ function selectRoom(roomId, roomName) {
             clearInterval(window._activeRoomKeyCheckTimer);
             window._activeRoomKeyCheckTimer = null;
             if (currentRoomId === activeRoomId && typeof renderMessagesWithReadReceipts === 'function') {
+              if (allLoadedMessages && allLoadedMessages.length > 0) {
+                await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
+              }
               renderMessagesWithReadReceipts();
             }
           }
@@ -37188,6 +37362,18 @@ async function jumpToUnloadedMessage(msgId) {
     doJumpHighlight(existingEl);
     return;
   }
+  const session = _activeChannelSessionId;
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const isStillActive = () => (
+    session === _activeChannelSessionId &&
+    currentServerId === targetServerId &&
+    currentRoomId === targetRoomId &&
+    currentDmId === targetDmId
+  );
   const spinner = document.getElementById('topLoadingSpinner');
   const spinnerText = document.getElementById('topLoadingSpinnerText');
   if (spinnerText) spinnerText.textContent = "過去ログをロード中...";
@@ -37197,14 +37383,14 @@ async function jumpToUnloadedMessage(msgId) {
     _exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
     _exitBtn.classList.add('opacity-90', 'pointer-events-auto', 'translate-y-0');
   }
-  const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const decryptInPlace = async (list) => {
-    if (!list || list.length === 0) return;
-    if (currentServerId) {
-      const _members = (currentServerData && currentServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(list, currentServerId, currentRoomId, _members).catch(() => {});
-    } else if (currentDmId) {
-      await _decryptDmMessagesInPlace(list, currentDmId, currentDmParticipants).catch(() => {});
+    if (!list || list.length === 0 || !isStillActive()) return;
+    if (targetServerId) {
+      const _members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(list, targetServerId, targetRoomId, _members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
   try {
@@ -38806,8 +38992,41 @@ async function notifyNewMessage({
     // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、OS通知を送信
     showNotification(notifTitle, notifBody, channelId);
   }
+  // 🌟 新着通知を covo_global_items に確実に登録・更新
+  try {
+    let items = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
+    const itemServerId = isDm ? null : (serverId || null);
+    const itemRoomId = isDm ? null : channelId;
+    const itemDmId = isDm ? channelId : null;
+    const existingIdx = items.findIndex(it => {
+      if (isDm) return it.isDm && it.dmId === itemDmId;
+      return !it.isDm && it.serverId === itemServerId && it.roomId === itemRoomId;
+    });
+    const newItem = {
+      isDm: isDm,
+      serverId: itemServerId,
+      serverName: serverName,
+      roomId: itemRoomId,
+      dmId: itemDmId,
+      roomName: channelName,
+      senderName: senderName,
+      lastText: bodyText,
+      lastAt: Date.now(),
+      targetUid: targetUid || null,
+      targetAvatarUrl: targetAvatarUrl || null,
+      isMention: isMention
+    };
+    if (existingIdx >= 0) {
+      items[existingIdx] = { ...items[existingIdx], ...newItem };
+    } else {
+      items.unshift(newItem);
+    }
+    items = items.slice(0, 50);
+    localStorage.setItem('covo_global_items', JSON.stringify(items));
+    renderNotifList(items);
+  } catch (_) {}
   updateGlobalNotifUI();
-}
+  }
 // モバイル通知用キュー & 状態
 window._mobileNotifQueue = window._mobileNotifQueue || [];
 window._mobileNotifActive = window._mobileNotifActive || false;
@@ -41950,17 +42169,22 @@ async function showNotification(title, body, roomId, forceOs = false) {
   } else {
     // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
     if ("Notification" in window && Notification.permission === "granted") {
+      const notifTag = roomId ? `chat-${roomId}` : `covo-msg-${Date.now()}`;
       const showNativeDirect = () => {
         try {
           const n = new Notification(title, {
             body: displayBody,
             icon: '/img/icon-192x192.png?v=6',
             badge: '/img/icon-192x192.png?v=6',
-            tag: roomId ? `chat-${roomId}` : `covo-msg-${Date.now()}`
+            tag: notifTag
           });
+          // Web版通知が一生消えずに残り続けるのを確実に防ぐ（6秒で自動消去）
+          setTimeout(() => {
+            try { n.close(); } catch (_) {}
+          }, 6000);
           n.onclick = () => {
             window.focus();
-            n.close();
+            try { n.close(); } catch (_) {}
             if (roomId) {
               if (typeof goToRoom === 'function') goToRoom(roomId);
               else {
@@ -41978,35 +42202,25 @@ async function showNotification(title, body, roomId, forceOs = false) {
       }
       try {
         if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-          let resolved = false;
-          const fallbackTimer = setTimeout(() => {
-            if (!resolved) {
-              resolved = true;
-              showNativeDirect();
-            }
-          }, 300);
           navigator.serviceWorker.ready.then(reg => {
-            if (resolved) return;
-            resolved = true;
-            clearTimeout(fallbackTimer);
             if (reg && reg.showNotification) {
               reg.showNotification(title, {
                 body: displayBody,
                 icon: '/img/icon-192x192.png?v=6',
                 badge: '/img/icon-192x192.png?v=6',
-                tag: roomId ? `chat-${roomId}` : `covo-msg-${Date.now()}`,
+                tag: notifTag,
                 data: { roomId }
+              }).then(() => {
+                setTimeout(() => {
+                  reg.getNotifications({ tag: notifTag }).then(list => {
+                    list.forEach(item => item.close());
+                  }).catch(() => {});
+                }, 6000);
               }).catch(showNativeDirect);
             } else {
               showNativeDirect();
             }
-          }).catch(() => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(fallbackTimer);
-              showNativeDirect();
-            }
-          });
+          }).catch(showNativeDirect);
         } else {
           showNativeDirect();
         }
@@ -46570,6 +46784,7 @@ class VoiceEngine {
       }
     }
     try {
+      if (!peerInfo || !peerInfo.pc || peerInfo.pc.signalingState === 'closed') return;
       await peerInfo.pc.setRemoteDescription(
         new RTCSessionDescription({ type: 'offer', sdp: data.sdp })
       );
@@ -46577,12 +46792,17 @@ class VoiceEngine {
         const cand = peerInfo.pendingCandidates.shift();
         try { await peerInfo.pc.addIceCandidate(new RTCIceCandidate(cand)); } catch(e){}
       }
+      if (peerInfo.pc.signalingState !== 'have-remote-offer') return;
       const answer = await peerInfo.pc.createAnswer();
+      if (peerInfo.pc.signalingState !== 'have-remote-offer') return;
       await peerInfo.pc.setLocalDescription(answer);
       await this._sendSignal(fromUid, { type: 'answer', sdp: answer.sdp });
       console.log(`[VoiceEngine] 📥 Offer受信 → Answer送信 to ${fromUid.slice(0,8)}`);
     } catch(e) {
-      console.error('[VoiceEngine] Answer作成失敗:', e);
+      const msg = String(e?.message || '');
+      if (!msg.includes('Called in wrong state') && !msg.includes('no pending remote description')) {
+        console.error('[VoiceEngine] Answer作成失敗:', e);
+      }
     }
   }
   // ================================================================
@@ -47570,7 +47790,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.246",
+  "version": "1.1.248",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -47642,7 +47862,7 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>Covo</title>
@@ -47657,15 +47877,15 @@ window._subscribeVcSidebarStates = function(serverId) {
   <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png?v=6" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.246" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.248" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.246" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.248" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -47713,9 +47933,10 @@ window._subscribeVcSidebarStates = function(serverId) {
 </head>
 <body>
   <script>
-    // iPad / タブレットのスクロール機構安全化 (CSS base.css の overflow/overscroll 設定と調和)
+    // iPadのみ全体スクロールを完全に固定する
     if (/iPad/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints && navigator.maxTouchPoints > 1)) {
-      document.documentElement.classList.add('ipad-device');
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+      document.body.style.setProperty('overflow', 'hidden', 'important');
     }
     // meta theme-color と html の背景色を動的に完全同期させるシステム
     function updateMetaThemeColor() {
@@ -47788,14 +48009,22 @@ window._subscribeVcSidebarStates = function(serverId) {
       updateMetaThemeColor();
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: false });
-    // iPhone / iOS PWA での二重タップズーム防止（フォームや拡大プレビュー、ボタン操作を妨げない安全な実装）
-    document.addEventListener('touchstart', function(event) {
-      if (event.touches.length > 1) {
-        const inZoomable = event.target.closest('#imageLightbox, #avatarCropModal, #stampCropModal, .pswp, .zoomable');
-        if (!inZoomable) {
-          event.preventDefault();
-        }
+    // iPhone 17 / iOS PWA での予期せぬ拡大（ピンチ＆ダブルタップズーム）を完全防止する最強防壁
+    document.addEventListener('touchmove', function(event) {
+      if (event.scale !== undefined && event.scale !== 1) {
+        event.preventDefault();
       }
+      if (event.touches && event.touches.length > 1) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(event) {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
     }, { passive: false });
     // =========================================================================
     // 🛡️ 最強フェイルセーフ：画面真っ白・起動フリーズを完全防止するシステムリカバリー＆ウォッチドッグ
@@ -48394,8 +48623,8 @@ window._subscribeVcSidebarStates = function(serverId) {
     </div>
     <!-- メインコンテンツエリア -->
     <div id="mainContent" class="flex flex-1 overflow-hidden flex-col md:flex-row">
-      <!-- 認証フォーム (統合スマート認証・大手サービス準拠: セーフエリア対応) -->
-      <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full" style="padding-top: max(1.5rem, env(safe-area-inset-top, 0px)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));">
+      <!-- 認証フォーム (統合スマート認証・大手サービス準拠) -->
+      <div id="authContainer" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 hidden w-full">
         <div class="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl modal-box animate-pop-in border border-gray-100 dark:border-slate-800 text-gray-800 dark:text-gray-200">
           <div class="text-center mb-6">
             <h2 class="text-2xl font-black text-gray-900 dark:text-white tracking-tight">Covo にログイン / 新規登録</h2>
@@ -48675,8 +48904,8 @@ window._subscribeVcSidebarStates = function(serverId) {
           </div>
         </div>
       </div>
-      <!-- ニックネーム設定コンテナ (初回用: セーフエリア対応) -->
-      <div id="nicknameContainer" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden" style="padding-top: max(1.5rem, env(safe-area-inset-top, 0px)); padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));">
+      <!-- ニックネーム設定コンテナ (初回用) -->
+      <div id="nicknameContainer" class="fixed inset-0 modal-overlay flex items-center justify-center z-40 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md text-center modal-box animate-pop-in">
           <h2 class="text-2xl font-bold mb-6 text-gray-800">
             ニックネームを設定
@@ -51315,7 +51544,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.246"></script>
+  <script type="module" src="js/main.js?v=1.1.248"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -52732,7 +52961,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.246",
+  "version": "1.1.248",
   "force": false
 }
 </file>

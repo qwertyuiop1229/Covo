@@ -308,9 +308,15 @@ self.addEventListener('notificationclick', (event) => {
           return client.focus();
         }
       }
-      // なければ新しく開く
+      // なければ新しく開く（通知対象のURLパラメータを付与して直接遷移可能にする）
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen).then(client => {
+        let launchUrl = urlToOpen;
+        if (data.callId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `callId=${encodeURIComponent(data.callId)}`;
+        } else if (data.roomId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `roomId=${encodeURIComponent(data.roomId)}` + (data.serverId ? `&serverId=${encodeURIComponent(data.serverId)}` : '');
+        }
+        return clients.openWindow(launchUrl).then(client => {
           if (client && 'focus' in client) {
              client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
              return client.focus();
