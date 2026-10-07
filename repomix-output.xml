@@ -2274,6 +2274,415 @@ database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 }
 </file>
 
+<file path="patch.js">
+#!/usr/bin/env node
+/**
+ * patch.js - Robust AI Patch Engine (v2)
+ * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
+ */
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
+// =========================================================================
+// 巻き戻し機能 (--undo)
+// =========================================================================
+if (process.argv.includes('--undo')) {
+  console.log('============================================================');
+  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
+  console.log('============================================================\n');
+  if (!fs.existsSync(BACKUP_DIR)) {
+    console.error('❌ バックアップが見つかりません。');
+    process.exit(1);
+  }
+  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
+    process.exit(1);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
+  manifest.files.forEach(relPath => {
+    const backupFile = path.join(BACKUP_DIR, relPath);
+    const targetFile = path.resolve(process.cwd(), relPath);
+    if (fs.existsSync(backupFile)) {
+      fs.copyFileSync(backupFile, targetFile);
+      console.log(`   ✅ 復元完了: ${relPath}`);
+    }
+  });
+  console.log('\n============================================================');
+  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
+  console.log('============================================================');
+  process.exit(0);
+}
+// =========================================================================
+// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
+// =========================================================================
+function getSourceText() {
+  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  if (args.length > 0 && fs.existsSync(args[0])) {
+    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
+    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
+  }
+  if (process.platform === 'win32') {
+    try {
+      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && text.trim().length > 0) {
+        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
+        if (!hasPatchMarkers) {
+          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
+          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
+          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
+          process.exit(1);
+        }
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  } else {
+    try {
+      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
+      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
+      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
+        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
+        return { text, source: 'クリップボード' };
+      }
+    } catch (_) {}
+  }
+  const fallback = path.resolve(process.cwd(), 'patch.txt');
+  if (fs.existsSync(fallback)) {
+    console.log('   📄 patch.txt から読み込みます');
+    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
+  }
+  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
+  process.exit(1);
+}
+// =========================================================================
+// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
+// =========================================================================
+function parseBlocks(rawText) {
+  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
+  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const blocks = [];
+  let currentFile = null;
+  let state = 'OUTSIDE';
+  let searchLines = [];
+  let replaceLines = [];
+  let inFence = false;
+  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
+  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
+  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
+  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
+  function saveBlock() {
+    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
+      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
+      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
+      blocks.push({
+        file: currentFile,
+        search: sClean,
+        replace: rClean
+      });
+    }
+    searchLines = [];
+    replaceLines = [];
+    state = 'OUTSIDE';
+    inFence = false;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // コードフェンス外の制御構文判定
+    if (!inFence) {
+      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        currentFile = null;
+        continue;
+      }
+      const fileMatch = trimmed.match(fileRegex);
+      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
+        saveBlock();
+        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
+        continue;
+      }
+      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        saveBlock();
+        state = 'SEARCH';
+        inFence = false;
+        continue;
+      }
+      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+        state = 'REPLACE';
+        inFence = false;
+        continue;
+      }
+    }
+    // コードフェンスの開始/終了
+    if (state === 'SEARCH' || state === 'REPLACE') {
+      if (trimmed.startsWith('```') && trimmed.length < 25) {
+        inFence = !inFence;
+        continue;
+      }
+      if (state === 'SEARCH') {
+        searchLines.push(line);
+      } else if (state === 'REPLACE') {
+        replaceLines.push(line);
+      }
+    }
+  }
+  saveBlock();
+  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
+  return blocks;
+}
+// 記号正規化関数
+function normalizeLine(line) {
+  let l = line.trim().replace(/['"`]/g, '"');
+  if (l.endsWith(';')) l = l.slice(0, -1).trim();
+  return l.replace(/\s+/g, ' ');
+}
+// =========================================================================
+// 3. 改行コード吸収 & 行シーケンス照合エンジン
+// =========================================================================
+function applyReplacement(originalContent, searchText, replaceText) {
+  if (!searchText.trim()) {
+    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
+    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
+  }
+  const isCRLF = originalContent.includes('\r\n');
+  const origLF = originalContent.replace(/\r\n/g, '\n');
+  const searchLF = searchText.replace(/\r\n/g, '\n');
+  const replaceLF = replaceText.replace(/\r\n/g, '\n');
+  // Level 1: 改行コード吸収の完全一致 (Exact Match)
+  const exactIndex = origLF.indexOf(searchLF);
+  if (exactIndex !== -1) {
+    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
+    if (secondIndex !== -1) {
+      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
+    }
+    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
+    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 1 完全一致 (Exact)',
+      lineNo
+    };
+  }
+  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
+  const origLines = origLF.split('\n');
+  const searchLines = searchLF.split('\n');
+  const replaceLines = replaceLF.split('\n');
+  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
+  const sValid = [];
+  for (let idx = 0; idx < searchLines.length; idx++) {
+    const line = searchLines[idx];
+    if (line.trim()) {
+      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
+    }
+  }
+  if (sValid.length === 0) {
+    return { success: false, reason: '検索コードが空です。' };
+  }
+  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
+  const matchedRanges = [];
+  for (let startI = 0; startI < origLines.length; startI++) {
+    // 照合開始候補行が空行ならスキップ
+    if (!origLines[startI].trim()) continue;
+    // 最初の有効行が一致するかクイックチェック
+    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
+    let sIdx = 0;
+    let curOrigI = startI;
+    let matchFailed = false;
+    // 元ファイル側の空行を自律的に読み飛ばしながら照合
+    while (curOrigI < origLines.length && sIdx < sValid.length) {
+      const oLine = origLines[curOrigI];
+      // 元ファイル側の空行は無視して読み飛ばす
+      if (!oLine.trim()) {
+        curOrigI++;
+        continue;
+      }
+      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
+        matchFailed = true;
+        break;
+      }
+      sIdx++;
+      curOrigI++;
+    }
+    if (!matchFailed && sIdx === sValid.length) {
+      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
+    }
+  }
+  if (matchedRanges.length === 1) {
+    const { startOrigLine, endOrigLine } = matchedRanges[0];
+    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
+    const adjustedReplace = replaceLines.map(line => {
+      if (!line.trim()) return '';
+      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
+      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
+      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
+    });
+    const newLines = [
+      ...origLines.slice(0, startOrigLine),
+      ...adjustedReplace,
+      ...origLines.slice(endOrigLine + 1)
+    ];
+    const newLF = newLines.join('\n');
+    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
+    return {
+      success: true,
+      content: finalContent,
+      mode: 'Level 2 空行完全吸収・行シーケンス照合',
+      lineNo: startOrigLine + 1
+    };
+  } else if (matchedRanges.length > 1) {
+    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
+  }
+  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
+}
+// =========================================================================
+// 4. メイン実行処理
+// =========================================================================
+function run() {
+  console.log('============================================================');
+  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
+  console.log('============================================================\n');
+  const { text: rawText, source } = getSourceText();
+  const blocks = parseBlocks(rawText);
+  if (blocks.length === 0) {
+    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
+    process.exit(1);
+  }
+  const fileGroups = {};
+  blocks.forEach((b, i) => {
+    if (!fileGroups[b.file]) fileGroups[b.file] = [];
+    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
+  });
+  // 自動バックアップ作成
+  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
+    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
+    for (const relPath of Object.keys(fileGroups)) {
+      const fullPath = path.resolve(process.cwd(), relPath);
+      if (fs.existsSync(fullPath)) {
+        const dest = path.join(BACKUP_DIR, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(fullPath, dest);
+        console.log(`   💾 バックアップ完了: ${relPath}`);
+      }
+    }
+    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
+  } catch (backupErr) {
+    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
+  }
+  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
+  console.log('------------------------------------------------------------');
+  let totalSuccess = 0;
+  let totalFail = 0;
+  const failedDetails = [];
+  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
+    const fullPath = path.resolve(process.cwd(), relPath);
+    console.log(`\n📁 対象ファイル: ${relPath}`);
+    let fileContent = '';
+    let fileEncoding = 'utf-8';
+    const exists = fs.existsSync(fullPath);
+    if (exists) {
+      const rawBuf = fs.readFileSync(fullPath);
+      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
+      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
+        fileEncoding = 'utf-16le';
+        fileContent = rawBuf.slice(2).toString('utf16le');
+      } else {
+        let nulls = 0;
+        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
+          if (rawBuf[i] === 0) nulls++;
+        }
+        if (nulls > 30) {
+          fileEncoding = 'utf-16le';
+          fileContent = rawBuf.toString('utf16le');
+        } else {
+          fileEncoding = 'utf-8';
+          fileContent = rawBuf.toString('utf-8');
+        }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      console.log(`   📁 新規ファイルを作成します`);
+    }
+    let modified = fileContent;
+    let fileSuccessCount = 0;
+    for (let idx = 0; idx < fileBlocks.length; idx++) {
+      const block = fileBlocks[idx];
+      const result = applyReplacement(modified, block.search, block.replace);
+      if (result.success) {
+        modified = result.content;
+        fileSuccessCount++;
+        totalSuccess++;
+        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
+      } else {
+        totalFail++;
+        failedDetails.push({
+          file: relPath,
+          blockNo: block.blockIndex,
+          reason: result.reason,
+          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
+        });
+        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
+      }
+    }
+    if (fileSuccessCount > 0) {
+      if (fileEncoding === 'utf-16le') {
+        const bom = Buffer.from([0xFF, 0xFE]);
+        const body = Buffer.from(modified, 'utf16le');
+        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
+      } else {
+        fs.writeFileSync(fullPath, modified, 'utf-8');
+      }
+      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
+      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
+      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
+        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
+        process.env._PATCH_RELOADED = '1';
+        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
+        process.exit(0);
+      }
+    } else {
+      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
+    }
+  }
+  console.log('\n------------------------------------------------------------');
+  console.log('[ステップ 5/5] 📊 最終レポート');
+  console.log('============================================================');
+  if (totalFail === 0) {
+    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
+    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
+    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
+    console.log('\n💡 ご安心ください:');
+    console.log('   ・ファイルは安全に書き換わりました。');
+    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
+    console.log('     この実行直前の状態に100%完全復元できます。');
+  } else {
+    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
+    console.log('------------------------------------------------------------');
+    failedDetails.forEach(f => {
+      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
+      console.log(`    理由: ${f.reason}`);
+      console.log(`    探したコード（先頭部分）:`);
+      console.log('    ----------------------------------------');
+      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
+      console.log('    ----------------------------------------');
+    });
+  }
+  console.log('============================================================');
+}
+run();
+</file>
+
 <file path="public/js/ui_helpers.js">
 /**
  * UI補助機能 (ui_helpers.js)
@@ -4695,415 +5104,6 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
 }
 </file>
 
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
-</file>
-
 <file path="public/css/modules/components.css">
 /* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
     .flipped {
@@ -5860,12 +5860,12 @@ self._cachedAppId   = null;
 self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
 self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
 self._notifEnabled  = true; // 通知トグル状態
-// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+// 重複通知防止キャッシュ (iOS PWA多重受信防止・30秒ウィンドウ)
 const _recentNotifs = new Map();
 function _isDuplicate(key) {
   const now = Date.now();
   for (const [k, time] of _recentNotifs.entries()) {
-    if (now - time > 15000) _recentNotifs.delete(k);
+    if (now - time > 30000) _recentNotifs.delete(k);
   }
   if (_recentNotifs.has(key)) return true;
   _recentNotifs.set(key, now);
@@ -14879,11 +14879,26 @@ body.discord-dark-theme #openSettingsBtn:hover {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      padding: 3px 14px;
+      border-radius: 9999px;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      transition: all 0.2s ease;
+    }
+    body.dark-server-theme .titlebar-center-context {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #f8fafc !important;
+    }
+    body.discord-dark-theme .titlebar-center-context {
+      background: #1e1f22 !important;
+      border-color: rgba(0, 0, 0, 0.25) !important;
+      color: #f2f3f5 !important;
     }
     .titlebar-context-icon {
       width: 16px;
       height: 16px;
-      border-radius: 4px;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -17753,9 +17768,8 @@ async function handleSendNotification(request, env) {
                 }
                 for (const t of tokens) {
                     const tokenStr = t.stringValue;
-                    // FCM V1 API: webpush.notification + data の両方を送信
-                    // webpush.notification があると Service Worker の onBackgroundMessage が呼ばれるケースと
-                    // ブラウザが自動表示するケースがあるが、SW 側で tag による重複制御をするので問題ない
+                    // FCM V1 API: Androidはネイティブ通知、Web Push (iOS PWA / PCブラウザ) は高優先度data駆動に統一
+                    // （webpush.notification や aps.alert があると iOS WebKit / PWA で OS自動表示 + SW表示の2重通知が発生するため）
                     const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
                         method: "POST",
                         headers: {
@@ -17765,7 +17779,7 @@ async function handleSendNotification(request, env) {
                         body: JSON.stringify({
                             message: {
                                 token: tokenStr,
-                                // data フィールド: SW が受信して処理する
+                                // data フィールド: Service Worker (sw.js) が確実に受信して1件だけ表示する
                                 data: {
                                     title: safeTitle,
                                     body: safeBody,
@@ -17775,7 +17789,7 @@ async function handleSendNotification(request, env) {
                                     messageId: messageId || "",
                                     type: "chat_message"
                                 },
-                                // Android: 高優先度通知チャンネル
+                                // Android: ネイティブ高優先度通知チャンネル
                                 android: {
                                     priority: "high",
                                     notification: {
@@ -17788,35 +17802,10 @@ async function handleSendNotification(request, env) {
                                         tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     }
                                 },
-                                // iOS: alert を含めて高優先度配信（これがないとiOSで届かないことがある）
-                                apns: {
-                                    headers: {
-                                        "apns-priority": "10",
-                                        "apns-push-type": "alert"
-                                    },
-                                    payload: {
-                                        aps: {
-                                            "content-available": 1,
-                                            alert: {
-                                                title: safeTitle,
-                                                body: safeBody
-                                            },
-                                            sound: "default",
-                                            badge: 1
-                                        }
-                                    }
-                                },
-                                // Web Push (Chrome/Firefox/Edge Windows): notification を含めることで Windows の通知アクションセンターが確実にポップアップ
+                                // Web Push (Chrome/Firefox/Edge/iOS PWA): Urgency=high で確実に配信（SW側で重複なし単一表示）
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
-                                    },
-                                    notification: {
-                                        title: safeTitle,
-                                        body: safeBody,
-                                        icon: "/img/icon-192x192.png?v=6",
-                                        badge: "/img/icon-192x192.png?v=6",
-                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     },
                                     fcm_options: {
                                         link: "/"
@@ -20804,7 +20793,7 @@ let currentHomeViewMode = 'dm'; // 'dm' or 'discover'
 let currentDmId = null;
 let currentDmParticipant = null;
 let currentDmParticipants = [];
-let dmAndFriendsEnabled = false;
+let dmAndFriendsEnabled = true;
 let activeDmTab = 'online';
 let friendRelationships = {};
 function isUserBlocked(targetUid) {
@@ -24618,7 +24607,7 @@ function updateGlobalNotifUI() {
 window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
-  switchMobileTab('home');
+  if (!rid) return;
   if (typeof rid === 'string' && (rid.startsWith('dm_') || rid.includes('_'))) {
     const cleanDmId = rid.startsWith('dm_') ? rid.substring(3) : rid;
     const parts = cleanDmId.split('_');
@@ -24885,9 +24874,9 @@ function renderNotifList(items) {
 window.goToServerRoom = async function (serverId, roomId) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
+  if (!serverId || !roomId) return;
   try {
-    if (serverId && serverId !== currentServerId && typeof enterServer === 'function') {
-      // サーバーデータを用意（キャッシュ優先、無ければ取得）
+    if (serverId !== currentServerId && typeof enterServer === 'function') {
       let sv = (allServersCache || []).find(s => s.id === serverId);
       if (!sv) {
         const sd = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
@@ -24896,16 +24885,16 @@ window.goToServerRoom = async function (serverId, roomId) {
       if (sv) {
         try { localStorage.setItem('covo_last_room_' + serverId, roomId); } catch (e) { }
         await enterServer(serverId, sv);
-        switchMobileTab('home');
-        setTimeout(() => { const ri = document.getElementById('room-item-' + roomId); if (ri) ri.click(); }, 700);
-        return;
       }
     }
+    // 該当ルームへの確実な直接遷移（強制個チャ戻りのバグを完全解消）
+    if (typeof selectRoom === 'function') {
+      const rName = roomNames[roomId] || 'ルーム';
+      selectRoom(roomId, rName);
+    }
+    const rItem = document.getElementById('room-item-' + roomId);
+    if (rItem) rItem.click();
   } catch (e) { console.warn('[Notif] サーバー移動失敗:', e); }
-  // 同じサーバー内（またはフォールバック）
-  switchMobileTab('home');
-  const rItem = document.getElementById('room-item-' + roomId);
-  if (rItem) rItem.click();
 };
 window.openMobileDetail = function (type) {
   const m = {
@@ -27983,13 +27972,20 @@ function subscribeToUserStatus() {
                 try { localStorage.setItem(`covo_last_seen_${uid}`, String(ms)); } catch (_) {}
               }
             }
-            const merged = {
+            const tempMerged = {
               id: uid,
               ...existing,
               ...cachedProf,
               ...data,
               last_changed: rawLc || existing.last_changed || cachedProf.last_changed || null,
               lastSeen: rawLc || existing.lastSeen || cachedProf.lastSeen || null
+            };
+            const computed = computeUserPresenceState(tempMerged);
+            const merged = {
+              ...tempMerged,
+              state: computed,
+              status: computed,
+              computedState: computed
             };
             usersMap.set(uid, merged);
             Object.assign(cachedProf, merged);
@@ -28671,6 +28667,9 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   // DM / フレンド画面の公開状態に応じた表示更新
   updateDmViewVisibility();
   renderDmConversationsList();
+  if (typeof subscribeToUserStatus === 'function') {
+    subscribeToUserStatus();
+  }
   // 右サイドバー: DMプロフィールとメンバーリストを隠し、現在アクティブパネルを展開
   const dmProfilePanel = document.getElementById('dmProfilePanel');
   const membersListEl = document.getElementById('membersList');
@@ -28700,9 +28699,9 @@ function subscribeToFeatureFlags() {
     unsubscribeFeatureFlags = onSnapshot(doc(db, `artifacts/${appId}/settings/featureFlags`), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        dmAndFriendsEnabled = Boolean(data.dmAndFriendsEnabled);
+        dmAndFriendsEnabled = data.dmAndFriendsEnabled !== false;
       } else {
-        dmAndFriendsEnabled = false;
+        dmAndFriendsEnabled = true;
       }
       const toggle = document.getElementById('adminDmFeatureToggle');
       if (toggle) toggle.checked = dmAndFriendsEnabled;
@@ -28763,13 +28762,21 @@ function subscribeToRelationships() {
   try {
     const relCol = collection(db, `artifacts/${appId}/users/${userId}/relationships`);
     unsubscribeRelationships = onSnapshot(relCol, (snap) => {
-      friendRelationships = {};
+      const nextRels = {};
       snap.forEach(d => {
-        friendRelationships[d.id] = { id: d.id, ...d.data() };
+        nextRels[d.id] = { id: d.id, ...d.data() };
       });
+      if (snap.empty && friendRelationships && Object.keys(friendRelationships).length > 0) {
+        // オフラインや初期読み込み中の一時的空振りを保護
+      } else {
+        friendRelationships = nextRels;
+      }
       LocalStore.putFriendsBatch(Object.values(friendRelationships)).catch(() => {});
       renderFriendTabs();
       updateDmPendingBadges();
+      if (typeof subscribeToUserStatus === 'function') {
+        subscribeToUserStatus();
+      }
     }, (err) => {
       console.warn('[Relationships] Listen error:', err);
     });
@@ -29320,7 +29327,6 @@ function renderDmConversationsList() {
     const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser?.avatarUrl !== undefined ? targetUser.avatarUrl : (rel?.targetAvatarUrl || ''));
     const isActive = currentDmId === dm.id;
     const presenceState = computeUserPresenceState(otherUid);
-    const isOnline = presenceState === 'online' || presenceState === 'away';
     if (!cachedProf) {
       window.getUserProfile(otherUid).then(() => renderDmConversationsList()).catch(() => {});
     }
@@ -29352,7 +29358,7 @@ function renderDmConversationsList() {
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
             ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
           </div>
-          <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
+          <div class="status-indicator status-${presenceState}"></div>
         </div>
         <div class="flex-1 min-w-0 flex flex-col justify-center">
           <div class="text-[13px] leading-snug truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-[#949ba4]'}">${escapeHtml(nickname)}</div>
@@ -29385,21 +29391,24 @@ function renderDmConversationsList() {
   const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
   const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
   const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
-  const newState = updatedData.computedState || updatedData.state || updatedData.status || existingProf.status || 'offline';
   const newLastChanged = updatedData.last_changed || updatedData.lastSeen || existingProf.last_changed || null;
-  const merged = {
+  const tempUserObj = {
     ...existingProf,
+    ...updatedData,
     id: targetUid,
-    uid: targetUid,
+    last_changed: newLastChanged,
+    lastSeen: newLastChanged
+  };
+  const computedState = computeUserPresenceState(tempUserObj);
+  const merged = {
+    ...tempUserObj,
     nickname: newNickname,
     avatarUrl: newAvatarUrl,
     aboutMe: newAboutMe,
     customStatus: newCustomStatus,
-    state: newState,
-    status: newState,
-    computedState: newState,
-    last_changed: newLastChanged,
-    lastSeen: newLastChanged
+    state: computedState,
+    status: computedState,
+    computedState: computedState
   };
   window._userProfileCache?.set(targetUid, merged);
   if (Array.isArray(cachedUsers)) {
@@ -29623,6 +29632,9 @@ function renderDmConversationsList() {
   // チャット購読を即座に開始（鍵の取得待ちでメッセージ一覧をブロックしない）
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
+  if (typeof subscribeToUserStatus === 'function') {
+    subscribeToUserStatus();
+  }
   // DM鍵の初期化と自動復号は非同期並行処理で実行
   (async () => {
     try {
@@ -29863,7 +29875,8 @@ function renderDmConversationsList() {
         }
       }
       if (statusDot) {
-        statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
+        const computedState = computeUserPresenceState(targetUid);
+        statusDot.className = `status-indicator status-${computedState}`;
       }
       if (prof.customStatus && prof.customStatus.text) {
         if (customEmoji) {
@@ -39199,14 +39212,25 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
   });
   card.addEventListener('click', () => {
     _dismissPcNotif(card);
-    if (isDm || !serverId) {
-      if (targetUid) {
-        openDm(targetUid, senderName, targetAvatarUrl);
+    const curIsDm = card.dataset.isDm === 'true' || isDm;
+    const curServerId = card.dataset.serverId || serverId;
+    const curRoomId = card.dataset.roomId || roomId;
+    let curTargetUid = card.dataset.targetUid || targetUid;
+    const curSenderName = card.dataset.senderName || senderName;
+    const curTargetAvatarUrl = card.dataset.targetAvatarUrl || targetAvatarUrl;
+    if (curIsDm || !curServerId) {
+      if (!curTargetUid && curRoomId) {
+        const cleanDm = curRoomId.startsWith('dm_') ? curRoomId.slice(3) : curRoomId;
+        const parts = cleanDm.split('_');
+        curTargetUid = parts.find(u => u !== userId) || curTargetUid;
+      }
+      if (curTargetUid) {
+        openDm(curTargetUid, curSenderName, curTargetAvatarUrl);
       } else {
         openDmHomeView();
       }
     } else {
-      goToServerRoom(serverId, roomId);
+      goToServerRoom(curServerId, curRoomId);
     }
   });
   stack.appendChild(card);
@@ -39313,14 +39337,23 @@ function _processNextMobileNotification() {
   }, { passive: true });
   banner.addEventListener('click', () => {
     dismissBanner();
-    if (isDm || !item.serverId) {
-      if (item.targetUid) {
-        openDm(item.targetUid, item.senderName, item.targetAvatarUrl);
+    const curIsDm = Boolean(item.isDm);
+    const curServerId = item.serverId;
+    const curRoomId = item.roomId;
+    let curTargetUid = item.targetUid;
+    if (curIsDm || !curServerId) {
+      if (!curTargetUid && curRoomId) {
+        const cleanDm = curRoomId.startsWith('dm_') ? curRoomId.slice(3) : curRoomId;
+        const parts = cleanDm.split('_');
+        curTargetUid = parts.find(u => u !== userId) || curTargetUid;
+      }
+      if (curTargetUid) {
+        openDm(curTargetUid, item.senderName, item.targetAvatarUrl);
       } else {
         openDmHomeView();
       }
     } else {
-      goToServerRoom(item.serverId, item.roomId);
+      goToServerRoom(curServerId, curRoomId);
     }
   });
   container.appendChild(banner);
@@ -42822,9 +42855,9 @@ async function setupGlobalAnnouncementListener() {
   if (!userId) return; // 認証完了前はスキップ（onAuthStateChanged で確実に起動）
   if (_announcementListenerUnsub) return;
   try {
-    const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const annRef = ref(rtdb, `artifacts/${appId}/latestAnnouncement`);
+    if (!rtdb) return;
+    const annRef = rtdbRef(rtdb, `artifacts/${appId}/latestAnnouncement`);
     const onAnn = (snap) => {
       const data = snap.val();
       if (!data || !data.id) return;
@@ -42833,8 +42866,8 @@ async function setupGlobalAnnouncementListener() {
         showAnnouncementModal(data, data.id);
       }
     };
-    onValue(annRef, onAnn);
-    _announcementListenerUnsub = () => off(annRef, 'value', onAnn);
+    rtdbOnValue(annRef, onAnn);
+    _announcementListenerUnsub = () => rtdbOff(annRef, 'value', onAnn);
   } catch (e) {
     console.warn("setupGlobalAnnouncementListener error, fallback to checkLatestAnnouncement:", e);
     checkLatestAnnouncement();
@@ -47795,7 +47828,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.249",
+  "version": "1.1.250",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -47884,13 +47917,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.249" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.250" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.249" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.250" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -47930,7 +47963,10 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.dataLayer = window.dataLayer || [];
       function gtag() { window.dataLayer.push(arguments); }
       gtag("js", new Date());
-      gtag("config", "G-RY7DKH85XG");
+      gtag("config", "G-RY7DKH85XG", {
+        client_storage: 'none',
+        anonymize_ip: true
+      });
     } else {
       window.gtag = function() {};
     }
@@ -51549,7 +51585,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.249"></script>
+  <script type="module" src="js/main.js?v=1.1.250"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -52966,7 +53002,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.249",
+  "version": "1.1.250",
   "force": false
 }
 </file>

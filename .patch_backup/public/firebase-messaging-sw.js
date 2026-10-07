@@ -267,10 +267,18 @@ messaging.onBackgroundMessage((payload) => {
         { action: 'open', title: '開く' }
       ]
     };
-  }
-
-  return self.registration.showNotification(title, notificationOptions);
-});
+    }
+    const showPromise = self.registration.showNotification(title, notificationOptions);
+    // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に自動消去
+    if (data.type !== 'incoming_call') {
+    setTimeout(() => {
+      self.registration.getNotifications({ tag: notificationOptions.tag }).then(notifs => {
+        notifs.forEach(n => n.close());
+      }).catch(() => {});
+    }, 7000);
+    }
+    return showPromise;
+    });
 
 // ─── 通知クリック ───────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {

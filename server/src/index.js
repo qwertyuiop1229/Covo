@@ -1456,10 +1456,8 @@ async function handleSendNotification(request, env) {
 
                 for (const t of tokens) {
                     const tokenStr = t.stringValue;
-                    
-                    // FCM V1 API: webpush.notification + data の両方を送信
-                    // webpush.notification があると Service Worker の onBackgroundMessage が呼ばれるケースと
-                    // ブラウザが自動表示するケースがあるが、SW 側で tag による重複制御をするので問題ない
+                    // FCM V1 API: Androidはネイティブ通知、Web Push (iOS PWA / PCブラウザ) は高優先度data駆動に統一
+                    // （webpush.notification や aps.alert があると iOS WebKit / PWA で OS自動表示 + SW表示の2重通知が発生するため）
                     const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
                         method: "POST",
                         headers: {
@@ -1469,7 +1467,7 @@ async function handleSendNotification(request, env) {
                         body: JSON.stringify({
                             message: {
                                 token: tokenStr,
-                                // data フィールド: SW が受信して処理する
+                                // data フィールド: Service Worker (sw.js) が確実に受信して1件だけ表示する
                                 data: {
                                     title: safeTitle,
                                     body: safeBody,
@@ -1479,7 +1477,7 @@ async function handleSendNotification(request, env) {
                                     messageId: messageId || "",
                                     type: "chat_message"
                                 },
-                                // Android: 高優先度通知チャンネル
+                                // Android: ネイティブ高優先度通知チャンネル
                                 android: {
                                     priority: "high",
                                     notification: {
@@ -1492,35 +1490,10 @@ async function handleSendNotification(request, env) {
                                         tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     }
                                 },
-                                // iOS: alert を含めて高優先度配信（これがないとiOSで届かないことがある）
-                                apns: {
-                                    headers: {
-                                        "apns-priority": "10",
-                                        "apns-push-type": "alert"
-                                    },
-                                    payload: {
-                                        aps: {
-                                            "content-available": 1,
-                                            alert: {
-                                                title: safeTitle,
-                                                body: safeBody
-                                            },
-                                            sound: "default",
-                                            badge: 1
-                                        }
-                                    }
-                                },
-                                // Web Push (Chrome/Firefox/Edge Windows): notification を含めることで Windows の通知アクションセンターが確実にポップアップ
+                                // Web Push (Chrome/Firefox/Edge/iOS PWA): Urgency=high で確実に配信（SW側で重複なし単一表示）
                                 webpush: {
                                     headers: {
                                         "Urgency": "high"
-                                    },
-                                    notification: {
-                                        title: safeTitle,
-                                        body: safeBody,
-                                        icon: "/img/icon-192x192.png?v=6",
-                                        badge: "/img/icon-192x192.png?v=6",
-                                        tag: messageId ? `msg-${messageId}` : `chat-${roomId || 'covo'}`
                                     },
                                     fcm_options: {
                                         link: "/"

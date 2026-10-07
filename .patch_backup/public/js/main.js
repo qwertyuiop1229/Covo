@@ -67,25 +67,28 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 import {
   getDatabase,
-  ref as rtdbRef,
-  set as rtdbSet,
-  get as rtdbGet,
-  update as rtdbUpdate,
-  remove as rtdbRemove,
-  onValue as rtdbOnValue,
-  off as rtdbOff,
-  onChildAdded as rtdbOnChildAdded,
-  onChildChanged as rtdbOnChildChanged,
-  onChildRemoved as rtdbOnChildRemoved,
+  ref,
+  set,
+  get,
+  update,
+  remove,
+  onValue,
+  off,
+  onChildAdded,
+  onChildChanged,
+  onChildRemoved,
+  orderByChild,
+  limitToLast,
+  limitToFirst,
+  onDisconnect,
   query as rtdbQuery,
-  limitToLast as rtdbLimitToLast,
-  limitToFirst as rtdbLimitToFirst,
-  orderByChild as rtdbOrderByChild,
   startAt as rtdbStartAt,
   endAt as rtdbEndAt,
-  serverTimestamp as rtdbServerTimestamp,
-  onDisconnect as rtdbOnDisconnect
+  serverTimestamp as rtdbServerTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
+const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
+const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
 import * as LocalStore from './local_store.js?v=1.1.235';
 import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
@@ -7976,12 +7979,8 @@ async function resyncActiveRoomMessages() {
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
       }
-    } else if (allLoadedMessages.length > 0) {
-      if (!isStillActive()) return;
-      allLoadedMessages = [];
-      lastMessagesData = [];
-      messagesIndexMap = {};
-      renderMessagesWithReadReceipts();
+    } else if (allLoadedMessages.length > 0 && !snapshot.exists()) {
+      // ネットワーク瞬断時の一時的な未取得で画面のメッセージを消去しないよう保護
     }
   } catch (e) {
     console.warn('[RTDB] resyncActiveRoomMessages failed:', e);
@@ -15309,30 +15308,33 @@ async function subscribeToMessagesRTDB(session) {
       }
       } catch (_) {}
       };
+      if (!isStillActive()) {
+        return;
+      }
       const unsubAdded = onChildAdded(q, handleAdded);
       const unsubChanged = onChildChanged(q, handleChanged);
       const unsubRemoved = onChildRemoved(q, handleRemoved);
+      if (!isStillActive()) {
+        try { off(q); } catch (_) {}
+        return;
+      }
       const activeServerId = currentServerId;
-  const activeRoomId = currentRoomId;
-  const activeDmId = currentDmId;
-
-  if (window.typingUnsubscribe) {
-    try { window.typingUnsubscribe(); } catch(_) {}
-    window.typingUnsubscribe = null;
-    typingUnsubscribe = null;
-  }
-
-  const indicator = document.getElementById('typingIndicator');
-  if (indicator) {
-    indicator.textContent = '';
-    indicator.classList.add('hidden');
-  }
-
-  const typingPath = activeServerId
-    ? `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/typing`
-    : `artifacts/${appId}/dm_typing/${activeDmId}`;
-  const typingRef = ref(rtdb, typingPath);
-  const { onValue } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const activeRoomId = currentRoomId;
+      const activeDmId = currentDmId;
+      if (window.typingUnsubscribe) {
+      try { window.typingUnsubscribe(); } catch(_) {}
+      window.typingUnsubscribe = null;
+      typingUnsubscribe = null;
+      }
+      const indicator = document.getElementById('typingIndicator');
+      if (indicator) {
+      indicator.textContent = '';
+      indicator.classList.add('hidden');
+      }
+      const typingPath = activeServerId
+      ? `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/typing`
+      : `artifacts/${appId}/dm_typing/${activeDmId}`;
+      const typingRef = ref(rtdb, typingPath);
   const onTyping = onValue(typingRef, (snap) => {
     // 登録時のルーム/サーバー/DMと現在のアクティブ状態が完全一致しない場合は無視してインジケータを隠す
     if (currentServerId !== activeServerId || currentRoomId !== activeRoomId || currentDmId !== activeDmId) {
