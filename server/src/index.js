@@ -3730,16 +3730,22 @@ async function handleSetOffline(request, env) {
               return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
             }
             const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+            let hasServerAdminRights = isGlobal;
             if (dmId) {
               const parts = dmId.split('_');
               if (!isGlobal && !parts.includes(verifiedUser.uid)) {
                 return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
               }
             } else {
-              if (!isGlobal) {
+              const isSvAdmin = serverId ? await isServerAdminCheck(appId, serverId, verifiedUser, env) : false;
+              hasServerAdminRights = isGlobal || isSvAdmin;
+              if (!hasServerAdminRights) {
                 const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
                 if (!isMember) {
                   return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+                }
+                if (forcePrune) {
+                  return new Response(JSON.stringify({ error: "Forbidden: Server admin rights required for force prune" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
                 }
               }
             }
@@ -3804,7 +3810,22 @@ async function handleSetOffline(request, env) {
               const tB = b.timestamp || b.createdAt || 0;
               return tA - tB;
             });
-            const policy = retentionPolicy || "prune_100";
+            let policy = retentionPolicy || "prune_100";
+            if (!hasServerAdminRights && serverId) {
+              // 🔒 一般メンバーによる不正プルーニング・過剰削除を完全防止: サーバーの実際の設定を確認
+              try {
+                const adminToken = await getAdminTokenForFirestore(env);
+                if (adminToken) {
+                  const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
+                    headers: { "Authorization": `Bearer ${adminToken}` }
+                  });
+                  const srvData = await srvRes.json();
+                  policy = srvData.fields?.messageRetentionPolicy?.stringValue || "keep_all";
+                }
+              } catch (_) {
+                policy = "keep_all";
+              }
+            }
             if (policy === "keep_all" && !forcePrune) {
               return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, skipped: true }), {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
@@ -3829,7 +3850,7 @@ async function handleSetOffline(request, env) {
               });
             } else {
               // prune_100 またはデフォルト
-              const maxAllowed = typeof maxKeep === 'number' && maxKeep > 0 ? maxKeep : 100;
+              const maxAllowed = (hasServerAdminRights && typeof maxKeep === 'number' && maxKeep > 0) ? maxKeep : 100;
               if (unpinnedMsgs.length > maxAllowed) {
                 const excessCount = unpinnedMsgs.length - maxAllowed;
                 excessMsgs = unpinnedMsgs.slice(0, excessCount);

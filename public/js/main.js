@@ -9817,8 +9817,6 @@ window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', 
       // 相手側のドキュメントが存在しない場合（相手が申請を拒否・削除した場合）、自分側も再送可能にする
       console.log('[FriendRequest] 相手側で申請が削除されているため再送信を許可します');
     }
-    const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
-
     const batch = writeBatch(db);
     batch.set(myRef, {
       targetUid: targetUid,
@@ -9905,6 +9903,12 @@ window.submitFriendRequest = async function() {
     if (existing && (existing.status === 'friends' || existing.status === 'friend')) {
       feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-amber-500';
       feedback.textContent = 'すでにフレンドです！';
+      btn.disabled = false;
+      return;
+    }
+    if (existing && existing.status === 'pending_sent') {
+      feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-amber-500';
+      feedback.textContent = 'すでにフレンド申請を送信済みです。';
       btn.disabled = false;
       return;
     }
@@ -11773,7 +11777,7 @@ window.toggleDeviceSubMenu = function (type) {
     if (isHidden) {
       subIn.innerHTML = _activeAudioDevices.mics.length > 0
         ? _activeAudioDevices.mics.map(m => `
-            <div onclick="window.selectAudioDevice('input', '${m.deviceId}', '${escapeHtml(m.label || 'マイク')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+            <div onclick="window.selectAudioDevice('input', '${m.deviceId}', '${_jsq(m.label || 'マイク')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
               <span class="truncate">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</span>
               ${m.deviceId === _activeAudioDevices.selectedMicId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
             </div>
@@ -11790,7 +11794,7 @@ window.toggleDeviceSubMenu = function (type) {
     if (isHidden) {
       subOut.innerHTML = _activeAudioDevices.speakers.length > 0
         ? _activeAudioDevices.speakers.map(s => `
-            <div onclick="window.selectAudioDevice('output', '${s.deviceId}', '${escapeHtml(s.label || 'スピーカー')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+            <div onclick="window.selectAudioDevice('output', '${s.deviceId}', '${_jsq(s.label || 'スピーカー')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
               <span class="truncate">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</span>
               ${s.deviceId === _activeAudioDevices.selectedSpeakerId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
             </div>
@@ -14889,12 +14893,12 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
         const isActiveVc = window._voiceEngine && window._voiceEngine.isActive && window._voiceEngine.channelId === docSnap.id;
         vcDiv.innerHTML = `
           <div class="vc-channel-row${isActiveVc ? ' active-vc' : ''}" data-vc-id="${docSnap.id}"
-               onclick="joinVoiceChannel('${docSnap.id}', '${safeName}')">
+               onclick="joinVoiceChannel('${docSnap.id}', '${_jsq(room.name)}')">
             <div class="flex items-center gap-2 flex-1 truncate text-left min-w-0">
               <i class="fas fa-volume-up vc-channel-icon text-sm flex-shrink-0"></i>
               <span class="vc-channel-name truncate">${safeName}</span>
             </div>
-            <button class="vc-join-btn" onclick="event.stopPropagation();joinVoiceChannel('${docSnap.id}','${safeName}')" title="参加">
+            <button class="vc-join-btn" onclick="event.stopPropagation();joinVoiceChannel('${docSnap.id}','${_jsq(room.name)}')" title="参加">
               <i class="fas fa-sign-in-alt"></i>
             </button>
           </div>
@@ -21268,16 +21272,32 @@ window.unpinMessage = async function(msgId) {
 };
 
 window.minimizePinnedAnnouncement = function() {
-  const pinKey = currentRoomId || currentDmId;
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
   localStorage.setItem(`covo_minimized_pins_${pinKey}`, "true");
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  (allLoadedMessages || []).filter(m => m.isPinned).forEach(m => combinedMap.set(m.id, m));
+  const pinnedList = Array.from(combinedMap.values());
+  if (pinnedList.length > 0) {
+    pinnedList.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    const latestMsg = pinnedList[pinnedList.length - 1];
+    localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
+  }
   isPinnedMessagesExpanded = false;
   renderPinnedMessages();
 };
 window.restorePinnedAnnouncement = function() {
-  const pinKey = currentRoomId || currentDmId;
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+  const oldPinKey = currentRoomId || currentDmId;
   localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
-  if (currentPinnedMessages && currentPinnedMessages.length > 0) {
-    const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
+  if (oldPinKey) localStorage.removeItem(`covo_minimized_pins_${oldPinKey}`);
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  (allLoadedMessages || []).filter(m => m.isPinned).forEach(m => combinedMap.set(m.id, m));
+  const pinnedList = Array.from(combinedMap.values());
+  if (pinnedList.length > 0) {
+    pinnedList.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    const latestMsg = pinnedList[pinnedList.length - 1];
     localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
   }
   renderPinnedMessages();
@@ -21303,15 +21323,15 @@ if (pinMessageBtn) {
       // ローカル状態を即時更新して画面に瞬時反映
       const mObj = allLoadedMessages.find(m => m.id === targetId);
       if (mObj) mObj.isPinned = isPinned;
-
-      const pinKey = currentRoomId || currentDmId;
-
+      const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+      const oldPinKey = currentRoomId || currentDmId;
       if (isPinned) {
         if (!currentPinnedMessages.some(m => m.id === targetId)) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
         localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
+        if (oldPinKey) localStorage.removeItem(`covo_minimized_pins_${oldPinKey}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
@@ -21372,10 +21392,12 @@ function renderPinnedMessages() {
   // 最新（直近）のピン留めメッセージ
   const latestMsg = pinnedMessages[pinnedMessages.length - 1];
   const count = pinnedMessages.length;
-  const pinKey = currentRoomId || currentDmId;
-  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`);
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+  const oldPinKey = currentRoomId || currentDmId;
+  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`) || (oldPinKey ? localStorage.getItem(`covo_last_seen_pin_${oldPinKey}`) : null);
   // ローカルストレージから最小化状態を永続復元
-  const isMinimized = localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true";
+  const isMinimized = (localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true") ||
+                      (oldPinKey && localStorage.getItem(`covo_minimized_pins_${oldPinKey}`) === "true");
 
   if (isMinimized) {
     pinnedMessagesArea.classList.add("hidden");

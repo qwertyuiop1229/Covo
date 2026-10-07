@@ -670,6 +670,7 @@ function installPastRelease(...args) { return window.installPastRelease ? window
 function showAnnouncementModal(...args) { return window.showAnnouncementModal ? window.showAnnouncementModal(...args) : null; }
 function forceRestartNow(...args) { return window.forceRestartNow ? window.forceRestartNow(...args) : null; }
 function openPastVersionsModal(...args) { return window.openPastVersionsModal ? window.openPastVersionsModal(...args) : null; }
+function closePastVersionsModal(...args) { return window.closePastVersionsModal ? window.closePastVersionsModal(...args) : null; }
 function emergencyCheckUpdate(...args) { return window.emergencyCheckUpdate ? window.emergencyCheckUpdate(...args) : null; }
 function updateThemeSelectorUI(...args) { return window.updateThemeSelectorUI ? window.updateThemeSelectorUI(...args) : null; }
 function closePinSetupModal(...args) { return window.closePinSetupModal ? window.closePinSetupModal(...args) : null; }
@@ -5206,7 +5207,6 @@ function renderNotifList(items) {
     if (mList) mList.innerHTML = html;
     }
     // 2. メンションタブの描画（個別削除ボタン付き・確実に残る）
-    const mentionItems = items.filter(it => it.isMention);
     if (mentionsList) {
     if (mentionItems.length === 0) {
       mentionsList.innerHTML = '';
@@ -9817,8 +9817,6 @@ window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', 
       // 相手側のドキュメントが存在しない場合（相手が申請を拒否・削除した場合）、自分側も再送可能にする
       console.log('[FriendRequest] 相手側で申請が削除されているため再送信を許可します');
     }
-    const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
-
     const batch = writeBatch(db);
     batch.set(myRef, {
       targetUid: targetUid,
@@ -21269,14 +21267,13 @@ window.unpinMessage = async function(msgId) {
 
 window.minimizePinnedAnnouncement = function() {
   const pinKey = currentRoomId || currentDmId;
-  sessionStorage.setItem(`minimized_pins_${pinKey}`, "true");
+  localStorage.setItem(`covo_minimized_pins_${pinKey}`, "true");
   isPinnedMessagesExpanded = false;
   renderPinnedMessages();
 };
-
 window.restorePinnedAnnouncement = function() {
   const pinKey = currentRoomId || currentDmId;
-  sessionStorage.removeItem(`minimized_pins_${pinKey}`);
+  localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
   if (currentPinnedMessages && currentPinnedMessages.length > 0) {
     const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
     localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
@@ -21312,7 +21309,7 @@ if (pinMessageBtn) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
-        sessionStorage.removeItem(`minimized_pins_${pinKey}`);
+        localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
@@ -21375,9 +21372,8 @@ function renderPinnedMessages() {
   const count = pinnedMessages.length;
   const pinKey = currentRoomId || currentDmId;
   const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`);
-
-  // セッションから最小化状態を復元
-  const isMinimized = sessionStorage.getItem(`minimized_pins_${pinKey}`) === "true";
+  // ローカルストレージから最小化状態を永続復元
+  const isMinimized = localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true";
 
   if (isMinimized) {
     pinnedMessagesArea.classList.add("hidden");
