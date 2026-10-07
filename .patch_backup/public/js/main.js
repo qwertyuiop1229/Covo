@@ -780,7 +780,7 @@ let currentHomeViewMode = 'dm'; // 'dm' or 'discover'
 let currentDmId = null;
 let currentDmParticipant = null;
 let currentDmParticipants = [];
-let dmAndFriendsEnabled = false;
+let dmAndFriendsEnabled = true;
 let activeDmTab = 'online';
 let friendRelationships = {};
 function isUserBlocked(targetUid) {
@@ -4915,7 +4915,7 @@ function updateGlobalNotifUI() {
 window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
-  switchMobileTab('home');
+  if (!rid) return;
   if (typeof rid === 'string' && (rid.startsWith('dm_') || rid.includes('_'))) {
     const cleanDmId = rid.startsWith('dm_') ? rid.substring(3) : rid;
     const parts = cleanDmId.split('_');
@@ -5201,9 +5201,9 @@ function renderNotifList(items) {
 window.goToServerRoom = async function (serverId, roomId) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
+  if (!serverId || !roomId) return;
   try {
-    if (serverId && serverId !== currentServerId && typeof enterServer === 'function') {
-      // サーバーデータを用意（キャッシュ優先、無ければ取得）
+    if (serverId !== currentServerId && typeof enterServer === 'function') {
       let sv = (allServersCache || []).find(s => s.id === serverId);
       if (!sv) {
         const sd = await getDoc(doc(db, `artifacts/${appId}/servers`, serverId));
@@ -5212,16 +5212,16 @@ window.goToServerRoom = async function (serverId, roomId) {
       if (sv) {
         try { localStorage.setItem('covo_last_room_' + serverId, roomId); } catch (e) { }
         await enterServer(serverId, sv);
-        switchMobileTab('home');
-        setTimeout(() => { const ri = document.getElementById('room-item-' + roomId); if (ri) ri.click(); }, 700);
-        return;
       }
     }
+    // 該当ルームへの確実な直接遷移（強制個チャ戻りのバグを完全解消）
+    if (typeof selectRoom === 'function') {
+      const rName = roomNames[roomId] || 'ルーム';
+      selectRoom(roomId, rName);
+    }
+    const rItem = document.getElementById('room-item-' + roomId);
+    if (rItem) rItem.click();
   } catch (e) { console.warn('[Notif] サーバー移動失敗:', e); }
-  // 同じサーバー内（またはフォールバック）
-  switchMobileTab('home');
-  const rItem = document.getElementById('room-item-' + roomId);
-  if (rItem) rItem.click();
 };
 
 window.openMobileDetail = function (type) {
@@ -8449,13 +8449,20 @@ function subscribeToUserStatus() {
                 try { localStorage.setItem(`covo_last_seen_${uid}`, String(ms)); } catch (_) {}
               }
             }
-            const merged = {
+            const tempMerged = {
               id: uid,
               ...existing,
               ...cachedProf,
               ...data,
               last_changed: rawLc || existing.last_changed || cachedProf.last_changed || null,
               lastSeen: rawLc || existing.lastSeen || cachedProf.lastSeen || null
+            };
+            const computed = computeUserPresenceState(tempMerged);
+            const merged = {
+              ...tempMerged,
+              state: computed,
+              status: computed,
+              computedState: computed
             };
             usersMap.set(uid, merged);
             Object.assign(cachedProf, merged);
@@ -9203,6 +9210,9 @@ window.openDmHomeView = function (showFriendsOnMobile = false) {
   // DM / フレンド画面の公開状態に応じた表示更新
   updateDmViewVisibility();
   renderDmConversationsList();
+  if (typeof subscribeToUserStatus === 'function') {
+    subscribeToUserStatus();
+  }
 
   // 右サイドバー: DMプロフィールとメンバーリストを隠し、現在アクティブパネルを展開
   const dmProfilePanel = document.getElementById('dmProfilePanel');
@@ -9238,9 +9248,9 @@ function subscribeToFeatureFlags() {
     unsubscribeFeatureFlags = onSnapshot(doc(db, `artifacts/${appId}/settings/featureFlags`), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        dmAndFriendsEnabled = Boolean(data.dmAndFriendsEnabled);
+        dmAndFriendsEnabled = data.dmAndFriendsEnabled !== false;
       } else {
-        dmAndFriendsEnabled = false;
+        dmAndFriendsEnabled = true;
       }
       const toggle = document.getElementById('adminDmFeatureToggle');
       if (toggle) toggle.checked = dmAndFriendsEnabled;
@@ -9307,13 +9317,21 @@ function subscribeToRelationships() {
   try {
     const relCol = collection(db, `artifacts/${appId}/users/${userId}/relationships`);
     unsubscribeRelationships = onSnapshot(relCol, (snap) => {
-      friendRelationships = {};
+      const nextRels = {};
       snap.forEach(d => {
-        friendRelationships[d.id] = { id: d.id, ...d.data() };
+        nextRels[d.id] = { id: d.id, ...d.data() };
       });
+      if (snap.empty && friendRelationships && Object.keys(friendRelationships).length > 0) {
+        // オフラインや初期読み込み中の一時的空振りを保護
+      } else {
+        friendRelationships = nextRels;
+      }
       LocalStore.putFriendsBatch(Object.values(friendRelationships)).catch(() => {});
       renderFriendTabs();
       updateDmPendingBadges();
+      if (typeof subscribeToUserStatus === 'function') {
+        subscribeToUserStatus();
+      }
     }, (err) => {
       console.warn('[Relationships] Listen error:', err);
     });
@@ -9912,7 +9930,6 @@ function renderDmConversationsList() {
     const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser?.avatarUrl !== undefined ? targetUser.avatarUrl : (rel?.targetAvatarUrl || ''));
     const isActive = currentDmId === dm.id;
     const presenceState = computeUserPresenceState(otherUid);
-    const isOnline = presenceState === 'online' || presenceState === 'away';
     if (!cachedProf) {
       window.getUserProfile(otherUid).then(() => renderDmConversationsList()).catch(() => {});
     }
@@ -9944,7 +9961,7 @@ function renderDmConversationsList() {
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs overflow-hidden">
             ${isUsableAvatarUrl(avatarUrl) ? `<img src="${escapeHtml(avatarUrl)}" class="w-full h-full object-cover">` : escapeHtml(nickname.charAt(0))}
           </div>
-          <div class="status-indicator ${isOnline ? 'status-online' : 'status-offline'}"></div>
+          <div class="status-indicator status-${presenceState}"></div>
         </div>
         <div class="flex-1 min-w-0 flex flex-col justify-center">
           <div class="text-[13px] leading-snug truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-[#949ba4]'}">${escapeHtml(nickname)}</div>
@@ -9978,21 +9995,24 @@ function renderDmConversationsList() {
   const newAvatarUrl = (updatedData.avatarUrl !== undefined) ? updatedData.avatarUrl : (existingProf.avatarUrl || '');
   const newAboutMe = (updatedData.aboutMe !== undefined) ? updatedData.aboutMe : (existingProf.aboutMe || '');
   const newCustomStatus = (updatedData.customStatus !== undefined) ? updatedData.customStatus : (existingProf.customStatus || null);
-  const newState = updatedData.computedState || updatedData.state || updatedData.status || existingProf.status || 'offline';
   const newLastChanged = updatedData.last_changed || updatedData.lastSeen || existingProf.last_changed || null;
-  const merged = {
+  const tempUserObj = {
     ...existingProf,
+    ...updatedData,
     id: targetUid,
-    uid: targetUid,
+    last_changed: newLastChanged,
+    lastSeen: newLastChanged
+  };
+  const computedState = computeUserPresenceState(tempUserObj);
+  const merged = {
+    ...tempUserObj,
     nickname: newNickname,
     avatarUrl: newAvatarUrl,
     aboutMe: newAboutMe,
     customStatus: newCustomStatus,
-    state: newState,
-    status: newState,
-    computedState: newState,
-    last_changed: newLastChanged,
-    lastSeen: newLastChanged
+    state: computedState,
+    status: computedState,
+    computedState: computedState
   };
   window._userProfileCache?.set(targetUid, merged);
   if (Array.isArray(cachedUsers)) {
@@ -10226,6 +10246,9 @@ function renderDmConversationsList() {
   // チャット購読を即座に開始（鍵の取得待ちでメッセージ一覧をブロックしない）
   subscribeToMessages();
   subscribeToPinnedMessages(null, null, dmId);
+  if (typeof subscribeToUserStatus === 'function') {
+    subscribeToUserStatus();
+  }
   // DM鍵の初期化と自動復号は非同期並行処理で実行
   (async () => {
     try {
@@ -10470,7 +10493,8 @@ function renderDmConversationsList() {
         }
       }
       if (statusDot) {
-        statusDot.className = `status-indicator status-${prof.status || 'offline'}`;
+        const computedState = computeUserPresenceState(targetUid);
+        statusDot.className = `status-indicator status-${computedState}`;
       }
       if (prof.customStatus && prof.customStatus.text) {
         if (customEmoji) {
@@ -20557,14 +20581,26 @@ function _showPcStackNotification(serverName, roomName, senderName, displayBody,
 
   card.addEventListener('click', () => {
     _dismissPcNotif(card);
-    if (isDm || !serverId) {
-      if (targetUid) {
-        openDm(targetUid, senderName, targetAvatarUrl);
+    const curIsDm = card.dataset.isDm === 'true' || isDm;
+    const curServerId = card.dataset.serverId || serverId;
+    const curRoomId = card.dataset.roomId || roomId;
+    let curTargetUid = card.dataset.targetUid || targetUid;
+    const curSenderName = card.dataset.senderName || senderName;
+    const curTargetAvatarUrl = card.dataset.targetAvatarUrl || targetAvatarUrl;
+
+    if (curIsDm || !curServerId) {
+      if (!curTargetUid && curRoomId) {
+        const cleanDm = curRoomId.startsWith('dm_') ? curRoomId.slice(3) : curRoomId;
+        const parts = cleanDm.split('_');
+        curTargetUid = parts.find(u => u !== userId) || curTargetUid;
+      }
+      if (curTargetUid) {
+        openDm(curTargetUid, curSenderName, curTargetAvatarUrl);
       } else {
         openDmHomeView();
       }
     } else {
-      goToServerRoom(serverId, roomId);
+      goToServerRoom(curServerId, curRoomId);
     }
   });
 
@@ -20685,14 +20721,23 @@ function _processNextMobileNotification() {
 
   banner.addEventListener('click', () => {
     dismissBanner();
-    if (isDm || !item.serverId) {
-      if (item.targetUid) {
-        openDm(item.targetUid, item.senderName, item.targetAvatarUrl);
+    const curIsDm = Boolean(item.isDm);
+    const curServerId = item.serverId;
+    const curRoomId = item.roomId;
+    let curTargetUid = item.targetUid;
+    if (curIsDm || !curServerId) {
+      if (!curTargetUid && curRoomId) {
+        const cleanDm = curRoomId.startsWith('dm_') ? curRoomId.slice(3) : curRoomId;
+        const parts = cleanDm.split('_');
+        curTargetUid = parts.find(u => u !== userId) || curTargetUid;
+      }
+      if (curTargetUid) {
+        openDm(curTargetUid, item.senderName, item.targetAvatarUrl);
       } else {
         openDmHomeView();
       }
     } else {
-      goToServerRoom(item.serverId, item.roomId);
+      goToServerRoom(curServerId, curRoomId);
     }
   });
 
@@ -24441,10 +24486,9 @@ async function setupGlobalAnnouncementListener() {
   if (!userId) return; // 認証完了前はスキップ（onAuthStateChanged で確実に起動）
   if (_announcementListenerUnsub) return;
   try {
-    const { ref, onValue, off } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
-    const annRef = ref(rtdb, `artifacts/${appId}/latestAnnouncement`);
-    
+    if (!rtdb) return;
+    const annRef = rtdbRef(rtdb, `artifacts/${appId}/latestAnnouncement`);
     const onAnn = (snap) => {
       const data = snap.val();
       if (!data || !data.id) return;
@@ -24453,8 +24497,8 @@ async function setupGlobalAnnouncementListener() {
         showAnnouncementModal(data, data.id);
       }
     };
-    onValue(annRef, onAnn);
-    _announcementListenerUnsub = () => off(annRef, 'value', onAnn);
+    rtdbOnValue(annRef, onAnn);
+    _announcementListenerUnsub = () => rtdbOff(annRef, 'value', onAnn);
   } catch (e) {
     console.warn("setupGlobalAnnouncementListener error, fallback to checkLatestAnnouncement:", e);
     checkLatestAnnouncement();

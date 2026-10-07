@@ -548,9 +548,12 @@ body.discord-dark-theme #openSettingsBtn:hover {
       display: flex !important;
       padding-top: 4px !important; /* Discord本家準拠: DMアイコン上端とサーバーヘッダー高さを完全一致 */
     }
-    /* Discord本家準拠: サーバーレールとサイドバーの色の境目の左上角を8px角丸化 */
+    /* Discord本家準拠: サーバーレールとサイドバーの色の境目の左上角を16px角丸化 & 仕切り線完全撤去 */
+    body.discord-ui-mode #discordServerNav {
+      border-right: none !important;
+    }
     body.discord-ui-mode #sidebar {
-      border-top-left-radius: 8px !important;
+      border-top-left-radius: 16px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
@@ -558,7 +561,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
     body.discord-ui-mode #serverHeader,
     body.discord-ui-mode #discordHomeSidebar,
     body.discord-ui-mode #discordHomeSidebar > div:first-child {
-      border-top-left-radius: 8px !important;
+      border-top-left-radius: 16px !important;
     }
     body.discord-ui-mode #backToServerListBtn {
       display: none !important; /* Discord風ヘッダーのため不要 */
@@ -1223,11 +1226,15 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #0b0f19 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
     }
+    body.dark-server-theme.discord-ui-mode #discordServerNav {
+      background: #0b0f19 !important;
+      border-right: none !important;
+    }
     body.dark-server-theme.discord-ui-mode #sidebar {
       background: #111827 !important;
       color: #cbd5e1 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-      border-top-left-radius: 8px !important;
+      border-top-left-radius: 16px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
@@ -1240,7 +1247,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #111827 !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
       color: #f8fafc !important;
-      border-top-left-radius: 8px !important;
+      border-top-left-radius: 16px !important;
     }
     body.dark-server-theme #serverNameDisplay {
       color: #f8fafc !important;
@@ -1359,13 +1366,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
 
     body.discord-dark-theme.discord-ui-mode #discordServerNav {
       background: #1e1f22 !important;
-      border-right: 1px solid #1f2023 !important;
+      border-right: none !important;
     }
     body.discord-dark-theme.discord-ui-mode #sidebar {
       background: #2b2d31 !important;
       color: #dbdee1 !important;
       border-right: 1px solid #1f2023 !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 16px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
@@ -1378,7 +1385,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #313338 !important;
       border-bottom: 1px solid #1f2023 !important;
       color: #f2f3f5 !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 16px !important;
     }
     body.discord-dark-theme.discord-ui-mode #discordDmHomeView,
     body.discord-dark-theme.discord-ui-mode #discordDiscoverView,
@@ -1438,13 +1445,13 @@ body.discord-dark-theme #openSettingsBtn:hover {
 
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordServerNav {
       background: #e2e8f0 !important;
-      border-right: 1px solid #cbd5e1 !important;
+      border-right: none !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #sidebar {
       background: #f1f5f9 !important;
       color: #1e293b !important;
       border-right: 1px solid #e2e8f0 !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 16px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
@@ -1457,7 +1464,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #ffffff !important;
       border-bottom: 1px solid #e2e8f0 !important;
       color: #0f172a !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 16px !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDmHomeView,
     body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #discordDiscoverView,

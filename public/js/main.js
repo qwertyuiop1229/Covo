@@ -10004,6 +10004,7 @@ function renderDmConversationsList() {
     lastSeen: newLastChanged
   };
   const computedState = computeUserPresenceState(tempUserObj);
+  const newState = computedState;
   const merged = {
     ...tempUserObj,
     nickname: newNickname,
@@ -10032,24 +10033,24 @@ function renderDmConversationsList() {
   // 🌟 右側プロフィールパネル (#dmProfilePanel) のステータスインジケーター（緑/黄/灰）をリアルタイム即時更新！
   const dmPanelStatusDot = document.getElementById('dmPanelStatusDot');
   if (dmPanelStatusDot && currentDmParticipant && currentDmParticipant.uid === targetUid) {
-    dmPanelStatusDot.className = `status-indicator status-${newState}`;
+    dmPanelStatusDot.className = `status-indicator status-${computedState}`;
   }
   // 🌟 ポップアウト (#userProfileModal) が開いていればステータスドットを即時更新！
   if (_currentProfileTargetUser && _currentProfileTargetUser.uid === targetUid) {
     const upStatusDot = document.getElementById('userProfileStatusDot');
-    if (upStatusDot) upStatusDot.className = `status-indicator status-${newState}`;
+    if (upStatusDot) upStatusDot.className = `status-indicator status-${computedState}`;
   }
   // 🌟 フルプロフィール (#userFullProfileModal) が開いていればステータスドットを即時更新！
   if (_fullProfileTargetUser && _fullProfileTargetUser.uid === targetUid) {
     const fpStatusDot = document.getElementById('fullProfileStatusDot');
-    if (fpStatusDot) fpStatusDot.className = `status-indicator status-${newState}`;
+    if (fpStatusDot) fpStatusDot.className = `status-indicator status-${computedState}`;
   }
   // 🌟 左サイドバーの該当DM行 (#dmConversationsList) のステータスドットを即時更新！
   const dmSidebarItems = document.querySelectorAll('#dmConversationsList .dm-sidebar-item');
   dmSidebarItems.forEach(item => {
     if (item.getAttribute('onclick')?.includes(targetUid)) {
       const dot = item.querySelector('.status-indicator');
-      if (dot) dot.className = `status-indicator status-${newState}`;
+      if (dot) dot.className = `status-indicator status-${computedState}`;
     }
   });
   // 現在この相手との個チャ (DM) を開いている場合、アクティブUIを瞬時に即座反映
