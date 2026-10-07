@@ -5120,21 +5120,39 @@ function renderNotifList(items) {
   const mentionsEmpty = document.getElementById('inboxMentionsEmpty');
   const totalBadge = document.getElementById('notifTotalBadge');
 
-  const count = items.length;
-  if (totalBadge) {
-    totalBadge.textContent = count;
-    totalBadge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
+  const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
+  const isAppFocused = document.visibilityState === 'visible' && document.hasFocus();
 
-  // 1. 未読タブの描画
-  if (count === 0) {
+  // 未読メッセージのみ抽出（チャットを開いて読んだものは未読タブから自動消去）
+  const unreadItems = (items || []).filter(it => {
+    if (!it) return false;
+    const chKey = it.isDm ? `dm_${it.dmId}` : it.roomId;
+    if (isAppFocused) {
+      if (it.isDm && currentDmId && it.dmId === currentDmId) return false;
+      if (!it.isDm && currentServerId && it.serverId === currentServerId && it.roomId === currentRoomId) return false;
+    }
+    const lastRead = rm[chKey] || 0;
+    return lastRead < (it.lastAt || 0);
+  });
+
+  // メンション履歴（読んだ後でも消えない・全件保持）
+  const mentionItems = (items || []).filter(it => it && it.isMention);
+
+  // 赤い点（未読バッジ）の点灯件数: 本当に未読のメッセージ件数
+  const unreadCount = unreadItems.length;
+
+  if (totalBadge) {
+    totalBadge.textContent = unreadCount;
+    totalBadge.style.display = unreadCount > 0 ? 'inline-flex' : 'none';
+  }
+  // 1. 未読タブの描画 (unreadItems を表示)
+  if (unreadItems.length === 0) {
     if (pList) pList.innerHTML = '';
     if (mList) mList.innerHTML = '';
     if (pe) pe.style.display = 'block';
   } else {
     if (pe) pe.style.display = 'none';
-    // 50件の強制打ち切りを撤廃し、最大200件まで一括表示
-    const maxItems = items.slice(0, 200);
+    const maxItems = unreadItems.slice(0, 200);
     let html = '';
     maxItems.forEach(it => {
       const isDm = Boolean(it.isDm);
@@ -5224,31 +5242,30 @@ function renderNotifList(items) {
     }
     }
 
-  // 通知バッジ・アイコン更新
+  // 通知バッジ・アイコン更新（unreadCount に完全連動: 読んだ瞬間に開かなくても赤丸が自動消去される）
   const mobileNotifTab = document.getElementById('mobileTabNotif');
   if (mobileNotifTab) {
     let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
-    if (count > 0) {
+    if (unreadCount > 0) {
       if (!nb) { nb = document.createElement('span'); nb.className = 'mobile-notif-dot'; mobileNotifTab.appendChild(nb); }
       nb.style.display = 'block';
     } else if (nb) { nb.style.display = 'none'; }
   }
   const badge = document.getElementById('globalUnreadBadge');
-  if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+  if (badge) { badge.textContent = unreadCount; badge.style.display = unreadCount > 0 ? 'flex' : 'none'; }
   const headerBadges = document.querySelectorAll('.header-notif-badge');
   headerBadges.forEach(b => {
-    b.style.display = count > 0 ? 'block' : 'none';
-    b.classList.toggle('hidden', count === 0);
+    b.style.display = unreadCount > 0 ? 'block' : 'none';
+    b.classList.toggle('hidden', unreadCount === 0);
   });
-
   if (isTauri && window.__TAURI__?.core?.invoke) {
-    window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
+    window.__TAURI__.core.invoke('set_badge', { hasUnread: unreadCount > 0 }).catch(console.error);
     document.title = 'Covo';
   } else {
-    document.title = count > 0 ? `(新着あり) Covo` : 'Covo';
+    document.title = unreadCount > 0 ? `(新着あり) Covo` : 'Covo';
   }
   if ('setAppBadge' in navigator) {
-    if (count > 0) navigator.setAppBadge(count).catch(() => {});
+    if (unreadCount > 0) navigator.setAppBadge(unreadCount).catch(() => {});
     else navigator.clearAppBadge().catch(() => {});
   }
   if (typeof updateServerCardDots === 'function') updateServerCardDots();
@@ -7037,15 +7054,17 @@ window.submitQuickDmMessage = async function () {
   const text = input.value.trim();
   if (!text) return;
   const target = _currentProfileTargetUser;
+  input.value = ""; // 入力欄を即座にクリア
   closeUserProfileModal();
   await openDm(target.uid, target.nickname, target.avatarUrl);
   setTimeout(() => {
     const mainInput = document.getElementById("messageInput");
     if (mainInput) {
       mainInput.value = text;
+      if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
       sendMessage();
     }
-  }, 200);
+  }, 280);
 };
 
 // =========================================================================
@@ -7208,7 +7227,33 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const noteInput = document.getElementById("fullProfileNoteInput");
   const msgBtn = document.getElementById("fullProfileMsgBtn");
   const friendBtn = document.getElementById("fullProfileFriendBtn");
+  const rolesWrap = document.getElementById("fullProfileRolesWrap");
+  const rolesList = document.getElementById("fullProfileRolesList");
   const safeName = targetNickname || targetUid.substring(0, 8);
+
+  // Discord完全準拠: フルプロフィールでの役職（ロール）表示
+  if (rolesWrap && rolesList) {
+    const rolesHtml = [];
+    if (currentServerData && currentServerId) {
+      if (currentServerData.createdBy === targetUid) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"><i class="fas fa-crown text-[10px]"></i>サーバーオーナー</span>');
+      } else if (currentServerData.serverAdmins && currentServerData.serverAdmins.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30"><i class="fas fa-shield-halved text-[10px]"></i>管理者</span>');
+      }
+      if (currentServerData.joinedUsers && currentServerData.joinedUsers.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>メンバー</span>');
+      }
+    }
+    if (isAdmin && targetUid === userId) {
+      rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"><i class="fas fa-star text-[10px]"></i>Covo管理者</span>');
+    }
+    if (rolesHtml.length > 0) {
+      rolesList.innerHTML = rolesHtml.join('');
+      rolesWrap.classList.remove('hidden');
+    } else {
+      rolesWrap.classList.add('hidden');
+    }
+  }
   // 共通サーバー数の算出
   const mutualServers = Array.isArray(allServersCache)
     ? allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId))
@@ -9671,7 +9716,7 @@ function createFriendCardHtml(friend, online) {
     ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">${curEmoji}<span class="truncate">${escapeHtml(curSt.text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
   return `
-    <div class="friend-card" onclick="openUserProfileModal('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
+    <div class="friend-card" onclick="openUserProfileModal('${_jsq(fUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
       <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
@@ -9685,16 +9730,16 @@ function createFriendCardHtml(friend, online) {
         </div>
       </div>
       <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
-        <button onclick="openDm('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')" class="friend-action-btn" title="メッセージを送る">
+        <button onclick="openDm('${_jsq(fUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')" class="friend-action-btn" title="メッセージを送る">
           <i class="fas fa-comment-dots"></i>
         </button>
-        <button onclick="openCallPickerWithTarget('${friend.targetUid}')" class="friend-action-btn" title="通話">
+        <button onclick="openCallPickerWithTarget('${_jsq(fUid)}')" class="friend-action-btn" title="通話">
           <i class="fas fa-phone"></i>
         </button>
-        <button onclick="openFileShareWithTarget('${friend.targetUid}')" class="friend-action-btn" title="P2Pファイル共有">
+        <button onclick="openFileShareWithTarget('${_jsq(fUid)}')" class="friend-action-btn" title="P2Pファイル共有">
           <i class="fas fa-share-from-square"></i>
         </button>
-        <button onclick="blockUser('${friend.targetUid}')" class="friend-action-btn hover:!bg-rose-600 hover:!text-white" title="ブロック">
+        <button onclick="blockUser('${_jsq(fUid)}')" class="friend-action-btn hover:!bg-rose-600 hover:!text-white" title="ブロック">
           <i class="fas fa-ban"></i>
         </button>
       </div>
@@ -9768,6 +9813,9 @@ window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', 
         alertMessage('フレンド関係を同期・復旧しました！', 'success');
         return;
       }
+    } else if (myRelDoc && myRelDoc.exists() && myRelDoc.data()?.status === 'pending_sent') {
+      // 相手側のドキュメントが存在しない場合（相手が申請を拒否・削除した場合）、自分側も再送可能にする
+      console.log('[FriendRequest] 相手側で申請が削除されているため再送信を許可します');
     }
     const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
 

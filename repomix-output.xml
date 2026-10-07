@@ -20685,6 +20685,7 @@ function installPastRelease(...args) { return window.installPastRelease ? window
 function showAnnouncementModal(...args) { return window.showAnnouncementModal ? window.showAnnouncementModal(...args) : null; }
 function forceRestartNow(...args) { return window.forceRestartNow ? window.forceRestartNow(...args) : null; }
 function openPastVersionsModal(...args) { return window.openPastVersionsModal ? window.openPastVersionsModal(...args) : null; }
+function closePastVersionsModal(...args) { return window.closePastVersionsModal ? window.closePastVersionsModal(...args) : null; }
 function emergencyCheckUpdate(...args) { return window.emergencyCheckUpdate ? window.emergencyCheckUpdate(...args) : null; }
 function updateThemeSelectorUI(...args) { return window.updateThemeSelectorUI ? window.updateThemeSelectorUI(...args) : null; }
 function closePinSetupModal(...args) { return window.closePinSetupModal ? window.closePinSetupModal(...args) : null; }
@@ -24873,7 +24874,6 @@ function renderNotifList(items) {
     if (mList) mList.innerHTML = html;
     }
     // 2. メンションタブの描画（個別削除ボタン付き・確実に残る）
-    const mentionItems = items.filter(it => it.isMention);
     if (mentionsList) {
     if (mentionItems.length === 0) {
       mentionsList.innerHTML = '';
@@ -39848,13 +39848,13 @@ window.unpinMessage = async function(msgId) {
 };
 window.minimizePinnedAnnouncement = function() {
   const pinKey = currentRoomId || currentDmId;
-  sessionStorage.setItem(`minimized_pins_${pinKey}`, "true");
+  localStorage.setItem(`covo_minimized_pins_${pinKey}`, "true");
   isPinnedMessagesExpanded = false;
   renderPinnedMessages();
 };
 window.restorePinnedAnnouncement = function() {
   const pinKey = currentRoomId || currentDmId;
-  sessionStorage.removeItem(`minimized_pins_${pinKey}`);
+  localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
   if (currentPinnedMessages && currentPinnedMessages.length > 0) {
     const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
     localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
@@ -39886,7 +39886,7 @@ if (pinMessageBtn) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
-        sessionStorage.removeItem(`minimized_pins_${pinKey}`);
+        localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
@@ -39943,8 +39943,8 @@ function renderPinnedMessages() {
   const count = pinnedMessages.length;
   const pinKey = currentRoomId || currentDmId;
   const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`);
-  // セッションから最小化状態を復元
-  const isMinimized = sessionStorage.getItem(`minimized_pins_${pinKey}`) === "true";
+  // ローカルストレージから最小化状態を永続復元
+  const isMinimized = localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true";
   if (isMinimized) {
     pinnedMessagesArea.classList.add("hidden");
     // フローティング最小化アイコン（メガホン）を表示
@@ -48038,7 +48038,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.253",
+  "version": "1.1.254",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48127,13 +48127,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.253" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.254" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.253" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.254" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -48377,6 +48377,12 @@ window._subscribeVcSidebarStates = function(serverId) {
         const modal = document.getElementById('pastVersionsModal');
         if (modal) { modal.classList.remove('hidden'); modal.style.display = 'flex'; }
         if (typeof window.loadPastVersionsPage === 'function') window.loadPastVersionsPage(1);
+      };
+    }
+    if (typeof window.closePastVersionsModal !== 'function') {
+      window.closePastVersionsModal = function() {
+        const modal = document.getElementById('pastVersionsModal');
+        if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
       };
     }
     if (typeof window.emergencyCheckUpdate !== 'function') {
@@ -51799,7 +51805,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.253"></script>
+  <script type="module" src="js/main.js?v=1.1.254"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -53227,7 +53233,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.253",
+  "version": "1.1.254",
   "force": false
 }
 </file>
