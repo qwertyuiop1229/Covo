@@ -1,10 +1,7 @@
 {
-  "date": "2026-10-07T07:53:58.418Z",
+  "date": "2026-10-07T08:10:54.908Z",
   "files": [
-    "public/index.html",
-    "server/src/index.js",
-    "public/firebase-messaging-sw.js",
     "public/css/modules/sidebar.css",
-    "public/js/main.js"
+    "public/css/modules/theme.css"
   ]
 }

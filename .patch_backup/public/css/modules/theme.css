@@ -31,10 +31,14 @@
       background-color: rgba(0, 0, 0, 0.75);
     }
     /* Discord本家のユーザーポップオーバーは画面全体を暗くしないため、
-       PC幅ではプロフィールカードの暗幕だけ弱める */
+       PC幅ではプロフィールカードの暗幕を完全に透明化して外側クリックで閉じる */
     @media (min-width: 768px) {
       #userProfileModal.modal-overlay {
-        background-color: transparent;
+        background-color: transparent !important;
+        pointer-events: auto !important;
+      }
+      #userProfileModal .user-profile-card {
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
       }
     }
     /* ドロップダウンコンテナのスタイル */
@@ -925,11 +929,42 @@
       overflow: hidden !important;
       transition: background-color 0.2s ease, border-color 0.2s ease;
     }
+    .user-profile-inner-card {
+      border-radius: 12px;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .user-profile-btn {
+      transition: all 0.15s ease;
+    }
+
     /* 1. ライトモード */
     body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-card {
       background-color: #ffffff !important;
       border-color: #e3e5e8 !important;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-inner-card {
+      background-color: #f2f3f5 !important;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-divider {
+      background-color: rgba(0, 0, 0, 0.08) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileQuickDmInput {
+      background-color: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      color: #313338 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileQuickDmInput::placeholder {
+      color: #747f8d !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-btn {
+      background-color: rgba(0, 0, 0, 0.06) !important;
+      color: #4e5058 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .user-profile-btn:hover {
+      background-color: rgba(0, 0, 0, 0.12) !important;
+      color: #060607 !important;
     }
     body:not(.dark-server-theme):not(.discord-dark-theme) #userProfileAvatar {
       border-color: #ffffff !important;
@@ -945,6 +980,29 @@
       border-color: rgba(255, 255, 255, 0.08) !important;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
     }
+    body.dark-server-theme .user-profile-inner-card {
+      background-color: #0f172a !important;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    body.dark-server-theme .user-profile-divider {
+      background-color: rgba(255, 255, 255, 0.07) !important;
+    }
+    body.dark-server-theme #userProfileQuickDmInput {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #userProfileQuickDmInput::placeholder {
+      color: #64748b !important;
+    }
+    body.dark-server-theme .user-profile-btn {
+      background-color: rgba(255, 255, 255, 0.1) !important;
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme .user-profile-btn:hover {
+      background-color: rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+    }
     body.dark-server-theme #userProfileAvatar {
       border-color: #1e293b !important;
       background-color: #0f172a !important;
@@ -955,11 +1013,35 @@
     body.dark-server-theme #userProfileBanner {
       background-color: var(--user-banner-color, #1e293b);
     }
+
     /* 3. Discordダークモード (body.discord-dark-theme) */
     body.discord-dark-theme .user-profile-card {
       background-color: #232428 !important;
       border-color: #1f2023 !important;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
+    }
+    body.discord-dark-theme .user-profile-inner-card {
+      background-color: #111214 !important;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    body.discord-dark-theme .user-profile-divider {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.discord-dark-theme #userProfileQuickDmInput {
+      background-color: #383a40 !important;
+      border-color: transparent !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #userProfileQuickDmInput::placeholder {
+      color: #80848e !important;
+    }
+    body.discord-dark-theme .user-profile-btn {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: #b5bac1 !important;
+    }
+    body.discord-dark-theme .user-profile-btn:hover {
+      background-color: rgba(255, 255, 255, 0.16) !important;
+      color: #ffffff !important;
     }
     body.discord-dark-theme #userProfileAvatar {
       border-color: #232428 !important;
@@ -971,3 +1053,89 @@
     body.discord-dark-theme #userProfileBanner {
       background-color: var(--user-banner-color, #2b2d31);
     }
+
+    /* =========================================================================
+       音声クイックメニュー (#userAudioQuickMenu) のテーマ完全調和
+       ========================================================================= */
+    #userAudioQuickMenu {
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    /* 1. ライトモード */
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userAudioQuickMenu {
+      background: rgba(255, 255, 255, 0.98) !important;
+      border-color: #e3e5e8 !important;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+      color: #313338 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userAudioQuickMenu .h-px {
+      background-color: rgba(0, 0, 0, 0.08) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #userAudioQuickMenu input[type="range"] {
+      background-color: #e2e8f0 !important;
+    }
+
+    /* 2. ダークネイビーモード (body.dark-server-theme) */
+    body.dark-server-theme #userAudioQuickMenu {
+      background: rgba(30, 41, 59, 0.98) !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu .text-gray-800 {
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu .text-gray-700 {
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu .text-gray-400 {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu button:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu .h-px {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme #userAudioQuickMenu input[type="range"] {
+      background-color: #0f172a !important;
+    }
+    body.dark-server-theme #userPanel {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme #userPanel:hover {
+      border-color: rgba(255, 255, 255, 0.15) !important;
+    }
+
+    /* 3. Discordダークモード (body.discord-dark-theme) */
+    body.discord-dark-theme #userAudioQuickMenu {
+      background: rgba(43, 45, 49, 0.98) !important;
+      border-color: #1f2023 !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55) !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #userAudioQuickMenu .h-px {
+      background-color: rgba(255, 255, 255, 0.06) !important;
+    }
+    body.discord-dark-theme #userAudioQuickMenu input[type="range"] {
+      background-color: #1e1f22 !important;
+    }
+
+    /* VC接続バーのダークネイビー調和 */
+    body.dark-server-theme .vc-connection-bar {
+      background: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme .vc-bar-channel {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .vc-bar-btn {
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .vc-bar-btn:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #f1f5f9 !important;
+    }
+

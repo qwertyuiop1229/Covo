@@ -548,17 +548,17 @@ body.discord-dark-theme #openSettingsBtn:hover {
       display: flex !important;
       padding-top: 4px !important; /* Discord本家準拠: DMアイコン上端とサーバーヘッダー高さを完全一致 */
     }
-    /* Discord本家準拠: PC表示時にチャンネルサイドバー左上を丸角(12px)にして上部タイトルバーと自然に調和 */
+    /* Discord本家準拠: サーバーレールとサイドバーの色の境目の左上角を8px角丸化 */
     body.discord-ui-mode #sidebar {
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 8px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
-    /* 個チャ(DM)時・サーバー時共通: サーバーレールとの境目の左上角を美しく角丸化 */
+    /* 個チャ(DM)時・サーバー時共通: 境目の左上角を確実に美しく角丸化 */
     body.discord-ui-mode #serverHeader,
     body.discord-ui-mode #discordHomeSidebar,
     body.discord-ui-mode #discordHomeSidebar > div:first-child {
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 8px !important;
     }
     body.discord-ui-mode #backToServerListBtn {
       display: none !important; /* Discord風ヘッダーのため不要 */
@@ -1189,26 +1189,11 @@ body.discord-dark-theme #openSettingsBtn:hover {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      padding: 3px 14px;
-      border-radius: 9999px;
-      background: rgba(0, 0, 0, 0.05);
-      border: 1px solid rgba(0, 0, 0, 0.06);
-      transition: all 0.2s ease;
-    }
-    body.dark-server-theme .titlebar-center-context {
-      background: rgba(255, 255, 255, 0.06) !important;
-      border-color: rgba(255, 255, 255, 0.08) !important;
-      color: #f8fafc !important;
-    }
-    body.discord-dark-theme .titlebar-center-context {
-      background: #1e1f22 !important;
-      border-color: rgba(0, 0, 0, 0.25) !important;
-      color: #f2f3f5 !important;
     }
     .titlebar-context-icon {
       width: 16px;
       height: 16px;
-      border-radius: 50%;
+      border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1242,7 +1227,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #111827 !important;
       color: #cbd5e1 !important;
       border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 8px !important;
       overflow: visible !important;
       z-index: 35 !important;
     }
@@ -1255,7 +1240,7 @@ body.discord-dark-theme #openSettingsBtn:hover {
       background: #111827 !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
       color: #f8fafc !important;
-      border-top-left-radius: 12px !important;
+      border-top-left-radius: 8px !important;
     }
     body.dark-server-theme #serverNameDisplay {
       color: #f8fafc !important;

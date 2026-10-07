@@ -261,8 +261,10 @@
     }
     /* === ダークモード全体 === */
     body.dark-server-theme { background: #111827; }
-    body.dark-server-theme #mainContent,
-    body.dark-server-theme #appContainer { background: #111827; }
+    body.dark-server-theme #mainContent { background: #111827; }
+    body.dark-server-theme #appContainer { background: #0b0f19 !important; }
+    body.discord-dark-theme #appContainer { background: #1e1f22 !important; }
+    body:not(.dark-server-theme):not(.discord-dark-theme).discord-ui-mode #appContainer { background: #e2e8f0 !important; }
 
     /* サーバーリスト・通知画面 */
     body.dark-server-theme #serverListScreen { background: #1f2937; }
