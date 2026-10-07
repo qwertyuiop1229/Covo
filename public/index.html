@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.252" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.253" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.252" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.253" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -265,6 +265,10 @@
         s.includes('wakelock取得失敗: permission was denied') ||
         s.includes('permission was denied') ||
         s.includes('切断検知') ||
+        s.includes('couldn\'t find callback id') ||
+        s.includes('could not find callback id') ||
+        s.includes('tracking prevention') ||
+        s.includes('trackingprevention') ||
         s.includes('openpastversionsmodal is not defined') ||
         s.includes('emergencycheckupdate is not defined') ||
         s.includes('pdfjslib is not defined') ||
@@ -3891,7 +3895,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.252"></script>
+  <script type="module" src="js/main.js?v=1.1.253"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5144,6 +5148,12 @@
           <div class="text-[10px] font-bold text-[#949ba4] uppercase tracking-wider mb-1">メンバーになった日</div>
           <div id="userProfileJoinedDate" class="text-xs text-gray-700 dark:text-gray-300 font-medium">-</div>
         </div>
+        <!-- 役職 / ロール (Discord完全準拠) -->
+        <div id="userProfileRolesWrap" class="hidden">
+          <div class="text-[10px] font-extrabold text-[#949ba4] uppercase tracking-wider mb-1.5">役職</div>
+          <div id="userProfileRolesList" class="flex flex-wrap gap-1.5"></div>
+        </div>
+        <div id="userProfileRolesDivider" class="h-px bg-gray-200/80 dark:bg-white/5 hidden"></div>
         <!-- クイックメッセージ入力枠 -->
         <form onsubmit="event.preventDefault(); window.submitQuickDmMessage();" class="relative pt-0.5">
           <input type="text" id="userProfileQuickMsgInput" placeholder="メッセージを送信" class="w-full pl-3 pr-8 py-2 bg-white dark:bg-[#1e1f22] border border-gray-200 dark:border-white/10 rounded-xl text-xs text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all font-medium select-text" />
@@ -5231,6 +5241,11 @@
                 <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider">フレンドになった日 :</div>
                 <div id="fullProfileFriendDate" class="font-medium text-gray-800 dark:text-gray-200 mt-0.5">-</div>
               </div>
+            </div>
+            <!-- 役職 / ロール (Discord完全準拠) -->
+            <div id="fullProfileRolesWrap" class="hidden">
+              <div class="text-[10px] font-extrabold text-gray-400 dark:text-[#949ba4] uppercase tracking-wider mb-1.5">役職</div>
+              <div id="fullProfileRolesList" class="flex flex-wrap gap-1.5"></div>
             </div>
             <!-- メモ -->
             <div>

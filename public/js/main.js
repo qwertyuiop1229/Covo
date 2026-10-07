@@ -138,6 +138,20 @@ const firebaseConfig = {
   measurementId: "G-2JMHWNMG4R",
   databaseURL: "https://simplechat-65a0d-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
+// デスクトップ版でのサードパーティストレージアクセス警告 (Tracking Prevention) を根本防止
+const _isDesktopClient = typeof window !== 'undefined' && (
+  Boolean(window.__TAURI__) ||
+  Boolean(window.__TAURI_INTERNALS__) ||
+  location.origin === "tauri://localhost" ||
+  location.origin === "http://tauri.localhost" ||
+  location.origin === "https://tauri.localhost" ||
+  location.protocol === "tauri:" ||
+  location.hostname === "tauri.localhost" ||
+  location.hostname.endsWith(".localhost")
+);
+if (_isDesktopClient) {
+  delete firebaseConfig.measurementId;
+}
 const appId = "simplechat-65a0d";
 let _cachedIdToken = null;
 let _appVersion = null;
@@ -187,10 +201,13 @@ function isTransientTelemetryError(args) {
       str.includes('usecache is not defined') ||
       str.includes('receiving end does not exist') ||
       str.includes('could not establish connection') ||
+      str.includes('couldn\'t find callback id') ||
+      str.includes('could not find callback id') ||
+      str.includes('tracking prevention') ||
+      str.includes('trackingprevention') ||
+      str.includes('blocked access to storage') ||
       str.includes('a listener indicated an asynchronous response') ||
       str.includes('message channel closed') ||
-      str.includes('tracking prevention') ||
-      str.includes('blocked access to storage') ||
       str.includes('resizeobserver') ||
       str.includes('resize-observer') ||
       str.includes('disconnected port') ||
@@ -4890,20 +4907,32 @@ window.clearAllNotifications = function () {
 };
 
 window.__globalRoomsCache = window.__globalRoomsCache || {};
-
 function updateGlobalNotifUI() {
   try {
     let items = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
-    // 現在フォーカスして開いているチャンネルのアイテムがあれば消去
+    const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
     const curChannelKey = currentRoomId || (currentDmId ? `dm_${currentDmId}` : null);
-    if (curChannelKey && document.visibilityState === 'visible' && document.hasFocus()) {
-      items = items.filter(it => {
-        if (currentDmId && it.isDm && it.dmId === currentDmId) return false;
-        if (currentServerId && !it.isDm && it.serverId === currentServerId && it.roomId === currentRoomId) return false;
-        return true;
-      });
-      localStorage.setItem('covo_global_items', JSON.stringify(items));
-    }
+    const isAppFocused = document.visibilityState === 'visible' && document.hasFocus();
+
+    // 既読の自動検知（受信ボックスを開かなくても赤い点を自動消去）
+    // ※ ユーザーの大切なメンション通知 (it.isMention === true) は勝手に消さず保持する
+    items = items.filter(it => {
+      if (it.isMention) return true; // メンションは自動消去せず大切に残す
+      const chKey = it.isDm ? `dm_${it.dmId}` : it.roomId;
+      // 現在開いてフォーカス中のチャットは既読として除外
+      if (isAppFocused) {
+        if (it.isDm && currentDmId && it.dmId === currentDmId) return false;
+        if (!it.isDm && currentServerId && it.serverId === currentServerId && it.roomId === currentRoomId) return false;
+      }
+      // 既に既読時刻以降であれば未読一覧から自動除外
+      const lastRead = rm[chKey] || 0;
+      if (lastRead >= (it.lastAt || 0)) {
+        return false;
+      }
+      return true;
+    });
+
+    localStorage.setItem('covo_global_items', JSON.stringify(items));
     renderNotifList(items);
     if (isTauri && window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('set_badge', { hasUnread: items.length > 0 }).catch(() => { });
@@ -4912,6 +4941,18 @@ function updateGlobalNotifUI() {
   if (typeof updateServerCardDots === 'function') updateServerCardDots();
   if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
 }
+
+window.dismissMentionNotif = function(notifKey) {
+  try {
+    let items = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
+    items = items.filter(it => {
+      const k = `${it.isDm ? it.dmId : it.roomId}_${it.lastAt}_${it.senderName}`;
+      return k !== notifKey;
+    });
+    localStorage.setItem('covo_global_items', JSON.stringify(items));
+    updateGlobalNotifUI();
+  } catch (_) {}
+};
 window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
@@ -4951,8 +4992,21 @@ async function scanAllUnreadAndRender() {
       const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers`), where("joinedUsers", "array-contains", userId)));
       servers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
-    const items = (safeJsonParse(localStorage.getItem('covo_global_items'), []) || []).filter(it => it.serverId === currentServerId);
-    // 1. サーバーのルーム未読スキャン (同一サーバー内の別ルームも網羅)
+    // 既存のメンション通知と全サーバー通知を保護（現在のサーバー限定フィルタを完全撤廃）
+    const existingGlobal = safeJsonParse(localStorage.getItem('covo_global_items'), []) || [];
+    const items = [];
+    const itemKeySet = new Set();
+    // メンション通知は消えないように最優先で維持
+    existingGlobal.forEach(it => {
+      if (it && it.isMention) {
+        const key = `mention_${it.isDm ? it.dmId : it.roomId}_${it.lastAt}_${it.senderName}`;
+        if (!itemKeySet.has(key)) {
+          itemKeySet.add(key);
+          items.push(it);
+        }
+      }
+    });
+    // 1. サーバーのルーム未読スキャン (全サーバーを網羅)
     for (const sv of servers) {
       let roomsData = window.__globalRoomsCache[sv.id];
       if (!roomsData) {
@@ -5066,20 +5120,39 @@ function renderNotifList(items) {
   const mentionsEmpty = document.getElementById('inboxMentionsEmpty');
   const totalBadge = document.getElementById('notifTotalBadge');
 
-  const count = items.length;
-  if (totalBadge) {
-    totalBadge.textContent = count;
-    totalBadge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
+  const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
+  const isAppFocused = document.visibilityState === 'visible' && document.hasFocus();
 
-  // 1. 未読タブの描画
-  if (count === 0) {
+  // 未読メッセージのみ抽出（チャットを開いて読んだものは未読タブから自動消去）
+  const unreadItems = (items || []).filter(it => {
+    if (!it) return false;
+    const chKey = it.isDm ? `dm_${it.dmId}` : it.roomId;
+    if (isAppFocused) {
+      if (it.isDm && currentDmId && it.dmId === currentDmId) return false;
+      if (!it.isDm && currentServerId && it.serverId === currentServerId && it.roomId === currentRoomId) return false;
+    }
+    const lastRead = rm[chKey] || 0;
+    return lastRead < (it.lastAt || 0);
+  });
+
+  // メンション履歴（読んだ後でも消えない・全件保持）
+  const mentionItems = (items || []).filter(it => it && it.isMention);
+
+  // 赤い点（未読バッジ）の点灯件数: 本当に未読のメッセージ件数
+  const unreadCount = unreadItems.length;
+
+  if (totalBadge) {
+    totalBadge.textContent = unreadCount;
+    totalBadge.style.display = unreadCount > 0 ? 'inline-flex' : 'none';
+  }
+  // 1. 未読タブの描画 (unreadItems を表示)
+  if (unreadItems.length === 0) {
     if (pList) pList.innerHTML = '';
     if (mList) mList.innerHTML = '';
     if (pe) pe.style.display = 'block';
   } else {
     if (pe) pe.style.display = 'none';
-    const maxItems = items.slice(0, 50);
+    const maxItems = unreadItems.slice(0, 200);
     let html = '';
     maxItems.forEach(it => {
       const isDm = Boolean(it.isDm);
@@ -5126,16 +5199,15 @@ function renderNotifList(items) {
           </div>
         </div>`;
     });
-    if (items.length > 50) {
-      html += `<div class="text-center text-xs text-gray-400 py-2">他 ${items.length - 50} 件の未読メッセージがあります</div>`;
+    if (items.length > 200) {
+      html += `<div class="text-center text-xs text-gray-400 py-2">他 ${items.length - 200} 件の未読メッセージがあります</div>`;
     }
     if (pList) pList.innerHTML = html;
     if (mList) mList.innerHTML = html;
-  }
-
-  // 2. メンションタブの描画
-  const mentionItems = items.filter(it => it.isMention);
-  if (mentionsList) {
+    }
+    // 2. メンションタブの描画（個別削除ボタン付き・確実に残る）
+    const mentionItems = items.filter(it => it.isMention);
+    if (mentionsList) {
     if (mentionItems.length === 0) {
       mentionsList.innerHTML = '';
       if (mentionsEmpty) mentionsEmpty.style.display = 'block';
@@ -5148,10 +5220,10 @@ function renderNotifList(items) {
         const timeStr = formatTimeAgo(it.lastAt);
         const bodyText = escapeHtml(it.lastText || 'メンションメッセージ');
         const sender = escapeHtml(it.senderName || 'メンバー');
-
+        const notifItemKey = `${it.isDm ? it.dmId : it.roomId}_${it.lastAt}_${it.senderName}`;
         mHtml += `
-          <div class="p-3.5 bg-indigo-500/10 dark:bg-indigo-950/30 border border-indigo-500/30 rounded-2xl cursor-pointer hover:bg-indigo-500/20 transition-all group flex items-start justify-between gap-3 shadow-sm" onclick="goToServerRoom('${it.serverId}','${it.roomId}')">
-            <div class="flex-1 min-w-0">
+          <div class="p-3.5 bg-indigo-500/10 dark:bg-indigo-950/30 border border-indigo-500/30 rounded-2xl cursor-pointer hover:bg-indigo-500/20 transition-all group flex items-start justify-between gap-3 shadow-sm relative" onclick="goToServerRoom('${_jsq(it.serverId)}','${_jsq(it.roomId)}')">
+            <div class="flex-1 min-w-0 pr-6">
               <div class="flex items-center gap-1.5 leading-none mb-1">
                 <span class="px-1.5 py-0.5 text-[9px] font-extrabold bg-indigo-600 text-white rounded">@メンション</span>
                 <span class="text-[11px] font-bold text-gray-600 dark:text-gray-300 truncate">${sName} › #${rName}</span>
@@ -5161,37 +5233,39 @@ function renderNotifList(items) {
                 <span class="font-bold mr-1">${sender}:</span>${bodyText}
               </div>
             </div>
+            <button onclick="event.stopPropagation(); window.dismissMentionNotif('${_jsq(notifItemKey)}')" class="absolute top-2.5 right-2.5 w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-black/10 dark:hover:bg-white/10 transition-colors" title="メンション通知を削除">
+              <i class="fas fa-times text-[10px]"></i>
+            </button>
           </div>`;
       });
       mentionsList.innerHTML = mHtml;
     }
-  }
+    }
 
-  // 通知バッジ・アイコン更新
+  // 通知バッジ・アイコン更新（unreadCount に完全連動: 読んだ瞬間に開かなくても赤丸が自動消去される）
   const mobileNotifTab = document.getElementById('mobileTabNotif');
   if (mobileNotifTab) {
     let nb = mobileNotifTab.querySelector('.mobile-notif-dot');
-    if (count > 0) {
+    if (unreadCount > 0) {
       if (!nb) { nb = document.createElement('span'); nb.className = 'mobile-notif-dot'; mobileNotifTab.appendChild(nb); }
       nb.style.display = 'block';
     } else if (nb) { nb.style.display = 'none'; }
   }
   const badge = document.getElementById('globalUnreadBadge');
-  if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+  if (badge) { badge.textContent = unreadCount; badge.style.display = unreadCount > 0 ? 'flex' : 'none'; }
   const headerBadges = document.querySelectorAll('.header-notif-badge');
   headerBadges.forEach(b => {
-    b.style.display = count > 0 ? 'block' : 'none';
-    b.classList.toggle('hidden', count === 0);
+    b.style.display = unreadCount > 0 ? 'block' : 'none';
+    b.classList.toggle('hidden', unreadCount === 0);
   });
-
   if (isTauri && window.__TAURI__?.core?.invoke) {
-    window.__TAURI__.core.invoke('set_badge', { hasUnread: count > 0 }).catch(console.error);
+    window.__TAURI__.core.invoke('set_badge', { hasUnread: unreadCount > 0 }).catch(console.error);
     document.title = 'Covo';
   } else {
-    document.title = count > 0 ? `(新着あり) Covo` : 'Covo';
+    document.title = unreadCount > 0 ? `(新着あり) Covo` : 'Covo';
   }
   if ('setAppBadge' in navigator) {
-    if (count > 0) navigator.setAppBadge(count).catch(() => {});
+    if (unreadCount > 0) navigator.setAppBadge(unreadCount).catch(() => {});
     else navigator.clearAppBadge().catch(() => {});
   }
   if (typeof updateServerCardDots === 'function') updateServerCardDots();
@@ -6791,6 +6865,9 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   }
   const statusDivider = document.getElementById("userProfileCustomStatusDivider");
   const aboutDivider = document.getElementById("userProfileAboutMeDivider");
+  const rolesWrap = document.getElementById("userProfileRolesWrap");
+  const rolesList = document.getElementById("userProfileRolesList");
+  const rolesDivider = document.getElementById("userProfileRolesDivider");
   const quickInput = document.getElementById("userProfileQuickMsgInput");
   if (quickInput) {
     quickInput.value = "";
@@ -6799,12 +6876,38 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     if (quickForm) quickForm.style.display = isSelf ? 'none' : '';
   }
 
+  // Discord完全準拠: 役職・権限ロールの算出 & 表示
+  if (rolesWrap && rolesList) {
+    const rolesHtml = [];
+    if (currentServerData && currentServerId) {
+      if (currentServerData.createdBy === targetUid) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"><i class="fas fa-crown text-[10px]"></i>サーバーオーナー</span>');
+      } else if (currentServerData.serverAdmins && currentServerData.serverAdmins.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30"><i class="fas fa-shield-halved text-[10px]"></i>管理者</span>');
+      }
+      if (currentServerData.joinedUsers && currentServerData.joinedUsers.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>メンバー</span>');
+      }
+    }
+    if (isAdmin && targetUid === userId) {
+      rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"><i class="fas fa-star text-[10px]"></i>Covo管理者</span>');
+    }
+    if (rolesHtml.length > 0) {
+      rolesList.innerHTML = rolesHtml.join('');
+      rolesWrap.classList.remove('hidden');
+    } else {
+      rolesWrap.classList.add('hidden');
+    }
+  }
+
   const updateProfileDividers = () => {
     const hasStatus = customStatusWrap && !customStatusWrap.classList.contains("hidden");
     const hasAbout = aboutMeWrap && !aboutMeWrap.classList.contains("hidden");
     const hasJoined = joinedWrap && !joinedWrap.classList.contains("hidden");
+    const hasRoles = rolesWrap && !rolesWrap.classList.contains("hidden");
     if (statusDivider) statusDivider.classList.toggle("hidden", !hasStatus);
     if (aboutDivider) aboutDivider.classList.toggle("hidden", !(hasAbout || (hasJoined && hasStatus)));
+    if (rolesDivider) rolesDivider.classList.toggle("hidden", !hasRoles);
   };
 
   // 前のユーザーのカスタムステータス残留を完全防止（キャッシュがあれば即時適用、なければ非表示に初期化）
@@ -6877,7 +6980,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
         }
         if (uData.aboutMe) {
           if (aboutMeWrap) aboutMeWrap.classList.remove("hidden");
-          if (aboutMeText) aboutMeText.textContent = uData.aboutMe;
+          if (aboutMeText) aboutMeText.innerHTML = typeof escapeHtmlAndLinkUrls === 'function' ? escapeHtmlAndLinkUrls(uData.aboutMe) : escapeHtml(uData.aboutMe);
         } else {
           if (aboutMeWrap) aboutMeWrap.classList.add("hidden");
         }
@@ -6951,15 +7054,17 @@ window.submitQuickDmMessage = async function () {
   const text = input.value.trim();
   if (!text) return;
   const target = _currentProfileTargetUser;
+  input.value = ""; // 入力欄を即座にクリア
   closeUserProfileModal();
   await openDm(target.uid, target.nickname, target.avatarUrl);
   setTimeout(() => {
     const mainInput = document.getElementById("messageInput");
     if (mainInput) {
       mainInput.value = text;
+      if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
       sendMessage();
     }
-  }, 200);
+  }, 280);
 };
 
 // =========================================================================
@@ -7122,7 +7227,33 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const noteInput = document.getElementById("fullProfileNoteInput");
   const msgBtn = document.getElementById("fullProfileMsgBtn");
   const friendBtn = document.getElementById("fullProfileFriendBtn");
+  const rolesWrap = document.getElementById("fullProfileRolesWrap");
+  const rolesList = document.getElementById("fullProfileRolesList");
   const safeName = targetNickname || targetUid.substring(0, 8);
+
+  // Discord完全準拠: フルプロフィールでの役職（ロール）表示
+  if (rolesWrap && rolesList) {
+    const rolesHtml = [];
+    if (currentServerData && currentServerId) {
+      if (currentServerData.createdBy === targetUid) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"><i class="fas fa-crown text-[10px]"></i>サーバーオーナー</span>');
+      } else if (currentServerData.serverAdmins && currentServerData.serverAdmins.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30"><i class="fas fa-shield-halved text-[10px]"></i>管理者</span>');
+      }
+      if (currentServerData.joinedUsers && currentServerData.joinedUsers.includes(targetUid)) {
+        rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>メンバー</span>');
+      }
+    }
+    if (isAdmin && targetUid === userId) {
+      rolesHtml.push('<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"><i class="fas fa-star text-[10px]"></i>Covo管理者</span>');
+    }
+    if (rolesHtml.length > 0) {
+      rolesList.innerHTML = rolesHtml.join('');
+      rolesWrap.classList.remove('hidden');
+    } else {
+      rolesWrap.classList.add('hidden');
+    }
+  }
   // 共通サーバー数の算出
   const mutualServers = Array.isArray(allServersCache)
     ? allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId))
@@ -7228,7 +7359,10 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
       if (uData.email && handleEl) {
         handleEl.textContent = `${uData.email.split('@')[0]}${uData.customStatus?.text ? ` • ${uData.customStatus.text}` : ''}`;
       }
-      if (aboutMeEl) aboutMeEl.textContent = uData.aboutMe || (uData.customStatus?.text || '自己紹介はまだ設定されていません。');
+      if (aboutMeEl) {
+        const rawAbout = uData.aboutMe || (uData.customStatus?.text || '');
+        aboutMeEl.innerHTML = rawAbout ? (typeof escapeHtmlAndLinkUrls === 'function' ? escapeHtmlAndLinkUrls(rawAbout) : escapeHtml(rawAbout)) : '自己紹介はまだ設定されていません。';
+      }
       if (joinedDateEl) {
         let dt = '-';
         if (uData.createdAt?.toDate) dt = uData.createdAt.toDate().toLocaleDateString('ja-JP');
@@ -9297,35 +9431,38 @@ function updateDmViewVisibility() {
 function subscribeToRelationships() {
   if (unsubscribeRelationships) { unsubscribeRelationships(); unsubscribeRelationships = null; }
   if (!userId) return;
-
   // 1. IndexedDB (LocalStore) から保存済みフレンドを先行読み出し（起動時の0人表示を完全防止）
   if (typeof LocalStore !== 'undefined' && LocalStore.getAllFriends) {
     LocalStore.getAllFriends().then(cachedList => {
       if (Array.isArray(cachedList) && cachedList.length > 0 && (!friendRelationships || Object.keys(friendRelationships).length === 0)) {
         if (!friendRelationships) friendRelationships = {};
         cachedList.forEach(item => {
-          const id = item.id || item.targetUid;
-          if (id) friendRelationships[id] = item;
+          const id = item.targetUid || item.id || item.uid;
+          if (id) {
+            let normStatus = item.status || 'friends';
+            if (['friend', 'accepted', 'mutual'].includes(String(normStatus).toLowerCase())) normStatus = 'friends';
+            friendRelationships[id] = { ...item, id, targetUid: id, status: normStatus };
+          }
         });
         renderFriendTabs();
         updateDmPendingBadges();
       }
     }).catch(() => {});
   }
-
-  // 2. Firestore リアルタイム同期
+  // 2. Firestore リアルタイム同期（UIDとステータスを確実に正規化）
   try {
     const relCol = collection(db, `artifacts/${appId}/users/${userId}/relationships`);
     unsubscribeRelationships = onSnapshot(relCol, (snap) => {
       const nextRels = {};
       snap.forEach(d => {
-        nextRels[d.id] = { id: d.id, ...d.data() };
+        const data = d.data() || {};
+        const id = d.id;
+        let normStatus = data.status || 'friends';
+        if (['friend', 'accepted', 'mutual'].includes(String(normStatus).toLowerCase())) normStatus = 'friends';
+        nextRels[id] = { id, targetUid: id, ...data, status: normStatus };
       });
-      if (snap.empty && friendRelationships && Object.keys(friendRelationships).length > 0) {
-        // オフラインや初期読み込み中の一時的空振りを保護
-      } else {
-        friendRelationships = nextRels;
-      }
+      // 新しいスナップショットで確実に更新
+      friendRelationships = nextRels;
       LocalStore.putFriendsBatch(Object.values(friendRelationships)).catch(() => {});
       renderFriendTabs();
       updateDmPendingBadges();
@@ -9430,13 +9567,20 @@ window.clearFriendSearch = function() {
   window.filterFriendsList('');
 };
 
+let _renderFriendTabsDebounce = null;
 function renderFriendTabs() {
-  const rels = Object.values(friendRelationships);
-  let friends = rels.filter(r => r.status === 'friends');
-  let pendingReceived = rels.filter(r => r.status === 'pending_received');
-  let pendingSent = rels.filter(r => r.status === 'pending_sent');
-  let blocked = rels.filter(r => r.status === 'blocked');
+  if (_renderFriendTabsDebounce) clearTimeout(_renderFriendTabsDebounce);
+  _renderFriendTabsDebounce = setTimeout(() => {
+    _renderFriendTabsReal();
+  }, 60);
+}
 
+function _renderFriendTabsReal() {
+  const rels = Object.values(friendRelationships || {});
+  let friends = rels.filter(r => r && (r.status === 'friends' || r.status === 'friend' || r.status === 'accepted'));
+  let pendingReceived = rels.filter(r => r && r.status === 'pending_received');
+  let pendingSent = rels.filter(r => r && r.status === 'pending_sent');
+  let blocked = rels.filter(r => r && r.status === 'blocked');
   if (window._friendSearchQuery) {
     const q = window._friendSearchQuery;
     friends = friends.filter(f => (f.targetNickname || '').toLowerCase().includes(q) || (f.targetEmail || '').toLowerCase().includes(q));
@@ -9444,13 +9588,12 @@ function renderFriendTabs() {
     pendingSent = pendingSent.filter(p => (p.targetNickname || '').toLowerCase().includes(q) || (p.targetEmail || '').toLowerCase().includes(q));
     blocked = blocked.filter(b => (b.targetNickname || '').toLowerCase().includes(q));
   }
-
   const isOnline = (uid) => {
+    if (!uid) return false;
     const st = computeUserPresenceState(uid);
     return st === 'online' || st === 'away';
   };
-
-  const onlineFriends = friends.filter(f => isOnline(f.targetUid));
+  const onlineFriends = friends.filter(f => isOnline(f.targetUid || f.id));
 
   // 1. オンライン
   const onlineCountEl = document.getElementById('dmOnlineFriendsCount');
@@ -9496,27 +9639,26 @@ function renderFriendTabs() {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="acceptFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95">
+            <button onclick="acceptFriendRequest('${escapeHtml(r.targetUid || r.id)}')" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 active:scale-95">
               <i class="fas fa-check text-xs"></i> 承認
             </button>
-            <button onclick="rejectFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition active:scale-95">
+            <button onclick="rejectFriendRequest('${escapeHtml(r.targetUid || r.id)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-xl transition active:scale-95">
               拒否
             </button>
           </div>
-        </div>
-      `).join('');
-    }
-  }
-
-  const psCountEl = document.getElementById('dmPendingSentCount');
-  if (psCountEl) psCountEl.textContent = pendingSent.length;
-  const psListEl = document.getElementById('dmPendingSentList');
-  if (psListEl) {
-    if (pendingSent.length === 0) {
-      psListEl.innerHTML = `<div class="p-4 text-center text-xs text-gray-400 dark:text-slate-500">送信済みのフレンド申請はありません</div>`;
-    } else {
-      psListEl.innerHTML = pendingSent.map(r => `
-        <div class="friend-card">
+          </div>
+          `).join('');
+          }
+          }
+          const psCountEl = document.getElementById('dmPendingSentCount');
+          if (psCountEl) psCountEl.textContent = pendingSent.length;
+          const psListEl = document.getElementById('dmPendingSentList');
+          if (psListEl) {
+          if (pendingSent.length === 0) {
+          psListEl.innerHTML = `<div class="p-4 text-center text-xs text-gray-400 dark:text-slate-500">送信済みのフレンド申請はありません</div>`;
+          } else {
+          psListEl.innerHTML = pendingSent.map(r => `
+          <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0 overflow-hidden">
               ${isUsableAvatarUrl(r.targetAvatarUrl) ? `<img src="${escapeHtml(r.targetAvatarUrl)}" class="w-full h-full rounded-full object-cover">` : escapeHtml((r.targetNickname || 'U').charAt(0).toUpperCase())}
@@ -9526,24 +9668,23 @@ function renderFriendTabs() {
               <div class="text-xs text-gray-400 dark:text-gray-500 truncate">送信済み申請</div>
             </div>
           </div>
-          <button onclick="cancelFriendRequest('${escapeHtml(r.targetUid)}')" class="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition active:scale-95">
+          <button onclick="cancelFriendRequest('${escapeHtml(r.targetUid || r.id)}')" class="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-bold rounded-xl transition active:scale-95">
             キャンセル
           </button>
-        </div>
-      `).join('');
-    }
-  }
-
-  // 4. ブロック中
-  const blCountEl = document.getElementById('dmBlockedCount');
-  if (blCountEl) blCountEl.textContent = blocked.length;
-  const blListEl = document.getElementById('dmBlockedList');
-  if (blListEl) {
-    if (blocked.length === 0) {
-      blListEl.innerHTML = `<div class="p-4 text-center text-xs text-gray-400 dark:text-slate-500">ブロック中のユーザーはいません</div>`;
-    } else {
-      blListEl.innerHTML = blocked.map(b => `
-        <div class="friend-card">
+          </div>
+          `).join('');
+          }
+          }
+          // 4. ブロック中
+          const blCountEl = document.getElementById('dmBlockedCount');
+          if (blCountEl) blCountEl.textContent = blocked.length;
+          const blListEl = document.getElementById('dmBlockedList');
+          if (blListEl) {
+          if (blocked.length === 0) {
+          blListEl.innerHTML = `<div class="p-4 text-center text-xs text-gray-400 dark:text-slate-500">ブロック中のユーザーはいません</div>`;
+          } else {
+          blListEl.innerHTML = blocked.map(b => `
+          <div class="friend-card">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm flex-shrink-0">
               ${escapeHtml((b.targetNickname || 'U').charAt(0).toUpperCase())}
@@ -9552,13 +9693,13 @@ function renderFriendTabs() {
               <div class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(b.targetNickname || 'ブロックされたユーザー')}</div>
             </div>
           </div>
-          <button onclick="unblockUser('${escapeHtml(b.targetUid)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition active:scale-95">
+          <button onclick="unblockUser('${escapeHtml(b.targetUid || b.id)}')" class="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 dark:bg-slate-800 text-gray-800 dark:text-white text-xs font-bold rounded-xl transition active:scale-95">
             ブロック解除
           </button>
-        </div>
-      `).join('');
-    }
-  }
+          </div>
+          `).join('');
+          }
+          }
 }
 
 function createFriendCardHtml(friend, online) {
@@ -9575,7 +9716,7 @@ function createFriendCardHtml(friend, online) {
     ? `<div class="text-[11px] text-gray-500 dark:text-[#949ba4] truncate flex items-center gap-1 mt-0.5">${curEmoji}<span class="truncate">${escapeHtml(curSt.text)}</span></div>`
     : `<div class="text-xs text-gray-400 dark:text-slate-400">${online ? 'オンライン' : 'オフライン'}</div>`;
   return `
-    <div class="friend-card" onclick="openUserProfileModal('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
+    <div class="friend-card" onclick="openUserProfileModal('${_jsq(fUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')">
       <div class="flex items-center gap-3 min-w-0 flex-1 mr-2">
         <div class="relative w-10 h-10 flex-shrink-0">
           <div class="w-full h-full rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-sm overflow-hidden">
@@ -9589,16 +9730,16 @@ function createFriendCardHtml(friend, online) {
         </div>
       </div>
       <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
-        <button onclick="openDm('${_jsq(friend.targetUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')" class="friend-action-btn" title="メッセージを送る">
+        <button onclick="openDm('${_jsq(fUid)}', '${_jsq(resolvedNick)}', '${_jsq(resolvedAvatar)}')" class="friend-action-btn" title="メッセージを送る">
           <i class="fas fa-comment-dots"></i>
         </button>
-        <button onclick="openCallPickerWithTarget('${friend.targetUid}')" class="friend-action-btn" title="通話">
+        <button onclick="openCallPickerWithTarget('${_jsq(fUid)}')" class="friend-action-btn" title="通話">
           <i class="fas fa-phone"></i>
         </button>
-        <button onclick="openFileShareWithTarget('${friend.targetUid}')" class="friend-action-btn" title="P2Pファイル共有">
+        <button onclick="openFileShareWithTarget('${_jsq(fUid)}')" class="friend-action-btn" title="P2Pファイル共有">
           <i class="fas fa-share-from-square"></i>
         </button>
-        <button onclick="blockUser('${friend.targetUid}')" class="friend-action-btn hover:!bg-rose-600 hover:!text-white" title="ブロック">
+        <button onclick="blockUser('${_jsq(fUid)}')" class="friend-action-btn hover:!bg-rose-600 hover:!text-white" title="ブロック">
           <i class="fas fa-ban"></i>
         </button>
       </div>
@@ -9620,7 +9761,7 @@ window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', 
   if (!targetUid || targetUid === userId) return;
   try {
     const existing = friendRelationships[targetUid];
-    if (existing && existing.status === 'friends') {
+    if (existing && (existing.status === 'friends' || existing.status === 'friend')) {
       alertMessage('すでにフレンドです！', 'info');
       return;
     }
@@ -9628,8 +9769,54 @@ window.sendDirectFriendRequest = async function(targetUid, targetNickname = '', 
       alertMessage('すでにフレンド申請を送信済みです。', 'info');
       return;
     }
-
+    if (existing && existing.status === 'pending_received') {
+      // 相手から既に申請が届いている場合は自動的に承認
+      await window.acceptFriendRequest(targetUid);
+      return;
+    }
+    // Firestore 最新ステータスで同期確認（自端末のキャッシュ漏れ・相手側先行承認をガード）
     const myRef = doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUid}`);
+    const myRelDoc = await getDoc(myRef).catch(() => null);
+    if (myRelDoc && myRelDoc.exists()) {
+      const myRelData = myRelDoc.data() || {};
+      if (myRelData.status === 'friends' || myRelData.status === 'friend') {
+        friendRelationships[targetUid] = { id: targetUid, targetUid, ...myRelData, status: 'friends' };
+        renderFriendTabs();
+        alertMessage('すでにフレンドです！', 'info');
+        return;
+      }
+      if (myRelData.status === 'pending_received') {
+        await window.acceptFriendRequest(targetUid);
+        return;
+      }
+      if (myRelData.status === 'pending_sent') {
+        alertMessage('すでにフレンド申請を送信済みです。', 'info');
+        return;
+      }
+    }
+    // 相手側の関係性も確認（相手側ですでにフレンド状態なら上書き破壊せず自分側も friends に修復）
+    const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
+    const targetRelDoc = await getDoc(targetRef).catch(() => null);
+    if (targetRelDoc && targetRelDoc.exists()) {
+      const targetRelData = targetRelDoc.data() || {};
+      if (targetRelData.status === 'friends' || targetRelData.status === 'friend') {
+        await setDoc(myRef, {
+          targetUid: targetUid,
+          targetNickname: targetNickname || 'ユーザー',
+          targetAvatarUrl: targetAvatarUrl || '',
+          targetEmail: targetEmail || '',
+          status: 'friends',
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        friendRelationships[targetUid] = { id: targetUid, targetUid, status: 'friends', targetNickname, targetAvatarUrl, targetEmail };
+        renderFriendTabs();
+        alertMessage('フレンド関係を同期・復旧しました！', 'success');
+        return;
+      }
+    } else if (myRelDoc && myRelDoc.exists() && myRelDoc.data()?.status === 'pending_sent') {
+      // 相手側のドキュメントが存在しない場合（相手が申請を拒否・削除した場合）、自分側も再送可能にする
+      console.log('[FriendRequest] 相手側で申請が削除されているため再送信を許可します');
+    }
     const targetRef = doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`);
 
     const batch = writeBatch(db);
@@ -9715,14 +9902,29 @@ window.submitFriendRequest = async function() {
     }
 
     const existing = friendRelationships[targetUser.id];
-    if (existing && existing.status === 'friends') {
+    if (existing && (existing.status === 'friends' || existing.status === 'friend')) {
       feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-amber-500';
       feedback.textContent = 'すでにフレンドです！';
       btn.disabled = false;
       return;
     }
-
+    if (existing && existing.status === 'pending_received') {
+      await window.acceptFriendRequest(targetUser.id);
+      feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-emerald-500';
+      feedback.textContent = `@${targetUser.nickname || 'ユーザー'} からの申請を承認してフレンドになりました！`;
+      btn.disabled = false;
+      return;
+    }
     const myRef = doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUser.id}`);
+    const myRelDoc = await getDoc(myRef).catch(() => null);
+    if (myRelDoc && myRelDoc.exists() && myRelDoc.data()?.status === 'friends') {
+      friendRelationships[targetUser.id] = { id: targetUser.id, targetUid: targetUser.id, ...myRelDoc.data(), status: 'friends' };
+      renderFriendTabs();
+      feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-amber-500';
+      feedback.textContent = 'すでにフレンドです！';
+      btn.disabled = false;
+      return;
+    }
     const targetRef = doc(db, `artifacts/${appId}/users/${targetUser.id}/relationships/${userId}`);
 
     const batch = writeBatch(db);
@@ -9762,14 +9964,22 @@ window.acceptFriendRequest = async function(targetUid) {
   try {
     const batch = writeBatch(db);
     batch.set(doc(db, `artifacts/${appId}/users/${userId}/relationships/${targetUid}`), {
+      targetUid: targetUid,
       status: 'friends',
       updatedAt: serverTimestamp()
     }, { merge: true });
     batch.set(doc(db, `artifacts/${appId}/users/${targetUid}/relationships/${userId}`), {
+      targetUid: userId,
       status: 'friends',
       updatedAt: serverTimestamp()
     }, { merge: true });
     await batch.commit();
+    if (friendRelationships && friendRelationships[targetUid]) {
+      friendRelationships[targetUid].status = 'friends';
+    } else if (friendRelationships) {
+      friendRelationships[targetUid] = { id: targetUid, targetUid, status: 'friends' };
+    }
+    renderFriendTabs();
     alertMessage("フレンド申請を承認しました！", "success");
   } catch (err) {
     console.error('Failed to accept friend request:', err);
@@ -10027,7 +10237,8 @@ function renderDmConversationsList() {
   if (friendRelationships && friendRelationships[targetUid]) {
     friendRelationships[targetUid].targetNickname = newNickname;
     friendRelationships[targetUid].targetAvatarUrl = newAvatarUrl;
-    friendRelationships[targetUid].status = merged.status;
+    // 🔒 バグ修正: フレンド関係の status (friends/pending/etc) をオンライン接続状態 (online/offline) で上書き破壊する致命的バグを解消
+    friendRelationships[targetUid].presenceState = merged.computedState || merged.status;
     if (newCustomStatus !== undefined) friendRelationships[targetUid].customStatus = newCustomStatus;
   }
   // 🌟 右側プロフィールパネル (#dmProfilePanel) のステータスインジケーター（緑/黄/灰）をリアルタイム即時更新！
@@ -23874,11 +24085,10 @@ async function blockingUpdateCheck() {
   }
 
   try {
-    console.log('📦 [アップデート] 新しいバージョンがないか確認しています...');
+    if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンがないか確認しています...');
     const metadata = await invoke('plugin:updater|check');
     if (metadata) {
-      console.log('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
-
+      if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
       const Channel = window.__TAURI__?.core?.Channel;
       const rid = metadata.rid;
 
@@ -23968,7 +24178,7 @@ async function blockingUpdateCheck() {
 
       return true; // アプリ起動をブロック
     }
-    console.log('📦 [アップデート] 現在のバージョンは最新です');
+    if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 現在のバージョンは最新です');
   } catch (error) {
     console.warn('Update check failed:', error);
   }
