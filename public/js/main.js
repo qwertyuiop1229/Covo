@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.260';
-import * as LocalStore from './local_store.js?v=1.1.260';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.260';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.260';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.260';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.260';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.260';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.261';
+import * as LocalStore from './local_store.js?v=1.1.261';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.261';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.261';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.261';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.261';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.261';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -258,6 +258,11 @@ function isTransientTelemetryError(args) {
       str.includes('no pending remote description') ||
       str.includes('called in wrong state: stable') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
+      str.includes('missing or insufficient permissions') ||
+      str.includes('[p2p logsync]') ||
+      str.includes('attempting to use a disconnected port') ||
+      str.includes('the message port closed before a response was received') ||
+      str.includes('err_quic_protocol_error') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -3023,10 +3028,15 @@ window.switchReportSubTab = function (tab) {
       }
     });
   }
-  const tabs = ['errors', 'feedbacks', 'diag'];
-  tabs.forEach(t => {
-    const btn = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
-    const content = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Content`);
+  const tabMap = {
+    errors: { btn: 'reportSubTabErrorsBtn', content: 'reportSubTabErrorsContent' },
+    feedbacks: { btn: 'reportSubTabFeedbacksBtn', content: 'reportSubTabFeedbacksContent' },
+    diag: { btn: 'reportSubTabDiagBtn', content: 'reportSubTabDiagContent' },
+    cfstatus: { btn: 'reportSubTabCfStatusBtn', content: 'reportSubTabCfStatusContent' }
+  };
+  Object.keys(tabMap).forEach(t => {
+    const btn = document.getElementById(tabMap[t].btn);
+    const content = document.getElementById(tabMap[t].content);
     if (t === tab) {
       if (btn) {
         btn.className = "flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs";
@@ -3042,6 +3052,15 @@ window.switchReportSubTab = function (tab) {
   if (tab === 'errors') loadErrorTelemetry();
   else if (tab === 'feedbacks') loadAdminFeedbacks();
   else if (tab === 'diag') renderReportsConsoleStream();
+  else if (tab === 'cfstatus') {
+    const container = document.getElementById('reportSubTabCfStatusContent');
+    const shared = document.getElementById('cfStatusSharedContent');
+    if (container && shared) {
+      container.appendChild(shared);
+      shared.classList.remove('hidden');
+    }
+    loadCfServerStatus();
+  }
 };
 
 window.filterErrorTelemetry = function (filter) {
@@ -3930,7 +3949,10 @@ window.loadCfServerStatus = async function () {
     const res = await fetch(`${WORKER_BASE_URL}/api/admin/serverStatus?appId=${appId}`, {
       headers: { "Authorization": `Bearer ${idToken}` }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `HTTP ${res.status}`);
+    }
     const json = await res.json();
     if (!json.success || !json.data) throw new Error(json.error || "データ取得失敗");
 
@@ -3946,10 +3968,14 @@ window.loadCfServerStatus = async function () {
 
 function renderCfServerStatusUI(data) {
   if (!data) return;
-  const limits = data.limits || {};
-  const reqs = limits.dailyRequests || {};
-  const kv = limits.kvStorage || {};
-  const d1 = limits.d1Database || {};
+  const reqs = data.requestsToday || data.limits?.dailyRequests || {};
+  const kv = data.kv || data.limits?.kvStorage || {};
+  const d1 = data.d1 || data.limits?.d1Database || {};
+
+  const reqCount = reqs.count ?? reqs.estimatedUsedToday ?? 0;
+  const reqSuccess = reqs.success ?? reqs.successCount ?? 0;
+  const reqError = reqs.error ?? reqs.errorCount ?? 0;
+  const reqPercent = reqs.percent ?? 0;
 
   // 1. Worker リクエスト数
   const reqCountEl = document.getElementById('cfReqCountText');
@@ -3957,11 +3983,11 @@ function renderCfServerStatusUI(data) {
   const reqErrorEl = document.getElementById('cfReqErrorText');
   const reqPercentEl = document.getElementById('cfReqPercentBadge');
   const reqProgressEl = document.getElementById('cfReqProgressBar');
-  if (reqCountEl) reqCountEl.textContent = `${(reqs.estimatedUsedToday || 0).toLocaleString()} 回`;
-  if (reqSuccessEl) reqSuccessEl.textContent = (reqs.successCount || 0).toLocaleString();
-  if (reqErrorEl) reqErrorEl.textContent = (reqs.errorCount || 0).toLocaleString();
-  if (reqPercentEl) reqPercentEl.textContent = `${reqs.percent || 0}%`;
-  if (reqProgressEl) reqProgressEl.style.width = `${Math.min(100, reqs.percent || 0)}%`;
+  if (reqCountEl) reqCountEl.textContent = `${reqCount.toLocaleString()} 回`;
+  if (reqSuccessEl) reqSuccessEl.textContent = reqSuccess.toLocaleString();
+  if (reqErrorEl) reqErrorEl.textContent = reqError.toLocaleString();
+  if (reqPercentEl) reqPercentEl.textContent = `${reqPercent}%`;
+  if (reqProgressEl) reqProgressEl.style.width = `${Math.min(100, reqPercent)}%`;
 
   // 2. KV 容量
   const kvUsageEl = document.getElementById('cfKvUsageText');
@@ -3977,7 +4003,8 @@ function renderCfServerStatusUI(data) {
   const d1RowEl = document.getElementById('cfD1RowCountText');
   if (d1RowEl) {
     if (d1.bound) {
-      d1RowEl.textContent = d1.healthy ? `D1 正常 (${(d1.totalMessagesInD1 || 0).toLocaleString()}行)` : 'D1 応答遅延';
+      const rowCount = d1.rowCount ?? d1.totalMessagesInD1 ?? 0;
+      d1RowEl.textContent = d1.healthy ? `D1 正常 (${rowCount.toLocaleString()}行)` : 'D1 応答遅延';
     } else {
       d1RowEl.textContent = 'D1 未バインド';
     }
@@ -3985,7 +4012,7 @@ function renderCfServerStatusUI(data) {
 
   // バインディングタグ
   const bindingsWrap = document.getElementById('cfBindingsBadges');
-  const eb = data.envBindings || limits.bindings || {};
+  const eb = data.envBindings || data.limits?.bindings || {};
   if (bindingsWrap) {
     bindingsWrap.innerHTML = `
       <span class="px-1.5 py-0.5 rounded ${eb.KV_FILES || eb.FILES_KV ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500'}">KV: ${eb.KV_FILES || eb.FILES_KV ? '✓' : '✗'}</span>
@@ -4030,7 +4057,7 @@ window.filterCfApiLogs = function (filter) {
     if (isTarget) {
       btn.className = "px-2.5 py-0.5 rounded-lg bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs";
     } else {
-      btn.className = "px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800";
+      btn.className = "px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors";
     }
   });
   renderCfLogsList();
@@ -4951,9 +4978,19 @@ window.switchDiscordSettingsTab = function (tab) {
       container.appendChild(shared);
       shared.classList.remove('hidden');
     }
-    // エラータブが既に選択状態なので必ず loadErrorTelemetry を呼ぶ
-    if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
-    if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+    // サブタブがcfstatusだった場合は確実に再マウント
+    if (_currentReportSubTab === 'cfstatus') {
+      const cfCont = document.getElementById('reportSubTabCfStatusContent');
+      const cfShared = document.getElementById('cfStatusSharedContent');
+      if (cfCont && cfShared && cfShared.parentElement !== cfCont) {
+        cfCont.appendChild(cfShared);
+        cfShared.classList.remove('hidden');
+      }
+      if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
+    } else {
+      if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
+      if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+    }
   }
   if (tab === 'cfstatus') {
     const container = document.getElementById('pcCfStatusContainer');
@@ -5547,8 +5584,18 @@ window.openMobileDetail = function (type) {
         container.appendChild(shared);
         shared.classList.remove('hidden');
       }
-      if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
-      if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+      if (_currentReportSubTab === 'cfstatus') {
+        const cfCont = document.getElementById('reportSubTabCfStatusContent');
+        const cfShared = document.getElementById('cfStatusSharedContent');
+        if (cfCont && cfShared && cfShared.parentElement !== cfCont) {
+          cfCont.appendChild(cfShared);
+          cfShared.classList.remove('hidden');
+        }
+        if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
+      } else {
+        if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
+        if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+      }
     }
     if (type === 'cfstatus') {
       const container = document.getElementById('mobileCfStatusContainer');
@@ -14243,7 +14290,7 @@ window.executeManualServerPrune = async function () {
             serverId: currentServerId,
             roomId: rId,
             forcePrune: true,
-            retentionPolicy: policy
+            retentionPolicy: currentServerData?.messageRetentionPolicy || "100_messages"
           })
         });
         if (res.ok) {
@@ -17453,7 +17500,7 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
         serverId: serverId || null,
         roomId: roomId || null,
         dmId: dmId || null,
-        retentionPolicy: policy
+        retentionPolicy: "100_messages"
       }),
       keepalive: true
     }).then(async res => {
@@ -17485,9 +17532,12 @@ function toggleSendButtonState() {
   } catch (_) { /* 初期化前などの一時的な参照エラーは無視 */ }
 }
 async function sendMessage() {
-  if (isSendingMessage && (attachedFile || attachedKvFile)) return;
+  const currentAttachedFile = attachedFile;
+  const currentAttachedKvFile = attachedKvFile;
+  const currentAttachedFiles = (Array.isArray(attachedFiles) && attachedFiles.length > 0) ? [...attachedFiles] : (currentAttachedFile ? [currentAttachedFile] : []);
+  if (isSendingMessage && (currentAttachedFile || currentAttachedKvFile)) return;
   const text = messageInput.value.trim();
-  if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
+  if ((!text && !currentAttachedFile && !currentAttachedKvFile) || (!currentRoomId && !currentDmId)) return;
   // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
   const snapDmId = currentDmId;
   const snapRoomId = currentRoomId;
@@ -17634,15 +17684,16 @@ async function sendMessage() {
       senderAvatarUrl: userAvatarUrl || null,
       timestamp: serverTimestamp() 
     };
-    if (attachedKvFile) {
-      Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
+    if (currentAttachedKvFile) {
+      Object.assign(data, { kvFileUrl: currentAttachedKvFile.url, fileName: currentAttachedKvFile.name, fileType: currentAttachedKvFile.type, fileSize: currentAttachedKvFile.size });
     }
-    if (attachedFile) {
+    if (currentAttachedFile) {
       if (progressBar) progressBar.classList.remove("hidden");
       if (progressFill) progressFill.style.width = "0%";
       if (progressText) progressText.textContent = "アップロード中... 0%";
       try {
-        let fileToUpload = attachedFile.file;
+        let fileToUpload = currentAttachedFile.file;
+        const currentFileName = currentAttachedFile.name || 'file';
         let isFileEncrypted = false;
         if (_subtleOK) {
           if (snapDmId) {
@@ -17652,7 +17703,7 @@ async function sendMessage() {
             }
             if (dmKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
-              fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+              fileToUpload = new File([encBlob], currentFileName, { type: 'application/octet-stream' });
               isFileEncrypted = true;
             }
           } else {
@@ -17660,7 +17711,7 @@ async function sendMessage() {
             const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (roomKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
-              fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+              fileToUpload = new File([encBlob], currentFileName, { type: 'application/octet-stream' });
               isFileEncrypted = true;
             }
           }
@@ -17677,9 +17728,9 @@ async function sendMessage() {
         cacheLocalMediaFile(fileUrl, fileToUpload);
         Object.assign(data, {
           fileData: fileUrl,
-          fileName: attachedFile.name,
-          fileType: attachedFile.type,
-          fileSize: attachedFile.size,
+          fileName: currentFileName,
+          fileType: currentAttachedFile.type || 'application/octet-stream',
+          fileSize: currentAttachedFile.size || 0,
           isFileEncrypted: isFileEncrypted
         });
       } finally {
@@ -22625,17 +22676,23 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await setDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
+    await updateDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
       answer: { type: answer.type, sdp: answer.sdp },
       status: 'answered'
-    }, { merge: true });
+    }).catch(async () => {
+      // ドキュメントが既に削除されていた場合は安全にスルー
+    });
     setTimeout(() => {
       if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
       try { pc.close(); } catch (e) {}
       deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }, 6000);
     } catch (err) {
-    if (err?.code !== 'not-found' && !String(err?.message || '').includes('No document to update')) {
+    const isIgnoredP2pErr = err?.code === 'not-found' ||
+      err?.code === 'permission-denied' ||
+      String(err?.message || '').toLowerCase().includes('permissions') ||
+      String(err?.message || '').includes('No document to update');
+    if (!isIgnoredP2pErr) {
       console.warn('[P2P LogSync] Responder error:', err);
     }
     if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }

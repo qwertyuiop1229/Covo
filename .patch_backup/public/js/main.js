@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.259';
-import * as LocalStore from './local_store.js?v=1.1.259';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.259';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.259';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.259';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.259';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.259';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.260';
+import * as LocalStore from './local_store.js?v=1.1.260';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.260';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.260';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.260';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.260';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.260';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -258,6 +258,11 @@ function isTransientTelemetryError(args) {
       str.includes('no pending remote description') ||
       str.includes('called in wrong state: stable') ||
       (str.includes('script error') && (str.length <= 16 || str.includes('::'))) ||
+      str.includes('missing or insufficient permissions') ||
+      str.includes('[p2p logsync]') ||
+      str.includes('attempting to use a disconnected port') ||
+      str.includes('the message port closed before a response was received') ||
+      str.includes('err_quic_protocol_error') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -3023,10 +3028,15 @@ window.switchReportSubTab = function (tab) {
       }
     });
   }
-  const tabs = ['errors', 'feedbacks', 'diag'];
-  tabs.forEach(t => {
-    const btn = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
-    const content = document.getElementById(`reportSubTab${t.charAt(0).toUpperCase() + t.slice(1)}Content`);
+  const tabMap = {
+    errors: { btn: 'reportSubTabErrorsBtn', content: 'reportSubTabErrorsContent' },
+    feedbacks: { btn: 'reportSubTabFeedbacksBtn', content: 'reportSubTabFeedbacksContent' },
+    diag: { btn: 'reportSubTabDiagBtn', content: 'reportSubTabDiagContent' },
+    cfstatus: { btn: 'reportSubTabCfStatusBtn', content: 'reportSubTabCfStatusContent' }
+  };
+  Object.keys(tabMap).forEach(t => {
+    const btn = document.getElementById(tabMap[t].btn);
+    const content = document.getElementById(tabMap[t].content);
     if (t === tab) {
       if (btn) {
         btn.className = "flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs";
@@ -3042,6 +3052,15 @@ window.switchReportSubTab = function (tab) {
   if (tab === 'errors') loadErrorTelemetry();
   else if (tab === 'feedbacks') loadAdminFeedbacks();
   else if (tab === 'diag') renderReportsConsoleStream();
+  else if (tab === 'cfstatus') {
+    const container = document.getElementById('reportSubTabCfStatusContent');
+    const shared = document.getElementById('cfStatusSharedContent');
+    if (container && shared) {
+      container.appendChild(shared);
+      shared.classList.remove('hidden');
+    }
+    loadCfServerStatus();
+  }
 };
 
 window.filterErrorTelemetry = function (filter) {
@@ -3946,10 +3965,14 @@ window.loadCfServerStatus = async function () {
 
 function renderCfServerStatusUI(data) {
   if (!data) return;
-  const limits = data.limits || {};
-  const reqs = limits.dailyRequests || {};
-  const kv = limits.kvStorage || {};
-  const d1 = limits.d1Database || {};
+  const reqs = data.requestsToday || data.limits?.dailyRequests || {};
+  const kv = data.kv || data.limits?.kvStorage || {};
+  const d1 = data.d1 || data.limits?.d1Database || {};
+
+  const reqCount = reqs.count ?? reqs.estimatedUsedToday ?? 0;
+  const reqSuccess = reqs.success ?? reqs.successCount ?? 0;
+  const reqError = reqs.error ?? reqs.errorCount ?? 0;
+  const reqPercent = reqs.percent ?? 0;
 
   // 1. Worker リクエスト数
   const reqCountEl = document.getElementById('cfReqCountText');
@@ -3957,11 +3980,11 @@ function renderCfServerStatusUI(data) {
   const reqErrorEl = document.getElementById('cfReqErrorText');
   const reqPercentEl = document.getElementById('cfReqPercentBadge');
   const reqProgressEl = document.getElementById('cfReqProgressBar');
-  if (reqCountEl) reqCountEl.textContent = `${(reqs.estimatedUsedToday || 0).toLocaleString()} 回`;
-  if (reqSuccessEl) reqSuccessEl.textContent = (reqs.successCount || 0).toLocaleString();
-  if (reqErrorEl) reqErrorEl.textContent = (reqs.errorCount || 0).toLocaleString();
-  if (reqPercentEl) reqPercentEl.textContent = `${reqs.percent || 0}%`;
-  if (reqProgressEl) reqProgressEl.style.width = `${Math.min(100, reqs.percent || 0)}%`;
+  if (reqCountEl) reqCountEl.textContent = `${reqCount.toLocaleString()} 回`;
+  if (reqSuccessEl) reqSuccessEl.textContent = reqSuccess.toLocaleString();
+  if (reqErrorEl) reqErrorEl.textContent = reqError.toLocaleString();
+  if (reqPercentEl) reqPercentEl.textContent = `${reqPercent}%`;
+  if (reqProgressEl) reqProgressEl.style.width = `${Math.min(100, reqPercent)}%`;
 
   // 2. KV 容量
   const kvUsageEl = document.getElementById('cfKvUsageText');
@@ -3977,7 +4000,8 @@ function renderCfServerStatusUI(data) {
   const d1RowEl = document.getElementById('cfD1RowCountText');
   if (d1RowEl) {
     if (d1.bound) {
-      d1RowEl.textContent = d1.healthy ? `D1 正常 (${(d1.totalMessagesInD1 || 0).toLocaleString()}行)` : 'D1 応答遅延';
+      const rowCount = d1.rowCount ?? d1.totalMessagesInD1 ?? 0;
+      d1RowEl.textContent = d1.healthy ? `D1 正常 (${rowCount.toLocaleString()}行)` : 'D1 応答遅延';
     } else {
       d1RowEl.textContent = 'D1 未バインド';
     }
@@ -3985,7 +4009,7 @@ function renderCfServerStatusUI(data) {
 
   // バインディングタグ
   const bindingsWrap = document.getElementById('cfBindingsBadges');
-  const eb = data.envBindings || limits.bindings || {};
+  const eb = data.envBindings || data.limits?.bindings || {};
   if (bindingsWrap) {
     bindingsWrap.innerHTML = `
       <span class="px-1.5 py-0.5 rounded ${eb.KV_FILES || eb.FILES_KV ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500'}">KV: ${eb.KV_FILES || eb.FILES_KV ? '✓' : '✗'}</span>
@@ -14199,39 +14223,6 @@ document.getElementById("deleteServerBtn")?.addEventListener("click", async () =
 });
 
 // ===== サーバーメッセージ自動消去 / D1キャッシュ管理 =====
-window.saveServerRetentionPolicy = async function () {
-  if (!currentServerId) return;
-  const isOwner = currentServerData?.createdBy === userId ||
-    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  if (!isOwner && !isAdmin) {
-    alertMessage("設定を変更できるのはサーバー管理者のみです", "error");
-    return;
-  }
-  const retentionSel = document.getElementById("serverMessageRetentionSelect");
-  const policy = retentionSel?.value || "keep_all";
-  const btn = document.getElementById("saveRetentionPolicyBtn");
-  const origHtml = btn ? btn.innerHTML : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin text-xs"></i> 保存中...`;
-  }
-  try {
-    await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
-      messageRetentionPolicy: policy
-    });
-    currentServerData = { ...currentServerData, messageRetentionPolicy: policy };
-    alertMessage("保管ポリシーを保存しました", "success");
-  } catch (err) {
-    console.error("saveServerRetentionPolicy error:", err);
-    alertMessage("保管ポリシーの保存に失敗しました", "error");
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-    }
-  }
-};
-
 window.executeManualServerPrune = async function () {
   if (!currentServerId) return;
   const isOwner = currentServerData?.createdBy === userId ||
@@ -14240,12 +14231,7 @@ window.executeManualServerPrune = async function () {
     alertMessage("メッセージ整理を実行できるのはサーバー管理者のみです", "error");
     return;
   }
-  const policy = document.getElementById("serverMessageRetentionSelect")?.value || currentServerData?.messageRetentionPolicy || "prune_100";
-  let desc = "サーバーの全チャンネルから、設定された保管ポリシーに基づいて古いメッセージと添付キャッシュを整理します。";
-  if (policy === 'prune_100') desc = "各チャンネルの最新100件を超える古いメッセージおよび添付ファイルを一括整理します。";
-  else if (policy === 'days_30') desc = "30日以上前のメッセージおよび添付ファイルを一括整理します。";
-  else if (policy === 'days_7') desc = "7日以上前のメッセージおよび添付ファイルを一括整理します。";
-
+  const desc = "すべてのチャンネルで最新100件を超える古いメッセージおよび添付ファイルを一括整理します（ピン留めメッセージは保護されます）。";
   if (!await showCustomConfirm("今すぐメッセージと添付キャッシュを整理しますか？", "今すぐ整理", "キャンセル", desc)) {
     return;
   }
@@ -14281,7 +14267,7 @@ window.executeManualServerPrune = async function () {
             serverId: currentServerId,
             roomId: rId,
             forcePrune: true,
-            retentionPolicy: policy
+            retentionPolicy: currentServerData?.messageRetentionPolicy || "100_messages"
           })
         });
         if (res.ok) {
@@ -16640,7 +16626,7 @@ function _skRenderTabs() {
     b.dataset.cat = cat.id;
     tabs.appendChild(b);
   });
-  // イベント委譲（twemojiでimg化されてもタブ全体で確実にクリックを拾う）
+  // イベント委譲 & PC向け横スクロール操作性向上 (マウスホイール / ドラッグ / 左右ボタン / 自動吸着)
   if (!_skTabsBound) {
     _skTabsBound = true;
     tabs.addEventListener('click', (e) => {
@@ -16649,9 +16635,76 @@ function _skRenderTabs() {
       _stickerActiveCat = btn.dataset.cat;
       tabs.querySelectorAll('.sticker-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _stickerActiveCat));
       _skRenderGrid(_stickerActiveCat);
+      try { btn.scrollIntoView({ inline: 'nearest', behavior: 'smooth' }); } catch (_) {}
+    });
+    // 1. マウスホイール（縦ホイール）を横スクロールに自動変換 (Discord / LINE PC 準拠)
+    tabs.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        tabs.scrollLeft += e.deltaY * 0.85;
+        _skUpdateNavButtons();
+      }
+    }, { passive: false });
+    // 2. 左右ナビゲーションボタン (< と >)
+    const btnLeft = document.getElementById('stickerTabsScrollLeft');
+    const btnRight = document.getElementById('stickerTabsScrollRight');
+    if (btnLeft) {
+      btnLeft.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tabs.scrollBy({ left: -140, behavior: 'smooth' });
+      });
+    }
+    if (btnRight) {
+      btnRight.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tabs.scrollBy({ left: 140, behavior: 'smooth' });
+      });
+    }
+    // 3. マウスドラッグスクロール (Grab to scroll)
+    let isDown = false, startX = 0, scrollLeftStart = 0;
+    tabs.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isDown = true;
+      startX = e.pageX - tabs.offsetLeft;
+      scrollLeftStart = tabs.scrollLeft;
+      tabs.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isDown) return;
+      const x = e.pageX - tabs.offsetLeft;
+      const walk = (x - startX) * 1.2;
+      if (Math.abs(walk) > 4) {
+        tabs.scrollLeft = scrollLeftStart - walk;
+        _skUpdateNavButtons();
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (isDown) {
+        isDown = false;
+        tabs.style.cursor = '';
+      }
+    });
+    tabs.addEventListener('scroll', () => {
+      _skUpdateNavButtons();
     });
   }
   _twemojiParse(tabs);
+  setTimeout(_skUpdateNavButtons, 60);
+}
+
+function _skUpdateNavButtons() {
+  const tabs = document.getElementById('stickerTabs');
+  const btnLeft = document.getElementById('stickerTabsScrollLeft');
+  const btnRight = document.getElementById('stickerTabsScrollRight');
+  if (!tabs || !btnLeft || !btnRight) return;
+  const maxScroll = tabs.scrollWidth - tabs.clientWidth;
+  if (maxScroll <= 4) {
+    btnLeft.classList.add('hidden');
+    btnRight.classList.add('hidden');
+    return;
+  }
+  btnLeft.classList.toggle('hidden', tabs.scrollLeft <= 4);
+  btnRight.classList.toggle('hidden', tabs.scrollLeft >= maxScroll - 4);
 }
 
 function _skRenderGrid(catId) {
@@ -17404,11 +17457,6 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
-  // 100件超過時の自動削除をサーバー・DM問わず基本デフォルト有効化
-  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : "prune_100";
-  // サーバー設定で明示的に全件保持 (keep_all) が選ばれている場合のみスキップ
-  if (policy === "keep_all") return;
-
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
   const now = Date.now();
   if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;
@@ -17429,7 +17477,7 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
         serverId: serverId || null,
         roomId: roomId || null,
         dmId: dmId || null,
-        retentionPolicy: policy
+        retentionPolicy: "100_messages"
       }),
       keepalive: true
     }).then(async res => {
@@ -17461,9 +17509,12 @@ function toggleSendButtonState() {
   } catch (_) { /* 初期化前などの一時的な参照エラーは無視 */ }
 }
 async function sendMessage() {
-  if (isSendingMessage && (attachedFile || attachedKvFile)) return;
+  const currentAttachedFile = attachedFile;
+  const currentAttachedKvFile = attachedKvFile;
+  const currentAttachedFiles = (Array.isArray(attachedFiles) && attachedFiles.length > 0) ? [...attachedFiles] : (currentAttachedFile ? [currentAttachedFile] : []);
+  if (isSendingMessage && (currentAttachedFile || currentAttachedKvFile)) return;
   const text = messageInput.value.trim();
-  if ((!text && !attachedFile && !attachedKvFile) || (!currentRoomId && !currentDmId)) return;
+  if ((!text && !currentAttachedFile && !currentAttachedKvFile) || (!currentRoomId && !currentDmId)) return;
   // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
   const snapDmId = currentDmId;
   const snapRoomId = currentRoomId;
@@ -17610,15 +17661,16 @@ async function sendMessage() {
       senderAvatarUrl: userAvatarUrl || null,
       timestamp: serverTimestamp() 
     };
-    if (attachedKvFile) {
-      Object.assign(data, { kvFileUrl: attachedKvFile.url, fileName: attachedKvFile.name, fileType: attachedKvFile.type, fileSize: attachedKvFile.size });
+    if (currentAttachedKvFile) {
+      Object.assign(data, { kvFileUrl: currentAttachedKvFile.url, fileName: currentAttachedKvFile.name, fileType: currentAttachedKvFile.type, fileSize: currentAttachedKvFile.size });
     }
-    if (attachedFile) {
+    if (currentAttachedFile) {
       if (progressBar) progressBar.classList.remove("hidden");
       if (progressFill) progressFill.style.width = "0%";
       if (progressText) progressText.textContent = "アップロード中... 0%";
       try {
-        let fileToUpload = attachedFile.file;
+        let fileToUpload = currentAttachedFile.file;
+        const currentFileName = currentAttachedFile.name || 'file';
         let isFileEncrypted = false;
         if (_subtleOK) {
           if (snapDmId) {
@@ -17628,7 +17680,7 @@ async function sendMessage() {
             }
             if (dmKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, dmKey);
-              fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+              fileToUpload = new File([encBlob], currentFileName, { type: 'application/octet-stream' });
               isFileEncrypted = true;
             }
           } else {
@@ -17636,7 +17688,7 @@ async function sendMessage() {
             const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (roomKey) {
               const encBlob = await encryptFileE2EE(fileToUpload, roomKey);
-              fileToUpload = new File([encBlob], attachedFile.name, { type: 'application/octet-stream' });
+              fileToUpload = new File([encBlob], currentFileName, { type: 'application/octet-stream' });
               isFileEncrypted = true;
             }
           }
@@ -17653,9 +17705,9 @@ async function sendMessage() {
         cacheLocalMediaFile(fileUrl, fileToUpload);
         Object.assign(data, {
           fileData: fileUrl,
-          fileName: attachedFile.name,
-          fileType: attachedFile.type,
-          fileSize: attachedFile.size,
+          fileName: currentFileName,
+          fileType: currentAttachedFile.type || 'application/octet-stream',
+          fileSize: currentAttachedFile.size || 0,
           isFileEncrypted: isFileEncrypted
         });
       } finally {
@@ -22601,17 +22653,23 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await setDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
+    await updateDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`), {
       answer: { type: answer.type, sdp: answer.sdp },
       status: 'answered'
-    }, { merge: true });
+    }).catch(async () => {
+      // ドキュメントが既に削除されていた場合は安全にスルー
+    });
     setTimeout(() => {
       if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
       try { pc.close(); } catch (e) {}
       deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }, 6000);
     } catch (err) {
-    if (err?.code !== 'not-found' && !String(err?.message || '').includes('No document to update')) {
+    const isIgnoredP2pErr = err?.code === 'not-found' ||
+      err?.code === 'permission-denied' ||
+      String(err?.message || '').toLowerCase().includes('permissions') ||
+      String(err?.message || '').includes('No document to update');
+    if (!isIgnoredP2pErr) {
       console.warn('[P2P LogSync] Responder error:', err);
     }
     if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }

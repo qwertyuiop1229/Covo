@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.260" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.261" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.260" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.261" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -2497,7 +2497,7 @@
 
   <!-- 共有レポートコンテンツ (3つのタブ: エラー収集・フィードバック・診断コンソール) -->
   <div id="reportsSharedContent" class="hidden h-full flex flex-col">
-    <!-- レポートサブタブ -->
+    <!-- レポートサブタブ (Cloudflare サーバー稼働タブ追加) -->
     <div class="flex gap-1 p-1 bg-gray-100/90 dark:bg-slate-900/80 rounded-2xl mb-3 overflow-x-auto no-scrollbar border border-gray-200/80 dark:border-slate-700/60 flex-shrink-0 flex-nowrap">
       <button id="reportSubTabErrorsBtn" onclick="switchReportSubTab('errors')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs">
         <i class="fas fa-triangle-exclamation text-rose-500 text-xs"></i>
@@ -2511,6 +2511,10 @@
       <button id="reportSubTabDiagBtn" onclick="switchReportSubTab('diag')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
         <i class="fas fa-terminal text-emerald-500 text-xs"></i>
         <span>診断 & コンソール</span>
+      </button>
+      <button id="reportSubTabCfStatusBtn" onclick="switchReportSubTab('cfstatus')" class="flex-shrink-0 py-1.5 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
+        <i class="fas fa-server text-cyan-500 text-xs"></i>
+        <span>Cloudflare サーバー稼働</span>
       </button>
     </div>
 
@@ -2576,6 +2580,8 @@
         <div id="reportsConsoleStreamBody" class="flex-1 overflow-y-auto font-mono text-[11px] space-y-0.5 text-gray-300 select-all pr-1 min-h-[160px]"></div>
         </div>
         </div>
+        <!-- 4. Cloudflare サーバー稼働状況 & 実行ログ (サブタブ表示用) -->
+        <div id="reportSubTabCfStatusContent" class="flex-1 flex flex-col min-h-0 space-y-3 hidden"></div>
         </div>
         <!-- 共有サーバー稼働状況コンテンツ (Cloudflare Worker & API Audit) -->
         <div id="cfStatusSharedContent" class="hidden space-y-4 select-none">
@@ -2645,8 +2651,7 @@
           <!-- バインディングタグ -->
         </div>
         </div>
-        </div>
-  <div id="windowsDownloadModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        </div> class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
     <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-8 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
       <button onclick="document.getElementById('windowsDownloadModal').classList.add('hidden')" class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
         <i class="fas fa-times text-base"></i>
@@ -4402,7 +4407,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.260"></script>
+  <script type="module" src="js/main.js?v=1.1.261"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

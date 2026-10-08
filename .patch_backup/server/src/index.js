@@ -4051,51 +4051,13 @@ async function handleSetOffline(request, env) {
               const tB = b.timestamp || b.createdAt || 0;
               return tA - tB;
             });
-            let policy = retentionPolicy || "prune_100";
-            if (!hasServerAdminRights && serverId) {
-              // 🔒 一般メンバーによる不正プルーニング・過剰削除を完全防止: サーバーの実際の設定を確認
-              try {
-                const adminToken = await getAdminTokenForFirestore(env);
-                if (adminToken) {
-                  const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
-                    headers: { "Authorization": `Bearer ${adminToken}` }
-                  });
-                  const srvData = await srvRes.json();
-                  policy = srvData.fields?.messageRetentionPolicy?.stringValue || "prune_100";
-                }
-              } catch (_) {
-                policy = "prune_100";
-              }
-            }
-            if (policy === "keep_all" && !forcePrune) {
-              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, skipped: true }), {
-                status: 200, headers: { ...cors, "Content-Type": "application/json" }
-              });
-            }
-
-            // ピン留め（アナウンス）メッセージは自動プルーニングから保護し、通常メッセージのみを対象とする
+            // サーバー・個チャ問わず、常に最新100件超過分を自動消去（ピン留めメッセージは保護）
+            const maxAllowed = 100;
             const unpinnedMsgs = msgsList.filter(m => !m.isPinned);
             let excessMsgs = [];
-
-            if (policy === "days_7") {
-              const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-              excessMsgs = unpinnedMsgs.filter(m => {
-                const t = m.timestamp || m.createdAt || 0;
-                return t > 0 && t < cutoff;
-              });
-            } else if (policy === "days_30") {
-              const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-              excessMsgs = unpinnedMsgs.filter(m => {
-                const t = m.timestamp || m.createdAt || 0;
-                return t > 0 && t < cutoff;
-              });
-            } else {
-              // prune_100 またはデフォルト
-              const maxAllowed = (hasServerAdminRights && typeof maxKeep === 'number' && maxKeep > 0) ? maxKeep : 100;
-              if (unpinnedMsgs.length > maxAllowed) {
-                const excessCount = unpinnedMsgs.length - maxAllowed;
-                excessMsgs = unpinnedMsgs.slice(0, excessCount);
-              }
+            if (unpinnedMsgs.length > maxAllowed) {
+              const excessCount = unpinnedMsgs.length - maxAllowed;
+              excessMsgs = unpinnedMsgs.slice(0, excessCount);
             }
 
             if (excessMsgs.length === 0) {

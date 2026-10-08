@@ -161,24 +161,6 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     };
     _cfApiLogs.unshift(logEntry);
     if (_cfApiLogs.length > 100) _cfApiLogs.pop();
-    const today = new Date().toISOString().slice(0, 10);
-    if (_cfApiDailyStats.date !== today) {
-      _cfApiDailyStats.date = today;
-      _cfApiDailyStats.totalRequests = 0;
-      _cfApiDailyStats.successRequests = 0;
-      _cfApiDailyStats.errorRequests = 0;
-      _cfApiDailyStats.routes = {};
-    }
-    _cfApiDailyStats.totalRequests++;
-    if (status < 400) _cfApiDailyStats.successRequests++;
-    else _cfApiDailyStats.errorRequests++;
-    const routeKey = `${request.method} ${pathname}`;
-    if (!_cfApiDailyStats.routes[routeKey]) {
-      _cfApiDailyStats.routes[routeKey] = { total: 0, success: 0, error: 0 };
-    }
-    _cfApiDailyStats.routes[routeKey].total++;
-    if (status < 400) _cfApiDailyStats.routes[routeKey].success++;
-    else _cfApiDailyStats.routes[routeKey].error++;
     if (env && env.DB && ctx && typeof ctx.waitUntil === 'function') {
       ctx.waitUntil((async () => {
         try {
