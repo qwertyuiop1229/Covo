@@ -9906,6 +9906,12 @@ window.submitFriendRequest = async function() {
       btn.disabled = false;
       return;
     }
+    if (existing && existing.status === 'pending_sent') {
+      feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-amber-500';
+      feedback.textContent = 'すでにフレンド申請を送信済みです。';
+      btn.disabled = false;
+      return;
+    }
     if (existing && existing.status === 'pending_received') {
       await window.acceptFriendRequest(targetUser.id);
       feedback.className = 'text-xs font-semibold px-2 min-h-[1.25rem] text-emerald-500';
@@ -11771,7 +11777,7 @@ window.toggleDeviceSubMenu = function (type) {
     if (isHidden) {
       subIn.innerHTML = _activeAudioDevices.mics.length > 0
         ? _activeAudioDevices.mics.map(m => `
-            <div onclick="window.selectAudioDevice('input', '${m.deviceId}', '${escapeHtml(m.label || 'マイク')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+            <div onclick="window.selectAudioDevice('input', '${m.deviceId}', '${_jsq(m.label || 'マイク')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
               <span class="truncate">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</span>
               ${m.deviceId === _activeAudioDevices.selectedMicId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
             </div>
@@ -11788,7 +11794,7 @@ window.toggleDeviceSubMenu = function (type) {
     if (isHidden) {
       subOut.innerHTML = _activeAudioDevices.speakers.length > 0
         ? _activeAudioDevices.speakers.map(s => `
-            <div onclick="window.selectAudioDevice('output', '${s.deviceId}', '${escapeHtml(s.label || 'スピーカー')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
+            <div onclick="window.selectAudioDevice('output', '${s.deviceId}', '${_jsq(s.label || 'スピーカー')}')" class="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer truncate text-[11px] text-gray-700 dark:text-gray-300 flex items-center justify-between">
               <span class="truncate">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</span>
               ${s.deviceId === _activeAudioDevices.selectedSpeakerId ? '<i class="fas fa-check text-indigo-500 text-[10px]"></i>' : ''}
             </div>
@@ -14887,12 +14893,12 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
         const isActiveVc = window._voiceEngine && window._voiceEngine.isActive && window._voiceEngine.channelId === docSnap.id;
         vcDiv.innerHTML = `
           <div class="vc-channel-row${isActiveVc ? ' active-vc' : ''}" data-vc-id="${docSnap.id}"
-               onclick="joinVoiceChannel('${docSnap.id}', '${safeName}')">
+               onclick="joinVoiceChannel('${docSnap.id}', '${_jsq(room.name)}')">
             <div class="flex items-center gap-2 flex-1 truncate text-left min-w-0">
               <i class="fas fa-volume-up vc-channel-icon text-sm flex-shrink-0"></i>
               <span class="vc-channel-name truncate">${safeName}</span>
             </div>
-            <button class="vc-join-btn" onclick="event.stopPropagation();joinVoiceChannel('${docSnap.id}','${safeName}')" title="参加">
+            <button class="vc-join-btn" onclick="event.stopPropagation();joinVoiceChannel('${docSnap.id}','${_jsq(room.name)}')" title="参加">
               <i class="fas fa-sign-in-alt"></i>
             </button>
           </div>
@@ -21266,16 +21272,32 @@ window.unpinMessage = async function(msgId) {
 };
 
 window.minimizePinnedAnnouncement = function() {
-  const pinKey = currentRoomId || currentDmId;
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
   localStorage.setItem(`covo_minimized_pins_${pinKey}`, "true");
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  (allLoadedMessages || []).filter(m => m.isPinned).forEach(m => combinedMap.set(m.id, m));
+  const pinnedList = Array.from(combinedMap.values());
+  if (pinnedList.length > 0) {
+    pinnedList.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    const latestMsg = pinnedList[pinnedList.length - 1];
+    localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
+  }
   isPinnedMessagesExpanded = false;
   renderPinnedMessages();
 };
 window.restorePinnedAnnouncement = function() {
-  const pinKey = currentRoomId || currentDmId;
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+  const oldPinKey = currentRoomId || currentDmId;
   localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
-  if (currentPinnedMessages && currentPinnedMessages.length > 0) {
-    const latestMsg = currentPinnedMessages[currentPinnedMessages.length - 1];
+  if (oldPinKey) localStorage.removeItem(`covo_minimized_pins_${oldPinKey}`);
+  const combinedMap = new Map();
+  (currentPinnedMessages || []).forEach(m => combinedMap.set(m.id, m));
+  (allLoadedMessages || []).filter(m => m.isPinned).forEach(m => combinedMap.set(m.id, m));
+  const pinnedList = Array.from(combinedMap.values());
+  if (pinnedList.length > 0) {
+    pinnedList.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    const latestMsg = pinnedList[pinnedList.length - 1];
     localStorage.setItem(`covo_last_seen_pin_${pinKey}`, latestMsg.id);
   }
   renderPinnedMessages();
@@ -21301,15 +21323,15 @@ if (pinMessageBtn) {
       // ローカル状態を即時更新して画面に瞬時反映
       const mObj = allLoadedMessages.find(m => m.id === targetId);
       if (mObj) mObj.isPinned = isPinned;
-
-      const pinKey = currentRoomId || currentDmId;
-
+      const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+      const oldPinKey = currentRoomId || currentDmId;
       if (isPinned) {
         if (!currentPinnedMessages.some(m => m.id === targetId)) {
           currentPinnedMessages.push({ ...selectedMessageForContext });
           currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         }
         localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
+        if (oldPinKey) localStorage.removeItem(`covo_minimized_pins_${oldPinKey}`);
       } else {
         currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
       }
@@ -21370,10 +21392,12 @@ function renderPinnedMessages() {
   // 最新（直近）のピン留めメッセージ
   const latestMsg = pinnedMessages[pinnedMessages.length - 1];
   const count = pinnedMessages.length;
-  const pinKey = currentRoomId || currentDmId;
-  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`);
+  const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
+  const oldPinKey = currentRoomId || currentDmId;
+  const lastSeenPinId = localStorage.getItem(`covo_last_seen_pin_${pinKey}`) || (oldPinKey ? localStorage.getItem(`covo_last_seen_pin_${oldPinKey}`) : null);
   // ローカルストレージから最小化状態を永続復元
-  const isMinimized = localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true";
+  const isMinimized = (localStorage.getItem(`covo_minimized_pins_${pinKey}`) === "true") ||
+                      (oldPinKey && localStorage.getItem(`covo_minimized_pins_${oldPinKey}`) === "true");
 
   if (isMinimized) {
     pinnedMessagesArea.classList.add("hidden");
@@ -24079,11 +24103,15 @@ async function blockingUpdateCheck() {
     console.warn('Tauri core.invoke not available, skipping update check.');
     return false;
   }
-
   try {
     if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンがないか確認しています...');
-    const metadata = await invoke('plugin:updater|check');
-    if (metadata) {
+    let metadata = null;
+    try {
+      metadata = await invoke('plugin:updater|check');
+    } catch (pluginErr) {
+      console.warn('[Updater] plugin:updater|check error, will fallback to GitHub API:', pluginErr);
+    }
+    if (metadata && (metadata.version || metadata.rid)) {
       if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
       const Channel = window.__TAURI__?.core?.Channel;
       const rid = metadata.rid;
@@ -24167,15 +24195,59 @@ async function blockingUpdateCheck() {
       if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
 
       overlay.classList.add('show');
-
       setTimeout(() => {
         performUpdate();
       }, 500);
-
       return true; // アプリ起動をブロック
-    }
-    if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 現在のバージョンは最新です');
-  } catch (error) {
+      }
+      // フォールバック: GitHub Releases API 直接照合（Tauri updater で検知されなかった場合）
+      try {
+      let curVer = _appVersion || "1.0.0";
+      if (!curVer || curVer === "web") {
+        try {
+          const vr = await fetch('/version.json', { cache: 'no-store' });
+          if (vr.ok) { curVer = (await vr.json()).version || curVer; }
+        } catch (_) {}
+      }
+      const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+      if (ghRes.ok) {
+        const releases = await ghRes.json();
+        if (Array.isArray(releases) && releases.length > 0) {
+          const latestRel = releases[0];
+          const latestTag = latestRel.tag_name || "";
+          const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+          const isNewer = typeof isSemverNewer === 'function'
+            ? isSemverNewer(latestTag, curVer)
+            : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
+          if (isNewer && exeAsset && exeAsset.browser_download_url) {
+            console.log(`[Updater] GitHub Releases API: 新バージョン検知 ${latestTag} > v${curVer}`);
+            pendingUpdate = {
+              version: latestTag,
+              body: latestRel.body || '最新アップデート（自己修復プログラム）',
+              directExeUrl: exeAsset.browser_download_url
+            };
+            const overlay = document.getElementById('updateOverlay');
+            const versionText = document.getElementById('updateVersionText');
+            const bodyText = document.getElementById('updateBodyText');
+            const closeBtn = document.getElementById('updateCloseButton');
+            const updateBtn = document.getElementById('updateButton');
+            const updateMainTitle = document.getElementById('updateMainTitle');
+            if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
+            if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+            if (closeBtn) closeBtn.classList.add('hidden');
+            if (updateBtn) updateBtn.classList.add('hidden');
+            if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+            if (overlay) overlay.classList.add('show');
+            setTimeout(() => { performUpdate(); }, 500);
+            return true;
+          }
+        }
+      }
+      } catch (ghErr) {
+      console.warn('[Updater] GitHub Releases check fallback notice:', ghErr);
+      }
+      if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 現在のバージョンは最新です');
+      } catch (error) {
     console.warn('Update check failed:', error);
   }
   return false;
@@ -25058,12 +25130,29 @@ window.performUpdate = async function () {
   if (!pendingUpdate) return;
   const btn = document.getElementById('updateButton');
   const invoke = window.__TAURI__?.core?.invoke;
-
   if (btn) { btn.disabled = true; btn.classList.add('hidden'); }
   updateProgressUI({ progress: 20, text: 'アップデートを準備中...' });
   startSpinner();
-
   try {
+    // GitHub Releases API 直接フォールバック時（EXE直接サイレントインストール）
+    if (pendingUpdate.directExeUrl && invoke) {
+      updateProgressUI({ progress: 40, text: `最新版 (${pendingUpdate.version}) をダウンロード中...` });
+      let unlisten = null;
+      try {
+        if (window.__TAURI__?.event?.listen) {
+          unlisten = await window.__TAURI__.event.listen('download-progress', (e) => {
+            if (e.payload?.progress) {
+              updateProgressUI({ progress: Math.min(95, Math.round(40 + e.payload.progress * 0.55)), text: `ダウンロード中... (${e.payload.progress}%)` });
+            }
+          });
+        }
+      } catch (_) {}
+      await invoke('silent_install_past_version', { url: pendingUpdate.directExeUrl, tag: pendingUpdate.version });
+      if (unlisten) unlisten();
+      updateProgressUI({ progress: 100, text: 'ダウンロード完了。セットアップを起動して再起動します...' });
+      stopSpinner('✔');
+      return;
+    }
     // Tauri標準の確実なビルトインアップデーターを実行
     // 完了後に自動的にインストーラー(Covoセットアップ)が起動するため、同時にアプリを自動終了させる
     updateProgressUI({ progress: 60, text: '更新データを取得中...' });

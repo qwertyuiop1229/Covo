@@ -24103,11 +24103,15 @@ async function blockingUpdateCheck() {
     console.warn('Tauri core.invoke not available, skipping update check.');
     return false;
   }
-
   try {
     if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンがないか確認しています...');
-    const metadata = await invoke('plugin:updater|check');
-    if (metadata) {
+    let metadata = null;
+    try {
+      metadata = await invoke('plugin:updater|check');
+    } catch (pluginErr) {
+      console.warn('[Updater] plugin:updater|check error, will fallback to GitHub API:', pluginErr);
+    }
+    if (metadata && (metadata.version || metadata.rid)) {
       if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 新しいバージョンが見つかりました:', metadata.version);
       const Channel = window.__TAURI__?.core?.Channel;
       const rid = metadata.rid;
@@ -24191,15 +24195,59 @@ async function blockingUpdateCheck() {
       if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
 
       overlay.classList.add('show');
-
       setTimeout(() => {
         performUpdate();
       }, 500);
-
       return true; // アプリ起動をブロック
-    }
-    if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 現在のバージョンは最新です');
-  } catch (error) {
+      }
+      // フォールバック: GitHub Releases API 直接照合（Tauri updater で検知されなかった場合）
+      try {
+      let curVer = _appVersion || "1.0.0";
+      if (!curVer || curVer === "web") {
+        try {
+          const vr = await fetch('/version.json', { cache: 'no-store' });
+          if (vr.ok) { curVer = (await vr.json()).version || curVer; }
+        } catch (_) {}
+      }
+      const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+      if (ghRes.ok) {
+        const releases = await ghRes.json();
+        if (Array.isArray(releases) && releases.length > 0) {
+          const latestRel = releases[0];
+          const latestTag = latestRel.tag_name || "";
+          const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+          const isNewer = typeof isSemverNewer === 'function'
+            ? isSemverNewer(latestTag, curVer)
+            : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
+          if (isNewer && exeAsset && exeAsset.browser_download_url) {
+            console.log(`[Updater] GitHub Releases API: 新バージョン検知 ${latestTag} > v${curVer}`);
+            pendingUpdate = {
+              version: latestTag,
+              body: latestRel.body || '最新アップデート（自己修復プログラム）',
+              directExeUrl: exeAsset.browser_download_url
+            };
+            const overlay = document.getElementById('updateOverlay');
+            const versionText = document.getElementById('updateVersionText');
+            const bodyText = document.getElementById('updateBodyText');
+            const closeBtn = document.getElementById('updateCloseButton');
+            const updateBtn = document.getElementById('updateButton');
+            const updateMainTitle = document.getElementById('updateMainTitle');
+            if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
+            if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+            if (closeBtn) closeBtn.classList.add('hidden');
+            if (updateBtn) updateBtn.classList.add('hidden');
+            if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+            if (overlay) overlay.classList.add('show');
+            setTimeout(() => { performUpdate(); }, 500);
+            return true;
+          }
+        }
+      }
+      } catch (ghErr) {
+      console.warn('[Updater] GitHub Releases check fallback notice:', ghErr);
+      }
+      if (window.__covo_native_console__?.debug) window.__covo_native_console__.debug('📦 [アップデート] 現在のバージョンは最新です');
+      } catch (error) {
     console.warn('Update check failed:', error);
   }
   return false;
@@ -25082,12 +25130,32 @@ window.performUpdate = async function () {
   if (!pendingUpdate) return;
   const btn = document.getElementById('updateButton');
   const invoke = window.__TAURI__?.core?.invoke;
-
   if (btn) { btn.disabled = true; btn.classList.add('hidden'); }
   updateProgressUI({ progress: 20, text: 'アップデートを準備中...' });
   startSpinner();
-
   try {
+    // GitHub Releases API 直接フォールバック時（EXE直接サイレントインストール）
+    if (pendingUpdate.directExeUrl && invoke) {
+      updateProgressUI({ progress: 40, text: `最新版 (${pendingUpdate.version}) をダウンロード中...` });
+      let unlisten = null;
+      try {
+        if (window.__TAURI__?.event?.listen) {
+          unlisten = await window.__TAURI__.event.listen('download-progress', (e) => {
+            if (e.payload?.progress) {
+              updateProgressUI({ progress: Math.min(95, Math.round(40 + e.payload.progress * 0.55)), text: `ダウンロード中... (${e.payload.progress}%)` });
+            }
+          });
+        }
+      } catch (_) {}
+      await invoke('silent_install_past_version', { url: pendingUpdate.directExeUrl, tag: pendingUpdate.version });
+      if (unlisten) unlisten();
+      updateProgressUI({ progress: 100, text: 'ダウンロード完了。更新を適用して再起動します...' });
+      stopSpinner('✔');
+      if (typeof startAutoRestartCountdown === 'function') {
+        startAutoRestartCountdown(3);
+      }
+      return;
+    }
     // Tauri標準の確実なビルトインアップデーターを実行
     // 完了後に自動的にインストーラー(Covoセットアップ)が起動するため、同時にアプリを自動終了させる
     updateProgressUI({ progress: 60, text: '更新データを取得中...' });

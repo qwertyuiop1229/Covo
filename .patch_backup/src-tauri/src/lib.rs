@@ -281,13 +281,35 @@ fn resize_notif_container(
 }
 
 // ===========================================================================
-
+#[tauri::command]
+fn open_recovery_window(app_handle: tauri::AppHandle) {
+    if let Some(existing) = app_handle.get_webview_window("recovery-engine") {
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+    } else {
+        if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
+            &app_handle,
+            "recovery-engine",
+            tauri::WebviewUrl::App("recovery.html".into())
+        )
+        .title("Covo - リカバリーパネル")
+        .inner_size(840.0, 680.0)
+        .resizable(true)
+        .center()
+        .build() {
+            let _ = recovery_win.show();
+        }
+    }
+}
 #[tauri::command]
 fn show_main_window(app_handle: tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = window.emit("window-focused", ());
+        let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
     }
 }
 
@@ -1191,6 +1213,7 @@ pub fn run() {
             notify_app_loaded,
             start_desktop_google_auth,
             open_in_app_browser_window,
+            open_recovery_window,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -1220,6 +1243,8 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                let _ = window.emit("window-focused", ());
+                                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                                 let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
                             }
                         }
@@ -1280,6 +1305,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                     "recovery" => {
@@ -1317,6 +1344,8 @@ pub fn run() {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
+                            let _ = window.emit("window-focused", ());
+                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                 })
@@ -1360,6 +1389,8 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+                let _ = window.emit("window-focused", ());
+                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                 let _ = window.emit("single-instance-opened", ());
             }
         }))

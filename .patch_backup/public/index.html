@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.253" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.255" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.253" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.255" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -285,13 +285,206 @@
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
+      const isDesktop = typeof window.__TAURI__ !== 'undefined';
+      const desktopView = document.getElementById('emergencyDesktopView');
+      const webView = document.getElementById('emergencyWebView');
+      const modalTitle = document.getElementById('emergencyModalTitle');
+      const modalSub = document.getElementById('emergencyModalSubtitle');
+      const headerIcon = document.getElementById('emergencyHeaderIcon');
+
+      if (isDesktop) {
+        if (desktopView) desktopView.classList.remove('hidden');
+        if (webView) webView.classList.add('hidden');
+        if (modalTitle) modalTitle.textContent = "アプリケーション保守 / 自動修復中";
+        if (modalSub) modalSub.textContent = "起動時の問題を検知しました。裏で自動修復と最新アップデートを確認しています。";
+        if (headerIcon) headerIcon.className = "fas fa-wrench";
+        // Windows版: 自動でバックグラウンドアップデート照合を開始
+        emergencyAutoCheckUpdateAndRepair();
+      } else {
+        if (webView) webView.classList.remove('hidden');
+        if (desktopView) desktopView.classList.add('hidden');
+        if (modalTitle) modalTitle.textContent = "サービス一時待機 / メンテナンス中";
+        if (modalSub) modalSub.textContent = "現在サーバーのメンテナンスを行っているか、一時的に通信が不安定な状態です。管理者が対応しておりますので、しばらくそのままお待ちください。";
+        if (headerIcon) headerIcon.className = "fas fa-circle-info";
+      }
+
       panel.classList.remove('hidden');
       panel.style.display = 'flex';
       const detailArea = document.getElementById('emergencyErrorDetail');
       if (detailArea && errMsg) {
-        detailArea.value = `エラー発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
+        detailArea.value = `発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細スタック: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
       }
     };
+
+    // Windows版: 自動バックグラウンドアップデート＆整合性修復ルーチン
+    let _emergencyAutoCheckRunning = false;
+    async function emergencyAutoCheckUpdateAndRepair() {
+      if (_emergencyAutoCheckRunning) return;
+      _emergencyAutoCheckRunning = true;
+      const titleEl = document.getElementById('emergencyAutoCheckTitle');
+      const descEl = document.getElementById('emergencyAutoCheckDesc');
+      const barEl = document.getElementById('emergencyAutoCheckProgressBar');
+      const pctEl = document.getElementById('emergencyAutoCheckPercent');
+      const spinner = document.getElementById('emergencyAutoCheckSpinner');
+
+      const setProg = (pct, title, desc) => {
+        if (barEl) barEl.style.width = `${pct}%`;
+        if (pctEl) pctEl.textContent = `${pct}%`;
+        if (titleEl && title) titleEl.textContent = title;
+        if (descEl && desc) descEl.textContent = desc;
+      };
+
+      setProg(20, "最新プログラムの確認中...", "最新の修正プログラムがあるか確認しています...");
+      const invoke = window.__TAURI__?.core?.invoke;
+      let updateFound = false;
+
+      // 1. 最新バージョンの照合 (Dual-Engine)
+      try {
+        if (invoke) {
+          const metadata = await invoke('plugin:updater|check').catch(() => null);
+          if (metadata && (metadata.version || metadata.rid)) {
+            updateFound = true;
+            setProg(60, `最新版 (v${metadata.version}) をダウンロード中...`, "修正プログラムをダウンロードしています...");
+            try {
+              await invoke('plugin:updater|download_and_install', { rid: metadata.rid });
+              setProg(100, "修復アップデート準備完了", "再起動して修正プログラムを適用します...");
+              setTimeout(() => {
+                invoke('restart_app').catch(() => window.location.reload());
+              }, 1800);
+              return;
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+
+      // 2. GitHub Releases API 直接フォールバック
+      if (!updateFound) {
+        try {
+          let curVer = window.__covo_version || "1.0.0";
+          try {
+            const vRes = await fetch("version.json", { cache: "no-store" });
+            if (vRes.ok) curVer = (await vRes.json()).version || curVer;
+          } catch (_) {}
+          const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+          if (ghRes.ok) {
+            const rels = await ghRes.json();
+            if (Array.isArray(rels) && rels.length > 0) {
+              const latest = rels[0];
+              const latestTag = latest.tag_name || "";
+              const exe = latest.assets?.find(a => a.name?.endsWith(".exe"));
+              const isNewer = typeof isSemverNewer === 'function' ? isSemverNewer(latestTag, curVer) : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
+              if (isNewer && exe && exe.browser_download_url && invoke) {
+                updateFound = true;
+                setProg(60, `最新版 (${latestTag}) をダウンロード中...`, "公式リリースからインストーラーを取得しています...");
+                await invoke('silent_install_past_version', { url: exe.browser_download_url, tag: latestTag });
+                setProg(100, "ダウンロード完了", "最新版インストーラーを適用して再起動します...");
+                return;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. アップデートがない場合は整合性チェック＆自己修復を自動実行
+      setProg(85, "データ整合性を診断中...", "キャッシュと一時データの整合性を検証しています...");
+      try {
+        if ('indexedDB' in window) {
+          const req = indexedDB.open('covo_local_db');
+          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 1200); });
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) { if (k !== 'covo_media_cache_v1') await caches.delete(k); }
+        }
+      } catch (_) {}
+
+      setProg(100, "自己修復スキャン完了", "プログラムは最新状態です。手動で操作するか再起動をお試しください。");
+      if (spinner) spinner.className = "fas fa-check text-emerald-400";
+      _emergencyAutoCheckRunning = false;
+    }
+
+    // 手動操作アクション群 (Windows / Web)
+    window.emergencyApplyLatestUpdate = async function(btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>確認中...'; }
+      await emergencyAutoCheckUpdateAndRepair();
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
+    };
+
+    window.emergencyRunIntegrityRepair = async function(btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>修復中...'; }
+      try {
+        if ('indexedDB' in window) {
+          const req = indexedDB.open('covo_local_db');
+          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 1500); });
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) { if (k !== 'covo_media_cache_v1') await caches.delete(k); }
+        }
+        let repaired = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) {
+            const v = localStorage.getItem(k);
+            if (v && (v.startsWith('{') || v.startsWith('['))) {
+              try { JSON.parse(v); } catch (_) { localStorage.removeItem(k); repaired++; }
+            }
+          }
+        }
+        alert('整合性チェックと自己修復が完了しました！');
+      } catch (err) {
+        alert('修復処理エラー: ' + (err.message || err));
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-shield-halved"></i><span>整合性チェック & 修復</span>'; }
+      }
+    };
+
+    window.emergencyOpenRecoveryEngine = function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('open_recovery_window').catch(() => {
+          window.location.href = "recovery.html";
+        });
+      } else {
+        window.location.href = "recovery.html";
+      }
+    };
+
+    window.emergencyOpenLogFolder = function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('open_log_dir').catch(e => alert('ログフォルダオープン失敗: ' + e));
+      }
+    };
+
+    window.emergencyRestartApp = function() {
+      const invoke = window.__TAURI__?.core?.invoke;
+      if (invoke) {
+        invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+      } else {
+        window.location.reload();
+      }
+    };
+
+    window.emergencyReloadWeb = function() {
+      window.location.reload();
+    };
+
+    window.emergencyClearCacheWeb = async function() {
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) await r.unregister();
+        }
+        sessionStorage.clear();
+      } catch (_) {}
+      window.location.href = window.location.pathname + '?v=' + Date.now();
+    };
+
     // リカバリーボタン用先行フォールバック定義 (ReferenceError防止)
     if (typeof window.openPastVersionsModal !== 'function') {
       window.openPastVersionsModal = function() {
@@ -300,22 +493,16 @@
         if (typeof window.loadPastVersionsPage === 'function') window.loadPastVersionsPage(1);
       };
     }
+    if (typeof window.closePastVersionsModal !== 'function') {
+      window.closePastVersionsModal = function() {
+        const modal = document.getElementById('pastVersionsModal');
+        if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; }
+      };
+    }
     if (typeof window.emergencyCheckUpdate !== 'function') {
       window.emergencyCheckUpdate = async function(btn) {
         if (btn) btn.textContent = '確認中...';
-        if (window.__TAURI__?.core?.invoke) {
-          try {
-            const metadata = await window.__TAURI__.core.invoke('plugin:updater|check');
-            if (metadata) {
-              alert('新しいバージョンが見つかりました: v' + metadata.version);
-              window.location.reload();
-            } else {
-              alert('最新バージョンです');
-            }
-          } catch(e) { alert('更新確認エラー: ' + (e.message || e)); }
-        } else {
-          window.location.reload();
-        }
+        await emergencyAutoCheckUpdateAndRepair();
         if (btn) btn.textContent = '更新をチェック';
       };
     }
@@ -616,57 +803,155 @@
     </div>
   </div>
 
-  <!-- 🛡️ システムリカバリー＆過去バージョン復旧パネル -->
-  <div id="emergencyRecoveryOverlay" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-4" style="z-index:999999;backdrop-filter:blur(25px);background:rgba(15,23,42,0.85);">
-    <div class="bg-gray-900 border border-red-500/30 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-6 flex flex-col space-y-6 animate-pop-in text-white max-h-[90dvh]">
-      <div class="flex items-center justify-between border-b border-gray-800 pb-4">
-        <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-500 text-2xl animate-pulse">
-            <i class="fas fa-exclamation-triangle"></i>
+  <!-- 🛡️ システム保守・自動修復＆メンテナンス画面 (Discord風安心デザイン・Web/Windows完全分離) -->
+  <div id="emergencyRecoveryOverlay" class="fixed inset-0 modal-overlay flex items-center justify-center hidden p-3 sm:p-4 select-none" style="z-index:999999;backdrop-filter:blur(20px);background:rgba(15,23,42,0.85);">
+    <div class="bg-[#1e1f22] border border-indigo-500/25 rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden p-6 sm:p-7 flex flex-col space-y-5 animate-pop-in text-gray-200 max-h-[92dvh]">
+      <!-- ヘッダー -->
+      <div class="flex items-center justify-between border-b border-white/10 pb-4">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-2xl flex-shrink-0 shadow-inner">
+            <i id="emergencyHeaderIcon" class="fas fa-wrench"></i>
           </div>
           <div>
-            <h2 class="text-lg font-bold text-gray-100">システムリカバリーモード</h2>
-            <p class="text-xs text-gray-400">アプリ起動処理中に問題が発生・またはタイムアウトしました</p>
+            <h2 id="emergencyModalTitle" class="text-lg font-bold text-white tracking-tight">アプリケーション保守 / 自動修復中</h2>
+            <p id="emergencyModalSubtitle" class="text-xs text-gray-400 mt-0.5 leading-relaxed">起動時の問題を検知しました。裏で自動修復と最新アップデートを確認しています。</p>
           </div>
         </div>
-        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="w-9 h-9 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-400 flex items-center justify-center transition">
-          <i class="fas fa-times"></i>
+        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition cursor-pointer flex-shrink-0" title="閉じる">
+          <i class="fas fa-times text-sm"></i>
         </button>
       </div>
 
-      <div class="flex-1 overflow-y-auto space-y-6 pr-2">
-        <div class="p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-between">
-          <div>
-            <div class="text-sm font-bold text-blue-400"><i class="fas fa-arrow-up mr-2"></i>最新の修正アップデートを確認</div>
-            <div class="text-xs text-gray-300 mt-1">新たな修正プログラム（ホットフィックス）が配信されているか直ちにチェックします。</div>
+      <!-- スクロールエリア -->
+      <div class="flex-1 overflow-y-auto space-y-4 pr-1">
+        <!-- A. Windows デスクトップ版専用ビュー -->
+        <div id="emergencyDesktopView" class="space-y-4">
+          <!-- 自動チェック・修復プログレスバー -->
+          <div id="emergencyAutoUpdateBanner" class="p-4 bg-indigo-500/10 border border-indigo-500/25 rounded-2xl space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-indigo-400 flex items-center gap-2">
+                <i id="emergencyAutoCheckSpinner" class="fas fa-spinner fa-spin text-indigo-400"></i>
+                <span id="emergencyAutoCheckTitle">裏で自動修復・最新アップデートを確認中...</span>
+              </span>
+              <span id="emergencyAutoCheckPercent" class="font-mono text-gray-400 text-[11px]"></span>
+            </div>
+            <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden border border-white/5">
+              <div id="emergencyAutoCheckProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 25%"></div>
+            </div>
+            <div id="emergencyAutoCheckDesc" class="text-[11px] text-gray-400">
+              最新の修正プログラムとプログラムファイルの整合性を自動スキャンしています。
+            </div>
           </div>
-          <button onclick="emergencyCheckUpdate(this)" class="px-4 py-2 rounded-xl font-bold text-xs bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg shadow-blue-600/30 flex-shrink-0">
-            更新をチェック
-          </button>
+
+          <!-- アクションカード群 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button onclick="emergencyApplyLatestUpdate(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                <i class="fas fa-cloud-arrow-up"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">最新アップデート適用</div>
+                <div class="text-[10px] text-gray-400 truncate">最新版を取得して修復</div>
+              </div>
+            </button>
+            <button onclick="emergencyRunIntegrityRepair(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                <i class="fas fa-shield-halved"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">整合性チェック & 修復</div>
+                <div class="text-[10px] text-gray-400 truncate">データ破損の自己修復</div>
+              </div>
+            </button>
+            <button onclick="emergencyOpenRecoveryEngine()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                <i class="fas fa-wrench"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">リカバリーパネル起動</div>
+                <div class="text-[10px] text-gray-400 truncate">ロールバックと詳細管理</div>
+              </div>
+            </button>
+            <button onclick="emergencyOpenLogFolder()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-slate-700 text-gray-300 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+                <i class="fas fa-folder-open"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">診断ログフォルダ</div>
+                <div class="text-[10px] text-gray-400 truncate">システムログを開く</div>
+              </div>
+            </button>
+          </div>
         </div>
 
-        <div class="p-4 bg-gray-800/60 border border-gray-700/60 rounded-2xl flex items-center justify-between">
-          <div>
-            <div class="text-sm font-bold text-gray-200"><i class="fas fa-history mr-2"></i>過去の安定バージョンへ復旧（ロールバック）</div>
-            <div class="text-xs text-gray-400 mt-1">不具合のない過去のバージョンを選択してサイレント復旧できます。</div>
+        <!-- B. Web ブラウザ版専用ビュー -->
+        <div id="emergencyWebView" class="space-y-4 hidden">
+          <div class="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl space-y-2 text-xs leading-relaxed text-indigo-200">
+            <div class="font-bold text-white flex items-center gap-2">
+              <i class="fas fa-info-circle text-indigo-400"></i> 管理者が対応しております
+            </div>
+            <p>
+              サービス改善のためのメンテナンスを行っているか、一時的なネットワーク切断の可能性があります。
+              一時的な問題の場合は、ページの再読み込みやキャッシュリセットですぐに復帰できます。
+            </p>
           </div>
-          <button onclick="openPastVersionsModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition shadow-sm flex-shrink-0">
-            過去のバージョン一覧を開く
-          </button>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button onclick="emergencyReloadWeb()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm flex-shrink-0">
+                <i class="fas fa-rotate-right"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">ページを再読み込み</div>
+                <div class="text-[10px] text-gray-400 truncate">再接続を試みる</div>
+              </div>
+            </button>
+            <button onclick="emergencyClearCacheWeb()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm flex-shrink-0">
+                <i class="fas fa-broom"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">キャッシュをクリア</div>
+                <div class="text-[10px] text-gray-400 truncate">最新アセットを取得</div>
+              </div>
+            </button>
+            <button onclick="window.openFeedbackModal && window.openFeedbackModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm flex-shrink-0">
+                <i class="fas fa-comment-dots"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">バグ・状況を報告</div>
+                <div class="text-[10px] text-gray-400 truncate">管理者にフィードバック</div>
+              </div>
+            </button>
+            <button onclick="openWindowsDownloadModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm flex-shrink-0">
+                <i class="fab fa-windows"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-bold text-white truncate">Windows版アプリ</div>
+                <div class="text-[10px] text-gray-400 truncate">デスクトップ版を取得</div>
+              </div>
+            </button>
+          </div>
         </div>
 
-        <div>
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2"><i class="fas fa-terminal mr-2"></i>エラー詳細ログ</h3>
-          <textarea id="emergencyErrorDetail" readonly class="w-full h-28 p-3 bg-black/60 border border-gray-800 rounded-xl text-red-400 font-mono text-xs focus:outline-none resize-none"></textarea>
-        </div>
+        <!-- 技術的詳細（折りたたみアコーディオン） -->
+        <details class="text-xs text-gray-400 border border-white/5 rounded-2xl p-3 bg-black/20">
+          <summary class="cursor-pointer font-bold text-gray-300 hover:text-white flex items-center gap-2 select-none">
+            <i class="fas fa-terminal text-[11px] text-gray-500"></i>
+            <span>技術的なエラー詳細（サポート・調査用）</span>
+          </summary>
+          <textarea id="emergencyErrorDetail" readonly class="w-full h-24 p-2.5 mt-2.5 bg-black/50 border border-white/10 rounded-xl text-gray-300 font-mono text-[11px] focus:outline-none resize-none select-all leading-relaxed"></textarea>
+        </details>
       </div>
 
-      <div class="flex items-center justify-between border-t border-gray-800 pt-4 gap-4">
-        <button onclick="if(window.caches){caches.keys().then(k=>k.forEach(c=>caches.delete(c)))};if(navigator.serviceWorker){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()))};window.location.reload(true)" class="px-5 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 font-bold text-xs rounded-xl transition flex items-center gap-2">
-          <i class="fas fa-trash-alt"></i>キャッシュ＆ストレージをリセットして再起動
+      <!-- フッター -->
+      <div class="flex items-center justify-between border-t border-white/10 pt-4 gap-3">
+        <button onclick="emergencyRestartApp()" class="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-2 active:scale-95">
+          <i class="fas fa-rotate-right"></i><span>アプリを再起動</span>
         </button>
-        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs rounded-xl transition">
-          閉じて続行を試みる
+        <button onclick="document.getElementById('emergencyRecoveryOverlay').classList.add('hidden');document.getElementById('emergencyRecoveryOverlay').style.display='none'" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md active:scale-95">
+          閉じて続行
         </button>
       </div>
     </div>
@@ -3895,7 +4180,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.253"></script>
+  <script type="module" src="js/main.js?v=1.1.255"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

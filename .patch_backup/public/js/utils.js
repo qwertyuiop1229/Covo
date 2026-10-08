@@ -57,35 +57,45 @@ export function formatBytes(bytes, decimals = 2) {
 }
 
 /**
+ * あらゆる形式のタイムスタンプ（数値・ミリ秒・秒・Firestoreオブジェクト・マップ・文字列）を正確なUnixミリ秒に変換
+ * @param {*} val - 変換対象
+ * @returns {number} タイムスタンプ(ミリ秒) または 0
+ */
+export function parseTimestampToMs(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') {
+    return val < 10000000000 ? val * 1000 : val;
+  }
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (typeof val === 'object') {
+    if (val.seconds != null) {
+      return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000);
+    }
+    if (val._seconds != null) {
+      return val._seconds * 1000 + Math.floor((val._nanoseconds || 0) / 1000000);
+    }
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num) && num > 0) {
+      return num < 10000000000 ? num * 1000 : num;
+    }
+    const parsed = new Date(val).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+/**
  * メッセージオブジェクトから正確なタイムスタンプを取得
  * @param {Object} msg - メッセージオブジェクト
  * @returns {number} タイムスタンプ(ミリ秒)
  */
 export function getMsgTimestamp(msg) {
   if (!msg) return Date.now();
-  if (msg.createdAt) {
-    if (typeof msg.createdAt.toMillis === 'function') return msg.createdAt.toMillis();
-    if (typeof msg.createdAt === 'number') return msg.createdAt;
-    if (typeof msg.createdAt === 'object' && msg.createdAt.seconds != null) {
-      return msg.createdAt.seconds * 1000 + Math.floor((msg.createdAt.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.createdAt === 'string') {
-      const parsed = new Date(msg.createdAt).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  if (msg.timestamp) {
-    if (typeof msg.timestamp === 'number') return msg.timestamp;
-    if (typeof msg.timestamp.toMillis === 'function') return msg.timestamp.toMillis();
-    if (typeof msg.timestamp === 'object' && msg.timestamp.seconds != null) {
-      return msg.timestamp.seconds * 1000 + Math.floor((msg.timestamp.nanoseconds || 0) / 1000000);
-    }
-    if (typeof msg.timestamp === 'string') {
-      const parsed = new Date(msg.timestamp).getTime();
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
-  return Date.now();
+  const ts = parseTimestampToMs(msg.timestamp) || parseTimestampToMs(msg.createdAt);
+  return ts > 0 ? ts : Date.now();
 }
 
 /**
@@ -145,11 +155,24 @@ export function emailInitial(email) {
  * @param {File} file - 処理対象のファイル
  * @returns {Promise<File>} 処理後のファイル
  */
+export function isSemverNewer(remoteVersion, localVersion) {
+  if (!remoteVersion || !localVersion) return false;
+  const r = String(remoteVersion).replace(/^v/i, '').trim();
+  const l = String(localVersion).replace(/^v/i, '').trim();
+  const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+  const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+  while (rParts.length < 3) rParts.push(0);
+  while (lParts.length < 3) lParts.push(0);
+  for (let i = 0; i < 3; i++) {
+    if (rParts[i] > lParts[i]) return true;
+    if (rParts[i] < lParts[i]) return false;
+  }
+  return false;
+}
 export async function processHeicFile(file) {
   if (!file) return null;
   const name = file.name || '';
   const ext = name.split('.').pop().toLowerCase();
-  
   if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
     try {
       if (typeof heic2any === 'undefined') {
@@ -168,12 +191,13 @@ export async function processHeicFile(file) {
   }
   return file;
 }
-
 // グローバル互換性
 if (typeof window !== 'undefined') {
+  window.isSemverNewer = isSemverNewer;
   window._abToB64 = _abToB64;
   window._b64ToAb = _b64ToAb;
   window.formatBytes = formatBytes;
+  window.parseTimestampToMs = parseTimestampToMs;
   window.getMsgTimestamp = getMsgTimestamp;
   window.safeCopy = safeCopy;
   window._execCopyFallback = _execCopyFallback;
