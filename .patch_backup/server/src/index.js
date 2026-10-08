@@ -85,22 +85,101 @@ function isFileExtensionBlocked(fileName) {
   }
   return false;
 }
-
+// --- Cloudflare API 監査・稼働メトリクスロガー ---
+const _cfApiLogs = [];
+const _cfApiDailyStats = {
+  date: new Date().toISOString().slice(0, 10),
+  totalRequests: 0,
+  successRequests: 0,
+  errorRequests: 0,
+  routes: {}
+};
+let _auditTableEnsured = false;
+async function ensureAuditTable(db) {
+  if (_auditTableEnsured || !db) return;
+  try {
+    await db.prepare(`CREATE TABLE IF NOT EXISTS api_audit_logs (
+      id TEXT PRIMARY KEY,
+      timestamp INTEGER NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      status INTEGER NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      client_ip TEXT,
+      user_id TEXT,
+      error_message TEXT,
+      details TEXT
+    )`).run();
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_api_audit_logs_timestamp ON api_audit_logs(timestamp)").run();
+    _auditTableEnsured = true;
+  } catch (_) {}
+}
+function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDetails = null) {
+  try {
+    const durationMs = Date.now() - startTime;
+    const clientIp = request.headers.get("CF-IPCountry") || request.headers.get("CF-Connecting-IP") || "unknown";
+    const status = response ? response.status : 500;
+    const pathname = url.pathname;
+    if (pathname === "/api/admin/serverStatus") return;
+    const userId = url.searchParams.get("userId") || url.searchParams.get("uid") || null;
+    const logEntry = {
+      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7),
+      timestamp: Date.now(),
+      method: request.method,
+      pathname: pathname,
+      status: status,
+      durationMs: durationMs,
+      clientIp: clientIp,
+      userId: userId,
+      error: errorDetails || (status >= 400 ? `HTTP ${status}` : null)
+    };
+    _cfApiLogs.unshift(logEntry);
+    if (_cfApiLogs.length > 100) _cfApiLogs.pop();
+    const today = new Date().toISOString().slice(0, 10);
+    if (_cfApiDailyStats.date !== today) {
+      _cfApiDailyStats.date = today;
+      _cfApiDailyStats.totalRequests = 0;
+      _cfApiDailyStats.successRequests = 0;
+      _cfApiDailyStats.errorRequests = 0;
+      _cfApiDailyStats.routes = {};
+    }
+    _cfApiDailyStats.totalRequests++;
+    if (status < 400) _cfApiDailyStats.successRequests++;
+    else _cfApiDailyStats.errorRequests++;
+    const routeKey = `${request.method} ${pathname}`;
+    if (!_cfApiDailyStats.routes[routeKey]) {
+      _cfApiDailyStats.routes[routeKey] = { total: 0, success: 0, error: 0 };
+    }
+    _cfApiDailyStats.routes[routeKey].total++;
+    if (status < 400) _cfApiDailyStats.routes[routeKey].success++;
+    else _cfApiDailyStats.routes[routeKey].error++;
+    if (env && env.DB && ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil((async () => {
+        try {
+          await ensureAuditTable(env.DB);
+          await env.DB.prepare(
+            "INSERT INTO api_audit_logs (id, timestamp, method, path, status, duration_ms, client_ip, user_id, error_message, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          ).bind(logEntry.id, logEntry.timestamp, logEntry.method, logEntry.pathname, logEntry.status, logEntry.durationMs, logEntry.clientIp, logEntry.userId, logEntry.error, null).run();
+        } catch (_) {}
+      })());
+    }
+  } catch (_) {}
+}
 export default {
   async fetch(request, env, ctx) {
+    const startTime = Date.now();
     let cors = corsHeaders;
     try {
       const url = new URL(request.url);
       const isFileRoute = url.pathname.startsWith("/api/file/") || url.pathname === "/api/download";
       cors = isFileRoute ? getFileCorsHeaders(request) : getCorsHeaders(request);
-
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: cors });
       }
-
-      if (url.pathname === "/api/signup" && request.method === "POST") {
-        return await handleSignup(request, env);
-      }
+      const response = await (async () => {
+        if (url.pathname === "/api/signup" && request.method === "POST") {
+          return await handleSignup(request, env);
+        }
       if (url.pathname === "/api/joinServer" && request.method === "POST") {
         return await handleJoinServer(request, env);
       }
@@ -153,6 +232,9 @@ export default {
       if (url.pathname === "/api/admin/bulkDeleteFiles" && request.method === "DELETE") {
         return await handleBulkDeleteFiles(request, env);
       }
+      if (url.pathname === "/api/admin/serverStatus" && request.method === "GET") {
+        return await handleServerStatus(request, env, url);
+      }
       if (url.pathname === "/api/admin/deleteMessage" && request.method === "DELETE") {
         return await handleAdminDeleteMessage(request, env);
       }
@@ -162,20 +244,26 @@ export default {
       if (url.pathname.startsWith("/api/d1/")) {
         return await handleD1Api(request, env, url);
       }
-
       return new Response(JSON.stringify({ error: "Not Found" }), {
         status: 404,
         headers: { ...cors, "Content-Type": "application/json" },
       });
-    } catch (fatalErr) {
+      })();
+      recordApiAuditLog(request, url, response, startTime, env, ctx);
+      return response;
+      } catch (fatalErr) {
       console.error("Worker unhandled fatal error:", fatalErr);
-      return new Response(JSON.stringify({ error: "Internal Server Error", details: fatalErr.toString() }), {
+      const errRes = new Response(JSON.stringify({ error: "Internal Server Error", details: fatalErr.toString() }), {
         status: 500,
         headers: { ...cors, "Content-Type": "application/json" }
       });
-    }
-  },
-};
+      try {
+        recordApiAuditLog(request, new URL(request.url), errRes, startTime, env, ctx, fatalErr.toString());
+      } catch (_) {}
+      return errRes;
+      }
+      },
+      };
 
 // -------------------------------------------------------------
 // エマージェンシーコードによるパスワード強制更新処理 (Firebase Identity Toolkit連携)
@@ -1936,7 +2024,6 @@ function categorizeKvFile(meta) {
   const folder = (meta?.folder || '').toLowerCase();
   const type = (meta?.type || '').toLowerCase();
   const name = (meta?.name || '').toLowerCase();
-
   if (folder.includes('avatar') || folder.includes('icon') || folder === 'avatars' || folder === 'icons' || folder === 'server_icons') {
     return 'avatars';
   }
@@ -1954,7 +2041,133 @@ function categorizeKvFile(meta) {
   }
   return 'others';
 }
+// -------------------------------------------------------------
+// 全体管理者専用: Cloudflare Worker 稼働状態 & 制限 & API実行履歴取得
+// -------------------------------------------------------------
+async function handleServerStatus(request, env, url) {
+  const cors = getCorsHeaders(request);
+  try {
+    const authHeader = request.headers.get("Authorization") || "";
+    const idToken = authHeader.replace("Bearer ", "").trim() || url.searchParams.get("idToken") || "";
+    if (!idToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+    if (!verifiedUser) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID || "simplechat-65a0d";
+    if (!isValidAppId(appId, env)) {
+      return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const isAdminUser = await isAppAdmin(appId, verifiedUser, env);
+    if (!isAdminUser) {
+      return new Response(JSON.stringify({ error: "Forbidden: Global Admin only" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
+    let kvTotalBytes = 0;
+    let kvKeyCount = 0;
+    if (env.FILES) {
+      try {
+        let cursor;
+        let limitCount = 0;
+        do {
+          const listed = await env.FILES.list({ cursor, limit: 1000 });
+          for (const key of listed.keys) {
+            kvKeyCount++;
+            kvTotalBytes += (key.metadata?.size || 0);
+          }
+          cursor = listed.cursor;
+          limitCount++;
+          if (listed.list_complete || limitCount >= 5) break;
+        } while (cursor);
+      } catch (_) {}
+    }
+
+    let d1Status = { bound: Boolean(env.DB), healthy: false, rowCount: 0 };
+    if (env.DB) {
+      try {
+        const d1Check = await env.DB.prepare("SELECT COUNT(*) as cnt FROM messages").first();
+        d1Status.healthy = true;
+        d1Status.rowCount = d1Check?.cnt || 0;
+      } catch (_) {
+        try {
+          await env.DB.prepare("SELECT 1").first();
+          d1Status.healthy = true;
+        } catch (_) {}
+      }
+    }
+
+    let logs = [..._cfApiLogs];
+    if (env.DB) {
+      try {
+        const dbLogs = await env.DB.prepare("SELECT * FROM api_audit_logs ORDER BY timestamp DESC LIMIT 60").all();
+        if (dbLogs && dbLogs.results && dbLogs.results.length > 0) {
+          const seen = new Set(logs.map(l => l.id));
+          for (const r of dbLogs.results) {
+            if (!seen.has(r.id)) {
+              logs.push({
+                id: r.id,
+                timestamp: r.timestamp,
+                method: r.method,
+                pathname: r.path,
+                status: r.status,
+                durationMs: r.duration_ms,
+                clientIp: r.client_ip,
+                userId: r.user_id,
+                error: r.error_message
+              });
+            }
+          }
+          logs.sort((a, b) => b.timestamp - a.timestamp);
+        }
+      } catch (_) {}
+    }
+
+    const kvLimitBytes = 1 * 1024 * 1024 * 1024; // 1 GB
+    const quota = {
+      serverHealth: "healthy",
+      timestamp: Date.now(),
+      requestsToday: {
+        limit: 100000,
+        count: _cfApiDailyStats.totalRequests,
+        success: _cfApiDailyStats.successRequests,
+        error: _cfApiDailyStats.errorRequests,
+        percent: Math.min(100, Number(((_cfApiDailyStats.totalRequests / 100000) * 100).toFixed(2)))
+      },
+      kv: {
+        usedBytes: kvTotalBytes,
+        limitBytes: kvLimitBytes,
+        percent: Math.min(100, Number(((kvTotalBytes / kvLimitBytes) * 100).toFixed(2))),
+        keyCount: kvKeyCount,
+        maxFileSize: "25 MB",
+        dailyWriteLimit: 1000,
+        dailyReadLimit: 100000
+      },
+      d1: d1Status,
+      envBindings: {
+        KV_FILES: Boolean(env.FILES),
+        D1_DB: Boolean(env.DB),
+        FIREBASE_API_KEY: Boolean(env.FIREBASE_API_KEY),
+        SERVICE_ACCOUNT_JSON: Boolean(env.SERVICE_ACCOUNT_JSON),
+        AGORA_APP_ID: Boolean(env.AGORA_APP_ID)
+      },
+      dailyRouteStats: _cfApiDailyStats.routes,
+      recentLogs: logs.slice(0, 80)
+    };
+
+    return new Response(JSON.stringify({ success: true, data: quota }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  } catch (err) {
+    console.error("handleServerStatus error:", err);
+    return new Response(JSON.stringify({ error: err.toString() }), {
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+}
 async function handleStorageStats(request, env) {
   const cors = getCorsHeaders(request);
   try {
@@ -3730,16 +3943,22 @@ async function handleSetOffline(request, env) {
               return new Response(JSON.stringify({ error: "Invalid dmId" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
             }
             const isGlobal = await isAppAdmin(appId, verifiedUser, env);
+            let hasServerAdminRights = isGlobal;
             if (dmId) {
               const parts = dmId.split('_');
               if (!isGlobal && !parts.includes(verifiedUser.uid)) {
                 return new Response(JSON.stringify({ error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
               }
             } else {
-              if (!isGlobal) {
+              const isSvAdmin = serverId ? await isServerAdminCheck(appId, serverId, verifiedUser, env) : false;
+              hasServerAdminRights = isGlobal || isSvAdmin;
+              if (!hasServerAdminRights) {
                 const isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
                 if (!isMember) {
                   return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
+                }
+                if (forcePrune) {
+                  return new Response(JSON.stringify({ error: "Forbidden: Server admin rights required for force prune" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
                 }
               }
             }
@@ -3804,7 +4023,22 @@ async function handleSetOffline(request, env) {
               const tB = b.timestamp || b.createdAt || 0;
               return tA - tB;
             });
-            const policy = retentionPolicy || "prune_100";
+            let policy = retentionPolicy || "prune_100";
+            if (!hasServerAdminRights && serverId) {
+              // 🔒 一般メンバーによる不正プルーニング・過剰削除を完全防止: サーバーの実際の設定を確認
+              try {
+                const adminToken = await getAdminTokenForFirestore(env);
+                if (adminToken) {
+                  const srvRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, {
+                    headers: { "Authorization": `Bearer ${adminToken}` }
+                  });
+                  const srvData = await srvRes.json();
+                  policy = srvData.fields?.messageRetentionPolicy?.stringValue || "prune_100";
+                }
+              } catch (_) {
+                policy = "prune_100";
+              }
+            }
             if (policy === "keep_all" && !forcePrune) {
               return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, skipped: true }), {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
@@ -3829,7 +4063,7 @@ async function handleSetOffline(request, env) {
               });
             } else {
               // prune_100 またはデフォルト
-              const maxAllowed = typeof maxKeep === 'number' && maxKeep > 0 ? maxKeep : 100;
+              const maxAllowed = (hasServerAdminRights && typeof maxKeep === 'number' && maxKeep > 0) ? maxKeep : 100;
               if (unpinnedMsgs.length > maxAllowed) {
                 const excessCount = unpinnedMsgs.length - maxAllowed;
                 excessMsgs = unpinnedMsgs.slice(0, excessCount);

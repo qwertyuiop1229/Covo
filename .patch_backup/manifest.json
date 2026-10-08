@@ -1,8 +1,7 @@
 {
-  "date": "2026-10-08T12:58:38.567Z",
+  "date": "2026-10-08T13:43:56.691Z",
   "files": [
-    "src-tauri/src/lib.rs",
-    "public/index.html",
+    "server/src/index.js",
     "public/js/main.js"
   ]
 }

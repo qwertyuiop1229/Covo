@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS webrtc_fileshares (
     created_at INTEGER,
     updated_at INTEGER
 );
+
 CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
     candidate_id TEXT PRIMARY KEY,
     fs_id TEXT NOT NULL,
@@ -230,17 +231,3 @@ CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
     created_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
--- 20. API Audit Logs (Cloudflare Worker Monitoring)
-CREATE TABLE IF NOT EXISTS api_audit_logs (
-    id TEXT PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    method TEXT NOT NULL,
-    path TEXT NOT NULL,
-    status INTEGER NOT NULL,
-    duration_ms INTEGER NOT NULL,
-    client_ip TEXT,
-    user_id TEXT,
-    error_message TEXT,
-    details TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_api_audit_logs_timestamp ON api_audit_logs(timestamp);

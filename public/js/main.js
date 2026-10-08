@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.258';
-import * as LocalStore from './local_store.js?v=1.1.258';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.258';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.258';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.258';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.258';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.258';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.259';
+import * as LocalStore from './local_store.js?v=1.1.259';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.259';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.259';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.259';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.259';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.259';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -3909,8 +3909,200 @@ if (openAdminModalBtn) {
 }
 
 // 許可リスト追加
-// ストレージ統計
+// =========================================================================
+// 🌐 Cloudflare Worker 稼働状況 & API実行監査ログ (全体管理者専用)
+// =========================================================================
+let _cachedCfStatusData = null;
+let _cfLogFilter = 'all';
 
+window.loadCfServerStatus = async function () {
+  const reqText = document.getElementById('cfReqCountText');
+  const kvText = document.getElementById('cfKvUsageText');
+  const d1Text = document.getElementById('cfD1RowCountText');
+  const spinIcon = document.getElementById('refreshCfStatusIcon');
+  if (spinIcon) spinIcon.classList.add('fa-spin');
+  if (reqText && reqText.textContent === '0 回') reqText.textContent = '取得中...';
+
+  try {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : (_cachedIdToken || "");
+    if (!idToken) throw new Error("認証トークンがありません");
+
+    const res = await fetch(`${WORKER_BASE_URL}/api/admin/serverStatus?appId=${appId}`, {
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (!json.success || !json.data) throw new Error(json.error || "データ取得失敗");
+
+    _cachedCfStatusData = json.data;
+    renderCfServerStatusUI(json.data);
+  } catch (err) {
+    console.error('[loadCfServerStatus] error:', err);
+    alertMessage("Cloudflare 稼働情報の取得に失敗しました: " + (err.message || ''), "error");
+  } finally {
+    if (spinIcon) spinIcon.classList.remove('fa-spin');
+  }
+};
+
+function renderCfServerStatusUI(data) {
+  if (!data) return;
+  const limits = data.limits || {};
+  const reqs = limits.dailyRequests || {};
+  const kv = limits.kvStorage || {};
+  const d1 = limits.d1Database || {};
+
+  // 1. Worker リクエスト数
+  const reqCountEl = document.getElementById('cfReqCountText');
+  const reqSuccessEl = document.getElementById('cfReqSuccessText');
+  const reqErrorEl = document.getElementById('cfReqErrorText');
+  const reqPercentEl = document.getElementById('cfReqPercentBadge');
+  const reqProgressEl = document.getElementById('cfReqProgressBar');
+  if (reqCountEl) reqCountEl.textContent = `${(reqs.estimatedUsedToday || 0).toLocaleString()} 回`;
+  if (reqSuccessEl) reqSuccessEl.textContent = (reqs.successCount || 0).toLocaleString();
+  if (reqErrorEl) reqErrorEl.textContent = (reqs.errorCount || 0).toLocaleString();
+  if (reqPercentEl) reqPercentEl.textContent = `${reqs.percent || 0}%`;
+  if (reqProgressEl) reqProgressEl.style.width = `${Math.min(100, reqs.percent || 0)}%`;
+
+  // 2. KV 容量
+  const kvUsageEl = document.getElementById('cfKvUsageText');
+  const kvCountEl = document.getElementById('cfKvCountText');
+  const kvPercentEl = document.getElementById('cfKvPercentBadge');
+  const kvProgressEl = document.getElementById('cfKvProgressBar');
+  if (kvUsageEl) kvUsageEl.textContent = formatBytes(kv.usedBytes || 0);
+  if (kvCountEl) kvCountEl.textContent = `${(kv.keyCount || 0).toLocaleString()} 件`;
+  if (kvPercentEl) kvPercentEl.textContent = `${kv.percent || 0}%`;
+  if (kvProgressEl) kvProgressEl.style.width = `${Math.min(100, kv.percent || 0)}%`;
+
+  // 3. D1 状態
+  const d1RowEl = document.getElementById('cfD1RowCountText');
+  if (d1RowEl) {
+    if (d1.bound) {
+      d1RowEl.textContent = d1.healthy ? `D1 正常 (${(d1.totalMessagesInD1 || 0).toLocaleString()}行)` : 'D1 応答遅延';
+    } else {
+      d1RowEl.textContent = 'D1 未バインド';
+    }
+  }
+
+  // バインディングタグ
+  const bindingsWrap = document.getElementById('cfBindingsBadges');
+  const eb = data.envBindings || limits.bindings || {};
+  if (bindingsWrap) {
+    bindingsWrap.innerHTML = `
+      <span class="px-1.5 py-0.5 rounded ${eb.KV_FILES || eb.FILES_KV ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500'}">KV: ${eb.KV_FILES || eb.FILES_KV ? '✓' : '✗'}</span>
+      <span class="px-1.5 py-0.5 rounded ${eb.D1_DB || eb.DB_D1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-200 dark:bg-slate-800 text-gray-500'}">D1: ${eb.D1_DB || eb.DB_D1 ? '✓' : '未接続'}</span>
+      <span class="px-1.5 py-0.5 rounded ${eb.SERVICE_ACCOUNT_JSON ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-500'}">Firebase: ${eb.SERVICE_ACCOUNT_JSON ? '✓' : '限定'}</span>
+      <span class="px-1.5 py-0.5 rounded ${eb.AGORA_APP_ID ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : 'bg-gray-200 dark:bg-slate-800 text-gray-500'}">Agora: ${eb.AGORA_APP_ID ? '✓' : '-'}</span>
+    `;
+  }
+
+  // 4. API別 サマリーバッジ
+  const routeStatsWrap = document.getElementById('cfRouteStatsList');
+  if (routeStatsWrap) {
+    const routes = data.dailyRouteStats || data.stats?.routes || {};
+    const routeKeys = Object.keys(routes);
+    if (routeKeys.length === 0) {
+      routeStatsWrap.innerHTML = '<span class="text-[11px] text-gray-400">本日のAPI実行履歴はまだありません</span>';
+    } else {
+      routeStatsWrap.innerHTML = routeKeys.map(k => {
+        const st = routes[k];
+        const badgeColor = st.error > 0 ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700';
+        return `
+          <div class="px-2.5 py-1 rounded-xl text-[10px] font-mono font-bold border ${badgeColor} flex items-center gap-1.5 shadow-xs">
+            <span>${escapeHtml(k)}</span>
+            <span class="opacity-60">×${st.total}</span>
+            ${st.error > 0 ? `<span class="text-rose-500">(${st.error}失敗)</span>` : '<span class="text-emerald-500">✓</span>'}
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // 5. 直近ログ描画
+  renderCfLogsList();
+}
+
+window.filterCfApiLogs = function (filter) {
+  _cfLogFilter = filter;
+  ['All', 'Success', 'Error'].forEach(f => {
+    const btn = document.getElementById(`cfLogFilter${f}`);
+    if (!btn) return;
+    const isTarget = (f === 'All' && filter === 'all') || (f === 'Success' && filter === 'success') || (f === 'Error' && filter === 'error');
+    if (isTarget) {
+      btn.className = "px-2.5 py-0.5 rounded-lg bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs";
+    } else {
+      btn.className = "px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800";
+    }
+  });
+  renderCfLogsList();
+};
+
+function renderCfLogsList() {
+  const container = document.getElementById('cfLogsList');
+  if (!container || !_cachedCfStatusData) return;
+  const rawLogs = _cachedCfStatusData.recentLogs || [];
+  const filtered = rawLogs.filter(l => {
+    if (_cfLogFilter === 'success') return l.status < 400;
+    if (_cfLogFilter === 'error') return l.status >= 400;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="p-8 text-center text-xs text-gray-400 dark:text-gray-500">該当するAPIログはありません</div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(log => {
+    const isSuccess = log.status < 400;
+    const timeStr = new Date(log.timestamp).toLocaleTimeString('ja-JP');
+    const methodColor = log.method === 'GET' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                        log.method === 'POST' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' :
+                        log.method === 'DELETE' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'bg-gray-500/10 text-gray-600';
+    const statusColor = isSuccess ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';
+    const durationColor = log.durationMs > 500 ? 'text-amber-500 font-bold' : 'text-gray-400';
+
+    return `
+      <div class="p-3 bg-white dark:bg-slate-900/60 border border-gray-200/80 dark:border-slate-800 rounded-xl shadow-xs text-xs flex flex-col gap-1 transition-colors">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${methodColor}">${escapeHtml(log.method)}</span>
+            <span class="font-mono font-bold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(log.pathname)}</span>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <span class="px-2 py-0.2 rounded-full text-[10px] font-mono font-bold border ${statusColor}">
+              ${isSuccess ? '✓ ' : '✗ '}${log.status}
+            </span>
+            <span class="text-[10px] font-mono ${durationColor}">${log.durationMs}ms</span>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-[10px] text-gray-400 pt-0.5">
+          <span>${timeStr} ${log.clientIp ? `• 地域: ${escapeHtml(log.clientIp)}` : ''}</span>
+          ${log.userId ? `<span class="font-mono">User: ${escapeHtml(log.userId.slice(0, 8))}...</span>` : ''}
+        </div>
+        ${log.error ? `<div class="mt-1 p-1.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-mono break-all leading-tight"><i class="fas fa-exclamation-triangle mr-1"></i>${escapeHtml(log.error)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+window.copyCfApiLogs = function () {
+  if (!_cachedCfStatusData || !_cachedCfStatusData.recentLogs || _cachedCfStatusData.recentLogs.length === 0) {
+    alertMessage("コピーするログがありません", "info");
+    return;
+  }
+  const logs = _cachedCfStatusData.recentLogs;
+  let text = `=== Cloudflare Worker API 実行監査ログ ===\n取得日時: ${new Date().toLocaleString('ja-JP')}\n件数: ${logs.length}件\n\n`;
+  logs.forEach(l => {
+    const time = new Date(l.timestamp).toLocaleTimeString('ja-JP');
+    text += `[${time}] ${l.method} ${l.pathname} -> ${l.status} (${l.durationMs}ms) ${l.error ? `[Error: ${l.error}]` : '[OK]'}\n`;
+  });
+  navigator.clipboard.writeText(text).then(() => {
+    alertMessage("API実行ログをクリップボードにコピーしました", "success");
+  }).catch(() => {
+    alertMessage("コピーに失敗しました", "error");
+  });
+};
+
+// ストレージ統計
 async function loadStorageStats() {
   const kvText = document.getElementById('kvUsageText');
   const catList = document.getElementById('storageCategoryItemsList');
@@ -4528,6 +4720,10 @@ function setupGlobalAdminRoleListener() {
       mobileAdminSec.style.display = (isAdmin || isListAdmin) ? "" : "none";
       mobileAdminSec.classList.toggle("hidden", !(isAdmin || isListAdmin));
     }
+    const cfNavBtn = document.getElementById("snav-cfstatus");
+    if (cfNavBtn) cfNavBtn.style.display = isAdmin ? "" : "none";
+    const cfMobRow = document.getElementById("mobileCfStatusRow");
+    if (cfMobRow) cfMobRow.style.display = isAdmin ? "" : "none";
 
     const hdrTitle = document.getElementById("headerTitle");
     if (hdrTitle && userNickname) {
@@ -4708,6 +4904,7 @@ window.switchDiscordSettingsTab = function (tab) {
     admin: 'adminNavSection',
     storage: 'storageSection',
     reports: 'reportsSection',
+    cfstatus: 'cfstatusSection',
     appinfo: 'appinfoSection',
     admintools: 'admintoolsSection'
   };
@@ -4757,6 +4954,15 @@ window.switchDiscordSettingsTab = function (tab) {
     // エラータブが既に選択状態なので必ず loadErrorTelemetry を呼ぶ
     if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
     if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+  }
+  if (tab === 'cfstatus') {
+    const container = document.getElementById('pcCfStatusContainer');
+    const shared = document.getElementById('cfStatusSharedContent');
+    if (container && shared) {
+      container.appendChild(shared);
+      shared.classList.remove('hidden');
+    }
+    if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
   }
 };
 
@@ -5308,6 +5514,7 @@ window.openMobileDetail = function (type) {
     admin: 'mobileDetailAdmin',
     storage: 'mobileDetailStorage',
     reports: 'mobileDetailReports',
+    cfstatus: 'mobileDetailCfStatus',
     appinfo: 'mobileDetailAppInfo',
     admintools: 'mobileDetailAdminTools'
   };
@@ -5342,6 +5549,15 @@ window.openMobileDetail = function (type) {
       }
       if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
       if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+    }
+    if (type === 'cfstatus') {
+      const container = document.getElementById('mobileCfStatusContainer');
+      const shared = document.getElementById('cfStatusSharedContent');
+      if (container && shared) {
+        container.appendChild(shared);
+        shared.classList.remove('hidden');
+      }
+      if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
     }
     if (type === 'appinfo') {
       const verEl = document.getElementById('mobileAppInfoVersion');
@@ -18856,6 +19072,8 @@ async function jumpToUnloadedMessage(msgId) {
     currentRoomId === targetRoomId &&
     currentDmId === targetDmId
   );
+  // ジャンプ移動中の意図しない追加ロード誤発火を完全にロック
+  allowPagination = false;
   const spinner = document.getElementById('topLoadingSpinner');
   const spinnerText = document.getElementById('topLoadingSpinnerText');
   if (spinnerText) spinnerText.textContent = "過去ログをロード中...";
@@ -18875,14 +19093,11 @@ async function jumpToUnloadedMessage(msgId) {
       await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants).catch(() => {});
     }
   };
-
   try {
     let targetMsg = null;
-
     // 1. IndexedDB (LocalStore) から探索
     const localMsgs = await LocalStore.getMessages(chId, null, 200);
     targetMsg = localMsgs.find(m => m.id === msgId);
-
     // 2. なければ RTDB から取得
     if (!targetMsg) {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -18895,7 +19110,6 @@ async function jumpToUnloadedMessage(msgId) {
         targetMsg = { id: snap.key, channelId: chId, ...snap.val() };
       }
     }
-
     // 3. なければ Firestore (サーバーメッセージの場合のみ)
     if (!targetMsg && currentServerId && currentRoomId) {
       const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
@@ -18904,16 +19118,14 @@ async function jumpToUnloadedMessage(msgId) {
         targetMsg = { id: docSnap.id, channelId: chId, ...docSnap.data() };
       }
     }
-
     if (!targetMsg) {
       alertMessage("メッセージが見つかりません。", "error");
       if (spinner) spinner.style.display = 'none';
+      allowPagination = true;
       return;
     }
-
     const targetTime = getMsgTimestamp(targetMsg);
     const fetchLimit = 15;
-
     // RTDB からターゲット周辺のメッセージを取得
     const { ref, get, query: rtdbQuery, orderByChild, startAt, endAt, limitToLast, limitToFirst } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
@@ -18921,19 +19133,15 @@ async function jumpToUnloadedMessage(msgId) {
       ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`
       : `artifacts/${appId}/dm_messages/${currentDmId}`;
     const messagesRef = ref(rtdb, basePath);
-
     const qPast = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(targetTime, msgId), limitToLast(fetchLimit + 1));
     const qFuture = rtdbQuery(messagesRef, orderByChild('timestamp'), startAt(targetTime, msgId), limitToFirst(fetchLimit + 1));
-
     const [snapPast, snapFuture] = await Promise.all([get(qPast), get(qFuture)]);
-
     let pastMsgs = [];
     if (snapPast.exists()) {
       const d = snapPast.val();
       pastMsgs = Object.keys(d).map(k => ({ ...d[k], id: k, channelId: chId }));
       pastMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
     }
-
     let futureMsgs = [];
     if (snapFuture.exists()) {
       const d = snapFuture.val();
@@ -18941,7 +19149,6 @@ async function jumpToUnloadedMessage(msgId) {
       futureMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       futureMsgs = futureMsgs.filter(d => d.id !== msgId);
     }
-
     hasMoreJumpOlder = pastMsgs.length >= fetchLimit;
     hasMoreJumpNewer = futureMsgs.length >= fetchLimit;
     const combinedMsgs = [targetMsg, ...pastMsgs, ...futureMsgs];
@@ -18952,39 +19159,65 @@ async function jumpToUnloadedMessage(msgId) {
       return true;
     });
     uniqueMsgs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-
     await decryptInPlace(uniqueMsgs);
-
     isJumpView = true;
     jumpViewMessages = uniqueMsgs;
     allLoadedMessages = [...jumpViewMessages];
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
-
+    // 二段階アライメント: 一旦非表示にし、DOM確定を待って瞬時配置
     messagesDisplay.style.transition = 'none';
     messagesDisplay.style.opacity = '0';
     if (spinner) spinner.style.display = 'none';
-
     renderMessagesWithReadReceipts();
+    // パス1: DOM構築直後に targetMsg のバブルを垂直中央へ瞬時吸着 (behavior: 'auto')
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+        if (el2) {
+          doJumpHighlight(el2, true);
+        }
+        // パス2: リフロー・画像高さ確定後に微調整してフェードイン＆スウェイ揺動発火
+        setTimeout(() => {
+          let el3 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
+          if (el3) {
+            doJumpHighlight(el3, true);
+            messagesDisplay.style.transition = 'opacity 0.22s ease-out';
+            messagesDisplay.style.opacity = '1';
+            // スウェイ揺動アニメーションを発火 (スタンプと通常メッセージを正しく判別)
+            setTimeout(() => {
+              const isStamp = el3.querySelector('img[alt^="stamp_"]') || el3.querySelector('.sticker-content') || el3.classList.contains('sticker-bubble');
+              if (isStamp) {
+                const targetNode = el3.querySelector('.sticker-content') || el3;
+                targetNode.classList.remove('stamp-jump-anim');
+                void targetNode.offsetWidth;
+                targetNode.classList.add('stamp-jump-anim');
+                setTimeout(() => targetNode.classList.remove('stamp-jump-anim'), 800);
+              } else {
+                el3.classList.remove('message-jump-anim', 'message-highlight');
+                void el3.offsetWidth;
+                el3.classList.add('message-jump-anim', 'message-highlight');
+                setTimeout(() => el3.classList.remove('message-jump-anim'), 880);
+                setTimeout(() => el3.classList.remove('message-highlight'), 1600);
+              }
+              // パス3: ジャンプ安定後にページネーションロックを解除
+              allowPagination = true;
+            }, 60);
+          } else {
+            messagesDisplay.style.transition = 'opacity 0.22s ease-out';
+            messagesDisplay.style.opacity = '1';
+            allowPagination = true;
+          }
+        }, 120);
+      });
+    });
   } catch (e) {
     console.error("Jump fetch error:", e);
+    messagesDisplay.style.transition = 'opacity 0.22s ease-out';
+    messagesDisplay.style.opacity = '1';
+    allowPagination = true;
   }
-
-  setTimeout(() => {
-    let el2 = document.querySelector(`.message-bubble[data-message-id="${msgId}"]`);
-    if (el2) {
-      messagesDisplay.style.transition = 'opacity 0.3s ease';
-      messagesDisplay.style.opacity = '1';
-      allowPagination = true;
-      doJumpHighlight(el2);
-    } else {
-      alertMessage("ジャンプできませんでした。", "warning");
-      messagesDisplay.style.transition = 'opacity 0.3s ease';
-      messagesDisplay.style.opacity = '1';
-      allowPagination = true;
-    }
-  }, 400);
 }
 
 function renderMessagesWithReadReceipts() {
@@ -20057,7 +20290,7 @@ async function showUnloadedMessagePreview(msgId) {
 
 
 
-function doJumpHighlight(el) {
+function doJumpHighlight(el, isInstant = false) {
   if (!el) return;
   const container = document.getElementById("messagesDisplay") || messagesDisplay;
   let didScroll = false;
@@ -20074,10 +20307,11 @@ function doJumpHighlight(el) {
     if (Math.abs(deltaY) > 8) {
       const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
       const targetScrollTop = Math.max(0, Math.min(maxScroll, container.scrollTop + deltaY));
-      container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+      container.scrollTo({ top: targetScrollTop, behavior: isInstant ? 'auto' : 'smooth' });
       didScroll = true;
     }
   }
+  if (isInstant) return;
   // アニメーション発火
   setTimeout(() => {
     el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');

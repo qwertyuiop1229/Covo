@@ -463,17 +463,16 @@ fn open_position_picker(
 }
 
 #[tauri::command]
-fn open_devtools_for_picker(app_handle: tauri::AppHandle) {
+fn open_devtools_for_picker(_app_handle: tauri::AppHandle) {
     #[cfg(debug_assertions)]
-    if let Some(win) = app_handle.get_webview_window(PICKER_LABEL) {
+    if let Some(win) = _app_handle.get_webview_window(PICKER_LABEL) {
         win.open_devtools();
     }
 }
-
 #[tauri::command]
-fn open_devtools_for_container(app_handle: tauri::AppHandle) {
+fn open_devtools_for_container(_app_handle: tauri::AppHandle) {
     #[cfg(debug_assertions)]
-    if let Some(win) = app_handle.get_webview_window(CONTAINER_LABEL) {
+    if let Some(win) = _app_handle.get_webview_window(CONTAINER_LABEL) {
         win.open_devtools();
     }
 }
@@ -1336,10 +1335,11 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_millis(25));
                     let vk_opt = {
                         let state = mouse_monitor_handle.state::<NotificationState>();
-                        match state.active_mouse_shortcut.lock() {
+                        let val = match state.active_mouse_shortcut.lock() {
                             Ok(guard) => *guard,
                             Err(_) => None,
-                        }
+                        };
+                        val
                     };
 
                     if let Some(vk) = vk_opt {

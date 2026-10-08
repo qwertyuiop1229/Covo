@@ -41,6 +41,7 @@ struct NotificationState {
     pending: Mutex<Vec<PendingNotif>>,
     close_behavior: Mutex<String>,
     app_loaded: Mutex<bool>,
+    active_mouse_shortcut: Mutex<Option<i32>>, // マウスVKコード (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
 }
 
 #[derive(serde::Serialize)]
@@ -757,15 +758,90 @@ fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
     }
 }
 
-#[tauri::command]
-fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
-    let _ = app_handle.global_shortcut().unregister_all();
-    if let Some(code) = char_to_code(&key) {
-        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
-        app_handle.global_shortcut().register(shortcut)
-            .map_err(|e| format!("ショートカット Ctrl+Shift+{} の登録に失敗しました (重複の可能性): {}", key, e))?;
+// 任意のキーボード組み合わせ（単一キー・複数修飾キー）を柔軟にパース
+fn parse_custom_shortcut(shortcut_str: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    use std::str::FromStr;
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    let trimmed = shortcut_str.trim();
+    if trimmed.is_empty() { return None; }
+
+    // 1. 標準パース (例: "Ctrl+Shift+S", "Alt+Space", "F8", "KeyS" 等)
+    if let Ok(s) = Shortcut::from_str(trimmed) {
+        return Some(s);
     }
+
+    // 2. 表記ゆれの正規化
+    let normalized = trimmed
+        .replace("Control", "Ctrl")
+        .replace("Option", "Alt")
+        .replace("Command", "Super")
+        .replace("Cmd", "Super")
+        .replace("Win", "Super");
+
+    if let Ok(s) = Shortcut::from_str(&normalized) {
+        return Some(s);
+    }
+
+    // 3. 後方互換性: 単一英字 (例: "S" -> "Ctrl+Shift+S")
+    if normalized.len() == 1 {
+        if let Some(code) = char_to_code(&normalized) {
+            use tauri_plugin_global_shortcut::Modifiers;
+            return Some(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code));
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetAsyncKeyState(vKey: i32) -> i16;
+}
+
+#[tauri::command]
+fn update_shortcut_key(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    key: String,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    // 既存のキーボードショートカットを全解除
+    let _ = app_handle.global_shortcut().unregister_all();
+
+    let trimmed = key.trim();
+    let lower = trimmed.to_lowercase();
+
+    // マウスボタン指定の判定 (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
+    let mouse_vk = match lower.as_str() {
+        "mouse4" | "mousex1" | "mouse_back" | "xbutton1" | "マウス戻るボタン" => Some(0x05),
+        "mouse5" | "mousex2" | "mouse_forward" | "xbutton2" | "マウス進むボタン" => Some(0x06),
+        "mouse3" | "mousemiddle" | "mouse_wheel" | "mbutton" | "ホイールクリック" | "マウス中ボタン" => Some(0x04),
+        _ => None,
+    };
+
+    if let Ok(mut lock) = state.active_mouse_shortcut.lock() {
+        *lock = mouse_vk;
+    }
+
+    // マウスボタンが設定された場合はキーボード登録を行わず即時完了
+    if mouse_vk.is_some() {
+        log::info!("Registered global mouse shortcut: {}", trimmed);
+        return Ok(());
+    }
+
+    // キーボードショートカットの登録
+    if !trimmed.is_empty() {
+        if let Some(shortcut) = parse_custom_shortcut(trimmed) {
+            app_handle.global_shortcut().register(shortcut)
+                .map_err(|e| format!("ショートカット「{}」の登録に失敗しました (他アプリと競合の可能性): {}", trimmed, e))?;
+            log::info!("Registered custom global keyboard shortcut: {}", trimmed);
+        } else {
+            return Err(format!("無効なキー設定です: 「{}」", trimmed));
+        }
+    }
+
     Ok(())
 }
 
@@ -1231,9 +1307,7 @@ pub fn run() {
             }
 
             use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState, ShortcutEvent};
-
             let ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
-
             let shortcut_plugin = {
                 let h = app.handle().clone();
                 tauri_plugin_global_shortcut::Builder::new()
@@ -1252,8 +1326,47 @@ pub fn run() {
                     .build()
             };
             app.handle().plugin(shortcut_plugin)?;
-
             let _ = app.global_shortcut().register(ctrl_shift_s);
+
+            // Windows グローバルマウスボタン (戻る/進む/中クリック) 超低負荷監視スレッド
+            let mouse_monitor_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut was_pressed = false;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    let vk_opt = {
+                        let state = mouse_monitor_handle.state::<NotificationState>();
+                        match state.active_mouse_shortcut.lock() {
+                            Ok(guard) => *guard,
+                            Err(_) => None,
+                        }
+                    };
+
+                    if let Some(vk) = vk_opt {
+                        #[cfg(target_os = "windows")]
+                        {
+                            let key_state = unsafe { GetAsyncKeyState(vk) };
+                            let is_pressed = (key_state as u16 & 0x8000) != 0;
+                            if is_pressed && !was_pressed {
+                                was_pressed = true;
+                                if let Some(window) = mouse_monitor_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                    let _ = window.emit("window-focused", ());
+                                    let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
+                                    let _ = window.eval("if(window.focusMessageInput)window.focusMessageInput()");
+                                }
+                            } else if !is_pressed {
+                                was_pressed = false;
+                            }
+                        }
+                    } else {
+                        was_pressed = false;
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                    }
+                }
+            });
 
             // 正常起動の非同期監視タスク (45秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
             let monitor_handle = app.handle().clone();

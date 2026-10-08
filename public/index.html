@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.258" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.259" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.258" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.259" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -1627,6 +1627,9 @@
                 <button class="settings-nav-item" id="snav-reports" onclick="switchDiscordSettingsTab('reports')">
                   <i class="fas fa-bug fa-fw"></i>システムレポート
                 </button>
+                <button class="settings-nav-item admin-only-global-item" id="snav-cfstatus" onclick="switchDiscordSettingsTab('cfstatus')">
+                  <i class="fas fa-server fa-fw"></i>サーバー稼働 (CF)
+                </button>
               </div>
               <button class="settings-nav-item danger" id="logoutButtonInModal">
                 <i class="fas fa-sign-out-alt fa-fw"></i>ログアウト
@@ -1831,7 +1834,13 @@
                   <!-- システムレポートはここに挿入される -->
                 </div>
               </div>
-
+              <!-- サーバー稼働 & API実行状況 (cfstatusSection) -->
+              <div id="cfstatusSection" class="settings-content-section space-y-4">
+                <div class="settings-section-title">サーバー稼働 & API実行状況 (Cloudflare)</div>
+                <div id="pcCfStatusContainer">
+                  <!-- サーバー稼働情報はここに挿入される -->
+                </div>
+              </div>
               <!-- ツールセクション (admintoolsSection) -->
               <div id="admintoolsSection" class="settings-content-section space-y-6">
                 <div class="settings-section-title">ツール</div>
@@ -2565,11 +2574,78 @@
           <button onclick="renderReportsConsoleStream()" class="text-[11px] text-gray-400 hover:text-white transition"><i class="fas fa-sync-alt mr-1"></i>再読込</button>
         </div>
         <div id="reportsConsoleStreamBody" class="flex-1 overflow-y-auto font-mono text-[11px] space-y-0.5 text-gray-300 select-all pr-1 min-h-[160px]"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Windows版ダウンロード モーダル (Web版用 - 極上デザイン) -->
+        </div>
+        </div>
+        </div>
+        <!-- 共有サーバー稼働状況コンテンツ (Cloudflare Worker & API Audit) -->
+        <div id="cfStatusSharedContent" class="hidden space-y-4 select-none">
+        <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Cloudflare Worker の利用制限とAPIコマンド実行履歴</p>
+        <button id="refreshCfStatusBtn" onclick="loadCfServerStatus()" class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-xl transition-all shadow-xs border border-transparent dark:border-slate-700/60 cursor-pointer active:scale-95">
+        <i class="fas fa-sync-alt text-xs" id="refreshCfStatusIcon"></i>更新
+        </button>
+        </div>
+        <!-- 1. クォータ & 制限概要カード群 (3列グリッド) -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <!-- カード1: 本日のAPIリクエスト制限 -->
+        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <i class="fas fa-bolt text-amber-500"></i>Worker リクエスト
+          </span>
+          <span id="cfReqPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">0%</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfReqCountText">0 回</span>
+          <span class="text-[10px] text-gray-400 font-mono">/ 100,000回 (上限)</span>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div id="cfReqProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="text-[10px] text-gray-400 flex items-center justify-between">
+          <span>成功: <strong id="cfReqSuccessText" class="text-emerald-500">0</strong></span>
+          <span>エラー: <strong id="cfReqErrorText" class="text-rose-500">0</strong></span>
+        </div>
+        </div>
+        <!-- カード2: KV ストレージ制限 -->
+        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <i class="fas fa-database text-blue-500"></i>KV ストレージ
+          </span>
+          <span id="cfKvPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">0%</span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfKvUsageText">0 B</span>
+          <span class="text-[10px] text-gray-400 font-mono">/ 1.0 GB (上限)</span>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div id="cfKvProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="text-[10px] text-gray-400 flex items-center justify-between">
+          <span>ファイル数: <strong id="cfKvCountText" class="text-gray-700 dark:text-gray-200 font-mono">0 件</strong></span>
+          <span>最大: <strong>25 MB/個</strong></span>
+        </div>
+        </div>
+        <!-- カード3: D1 & サービス稼働状態 -->
+        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <i class="fas fa-server text-emerald-500"></i>D1 & バインディング
+          </span>
+          <span id="cfServerStatusBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>正常稼働中
+          </span>
+        </div>
+        <div class="flex items-baseline justify-between">
+          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfD1RowCountText">D1 接続済</span>
+          <span class="text-[10px] text-gray-400 font-mono">上限 500万行/日</span>
+        </div>
+        <div class="pt-1 flex items-center gap-1.5 flex-wrap text-[10px]" id="cfBindingsBadges">
+          <!-- バインディングタグ -->
+        </div>
+        </div>
+        </div>
   <div id="windowsDownloadModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
     <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-8 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
       <button onclick="document.getElementById('windowsDownloadModal').classList.add('hidden')" class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
@@ -4347,7 +4423,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.258"></script>
+  <script type="module" src="js/main.js?v=1.1.259"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5079,6 +5155,11 @@
           <span class="mobile-settings-row-text">システムレポート</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <div class="mobile-settings-row admin-only-global-item" id="mobileCfStatusRow" onclick="openMobileDetail('cfstatus')">
+          <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-server"></i></div>
+          <span class="mobile-settings-row-text">サーバー稼働状況 (CF)</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
+        </div>
       </div>
     </div>
     <div class="mobile-settings-section">
@@ -5427,6 +5508,15 @@
       <span class="mobile-detail-title">システムレポート</span>
     </div>
     <div id="mobileReportsContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
+    </div>
+  </div>
+  <!-- Mobile Detail: Cloudflare Server Status -->
+  <div class="mobile-settings-detail" id="mobileDetailCfStatus">
+    <div class="mobile-detail-header flex-shrink-0">
+      <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailCfStatus')"><i class="fas fa-chevron-left"></i></div>
+      <span class="mobile-detail-title">サーバー稼働状況 (CF)</span>
+    </div>
+    <div id="mobileCfStatusContainer" style="padding:1rem; height: calc(100% - 60px); overflow-y: auto;">
     </div>
   </div>
 
