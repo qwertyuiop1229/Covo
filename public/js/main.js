@@ -91,7 +91,7 @@ const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtd
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
 import * as LocalStore from './local_store.js?v=1.1.235';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.235';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
 import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
@@ -24232,11 +24232,19 @@ async function blockingUpdateCheck() {
             const closeBtn = document.getElementById('updateCloseButton');
             const updateBtn = document.getElementById('updateButton');
             const updateMainTitle = document.getElementById('updateMainTitle');
-            if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
-            if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+            // ロールバック使用中の場合の特別案内メッセージ
+            const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
+            if (rolledBackFrom) {
+              if (updateMainTitle) updateMainTitle.textContent = '不具合修正版アップデートのお知らせ';
+              if (versionText) versionText.textContent = `修正版 ${latestTag} が公開されました`;
+              if (bodyText) bodyText.textContent = `以前エラーが発生したため直前のバージョンをお使いでしたが、問題が修正された最新版 (${latestTag}) が利用可能です。\n\n【更新内容】\n` + (latestRel.body || '最新の修正パッチ');
+            } else {
+              if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
+              if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+              if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+            }
             if (closeBtn) closeBtn.classList.add('hidden');
             if (updateBtn) updateBtn.classList.add('hidden');
-            if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
             if (overlay) overlay.classList.add('show');
             setTimeout(() => { performUpdate(); }, 500);
             return true;

@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.255" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.256" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.255" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.256" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -285,7 +285,8 @@
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
-      const isDesktop = typeof window.__TAURI__ !== 'undefined';
+      // WebView2初期化ラグでも確実に判定できる堅牢なデスクトップ環境判定
+      const isDesktop = Boolean(window.__TAURI__) || Boolean(window.__TAURI_INTERNALS__) || location.origin.includes('localhost') || location.protocol === 'tauri:';
       const desktopView = document.getElementById('emergencyDesktopView');
       const webView = document.getElementById('emergencyWebView');
       const modalTitle = document.getElementById('emergencyModalTitle');
@@ -306,6 +307,8 @@
         if (modalTitle) modalTitle.textContent = "サービス一時待機 / メンテナンス中";
         if (modalSub) modalSub.textContent = "現在サーバーのメンテナンスを行っているか、一時的に通信が不安定な状態です。管理者が対応しておりますので、しばらくそのままお待ちください。";
         if (headerIcon) headerIcon.className = "fas fa-circle-info";
+        // Web版: 復旧を監視して自動でチャットに復帰するポーリングタイマーを開始
+        startWebAutoReconnectPolling();
       }
 
       panel.classList.remove('hidden');
@@ -375,8 +378,19 @@
               const isNewer = typeof isSemverNewer === 'function' ? isSemverNewer(latestTag, curVer) : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
               if (isNewer && exe && exe.browser_download_url && invoke) {
                 updateFound = true;
-                setProg(60, `最新版 (${latestTag}) をダウンロード中...`, "公式リリースからインストーラーを取得しています...");
+                setProg(50, `最新版 (${latestTag}) をダウンロード中...`, "公式リリースからインストーラーを取得しています...");
+                let unlistenProg = null;
+                try {
+                  if (window.__TAURI__?.event?.listen) {
+                    unlistenProg = await window.__TAURI__.event.listen('download-progress', (e) => {
+                      if (e.payload?.progress) {
+                        setProg(Math.min(95, Math.round(50 + e.payload.progress * 0.45)), `ダウンロード中... (${e.payload.progress}%)`, `インストーラーを取得しています (${e.payload.progress}%)`);
+                      }
+                    });
+                  }
+                } catch (_) {}
                 await invoke('silent_install_past_version', { url: exe.browser_download_url, tag: latestTag });
+                if (unlistenProg) unlistenProg();
                 setProg(100, "ダウンロード完了", "最新版インストーラーを適用して再起動します...");
                 return;
               }
@@ -465,6 +479,22 @@
         window.location.reload();
       }
     };
+
+    // Web版: バックエンド復旧自動検知・自動リロードタイマー (Discord / Slack 準拠)
+    let _webReconnectTimer = null;
+    function startWebAutoReconnectPolling() {
+      if (_webReconnectTimer) return;
+      _webReconnectTimer = setInterval(async () => {
+        try {
+          const res = await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=HEALTH', { cache: 'no-store' });
+          if (res.ok) {
+            clearInterval(_webReconnectTimer);
+            _webReconnectTimer = null;
+            window.location.reload();
+          }
+        } catch (_) {}
+      }, 10000);
+    }
 
     window.emergencyReloadWeb = function() {
       window.location.reload();
@@ -4180,7 +4210,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.255"></script>
+  <script type="module" src="js/main.js?v=1.1.256"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

@@ -173,7 +173,13 @@
       return false;
     }
 
+    let _isUpdateCheckingNow = false;
     async function triggerUpdateCheck(isAuto = false) {
+      if (_isUpdateCheckingNow) {
+        logMessage("Update check or download is already in progress...");
+        return;
+      }
+      _isUpdateCheckingNow = true;
       const btn = document.getElementById("btnUpdateCheck");
       if (!isAuto && btn) {
         btn.disabled = true;
@@ -292,6 +298,7 @@
           setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
         }
       }
+      _isUpdateCheckingNow = false;
     }
 
     // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
@@ -303,20 +310,37 @@
       }
       logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
 
-      // 1. ローカルデータベース (IndexedDB) 整合性チェック
-      logMessage("[1/5] Checking Local Database (IndexedDB: covo_local_db)...");
+      // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
+      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
       try {
         if ('indexedDB' in window) {
-          const dbReq = indexedDB.open('covo_local_db');
-          await new Promise((res) => {
-            dbReq.onsuccess = () => { dbReq.result.close(); res(); };
-            dbReq.onerror = () => { res(); };
-            setTimeout(res, 2000);
+          const dbInstance = await new Promise((res, rej) => {
+            const req = indexedDB.open('covo_local_db');
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
+            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
           });
-          logMessage("[1/5] Local Database: Verified Healthy");
+          const stores = ['messages', 'channels', 'friends', 'settings'];
+          let storeErrors = 0;
+          for (const sName of stores) {
+            if (dbInstance.objectStoreNames.contains(sName)) {
+              try {
+                const tx = dbInstance.transaction(sName, 'readonly');
+                await new Promise((res, rej) => {
+                  const cntReq = tx.objectStore(sName).count();
+                  cntReq.onsuccess = res;
+                  cntReq.onerror = rej;
+                  setTimeout(res, 800);
+                });
+              } catch (_) { storeErrors++; }
+            }
+          }
+          dbInstance.close();
+          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
         }
       } catch (dbErr) {
-        logMessage(`[1/5] Database notice: Rebuilding store indexes (${dbErr.message || dbErr})`);
+        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
+        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
       }
 
       // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
@@ -580,14 +604,21 @@
       listen('download-progress', (event) => {
         const data = event.payload;
         if (data) {
-          const btn = document.getElementById(`btn-install-${data.tag}`);
-          if (btn) btn.innerHTML = `${data.progress}%`;
-          logMessage(`[${data.tag}] ${data.progress}%`);
+          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
+          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
+          const topBtn = document.getElementById("btnUpdateCheck");
+          if (topBtn && topBtn.disabled) {
+            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
+          }
+          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
         }
       });
     }
     // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
+    let _recoveryAutoCheckRan = false;
     window.addEventListener("DOMContentLoaded", () => {
+      if (_recoveryAutoCheckRan) return;
+      _recoveryAutoCheckRan = true;
       setTimeout(() => {
         triggerUpdateCheck(true);
       }, 1200);

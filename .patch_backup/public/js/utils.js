@@ -169,6 +169,20 @@ export function isSemverNewer(remoteVersion, localVersion) {
   }
   return false;
 }
+export function isSemverNewer(remoteVersion, localVersion) {
+  if (!remoteVersion || !localVersion) return false;
+  const r = String(remoteVersion).replace(/^v/i, '').trim();
+  const l = String(localVersion).replace(/^v/i, '').trim();
+  const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+  const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+  while (rParts.length < 3) rParts.push(0);
+  while (lParts.length < 3) lParts.push(0);
+  for (let i = 0; i < 3; i++) {
+    if (rParts[i] > lParts[i]) return true;
+    if (rParts[i] < lParts[i]) return false;
+  }
+  return false;
+}
 export async function processHeicFile(file) {
   if (!file) return null;
   const name = file.name || '';
@@ -193,6 +207,7 @@ export async function processHeicFile(file) {
 }
 // グローバル互換性
 if (typeof window !== 'undefined') {
+  window.isSemverNewer = isSemverNewer;
   window.isSemverNewer = isSemverNewer;
   window._abToB64 = _abToB64;
   window._b64ToAb = _b64ToAb;

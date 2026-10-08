@@ -759,6 +759,97 @@ jobs:
 @import url('./modules/theme.css');
 </file>
 
+<file path="public/js/file_uploader.js">
+import { alertMessage } from './ui_helpers.js';
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
+  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
+  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
+  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
+  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
+]);
+/**
+ * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
+ */
+export function checkFileAllowed(file) {
+  if (!file || !file.name) return false;
+  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
+    return false;
+  }
+  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
+  const cleanName = file.name.trim().replace(/\.+$/, '');
+  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
+  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
+  for (const part of parts) {
+    if (BLOCKED_EXTENSIONS.has(part)) {
+      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
+      return false;
+    }
+  }
+  // 3. 危険なMIMEタイプの偽装防御 (#59)
+  const DANGEROUS_MIMES = new Set([
+    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
+    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
+    'application/hta', 'application/x-msi'
+  ]);
+  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
+    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
+    return false;
+  }
+  return true;
+}
+/**
+ * Cloudflare Worker (KV) へファイルをアップロードします。
+ * (main.jsのグローバル変数を引数として受け取る内部用関数)
+ */
+export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+  return new Promise(async (resolve, reject) => {
+    let idToken = "";
+    try {
+      if (auth && auth.currentUser) {
+        idToken = await auth.currentUser.getIdToken();
+      }
+    } catch (tokenErr) {
+      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('uploaderId', userId || '');
+    fd.append('idToken', idToken);
+    if (_folder) {
+      fd.append('folder', _folder);
+    }
+    if (_serverId) {
+      fd.append('serverId', _serverId);
+    }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
+        } catch (e) { reject(new Error('応答の解析に失敗')); }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+        reject(new Error(msg));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
+    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
+    xhr.send(fd);
+  });
+}
+</file>
+
 <file path="public/manifest.json">
 {
   "name": "Covo",
@@ -2391,312 +2482,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/file_uploader.js">
-import { alertMessage } from './ui_helpers.js';
-const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
-  'ps1', 'psm1', 'psd1', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
-  'jar', 'jse', 'js', 'hta', 'cpl', 'inf', 'ins', 'isp', 'msp', 'mst',
-  'reg', 'dll', 'sys', 'drv', 'ocx', 'app', 'dmg', 'pkg', 'deb', 'rpm',
-  'ade', 'adp', 'chm', 'lnk', 'prf', 'url', 'xbap', 'html', 'htm'
-]);
-/**
- * 送信が禁止されている拡張子・サイズ超過・偽装MIMEかどうかをチェックし、安全性を確保します (#59, #60)
- */
-export function checkFileAllowed(file) {
-  if (!file || !file.name) return false;
-  // 1. ファイルサイズ上限チェック (KVストレージ仕様に完全整合: 最大25MB) (#60)
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_FILE_SIZE) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    alertMessage(`ファイルサイズが上限を超えています (${sizeMb}MB / 上限25MB)`, "error");
-    return false;
-  }
-  // 2. 拡張子の完全サニタイズと二重拡張子ガード (#59)
-  const cleanName = file.name.trim().replace(/\.+$/, '');
-  const parts = cleanName.split('.').slice(1).map(p => p.toLowerCase().trim());
-  // ファイル名に含まれる全拡張子パートをチェック (例: danger.exe.jpg, script.bat.txt)
-  for (const part of parts) {
-    if (BLOCKED_EXTENSIONS.has(part)) {
-      alertMessage(`セキュリティ保護のため、実行可能形式または危険な拡張子 (.${part}) を含むファイルは送信できません`, "error");
-      return false;
-    }
-  }
-  // 3. 危険なMIMEタイプの偽装防御 (#59)
-  const DANGEROUS_MIMES = new Set([
-    'application/x-msdownload', 'application/x-executable', 'application/x-dosexec',
-    'application/x-sh', 'application/x-bat', 'application/x-msdos-program',
-    'application/hta', 'application/x-msi'
-  ]);
-  if (file.type && DANGEROUS_MIMES.has(file.type.toLowerCase())) {
-    alertMessage("セキュリティ保護のため、この形式のファイルは送信できません", "error");
-    return false;
-  }
-  return true;
-}
-/**
- * Cloudflare Worker (KV) へファイルをアップロードします。
- * (main.jsのグローバル変数を引数として受け取る内部用関数)
- */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
-    let idToken = "";
-    try {
-      if (auth && auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken();
-      }
-    } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
-    }
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('uploaderId', userId || '');
-    fd.append('idToken', idToken);
-    if (_folder) {
-      fd.append('folder', _folder);
-    }
-    if (_serverId) {
-      fd.append('serverId', _serverId);
-    }
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const d = JSON.parse(xhr.responseText);
-          d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
-        } catch (e) { reject(new Error('応答の解析に失敗')); }
-      } else {
-        let msg = `HTTP ${xhr.status}`;
-        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-        reject(new Error(msg));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new Error('ネットワークエラー')));
-    xhr.addEventListener('abort', () => reject(new Error('アップロードキャンセル')));
-    xhr.send(fd);
-  });
-}
-</file>
-
-<file path="public/js/utils.js">
-/**
- * ユーティリティ関数群 (utils.js)
- * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
- */
-/**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
- * @param {ArrayBuffer} buf - 変換元のバイナリデータ
- * @returns {string} Base64文字列
- */
-export function _abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-  }
-  return btoa(bin);
-}
-/**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
- * @param {string} b64 - 変換元のBase64文字列
- * @returns {ArrayBuffer} 復元されたバイナリデータ
- */
-export function _b64ToAb(b64) {
-  try {
-    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
-    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    const pad = norm.length % 4;
-    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
-    if (pad === 2) norm += "==";
-    else if (pad === 3) norm += "=";
-    const bin = atob(norm);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  } catch (e) {
-    console.error("Base64 decode failed:", e);
-    return new ArrayBuffer(0);
-  }
-}
-/**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
- * @param {number} bytes - バイト数
- * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列
- */
-export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-/**
- * あらゆる形式のタイムスタンプ（数値・ミリ秒・秒・Firestoreオブジェクト・マップ・文字列）を正確なUnixミリ秒に変換
- * @param {*} val - 変換対象
- * @returns {number} タイムスタンプ(ミリ秒) または 0
- */
-export function parseTimestampToMs(val) {
-  if (!val) return 0;
-  if (typeof val === 'number') {
-    return val < 10000000000 ? val * 1000 : val;
-  }
-  if (typeof val.toMillis === 'function') return val.toMillis();
-  if (typeof val.toDate === 'function') return val.toDate().getTime();
-  if (typeof val === 'object') {
-    if (val.seconds != null) {
-      return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000);
-    }
-    if (val._seconds != null) {
-      return val._seconds * 1000 + Math.floor((val._nanoseconds || 0) / 1000000);
-    }
-  }
-  if (typeof val === 'string') {
-    const num = Number(val);
-    if (!isNaN(num) && num > 0) {
-      return num < 10000000000 ? num * 1000 : num;
-    }
-    const parsed = new Date(val).getTime();
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  return 0;
-}
-/**
- * メッセージオブジェクトから正確なタイムスタンプを取得
- * @param {Object} msg - メッセージオブジェクト
- * @returns {number} タイムスタンプ(ミリ秒)
- */
-export function getMsgTimestamp(msg) {
-  if (!msg) return Date.now();
-  const ts = parseTimestampToMs(msg.timestamp) || parseTimestampToMs(msg.createdAt);
-  return ts > 0 ? ts : Date.now();
-}
-/**
- * テキストをクリップボードに安全にコピー
- * @param {string} txt - コピーするテキスト
- */
-export async function safeCopy(txt) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(txt);
-      return true;
-    } else {
-      return _execCopyFallback(txt);
-    }
-  } catch (err) {
-    console.warn("Clipboard API failed, fallback to execCommand", err);
-    return _execCopyFallback(txt);
-  }
-}
-/**
- * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
- * @param {string} txt - コピーするテキスト
- */
-export function _execCopyFallback(txt) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = txt;
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy error', err);
-    return false;
-  }
-}
-/**
- * メールアドレスの最初の1文字を取得
- * @param {string} email - メールアドレス
- * @returns {string} 最初の1文字(大文字) または '?'
- */
-export function emailInitial(email) {
-  if (!email) return '?';
-  return email.charAt(0).toUpperCase();
-}
-/**
- * HEICファイルをJPEGに変換
- * @param {File} file - 処理対象のファイル
- * @returns {Promise<File>} 処理後のファイル
- */
-export function isSemverNewer(remoteVersion, localVersion) {
-  if (!remoteVersion || !localVersion) return false;
-  const r = String(remoteVersion).replace(/^v/i, '').trim();
-  const l = String(localVersion).replace(/^v/i, '').trim();
-  const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
-  const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
-  while (rParts.length < 3) rParts.push(0);
-  while (lParts.length < 3) lParts.push(0);
-  for (let i = 0; i < 3; i++) {
-    if (rParts[i] > lParts[i]) return true;
-    if (rParts[i] < lParts[i]) return false;
-  }
-  return false;
-}
-export function isSemverNewer(remoteVersion, localVersion) {
-  if (!remoteVersion || !localVersion) return false;
-  const r = String(remoteVersion).replace(/^v/i, '').trim();
-  const l = String(localVersion).replace(/^v/i, '').trim();
-  const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
-  const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
-  while (rParts.length < 3) rParts.push(0);
-  while (lParts.length < 3) lParts.push(0);
-  for (let i = 0; i < 3; i++) {
-    if (rParts[i] > lParts[i]) return true;
-    if (rParts[i] < lParts[i]) return false;
-  }
-  return false;
-}
-export async function processHeicFile(file) {
-  if (!file) return null;
-  const name = file.name || '';
-  const ext = name.split('.').pop().toLowerCase();
-  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
-    try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
-      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
-      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
-      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
-    } catch (e) {
-      console.error("HEIC conversion failed:", e);
-      return file;
-    }
-  }
-  return file;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.isSemverNewer = isSemverNewer;
-  window.isSemverNewer = isSemverNewer;
-  window._abToB64 = _abToB64;
-  window._b64ToAb = _b64ToAb;
-  window.formatBytes = formatBytes;
-  window.parseTimestampToMs = parseTimestampToMs;
-  window.getMsgTimestamp = getMsgTimestamp;
-  window.safeCopy = safeCopy;
-  window._execCopyFallback = _execCopyFallback;
-  window.emailInitial = emailInitial;
-  window.processHeicFile = processHeicFile;
-}
-</file>
-
 <file path="firestore.indexes.json">
 {
   "indexes": [
@@ -3363,6 +3148,217 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="public/js/utils.js">
+/**
+ * ユーティリティ関数群 (utils.js)
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
+ */
+/**
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
+ * @param {ArrayBuffer} buf - 変換元のバイナリデータ
+ * @returns {string} Base64文字列
+ */
+export function _abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+/**
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
+ * @param {string} b64 - 変換元のBase64文字列
+ * @returns {ArrayBuffer} 復元されたバイナリデータ
+ */
+export function _b64ToAb(b64) {
+  try {
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
+    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
+    const bin = atob(norm);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  } catch (e) {
+    console.error("Base64 decode failed:", e);
+    return new ArrayBuffer(0);
+  }
+}
+/**
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
+ * @param {number} bytes - バイト数
+ * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
+ * @returns {string} フォーマットされた文字列
+ */
+export function formatBytes(bytes, decimals = 2) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+/**
+ * あらゆる形式のタイムスタンプ（数値・ミリ秒・秒・Firestoreオブジェクト・マップ・文字列）を正確なUnixミリ秒に変換
+ * @param {*} val - 変換対象
+ * @returns {number} タイムスタンプ(ミリ秒) または 0
+ */
+export function parseTimestampToMs(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') {
+    return val < 10000000000 ? val * 1000 : val;
+  }
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (typeof val === 'object') {
+    if (val.seconds != null) {
+      return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000);
+    }
+    if (val._seconds != null) {
+      return val._seconds * 1000 + Math.floor((val._nanoseconds || 0) / 1000000);
+    }
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num) && num > 0) {
+      return num < 10000000000 ? num * 1000 : num;
+    }
+    const parsed = new Date(val).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+/**
+ * メッセージオブジェクトから正確なタイムスタンプを取得
+ * @param {Object} msg - メッセージオブジェクト
+ * @returns {number} タイムスタンプ(ミリ秒)
+ */
+export function getMsgTimestamp(msg) {
+  if (!msg) return Date.now();
+  const ts = parseTimestampToMs(msg.timestamp) || parseTimestampToMs(msg.createdAt);
+  return ts > 0 ? ts : Date.now();
+}
+/**
+ * テキストをクリップボードに安全にコピー
+ * @param {string} txt - コピーするテキスト
+ */
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
+  }
+}
+/**
+ * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
+ * @param {string} txt - コピーするテキスト
+ */
+export function _execCopyFallback(txt) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy error', err);
+    return false;
+  }
+}
+/**
+ * メールアドレスの最初の1文字を取得
+ * @param {string} email - メールアドレス
+ * @returns {string} 最初の1文字(大文字) または '?'
+ */
+export function emailInitial(email) {
+  if (!email) return '?';
+  return email.charAt(0).toUpperCase();
+}
+/**
+ * セマンティックバージョニング比較 (リモートがローカルより新しいか判定)
+ * @param {string} remoteVersion - リモートバージョン (例: "1.1.256" または "v1.1.256")
+ * @param {string} localVersion - ローカルバージョン
+ * @returns {boolean} リモートの方が新しければ true
+ */
+export function isSemverNewer(remoteVersion, localVersion) {
+  if (!remoteVersion || !localVersion) return false;
+  const r = String(remoteVersion).replace(/^v/i, '').trim();
+  const l = String(localVersion).replace(/^v/i, '').trim();
+  const rBase = r.split('-')[0].split('+')[0];
+  const lBase = l.split('-')[0].split('+')[0];
+  const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+  const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
+  while (rParts.length < 3) rParts.push(0);
+  while (lParts.length < 3) lParts.push(0);
+  for (let i = 0; i < 3; i++) {
+    if (rParts[i] > lParts[i]) return true;
+    if (rParts[i] < lParts[i]) return false;
+  }
+  if (l.includes('-') && !r.includes('-')) {
+    return true;
+  }
+  return false;
+}
+/**
+ * HEICファイルをJPEGに変換
+ * @param {File} file - 処理対象のファイル
+ * @returns {Promise<File>} 処理後のファイル
+ */
+export async function processHeicFile(file) {
+  if (!file) return null;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
+    try {
+      if (typeof heic2any === 'undefined') {
+        console.warn("heic2any is not loaded");
+        return file;
+      }
+      console.log("HEIC file detected. Converting to JPEG...");
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      console.error("HEIC conversion failed:", e);
+      return file;
+    }
+  }
+  return file;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.isSemverNewer = isSemverNewer;
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.parseTimestampToMs = parseTimestampToMs;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
+}
+</file>
+
 <file path="public/auth-desktop.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -3579,6 +3575,684 @@ if (typeof window !== 'undefined') {
 </html>
 </file>
 
+<file path="deploy.ps1">
+# Covo Deploy Script
+# Usage: .\deploy.ps1       (interactive confirm)
+#        .\deploy.ps1 -y    (skip confirm)
+#        npm run deploy      (deploy update)
+
+param(
+    [switch]$y
+)
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+
+$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
+if (-not (Test-Path $versionJsonPath)) {
+    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
+    exit 1
+}
+
+$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$currentVersion = $versionData.version
+Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
+
+$versionParts = $currentVersion.Split('.')
+if ($versionParts.Length -ne 3) {
+    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
+    exit 1
+}
+
+$major = [int]$versionParts[0]
+$minor = [int]$versionParts[1]
+$patch = [int]$versionParts[2] + 1
+$newVersion = "$major.$minor.$patch"
+$tagName    = "v$newVersion"
+
+Write-Host "New version : $newVersion" -ForegroundColor Green
+Write-Host "Tag name    : $tagName"    -ForegroundColor Green
+Write-Host ''
+
+if (-not $y) {
+    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
+    try {
+        $confirm = [Console]::ReadLine()
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
+            exit 0
+        }
+    } catch {
+        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
+Write-Host ''
+
+# [0/5] Tailwind CSS
+Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
+node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
+
+# [1/5] version.json + tauri.conf.json + index.html
+$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
+
+$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
+if (Test-Path $indexHtmlPath) {
+    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
+    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
+
+$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
+if (Test-Path $tauriConfPath) {
+    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
+    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
+    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
+    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
+        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
+} else {
+    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
+}
+
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+
+# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
+Write-Host '------------------------------------' -ForegroundColor DarkCyan
+try {
+    npx --yes repomix
+    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
+} catch {
+    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
+}
+Write-Host ''
+
+# [2/5] git commit
+Write-Host '[2/5] Committing changes...' -ForegroundColor Green
+git add -A
+git commit -m "Release v$newVersion"
+
+# [3/5] git tag
+Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
+git tag $tagName
+
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+firebase deploy --only "hosting,firestore:rules,database"
+
+# [5/5] git push
+Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
+git push origin HEAD --tags
+
+Write-Host ''
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host '  Deploy complete!' -ForegroundColor Green
+Write-Host "  Version : $newVersion" -ForegroundColor Green
+Write-Host "  Tag     : $tagName"    -ForegroundColor Green
+Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
+Write-Host '====================================' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
+Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
+Write-Host ''
+
+# ===========================================================================
+# GitHub Actions real-time build monitor
+# ===========================================================================
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
+Write-Host '====================================' -ForegroundColor DarkCyan
+Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
+Write-Host ''
+
+$REPO = 'qwertyuiop1229/Covo'
+
+# Retrieve GITHUB_TOKEN directly from environment or registry
+$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+if (-not $GITHUB_TOKEN_ENV) {
+    try {
+        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
+    } catch {}
+}
+
+# Move cursor up N lines (ANSI)
+function Move-CursorUp {
+    param([int]$Lines)
+    if ($Lines -gt 0) {
+        $esc = [char]27
+        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
+        [Console]::Write($seq)
+    }
+}
+
+# ASCII progress bar  [####....] 64%
+function Draw-Bar {
+    param([int]$Pct, [int]$W = 24)
+    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
+    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
+    $empty  = $W - $filled
+    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
+}
+
+# GitHub REST API helper
+function Invoke-GHApi {
+    param([string]$Path)
+    $url     = 'https://api.github.com' + $Path
+    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
+    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
+    try {
+        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+    } catch {
+        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
+            $global:RateLimitHit = $true
+        }
+        return $null
+    }
+}
+
+function Get-LatestRun {
+    param([string]$Tag)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    if (-not $res) { return $null }
+    $run = $res.workflow_runs | Where-Object {
+        ($_.head_branch -eq $Tag) -or
+        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
+        ($_.display_title -like ('*' + $Tag + '*'))
+    } | Select-Object -First 1
+    return $run
+}
+
+function Get-RunJobs {
+    param([string]$RunId)
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
+    if ($res -and $res.jobs) { return @($res.jobs) }
+    return @()
+}
+
+# Detect latest run (up to 45 s)
+Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
+$run = $null
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 3
+    $run = Get-LatestRun -Tag $tagName
+    if ($run) { break }
+    if ($global:RateLimitHit) { break }
+    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
+}
+
+if ($global:RateLimitHit -and -not $run) {
+    Write-Host ''
+    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
+    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    Write-Host ''
+    exit 0
+}
+
+if (-not $run) {
+    Write-Host ''
+    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
+    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
+    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
+    exit 0
+}
+
+$runId  = $run.id
+$runUrl = $run.html_url
+Write-Host ''
+Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
+Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
+Write-Host ''
+
+
+$StepDefs = @(
+    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
+    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
+    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
+    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
+    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
+    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
+)
+$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
+
+$Spinners   = @('-', '\', '|', '/')
+$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
+$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
+
+Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
+Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
+Write-Host ''
+
+$LINE_COUNT = 6
+$firstDraw  = $true
+$job = $null
+$jobStatus = 'queued'
+$jobConclusion = $null
+$jobUrl = $runUrl
+
+# Fetch initial job data
+$jobs = @(Get-RunJobs -RunId $runId)
+if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
+
+$maxOverallSec = 45 * 60
+$secSinceLastPoll = 0
+
+for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
+
+    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
+        $secSinceLastPoll = 0
+        $global:RateLimitHit = $false
+        $newJobs = @(Get-RunJobs -RunId $runId)
+        if ($global:RateLimitHit) {
+            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
+            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
+            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host (' ' * 80)
+            Write-Host ''
+            break
+        }
+        if ($newJobs -and $newJobs.Count -gt 0) {
+            $job = $newJobs[0]
+            $jobStatus = $job.status
+            $jobConclusion = $job.conclusion
+            $jobUrl = $job.html_url
+        }
+    }
+
+    $spin = $Spinners[$totalSec % $Spinners.Length]
+
+    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
+    $firstDraw = $false
+
+    if ($job) {
+        $steps = @($job.steps)
+        $completedWeight    = 0
+        $completedStepCount = 0
+        $currentLabel       = ''
+        $currentStep        = $null
+        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
+
+        if ($steps) {
+            foreach ($step in $steps) {
+                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
+                $w   = if ($def) { $def.Weight } else { 2 }
+                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
+                    $completedWeight    += $w
+                    $completedStepCount++
+                } elseif ($step.status -eq 'in_progress') {
+                    $completedWeight += [int]($w * 0.5)
+                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
+                    $currentStep      = $step
+                }
+            }
+        }
+
+        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
+        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
+        $bar = Draw-Bar -Pct $pct
+
+        # Calculate Job / Step elapsed time and log progression
+        $elapsedJobStr = '00:00'
+        if ($job.started_at) {
+            try {
+                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
+                $elapsedJob = [DateTime]::UtcNow - $jStart
+                if ($jobStatus -eq 'completed' -and $job.completed_at) {
+                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
+                    $elapsedJob = $jEnd - $jStart
+                }
+                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
+            } catch {}
+        }
+
+        $stepLogInfo = 'Preparing logs...'
+        $stepElapsedStr = '00:00'
+
+        if ($currentStep -and $currentStep.started_at) {
+            try {
+                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
+                $elapsedStep = [DateTime]::UtcNow - $sStart
+                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
+                $sec = $elapsedStep.TotalSeconds
+                if ($sec -lt 1) { $sec = 1 }
+
+                $expDur = 30.0; $expLines = 50.0
+                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
+                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
+                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
+                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
+                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
+                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
+                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
+
+                $progRatio = $sec / $expDur
+                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
+                $curLine = [int]([Math]::Round($expLines * $progRatio))
+                if ($curLine -lt 1) { $curLine = 1 }
+                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
+                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
+            } catch {}
+        }
+
+        if ($jobStatus -eq 'completed') {
+            if ($jobConclusion -eq 'success') {
+                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
+            } else {
+                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
+            }
+        } elseif ($jobStatus -eq 'queued') {
+            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
+        } else {
+            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
+        }
+
+        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
+        $l2 = ('  ' + $bar).PadRight(80)
+        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
+        $l4 = ('  -> ' + $jobUrl).PadRight(80)
+        $l5 = (' ' * 80)
+        $l6 = (' ' * 80)
+
+        Write-Host $l1 -ForegroundColor $col
+        Write-Host $l2 -ForegroundColor White
+        Write-Host $l3 -ForegroundColor DarkCyan
+        Write-Host $l4 -ForegroundColor DarkGray
+        Write-Host $l5
+        Write-Host $l6
+
+        if ($jobStatus -eq 'completed') {
+            Write-Host ''
+            if ($jobConclusion -eq 'success') {
+                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
+                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
+            } else {
+                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
+                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
+            }
+            Write-Host ''
+            break
+        }
+
+    } else {
+        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+        Write-Host (' ' * 80)
+    }
+
+    Start-Sleep -Seconds 1
+    $secSinceLastPoll++
+}
+</file>
+
+<file path="public/js/text_formatter.js">
+/**
+ * テキストフォーマット・パース処理 (text_formatter.js)
+ * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
+ */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+/**
+ * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
+ * @param {string} s - エスケープする文字列
+ * @returns {string} 安全なHTML文字列
+ */
+export function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+/**
+ * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
+ * @param {string} emoji - 絵文字の識別文字列
+ * @param {string} spanClass - spanで包む場合のCSSクラス
+ * @returns {string} 絵文字のHTMLタグ文字列
+ */
+export function getEmojiHtml(emoji, spanClass = 'sk-em') {
+  if (!emoji || typeof emoji !== 'string') return '';
+  if (emoji.startsWith('covo:')) {
+    const rawName = emoji.substring(5);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('covonew:')) {
+    const rawName = emoji.substring(8);
+    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
+    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  if (emoji.startsWith('serverstamp:')) {
+    const url = emoji.substring(12).trim();
+    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
+    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
+    if (!isSafeHttp && !isSafeDataImage) return '';
+    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
+  }
+  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
+}
+/**
+ * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
+ * @param {HTMLElement} el - 対象のDOM要素
+ */
+export function _twemojiParse(el) {
+  if (!window.twemoji || !el) return;
+  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
+}
+/**
+ * チャットの本文テキストをパースし、安全なHTMLに変換
+ * - コードブロック (```...```)
+ * - インラインコード (`...`)
+ * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
+ * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
+ * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
+ * @param {string} text - 変換元のプレーンテキスト
+ * @returns {string} 表示用HTML文字列
+ */
+export function escapeHtmlAndLinkUrls(text) {
+  if (!text) return "";
+  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
+  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
+    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
+  }
+  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
+  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
+  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
+  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
+  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
+  const tokenNonce = Math.random().toString(36).substring(2, 8);
+  // 1. コードブロック退避（コピーボタン付き）
+  const codeBlocks = [];
+  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
+    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
+    const escapedCode = escapeHtml(p1.trim());
+    codeBlocks.push(
+      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
+        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
+          `<span>Code</span>` +
+          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
+            `<i class="far fa-copy"></i> コピー` +
+          `</button>` +
+        `</div>` +
+        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
+      `</div>`
+    );
+    return id;
+  });
+  // 2. インラインコード退避
+  const inlineCodes = [];
+  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
+    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
+    const escapedCode = escapeHtml(p1);
+    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
+    return id;
+  });
+  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
+  const urls = [];
+  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
+  const urlRegex = new RegExp(
+    '(?:' +
+      'https?:\\/\\/[^\\s<>"\'　]+' +
+      '|' +
+      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
+      '|' +
+      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
+    ')',
+    'gi'
+  );
+  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
+    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
+    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
+      return rawUrl;
+    }
+    let cleanUrl = rawUrl;
+    let trailing = "";
+    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
+    for (let i = 0; i < cleanUrl.length; i++) {
+      const code = cleanUrl.charCodeAt(i);
+      const ch = cleanUrl.charAt(i);
+      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
+        trailing = cleanUrl.substring(i);
+        cleanUrl = cleanUrl.substring(0, i);
+        break;
+      }
+    }
+    // 末尾の句読点トリミングと括弧バランシング
+    while (cleanUrl.length > 0) {
+      const last = cleanUrl.slice(-1);
+      if (/[.,!?:;]/.test(last)) {
+        trailing = last + trailing;
+        cleanUrl = cleanUrl.slice(0, -1);
+      } else if (last === ')') {
+        const openCount = (cleanUrl.match(/\(/g) || []).length;
+        const closeCount = (cleanUrl.match(/\)/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === ']') {
+        const openCount = (cleanUrl.match(/\[/g) || []).length;
+        const closeCount = (cleanUrl.match(/\]/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else if (last === '}') {
+        const openCount = (cleanUrl.match(/\{/g) || []).length;
+        const closeCount = (cleanUrl.match(/\}/g) || []).length;
+        if (openCount < closeCount) {
+          trailing = last + trailing;
+          cleanUrl = cleanUrl.slice(0, -1);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    if (!cleanUrl) return rawUrl;
+    let href = cleanUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      href = 'https://' + href;
+    }
+    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
+    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
+      return escapeHtml(rawUrl);
+    }
+    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
+    const escapedHref = escapeHtml(href);
+    const escapedText = escapeHtml(cleanUrl);
+    const escapedTrailing = escapeHtml(trailing);
+    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
+    return id;
+  });
+  // 4. 基本テキストのエスケープ
+  let escapedText = escapeHtml(processedText);
+  // 5. 書式装飾
+  // スポイラー記法 (||ネタバレ||)
+  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
+  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  escapedText = escapedText.replace(/\n/g, '<br>');
+  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
+  let mentionCount = 0;
+  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
+  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
+    if (mentionCount >= 10) return match;
+    mentionCount++;
+    return `${prefix}<span class="mention-text">@${username}</span>`;
+  });
+  // 7. URL・インラインコード・コードブロックの復元
+  urls.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  inlineCodes.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  codeBlocks.forEach((html, index) => {
+    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
+  });
+  return escapedText;
+}
+// グローバル互換性
+if (typeof window !== 'undefined') {
+  window.escapeHtml = escapeHtml;
+  window.getEmojiHtml = getEmojiHtml;
+  window._twemojiParse = _twemojiParse;
+  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
+}
+</file>
+
 <file path="public/recovery.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -3728,22 +4402,27 @@ if (typeof window !== 'undefined') {
       consoleElem.appendChild(div);
       consoleElem.scrollTop = consoleElem.scrollHeight;
       document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-    }
-    function isSemverNewer(remoteVersion, localVersion) {
+      }
+      function isSemverNewer(remoteVersion, localVersion) {
       if (!remoteVersion || !localVersion) return false;
       const r = String(remoteVersion).replace(/^v/i, '').trim();
       const l = String(localVersion).replace(/^v/i, '').trim();
-      const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+      const rBase = r.split('-')[0].split('+')[0];
+      const lBase = l.split('-')[0].split('+')[0];
+      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
       while (rParts.length < 3) rParts.push(0);
       while (lParts.length < 3) lParts.push(0);
       for (let i = 0; i < 3; i++) {
         if (rParts[i] > lParts[i]) return true;
         if (rParts[i] < lParts[i]) return false;
       }
+      if (l.includes('-') && !r.includes('-')) {
+        return true;
+      }
       return false;
-    }
-    let _isUpdateCheckingNow = false;
+      }
+      let _isUpdateCheckingNow = false;
     async function triggerUpdateCheck(isAuto = false) {
       if (_isUpdateCheckingNow) {
         logMessage("Update check or download is already in progress...");
@@ -3859,8 +4538,18 @@ if (typeof window !== 'undefined') {
         }
       }
       _isUpdateCheckingNow = false;
-    }
-    // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
+      } catch (err) {
+        logMessage(`Update check failed: ${err.message || err}`, true);
+        const btn = document.getElementById("btnUpdateCheck");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      } finally {
+        _isUpdateCheckingNow = false;
+      }
+      }
+      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
     async function triggerIntegrityCheckAndRepair() {
       const btn = document.getElementById("btnIntegrityRepair");
       if (btn) {
@@ -3950,8 +4639,15 @@ if (typeof window !== 'undefined') {
         btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
         setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
       }
-    }
-    async function triggerCacheClearAndRestart() {
+      } catch (fatalErr) {
+        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      }
+      }
+      async function triggerCacheClearAndRestart() {
       logMessage("Clearing cache...");
       try {
         localStorage.clear();
@@ -4128,12 +4824,15 @@ if (typeof window !== 'undefined') {
       } catch (err) {
         logMessage(`Install error: ${err.message || err}`, true);
         if (btn) {
-          btn.disabled = false;
           btn.innerHTML = `失敗`;
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = `インストール`;
+          }, 3000);
         }
       }
-    }
-    if (listen) {
+      }
+      if (listen) {
       listen('download-progress', (event) => {
         const data = event.payload;
         if (data) {
@@ -5429,684 +6128,6 @@ pub fn run() {
         ))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-</file>
-
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-
-# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-try {
-    npx --yes repomix
-    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
-} catch {
-    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
-}
-Write-Host ''
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
-</file>
-
-<file path="public/js/text_formatter.js">
-/**
- * テキストフォーマット・パース処理 (text_formatter.js)
- * チャットメッセージのテキストを安全にHTMLに変換したり、絵文字・スタンプをパースする純粋関数群です。
- */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
-/**
- * 特殊文字(&, <, >, ", ')を無害なHTMLエンティティに変換（XSS防止）
- * @param {string} s - エスケープする文字列
- * @returns {string} 安全なHTML文字列
- */
-export function escapeHtml(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-/**
- * 特殊な絵文字タグ（covo:, covonew:, serverstamp:）をimgタグのHTMLに変換
- * @param {string} emoji - 絵文字の識別文字列
- * @param {string} spanClass - spanで包む場合のCSSクラス
- * @returns {string} 絵文字のHTMLタグ文字列
- */
-export function getEmojiHtml(emoji, spanClass = 'sk-em') {
-  if (!emoji || typeof emoji !== 'string') return '';
-  if (emoji.startsWith('covo:')) {
-    const rawName = emoji.substring(5);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/covo-stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('covonew:')) {
-    const rawName = emoji.substring(8);
-    const cleanName = rawName.replace(/[^a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01-\uff5e]/g, '');
-    return `<img src="/assets/covo_stamps/${escapeHtml(cleanName)}.png" class="emoji covo-emoji" alt="${escapeHtml(cleanName)}" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  if (emoji.startsWith('serverstamp:')) {
-    const url = emoji.substring(12).trim();
-    const isSafeHttp = (/^https?:\/\/[^\s"'<>]+$/i.test(url) || (url.startsWith('/') && !url.startsWith('//'))) && !url.includes('\\');
-    const isSafeDataImage = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-zA-Z0-9+/=]+$/i.test(url);
-    if (!isSafeHttp && !isSafeDataImage) return '';
-    return `<img src="${escapeHtml(url)}" class="emoji covo-emoji" alt="カスタムスタンプ" style="object-fit: contain; aspect-ratio: 1/1;" />`;
-  }
-  return `<span class="${escapeHtml(spanClass)}">${escapeHtml(emoji)}</span>`;
-}
-/**
- * DOM要素内の絵文字テキスト（🍎など）をTwemojiに変換
- * @param {HTMLElement} el - 対象のDOM要素
- */
-export function _twemojiParse(el) {
-  if (!window.twemoji || !el) return;
-  try { twemoji.parse(el, { folder: 'svg', ext: '.svg', base: TWEMOJI_BASE }); } catch (e) {}
-}
-/**
- * チャットの本文テキストをパースし、安全なHTMLに変換
- * - コードブロック (```...```)
- * - インラインコード (`...`)
- * - 太字 (**...**), 斜体 (*...*), 打ち消し線 (~~...~~)
- * - URLの自動リンク化（& やクエリパラメータの切断防止、括弧バランス対応）
- * - メンション (@ユーザー) （メールアドレス・URLとの衝突防止）
- * @param {string} text - 変換元のプレーンテキスト
- * @returns {string} 表示用HTML文字列
- */
-export function escapeHtmlAndLinkUrls(text) {
-  if (!text) return "";
-  // 🔒 暗号文生テキストの画面露出を100%防止（Discord/LINEライクな自然なシマースケルトンを表示）
-  if (typeof text === 'string' && (text.startsWith('enc::v') || text.startsWith('enc::'))) {
-    return '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
-  }
-  // 0a. 不可視文字・ゼロ幅スペースの過剰連続サニタイズ（不可視爆弾対策）
-  let normalizedText = String(text).replace(/[\u200B-\u200D\uFEFF]{3,}/g, '');
-  // 0b. 連続改行の正規化（4つ以上の連続改行を最大3つに制限）
-  normalizedText = normalizedText.replace(/\n{4,}/g, '\n\n\n');
-  // ランダムプレフィックスによりユーザー入力とのプレースホルダー衝突を完全防止
-  const tokenNonce = Math.random().toString(36).substring(2, 8);
-  // 1. コードブロック退避（コピーボタン付き）
-  const codeBlocks = [];
-  let processedText = normalizedText.replace(/```([\s\S]*?)```/g, (match, p1) => {
-    const id = `\uE000CB_${tokenNonce}_${codeBlocks.length}\uE001`;
-    const escapedCode = escapeHtml(p1.trim());
-    codeBlocks.push(
-      `<div class="code-block-container relative group my-1.5 rounded-lg overflow-hidden border border-gray-700/50">` +
-        `<div class="flex items-center justify-between px-3 py-1 bg-gray-900/90 text-xs text-gray-400 font-mono select-none">` +
-          `<span>Code</span>` +
-          `<button type="button" onclick="window.safeCopy ? window.safeCopy(this.parentElement.nextElementSibling.innerText) : navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); const orig=this.innerHTML; this.innerHTML='<i class=\\\'fas fa-check\\\'></i> コピー済'; setTimeout(()=>this.innerHTML=orig, 1500);" class="copy-code-btn hover:text-white transition-colors flex items-center gap-1 cursor-pointer">` +
-            `<i class="far fa-copy"></i> コピー` +
-          `</button>` +
-        `</div>` +
-        `<pre class="bg-gray-800/90 text-gray-100 p-3 overflow-x-auto text-sm font-mono text-left m-0"><code>${escapedCode}</code></pre>` +
-      `</div>`
-    );
-    return id;
-  });
-  // 2. インラインコード退避
-  const inlineCodes = [];
-  processedText = processedText.replace(/`([^`]+)`/g, (match, p1) => {
-    const id = `\uE000IC_${tokenNonce}_${inlineCodes.length}\uE001`;
-    const escapedCode = escapeHtml(p1);
-    inlineCodes.push(`<code class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded text-sm font-mono">${escapedCode}</code>`);
-    return id;
-  });
-  // 3. URL検出 & リンク化（http(s)://、www.、主要ドメイン直接指定（youtube.com 等）すべて対応）
-  const urls = [];
-  const COMMON_TLDS = '(?:com|net|org|edu|gov|mil|jp|co\\.jp|ne\\.jp|or\\.jp|ac\\.jp|go\\.jp|io|app|dev|me|tv|ai|gg|cc|info|biz|xyz|site|online|live|tech|store|space|club|fun|top|pro|link|click|news|work|tokyo|asia|us|uk|ca|de|fr|ru|cn|in|br|au|eu|ch|nl|se|no|es|it|kr|tw|hk|sg|nz|za|is|to|ly|be|gl|fm|so)';
-  const urlRegex = new RegExp(
-    '(?:' +
-      'https?:\\/\\/[^\\s<>"\'　]+' +
-      '|' +
-      '\\bwww\\.[a-zA-Z0-9\\-._~:/?#\\[\\]@!$&\'*+,;%=]+' +
-      '|' +
-      '\\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.){1,8}' + COMMON_TLDS + '(?::\\d+)?(?:\\/[^\\s<>"\'　]*)?' +
-    ')',
-    'gi'
-  );
-  processedText = processedText.replace(urlRegex, (rawUrl, offset, fullStr) => {
-    // メールアドレス (user@example.com) やコロン直後のプロトコル二重マッチなどをスキップ
-    if (offset > 0 && (fullStr[offset - 1] === '@' || fullStr[offset - 1] === ':')) {
-      return rawUrl;
-    }
-    let cleanUrl = rawUrl;
-    let trailing = "";
-    // 日本語や全角文字、無効な文字がパスに含まれている場合はそこで切り離す
-    for (let i = 0; i < cleanUrl.length; i++) {
-      const code = cleanUrl.charCodeAt(i);
-      const ch = cleanUrl.charAt(i);
-      if (code < 33 || code > 126 || ch === '<' || ch === '>' || ch === '"' || ch === "'" || ch === '`' || ch === '　') {
-        trailing = cleanUrl.substring(i);
-        cleanUrl = cleanUrl.substring(0, i);
-        break;
-      }
-    }
-    // 末尾の句読点トリミングと括弧バランシング
-    while (cleanUrl.length > 0) {
-      const last = cleanUrl.slice(-1);
-      if (/[.,!?:;]/.test(last)) {
-        trailing = last + trailing;
-        cleanUrl = cleanUrl.slice(0, -1);
-      } else if (last === ')') {
-        const openCount = (cleanUrl.match(/\(/g) || []).length;
-        const closeCount = (cleanUrl.match(/\)/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === ']') {
-        const openCount = (cleanUrl.match(/\[/g) || []).length;
-        const closeCount = (cleanUrl.match(/\]/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else if (last === '}') {
-        const openCount = (cleanUrl.match(/\{/g) || []).length;
-        const closeCount = (cleanUrl.match(/\}/g) || []).length;
-        if (openCount < closeCount) {
-          trailing = last + trailing;
-          cleanUrl = cleanUrl.slice(0, -1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    if (!cleanUrl) return rawUrl;
-    let href = cleanUrl;
-    if (!/^https?:\/\//i.test(href)) {
-      href = 'https://' + href;
-    }
-    // 🔒 厳格なプロトコルバリデーション（javascript:, data:, vbscript: などのXSSスキーム完全排除）
-    if (!/^https?:\/\/[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;%=]+$/i.test(href)) {
-      return escapeHtml(rawUrl);
-    }
-    const id = `\uE000URL_${tokenNonce}_${urls.length}\uE001`;
-    const escapedHref = escapeHtml(href);
-    const escapedText = escapeHtml(cleanUrl);
-    const escapedTrailing = escapeHtml(trailing);
-    urls.push(`<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 underline">${escapedText}</a>${escapedTrailing}`);
-    return id;
-  });
-  // 4. 基本テキストのエスケープ
-  let escapedText = escapeHtml(processedText);
-  // 5. 書式装飾
-  // スポイラー記法 (||ネタバレ||)
-  escapedText = escapedText.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler-text cursor-pointer bg-gray-600 dark:bg-gray-700 text-transparent hover:text-inherit rounded px-1 transition-all select-none" onclick="this.classList.toggle(\'text-transparent\'); this.classList.toggle(\'select-none\');" title="クリックで表示">$1</span>');
-  escapedText = escapedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  escapedText = escapedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  escapedText = escapedText.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  escapedText = escapedText.replace(/\n/g, '<br>');
-  // 6. メンション検出（最大10件までマッチ、メンション爆弾防止）
-  let mentionCount = 0;
-  const mentionRegex = /(^|[\s>])@([a-zA-Z0-9_\-\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g;
-  escapedText = escapedText.replace(mentionRegex, (match, prefix, username) => {
-    if (mentionCount >= 10) return match;
-    mentionCount++;
-    return `${prefix}<span class="mention-text">@${username}</span>`;
-  });
-  // 7. URL・インラインコード・コードブロックの復元
-  urls.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000URL_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  inlineCodes.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000IC_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  codeBlocks.forEach((html, index) => {
-    escapedText = escapedText.replace(`\uE000CB_${tokenNonce}_${index}\uE001`, () => html);
-  });
-  return escapedText;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.escapeHtml = escapeHtml;
-  window.getEmojiHtml = getEmojiHtml;
-  window._twemojiParse = _twemojiParse;
-  window.escapeHtmlAndLinkUrls = escapeHtmlAndLinkUrls;
 }
 </file>
 
@@ -20408,7 +20429,7 @@ const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtd
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
 import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
 import * as LocalStore from './local_store.js?v=1.1.235';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.235';
 import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
 import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
 import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
@@ -42945,11 +42966,19 @@ async function blockingUpdateCheck() {
             const closeBtn = document.getElementById('updateCloseButton');
             const updateBtn = document.getElementById('updateButton');
             const updateMainTitle = document.getElementById('updateMainTitle');
-            if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
-            if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+            // ロールバック使用中の場合の特別案内メッセージ
+            const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
+            if (rolledBackFrom) {
+              if (updateMainTitle) updateMainTitle.textContent = '不具合修正版アップデートのお知らせ';
+              if (versionText) versionText.textContent = `修正版 ${latestTag} が公開されました`;
+              if (bodyText) bodyText.textContent = `以前エラーが発生したため直前のバージョンをお使いでしたが、問題が修正された最新版 (${latestTag}) が利用可能です。\n\n【更新内容】\n` + (latestRel.body || '最新の修正パッチ');
+            } else {
+              if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
+              if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+              if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+            }
             if (closeBtn) closeBtn.classList.add('hidden');
             if (updateBtn) updateBtn.classList.add('hidden');
-            if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
             if (overlay) overlay.classList.add('show');
             setTimeout(() => { performUpdate(); }, 500);
             return true;
@@ -48427,7 +48456,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.256",
+  "version": "1.1.257",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48516,13 +48545,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.256" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.257" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.256" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.257" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -48750,23 +48779,41 @@ window._subscribeVcSidebarStates = function(serverId) {
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
+    // 構文エラー（Identifier has already been declared）を根絶するグローバルプロパティ定義
+    window.isSemverNewer = window.isSemverNewer || function(remoteVersion, localVersion) {
+      if (!remoteVersion || !localVersion) return false;
+      const r = String(remoteVersion).replace(/^v/i, '').trim();
+      const l = String(localVersion).replace(/^v/i, '').trim();
+      const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+      const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+      while (rParts.length < 3) rParts.push(0);
+      while (lParts.length < 3) lParts.push(0);
+      for (let i = 0; i < 3; i++) {
+        if (rParts[i] > lParts[i]) return true;
+        if (rParts[i] < lParts[i]) return false;
+      }
+      return false;
+    };
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
-      // WebView2初期化ラグでも確実に判定できる堅牢なデスクトップ環境判定
       const isDesktop = Boolean(window.__TAURI__) || Boolean(window.__TAURI_INTERNALS__) || location.origin.includes('localhost') || location.protocol === 'tauri:';
       const desktopView = document.getElementById('emergencyDesktopView');
       const webView = document.getElementById('emergencyWebView');
       const modalTitle = document.getElementById('emergencyModalTitle');
       const modalSub = document.getElementById('emergencyModalSubtitle');
       const headerIcon = document.getElementById('emergencyHeaderIcon');
+      const stopReasonEl = document.getElementById('emergencyStopReasonText');
       if (isDesktop) {
         if (desktopView) desktopView.classList.remove('hidden');
         if (webView) webView.classList.add('hidden');
-        if (modalTitle) modalTitle.textContent = "アプリケーション保守 / 自動修復中";
-        if (modalSub) modalSub.textContent = "起動時の問題を検知しました。裏で自動修復と最新アップデートを確認しています。";
+        if (modalTitle) modalTitle.textContent = "アプリケーション保守 / 安全停止中";
+        if (modalSub) modalSub.textContent = "起動処理でエラーを検知しました。以下の操作で直前の安定版に戻すか、自動修復を行えます。";
         if (headerIcon) headerIcon.className = "fas fa-wrench";
-        // Windows版: 自動でバックグラウンドアップデート照合を開始
+        if (stopReasonEl && errMsg) {
+          stopReasonEl.textContent = `停止理由: ${String(errMsg).slice(0, 180)} (直前のアップデートまたは一時的な破損の可能性があります)`;
+        }
+        // Windows版: 直前の安定版へのロールバック情報と修復確認をバックグラウンド実行
         emergencyAutoCheckUpdateAndRepair();
       } else {
         if (webView) webView.classList.remove('hidden');
@@ -48774,7 +48821,6 @@ window._subscribeVcSidebarStates = function(serverId) {
         if (modalTitle) modalTitle.textContent = "サービス一時待機 / メンテナンス中";
         if (modalSub) modalSub.textContent = "現在サーバーのメンテナンスを行っているか、一時的に通信が不安定な状態です。管理者が対応しておりますので、しばらくそのままお待ちください。";
         if (headerIcon) headerIcon.className = "fas fa-circle-info";
-        // Web版: 復旧を監視して自動でチャットに復帰するポーリングタイマーを開始
         startWebAutoReconnectPolling();
       }
       panel.classList.remove('hidden');
@@ -48784,102 +48830,151 @@ window._subscribeVcSidebarStates = function(serverId) {
         detailArea.value = `発生時刻: ${new Date().toLocaleString()}\nメッセージ: ${errMsg}\n詳細スタック: ${errObj ? (errObj.stack || JSON.stringify(errObj)) : 'なし'}`;
       }
     };
+    // 1つ前の安定バージョンへ戻す (ロールバック実行)
+    window.emergencyRollbackToPreviousVersion = async function(btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>直前の安定版を取得中...'; }
+      const invoke = window.__TAURI__?.core?.invoke;
+      try {
+        let curVer = "1.0.0";
+        try {
+          const vRes = await fetch("version.json", { cache: "no-store" });
+          if (vRes.ok) curVer = (await vRes.json()).version || curVer;
+        } catch (_) {}
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10', { cache: 'no-store' });
+        if (!ghRes.ok) throw new Error(`GitHub API error: ${ghRes.status}`);
+        const releases = await ghRes.json();
+        // 現在のバージョンより前の直前の安定版リリースを特定
+        const cleanCur = curVer.replace(/^v/i, '').trim();
+        let targetPrevRel = null;
+        for (let i = 0; i < releases.length; i++) {
+          const relTag = (releases[i].tag_name || "").replace(/^v/i, '').trim();
+          const hasExe = releases[i].assets?.some(a => a.name?.endsWith(".exe"));
+          if (hasExe) {
+            if (relTag === cleanCur) {
+              // 現在バージョンの次の要素が1つ前
+              if (i + 1 < releases.length) targetPrevRel = releases[i + 1];
+              break;
+            } else if (window.isSemverNewer(cleanCur, relTag) && !targetPrevRel) {
+              targetPrevRel = releases[i];
+              break;
+            }
+          }
+        }
+        if (!targetPrevRel && releases.length > 1) {
+          targetPrevRel = releases[1]; // フォールバック: リストの2番目
+        }
+        if (!targetPrevRel) throw new Error("直前の安定版リリースが見つかりませんでした");
+        const exeAsset = targetPrevRel.assets?.find(a => a.name?.endsWith(".exe"));
+        if (!exeAsset || !exeAsset.browser_download_url) throw new Error("インストーラー (.exe) が見つかりませんでした");
+        const prevTag = targetPrevRel.tag_name;
+        // ロールバック使用中フラグとバージョンロックをセット（起動時の再クラッシュ防止）
+        localStorage.setItem('covo_rolled_back_from_ver', curVer);
+        localStorage.setItem('covo_ignore_force_update', '1');
+        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>${prevTag} をダウンロード中...`;
+        if (invoke) {
+          await invoke('silent_install_past_version', { url: exeAsset.browser_download_url, tag: prevTag });
+          if (btn) btn.innerHTML = `<i class="fas fa-check text-emerald-400"></i> ${prevTag} へ復旧完了（再起動中...）`;
+        } else {
+          window.open(exeAsset.browser_download_url, '_blank');
+          if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザでダウンロード開始`; }
+        }
+      } catch (err) {
+        alert("ロールバック失敗: " + (err.message || err));
+        if (btn) { btn.disabled = false; btn.innerHTML = `<i class="fas fa-clock-rotate-left"></i> 1つ前のバージョンに戻して起動`; }
+      }
+    };
     // Windows版: 自動バックグラウンドアップデート＆整合性修復ルーチン
     let _emergencyAutoCheckRunning = false;
     async function emergencyAutoCheckUpdateAndRepair() {
       if (_emergencyAutoCheckRunning) return;
       _emergencyAutoCheckRunning = true;
       const titleEl = document.getElementById('emergencyAutoCheckTitle');
-      const descEl = document.getElementById('emergencyAutoCheckDesc');
       const barEl = document.getElementById('emergencyAutoCheckProgressBar');
       const pctEl = document.getElementById('emergencyAutoCheckPercent');
       const spinner = document.getElementById('emergencyAutoCheckSpinner');
-      const setProg = (pct, title, desc) => {
+      const rollbackCard = document.getElementById('emergencyRollbackCard');
+      const fixedBanner = document.getElementById('emergencyFixedUpdateBanner');
+      const fixedDesc = document.getElementById('emergencyFixedUpdateDesc');
+      const prevBadge = document.getElementById('emergencyPrevVerBadge');
+      const setProg = (pct, title) => {
         if (barEl) barEl.style.width = `${pct}%`;
         if (pctEl) pctEl.textContent = `${pct}%`;
         if (titleEl && title) titleEl.textContent = title;
-        if (descEl && desc) descEl.textContent = desc;
       };
-      setProg(20, "最新プログラムの確認中...", "最新の修正プログラムがあるか確認しています...");
+      setProg(20, "更新プログラムの確認中...");
       const invoke = window.__TAURI__?.core?.invoke;
-      let updateFound = false;
-      // 1. 最新バージョンの照合 (Dual-Engine)
+      const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
       try {
-        if (invoke) {
-          const metadata = await invoke('plugin:updater|check').catch(() => null);
-          if (metadata && (metadata.version || metadata.rid)) {
-            updateFound = true;
-            setProg(60, `最新版 (v${metadata.version}) をダウンロード中...`, "修正プログラムをダウンロードしています...");
-            try {
-              await invoke('plugin:updater|download_and_install', { rid: metadata.rid });
-              setProg(100, "修復アップデート準備完了", "再起動して修正プログラムを適用します...");
-              setTimeout(() => {
-                invoke('restart_app').catch(() => window.location.reload());
-              }, 1800);
-              return;
-            } catch (_) {}
+        let curVer = "1.0.0";
+        try {
+          const vRes = await fetch("version.json", { cache: "no-store" });
+          if (vRes.ok) curVer = (await vRes.json()).version || curVer;
+        } catch (_) {}
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (ghRes.ok) {
+          const rels = await ghRes.json();
+          if (Array.isArray(rels) && rels.length > 0) {
+            const latest = rels[0];
+            const latestTag = latest.tag_name || "";
+            const isNewer = window.isSemverNewer(latestTag, curVer);
+            // ★ロールバック使用中の場合に、修正版の最新アプデを案内
+            if (rolledBackFrom && window.isSemverNewer(latestTag, rolledBackFrom)) {
+              if (fixedBanner) fixedBanner.classList.remove('hidden');
+              if (fixedDesc) {
+                fixedDesc.textContent = `以前エラーが発生したバージョン (${rolledBackFrom}) の問題が修正された最新バージョン (${latestTag}) が公開されました！`;
+              }
+              const applyFixedBtn = document.getElementById('emergencyApplyFixedBtn');
+              if (applyFixedBtn) {
+                applyFixedBtn.innerHTML = `<i class="fas fa-sparkles mr-1"></i>修正版 (${latestTag}) にアップデート`;
+              }
+            }
+            // 直前のバージョン名バッジ更新
+            if (rels.length > 1 && prevBadge) {
+              prevBadge.textContent = `${rels[1].tag_name} へ復帰`;
+            }
           }
         }
       } catch (_) {}
-      // 2. GitHub Releases API 直接フォールバック
-      if (!updateFound) {
-        try {
-          let curVer = window.__covo_version || "1.0.0";
-          try {
-            const vRes = await fetch("version.json", { cache: "no-store" });
-            if (vRes.ok) curVer = (await vRes.json()).version || curVer;
-          } catch (_) {}
-          const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-          if (ghRes.ok) {
-            const rels = await ghRes.json();
-            if (Array.isArray(rels) && rels.length > 0) {
-              const latest = rels[0];
-              const latestTag = latest.tag_name || "";
-              const exe = latest.assets?.find(a => a.name?.endsWith(".exe"));
-              const isNewer = typeof isSemverNewer === 'function' ? isSemverNewer(latestTag, curVer) : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
-              if (isNewer && exe && exe.browser_download_url && invoke) {
-                updateFound = true;
-                setProg(50, `最新版 (${latestTag}) をダウンロード中...`, "公式リリースからインストーラーを取得しています...");
-                let unlistenProg = null;
-                try {
-                  if (window.__TAURI__?.event?.listen) {
-                    unlistenProg = await window.__TAURI__.event.listen('download-progress', (e) => {
-                      if (e.payload?.progress) {
-                        setProg(Math.min(95, Math.round(50 + e.payload.progress * 0.45)), `ダウンロード中... (${e.payload.progress}%)`, `インストーラーを取得しています (${e.payload.progress}%)`);
-                      }
-                    });
-                  }
-                } catch (_) {}
-                await invoke('silent_install_past_version', { url: exe.browser_download_url, tag: latestTag });
-                if (unlistenProg) unlistenProg();
-                setProg(100, "ダウンロード完了", "最新版インストーラーを適用して再起動します...");
-                return;
-              }
-            }
-          }
-        } catch (_) {}
-      }
-      // 3. アップデートがない場合は整合性チェック＆自己修復を自動実行
-      setProg(85, "データ整合性を診断中...", "キャッシュと一時データの整合性を検証しています...");
+      // 整合性自己チェック（キャッシュ・DB）
+      setProg(80, "データ整合性を診断中...");
       try {
         if ('indexedDB' in window) {
           const req = indexedDB.open('covo_local_db');
-          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 1200); });
+          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 800); });
         }
         if ('caches' in window) {
           const keys = await caches.keys();
           for (const k of keys) { if (k !== 'covo_media_cache_v1') await caches.delete(k); }
         }
       } catch (_) {}
-      setProg(100, "自己修復スキャン完了", "プログラムは最新状態です。手動で操作するか再起動をお試しください。");
+      setProg(100, "診断完了 (手動で操作を選択してください)");
       if (spinner) spinner.className = "fas fa-check text-emerald-400";
       _emergencyAutoCheckRunning = false;
     }
     // 手動操作アクション群 (Windows / Web)
     window.emergencyApplyLatestUpdate = async function(btn) {
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>確認中...'; }
-      await emergencyAutoCheckUpdateAndRepair();
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>最新版を取得中...'; }
+      const invoke = window.__TAURI__?.core?.invoke;
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (!ghRes.ok) throw new Error("GitHub APIエラー");
+        const releases = await ghRes.json();
+        const latestRel = releases[0];
+        const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+        if (!exeAsset) throw new Error("インストーラーが見つかりません");
+        localStorage.removeItem('covo_rolled_back_from_ver');
+        localStorage.removeItem('covo_ignore_force_update');
+        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>ダウンロード中...`;
+        if (invoke) {
+          await invoke('silent_install_past_version', { url: exeAsset.browser_download_url, tag: latestRel.tag_name });
+          if (btn) btn.innerHTML = `再起動して適用中...`;
+        } else {
+          window.open(exeAsset.browser_download_url, '_blank');
+        }
+      } catch (err) {
+        alert("アップデートエラー: " + (err.message || err));
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
+      }
     };
     window.emergencyRunIntegrityRepair = async function(btn) {
       if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>修復中...'; }
@@ -49300,26 +49395,59 @@ window._subscribeVcSidebarStates = function(serverId) {
       <div class="flex-1 overflow-y-auto space-y-4 pr-1">
         <!-- A. Windows デスクトップ版専用ビュー -->
         <div id="emergencyDesktopView" class="space-y-4">
+          <!-- 停止理由の率直な提示 -->
+          <div class="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-200 leading-relaxed">
+            <div class="font-bold text-white flex items-center gap-2 mb-1">
+              <i class="fas fa-triangle-exclamation text-amber-400"></i> エラーを検知したため安全停止しました
+            </div>
+            <p id="emergencyStopReasonText">直近のアップデートまたは一時的な通信・データ不整合により、アプリの起動が中断されました。</p>
+          </div>
+          <!-- ★最優先救済アクション: 1つ前の安定バージョンへ戻す (ロールバック) -->
+          <div id="emergencyRollbackCard" class="p-4 bg-indigo-500/15 border border-indigo-500/35 rounded-2xl space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fas fa-rotate-left text-indigo-400"></i>
+                <span>1つ前の安定バージョンに戻しますか？</span>
+              </div>
+              <span id="emergencyPrevVerBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-indigo-300">安定版へ復帰</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              アップデート後に問題が起きた場合、直前の安定バージョンにロールバックしてそのまま正常に使用し続けることができます。
+            </p>
+            <button id="emergencyRollbackBtn" onclick="emergencyRollbackToPreviousVersion(this)" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
+              <i class="fas fa-clock-rotate-left"></i> <span id="emergencyRollbackBtnText">1つ前のバージョンに戻して起動</span>
+            </button>
+          </div>
+          <!-- ★ロールバック使用中専用: 修正版が届いた時の特別案内バナー -->
+          <div id="emergencyFixedUpdateBanner" class="hidden p-4 bg-emerald-500/15 border border-emerald-500/35 rounded-2xl space-y-2">
+            <div class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+              <i class="fas fa-circle-check"></i>
+              <span>不具合が修正された最新バージョンが公開されました！</span>
+            </div>
+            <div class="text-xs text-gray-200 leading-relaxed" id="emergencyFixedUpdateDesc">
+              以前エラーが発生したため1つ前のバージョンをご利用中ですが、問題が修正された最新バージョンが利用可能です。
+            </div>
+            <button id="emergencyApplyFixedBtn" onclick="emergencyApplyLatestUpdate(this)" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
+              <i class="fas fa-sparkles"></i> <span>修正された最新版にアップデート</span>
+            </button>
+          </div>
           <!-- 自動チェック・修復プログレスバー -->
-          <div id="emergencyAutoUpdateBanner" class="p-4 bg-indigo-500/10 border border-indigo-500/25 rounded-2xl space-y-2">
+          <div id="emergencyAutoUpdateBanner" class="p-3.5 bg-gray-800/60 border border-white/10 rounded-2xl space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="font-bold text-indigo-400 flex items-center gap-2">
+              <span class="font-bold text-gray-300 flex items-center gap-2">
                 <i id="emergencyAutoCheckSpinner" class="fas fa-spinner fa-spin text-indigo-400"></i>
-                <span id="emergencyAutoCheckTitle">裏で自動修復・最新アップデートを確認中...</span>
+                <span id="emergencyAutoCheckTitle">裏で修復プログラムの有無を確認中...</span>
               </span>
               <span id="emergencyAutoCheckPercent" class="font-mono text-gray-400 text-[11px]"></span>
             </div>
-            <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden border border-white/5">
+            <div class="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden border border-white/5">
               <div id="emergencyAutoCheckProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 25%"></div>
-            </div>
-            <div id="emergencyAutoCheckDesc" class="text-[11px] text-gray-400">
-              最新の修正プログラムとプログラムファイルの整合性を自動スキャンしています。
             </div>
           </div>
           <!-- アクションカード群 -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button onclick="emergencyApplyLatestUpdate(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyApplyLatestUpdate(this)" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-cloud-arrow-up"></i>
               </div>
               <div class="min-w-0 flex-1">
@@ -49327,26 +49455,26 @@ window._subscribeVcSidebarStates = function(serverId) {
                 <div class="text-[10px] text-gray-400 truncate">最新版を取得して修復</div>
               </div>
             </button>
-            <button onclick="emergencyRunIntegrityRepair(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyRunIntegrityRepair(this)" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-shield-halved"></i>
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-bold text-white truncate">整合性チェック & 修復</div>
-                <div class="text-[10px] text-gray-400 truncate">データ破損の自己修復</div>
+                <div class="text-[10px] text-gray-400 truncate">破損データを自己修復</div>
               </div>
             </button>
-            <button onclick="emergencyOpenRecoveryEngine()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyOpenRecoveryEngine()" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-wrench"></i>
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-bold text-white truncate">リカバリーパネル起動</div>
-                <div class="text-[10px] text-gray-400 truncate">ロールバックと詳細管理</div>
+                <div class="text-[10px] text-gray-400 truncate">履歴一覧から選択</div>
               </div>
             </button>
-            <button onclick="emergencyOpenLogFolder()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-slate-700 text-gray-300 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyOpenLogFolder()" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-slate-700 text-gray-300 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-folder-open"></i>
               </div>
               <div class="min-w-0 flex-1">
@@ -52484,7 +52612,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.256"></script>
+  <script type="module" src="js/main.js?v=1.1.257"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -53912,7 +54040,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.256",
+  "version": "1.1.257",
   "force": false
 }
 </file>

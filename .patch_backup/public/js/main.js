@@ -24232,11 +24232,19 @@ async function blockingUpdateCheck() {
             const closeBtn = document.getElementById('updateCloseButton');
             const updateBtn = document.getElementById('updateButton');
             const updateMainTitle = document.getElementById('updateMainTitle');
-            if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
-            if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+            // ロールバック使用中の場合の特別案内メッセージ
+            const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
+            if (rolledBackFrom) {
+              if (updateMainTitle) updateMainTitle.textContent = '不具合修正版アップデートのお知らせ';
+              if (versionText) versionText.textContent = `修正版 ${latestTag} が公開されました`;
+              if (bodyText) bodyText.textContent = `以前エラーが発生したため直前のバージョンをお使いでしたが、問題が修正された最新版 (${latestTag}) が利用可能です。\n\n【更新内容】\n` + (latestRel.body || '最新の修正パッチ');
+            } else {
+              if (versionText) versionText.textContent = `${latestTag} を自動でダウンロード中...`;
+              if (bodyText) bodyText.textContent = latestRel.body || '最新の修正パッチを適用します。';
+              if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
+            }
             if (closeBtn) closeBtn.classList.add('hidden');
             if (updateBtn) updateBtn.classList.add('hidden');
-            if (updateMainTitle) updateMainTitle.textContent = '最新アップデートをダウンロード中';
             if (overlay) overlay.classList.add('show');
             setTimeout(() => { performUpdate(); }, 500);
             return true;
@@ -25149,8 +25157,11 @@ window.performUpdate = async function () {
       } catch (_) {}
       await invoke('silent_install_past_version', { url: pendingUpdate.directExeUrl, tag: pendingUpdate.version });
       if (unlisten) unlisten();
-      updateProgressUI({ progress: 100, text: 'ダウンロード完了。セットアップを起動して再起動します...' });
+      updateProgressUI({ progress: 100, text: 'ダウンロード完了。更新を適用して再起動します...' });
       stopSpinner('✔');
+      if (typeof startAutoRestartCountdown === 'function') {
+        startAutoRestartCountdown(3);
+      }
       return;
     }
     // Tauri標準の確実なビルトインアップデーターを実行
