@@ -201,9 +201,11 @@ export async function processHeicFile(file) {
   }
   return file;
 }
-// グローバル互換性
+// グローバル互換性 (多重宣言によるSyntaxErrorを防止)
 if (typeof window !== 'undefined') {
-  window.isSemverNewer = isSemverNewer;
+  if (!window.isSemverNewer) {
+    window.isSemverNewer = isSemverNewer;
+  }
   window._abToB64 = _abToB64;
   window._b64ToAb = _b64ToAb;
   window.formatBytes = formatBytes;

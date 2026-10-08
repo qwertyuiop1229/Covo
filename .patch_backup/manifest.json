@@ -1,8 +1,8 @@
 {
-  "date": "2026-10-08T09:41:19.766Z",
+  "date": "2026-10-08T12:58:38.567Z",
   "files": [
-    "public/recovery.html",
-    "public/js/utils.js",
+    "src-tauri/src/lib.rs",
+    "public/index.html",
     "public/js/main.js"
   ]
 }

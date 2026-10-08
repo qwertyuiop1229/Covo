@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
-import * as LocalStore from './local_store.js?v=1.1.235';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, processHeicFile } from './utils.js?v=1.1.235';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.235';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.257';
+import * as LocalStore from './local_store.js?v=1.1.257';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.257';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.257';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.257';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.257';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.257';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -5574,9 +5574,21 @@ async function startPresenceSystem() {
   window.addEventListener("offline", _handleNetworkOffline);
   subscribeToUserStatus();
   clearAppBadgeFull();
-
   if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
-  // リアルタイムリスナーで変更管理されているため、不要な定期的再描画・ポーリングを撤廃
+  // 1分ごとに経過時間表示（「○分前」等）をリアルタイムに自動再計算・更新
+  memberListRefreshInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      if (typeof renderMembersList === 'function' && Array.isArray(cachedUsers)) {
+        renderMembersList(cachedUsers);
+      }
+      if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+        renderDmActiveNowPanel();
+      }
+      if (typeof renderFriendTabs === 'function') {
+        renderFriendTabs();
+      }
+    }
+  }, 60000);
   renderMembersList(cachedUsers);
   initP2PLogSyncListener();
 }
@@ -8134,8 +8146,11 @@ function handleWindowFocus() {
   if (selfInCached) {
     selfInCached.state = 'online';
     selfInCached.computedState = 'online';
-    if (typeof renderMembersList === 'function') renderMembersList(cachedUsers);
   }
+  // 画面復帰時に経過時間表示（「○分前」）も含めて即座に再計算・描画
+  if (typeof renderMembersList === 'function' && Array.isArray(cachedUsers)) renderMembersList(cachedUsers);
+  if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) renderDmActiveNowPanel();
+  if (typeof renderFriendTabs === 'function') renderFriendTabs();
   if ((typeof currentRoomId !== 'undefined' && currentRoomId) || currentDmId) {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
@@ -8151,6 +8166,8 @@ function handleWindowFocus() {
     updateGlobalNotifUI();
     resyncActiveRoomMessages();
   }
+  // タブ・ウィンドウ復帰時に未読集計を確実にスキャンして受信ボックスの赤丸を同期
+  if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
   if (isTauri && window.__TAURI__?.core?.invoke) {
     let globalCount = 0;
     try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch (e) { }
@@ -13077,10 +13094,12 @@ window.saveServerNotifSettings = function() {
 };
 
 // メンバー管理タブ
+let _isLoadingSsMembers = false;
 async function loadServerSettingsMembers() {
-  if (currentSsTab !== "members") return;
+  if (currentSsTab !== "members" || _isLoadingSsMembers) return;
+  _isLoadingSsMembers = true;
   const listEl = document.getElementById("serverMembersManageList");
-  if (!listEl) return;
+  if (!listEl) { _isLoadingSsMembers = false; return; }
   listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
   const serverData = serverSnap.data();
@@ -13170,16 +13189,17 @@ async function loadServerSettingsMembers() {
           if (svSnap.exists() && svSnap.data().joinedUsers) {
             await rotateAllRoomKeys(currentServerId, svSnap.data().joinedUsers);
           }
-        }
-      } catch (e) { alertMessage("キックに失敗しました", "error"); }
-    });
-  });
-}
-document.getElementById("ssTabMembers")?.addEventListener("click", loadServerSettingsMembers);
-
-// 招待コードタブ
-document.getElementById("ssTabInvites")?.addEventListener("click", loadInviteCodes);
-async function loadInviteCodes() {
+          }
+          } catch (e) { alertMessage("キックに失敗しました", "error"); }
+          });
+          });
+          _isLoadingSsMembers = false;
+          }
+          // 招待コードタブ (二重登録リスナーを削除し switchSsTab に一本化)
+          let _isLoadingInviteCodes = false;
+          async function loadInviteCodes() {
+          if (currentSsTab !== "invites" || _isLoadingInviteCodes) return;
+          _isLoadingInviteCodes = true;
   if (currentSsTab !== "invites") return;
   const listEl = document.getElementById("inviteCodesList");
   listEl.innerHTML = "";
@@ -13218,11 +13238,11 @@ async function loadInviteCodes() {
         deleteDoc(doc(db, `artifacts/${appId}/inviteIndex`, btn.dataset.code)),
       ]);
       await loadInviteCodes();
-    });
-  });
-}
-
-// カスタムスタンプ管理タブ
+      });
+      });
+      _isLoadingInviteCodes = false;
+      }
+      // カスタムスタンプ管理タブ
 async function loadServerStampsForAdmin() {
   // 移行済みのため空
 }
@@ -15151,7 +15171,7 @@ function showTerminalBanner() {
     banner = document.createElement('div');
     banner.id = 'historyTerminalBanner';
     banner.className = 'history-terminal-banner flipped';
-    banner.innerHTML = `<i class="fas fa-shield-halved text-indigo-500 mr-1.5"></i> これより前のメッセージはありません（サーバーには最大100件まで保存されます）`;
+    banner.innerHTML = `<i class="fas fa-history text-indigo-500 mr-1.5"></i> これより前のメッセージはありません`;
   }
   banner.style.display = 'flex';
   if (messagesDisplay && !messagesDisplay.contains(banner)) {
@@ -15228,31 +15248,41 @@ async function loadOlderMessages() {
       return;
     }
 
-    // 2. ローカルに無い場合、RTDB から過去ログを取得
+    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
+
+    // 2. ローカルに無い場合、RTDB から過去ログを取得 (制限なしで古いメッセージがなくなるまで遡行)
     let fetchedFromRtdb = false;
     try {
       const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(21));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(30));
       const snapshot = await get(q);
-
       if (snapshot.exists()) {
         const data = snapshot.val();
         let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
-        docs = docs.filter(d => d.id !== oldestMessage.id);
-
-        if (docs.length > 0) {
-          await mergeAndRender(docs);
-          rtdbMessagesLimit += docs.length;
+        let newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
+        // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
+        if (newDocs.length === 0 && oldestTime > 0) {
+          const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(30));
+          const snapPrev = await get(qPrev);
+          if (snapPrev.exists()) {
+            const dPrev = snapPrev.val();
+            const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
+            newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
+          }
+        }
+        if (newDocs.length > 0) {
+          await mergeAndRender(newDocs);
+          rtdbMessagesLimit += newDocs.length;
           fetchedFromRtdb = true;
         }
       }
     } catch (rtdbErr) {
       console.warn('[loadOlderMessages] RTDB fetch warning:', rtdbErr);
     }
-
     if (fetchedFromRtdb) {
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
@@ -15260,25 +15290,36 @@ async function loadOlderMessages() {
       return;
     }
 
-    // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から取得
+    // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から型を両対応にして取得
     let fetchedFromFirestore = false;
     if (currentServerId && currentRoomId) {
       try {
-        const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs, Timestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
         const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-        const qFs = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestMessage.timestamp || oldestTime), fsLimit(20));
-        const fsSnap = await getDocs(qFs);
-        if (!fsSnap.empty) {
-          const fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
-          fsDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-          await mergeAndRender(fsDocs);
-          fetchedFromFirestore = true;
+        let fsSnap = null;
+        try {
+          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(20));
+          fsSnap = await getDocs(qFsTimestamp);
+        } catch (_) {}
+        if (!fsSnap || fsSnap.empty) {
+          try {
+            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(20));
+            fsSnap = await getDocs(qFsNumber);
+          } catch (_) {}
+        }
+        if (fsSnap && !fsSnap.empty) {
+          let fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
+          let newFsDocs = fsDocs.filter(d => !existingLoadedIds.has(d.id));
+          if (newFsDocs.length > 0) {
+            newFsDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+            await mergeAndRender(newFsDocs);
+            fetchedFromFirestore = true;
+          }
         }
       } catch (fsErr) {
         console.warn('[loadOlderMessages] Firestore fetch warning:', fsErr);
       }
     }
-
     if (fetchedFromFirestore) {
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
@@ -15288,8 +15329,7 @@ async function loadOlderMessages() {
 
     // 4. サーバー上にもない場合、オンラインの同室メンバーへ P2P 過去ログ補完を要求
     requestP2PLogBackfill(currentServerId ? 'server' : 'dm', currentServerId ? currentRoomId : currentDmId, oldestTime);
-
-    // すべてのソースに過去ログがない場合のみ終端バナーを表示
+    // すべてのソースに過去ログが一切見つからなかった場合のみ終端バナーを表示
     hasMoreOlderMessages = false;
     showTerminalBanner();
 
@@ -17148,8 +17188,9 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
-  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : (dmId ? "prune_100" : "keep_all");
-  // サーバー設定が全件保持 (keep_all) の場合は不要なAPIコールを行わず即時スキップ
+  // 100件超過時の自動削除をサーバー・DM問わず基本デフォルト有効化
+  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : "prune_100";
+  // サーバー設定で明示的に全件保持 (keep_all) が選ばれている場合のみスキップ
   if (policy === "keep_all") return;
 
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
@@ -20026,16 +20067,17 @@ function doJumpHighlight(el) {
     const rRect = row.getBoundingClientRect();
     const containerCenterY = (cRect.top + cRect.bottom) / 2;
     const rowCenterY = (rRect.top + rRect.bottom) / 2;
-    // 「中央より下にある（画面下半分に完全に収まっている）」場合はスクロールしない
-    // 最新メッセージ付近で見えているメッセージの不必要なスクロールを防止
-    const isBelowCenterAndVisible = (rowCenterY >= containerCenterY && rRect.bottom <= cRect.bottom && rRect.top >= cRect.top);
-    // 中央より上にある、または画面外・見切れている場合は、画面の真ん中（center）に来るようにスクロール
-    if (!isBelowCenterAndVisible) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // CSS scaleY(-1) 反転スクロール空間における数学的精密スクロール計算
+    // 視覚的中心のズレ (containerCenterY - rowCenterY) を直接 scrollTop に加算することで、
+    // PC/スマホ/iPad/全画面サイズでミリ単位のズレなく確実にターゲットを垂直中央に配置
+    const deltaY = containerCenterY - rowCenterY;
+    if (Math.abs(deltaY) > 10) {
+      const targetScrollTop = container.scrollTop + deltaY;
+      container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
       didScroll = true;
     }
   }
-  // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
+  // アニメーション発火
   setTimeout(() => {
     el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
     const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
@@ -20049,16 +20091,14 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.85s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
       }, 880);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.6s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
       }, 1600);
     }
-  }, didScroll ? 450 : 30);
+  }, didScroll ? 350 : 20);
 }
 
 // iOS/Safari 判定

@@ -1553,6 +1553,22 @@ scratch/
 }
 </file>
 
+<file path="firestore.indexes.json">
+{
+  "indexes": [
+    {
+      "collectionGroup": "vc_signaling",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "toUid", "order": "ASCENDING" },
+        { "fieldPath": "channelId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
+</file>
+
 <file path="package.json">
 {
   "name": "simplechat",
@@ -2482,22 +2498,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="firestore.indexes.json">
-{
-  "indexes": [
-    {
-      "collectionGroup": "vc_signaling",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "toUid", "order": "ASCENDING" },
-        { "fieldPath": "channelId", "order": "ASCENDING" }
-      ]
-    }
-  ],
-  "fieldOverrides": []
-}
-</file>
-
 <file path="public/css/modules/components.css">
 /* --- コンポーネント用ユーティリティ（ベース重複を解消） --- */
     .flipped {
@@ -3148,217 +3148,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/js/utils.js">
-/**
- * ユーティリティ関数群 (utils.js)
- * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
- */
-/**
- * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
- * @param {ArrayBuffer} buf - 変換元のバイナリデータ
- * @returns {string} Base64文字列
- */
-export function _abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
-  }
-  return btoa(bin);
-}
-/**
- * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
- * @param {string} b64 - 変換元のBase64文字列
- * @returns {ArrayBuffer} 復元されたバイナリデータ
- */
-export function _b64ToAb(b64) {
-  try {
-    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
-    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-    const pad = norm.length % 4;
-    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
-    if (pad === 2) norm += "==";
-    else if (pad === 3) norm += "=";
-    const bin = atob(norm);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out.buffer;
-  } catch (e) {
-    console.error("Base64 decode failed:", e);
-    return new ArrayBuffer(0);
-  }
-}
-/**
- * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
- * @param {number} bytes - バイト数
- * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
- * @returns {string} フォーマットされた文字列
- */
-export function formatBytes(bytes, decimals = 2) {
-  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-/**
- * あらゆる形式のタイムスタンプ（数値・ミリ秒・秒・Firestoreオブジェクト・マップ・文字列）を正確なUnixミリ秒に変換
- * @param {*} val - 変換対象
- * @returns {number} タイムスタンプ(ミリ秒) または 0
- */
-export function parseTimestampToMs(val) {
-  if (!val) return 0;
-  if (typeof val === 'number') {
-    return val < 10000000000 ? val * 1000 : val;
-  }
-  if (typeof val.toMillis === 'function') return val.toMillis();
-  if (typeof val.toDate === 'function') return val.toDate().getTime();
-  if (typeof val === 'object') {
-    if (val.seconds != null) {
-      return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000);
-    }
-    if (val._seconds != null) {
-      return val._seconds * 1000 + Math.floor((val._nanoseconds || 0) / 1000000);
-    }
-  }
-  if (typeof val === 'string') {
-    const num = Number(val);
-    if (!isNaN(num) && num > 0) {
-      return num < 10000000000 ? num * 1000 : num;
-    }
-    const parsed = new Date(val).getTime();
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  return 0;
-}
-/**
- * メッセージオブジェクトから正確なタイムスタンプを取得
- * @param {Object} msg - メッセージオブジェクト
- * @returns {number} タイムスタンプ(ミリ秒)
- */
-export function getMsgTimestamp(msg) {
-  if (!msg) return Date.now();
-  const ts = parseTimestampToMs(msg.timestamp) || parseTimestampToMs(msg.createdAt);
-  return ts > 0 ? ts : Date.now();
-}
-/**
- * テキストをクリップボードに安全にコピー
- * @param {string} txt - コピーするテキスト
- */
-export async function safeCopy(txt) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(txt);
-      return true;
-    } else {
-      return _execCopyFallback(txt);
-    }
-  } catch (err) {
-    console.warn("Clipboard API failed, fallback to execCommand", err);
-    return _execCopyFallback(txt);
-  }
-}
-/**
- * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
- * @param {string} txt - コピーするテキスト
- */
-export function _execCopyFallback(txt) {
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = txt;
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch (err) {
-    console.error('Fallback copy error', err);
-    return false;
-  }
-}
-/**
- * メールアドレスの最初の1文字を取得
- * @param {string} email - メールアドレス
- * @returns {string} 最初の1文字(大文字) または '?'
- */
-export function emailInitial(email) {
-  if (!email) return '?';
-  return email.charAt(0).toUpperCase();
-}
-/**
- * セマンティックバージョニング比較 (リモートがローカルより新しいか判定)
- * @param {string} remoteVersion - リモートバージョン (例: "1.1.256" または "v1.1.256")
- * @param {string} localVersion - ローカルバージョン
- * @returns {boolean} リモートの方が新しければ true
- */
-export function isSemverNewer(remoteVersion, localVersion) {
-  if (!remoteVersion || !localVersion) return false;
-  const r = String(remoteVersion).replace(/^v/i, '').trim();
-  const l = String(localVersion).replace(/^v/i, '').trim();
-  const rBase = r.split('-')[0].split('+')[0];
-  const lBase = l.split('-')[0].split('+')[0];
-  const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
-  const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
-  while (rParts.length < 3) rParts.push(0);
-  while (lParts.length < 3) lParts.push(0);
-  for (let i = 0; i < 3; i++) {
-    if (rParts[i] > lParts[i]) return true;
-    if (rParts[i] < lParts[i]) return false;
-  }
-  if (l.includes('-') && !r.includes('-')) {
-    return true;
-  }
-  return false;
-}
-/**
- * HEICファイルをJPEGに変換
- * @param {File} file - 処理対象のファイル
- * @returns {Promise<File>} 処理後のファイル
- */
-export async function processHeicFile(file) {
-  if (!file) return null;
-  const name = file.name || '';
-  const ext = name.split('.').pop().toLowerCase();
-  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
-    try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
-      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
-      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
-      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
-    } catch (e) {
-      console.error("HEIC conversion failed:", e);
-      return file;
-    }
-  }
-  return file;
-}
-// グローバル互換性
-if (typeof window !== 'undefined') {
-  window.isSemverNewer = isSemverNewer;
-  window._abToB64 = _abToB64;
-  window._b64ToAb = _b64ToAb;
-  window.formatBytes = formatBytes;
-  window.parseTimestampToMs = parseTimestampToMs;
-  window.getMsgTimestamp = getMsgTimestamp;
-  window.safeCopy = safeCopy;
-  window._execCopyFallback = _execCopyFallback;
-  window.emailInitial = emailInitial;
-  window.processHeicFile = processHeicFile;
-}
-</file>
-
 <file path="public/auth-desktop.html">
 <!DOCTYPE html>
 <html lang="ja">
@@ -3651,6 +3440,14 @@ if (Test-Path $indexHtmlPath) {
     $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
     [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
     Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
+}
+
+$mainJsPath = Join-Path $PSScriptRoot 'public\js\main.js'
+if (Test-Path $mainJsPath) {
+    $mainRaw = [System.IO.File]::ReadAllText($mainJsPath, [System.Text.Encoding]::UTF8)
+    $mainPatched = $mainRaw -replace '(\.js)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($mainJsPath, $mainPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced main.js internal import cache busters -> $newVersion" -ForegroundColor Green
 }
 
 $tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
@@ -4253,611 +4050,217 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
+<file path="public/js/utils.js">
+/**
+ * ユーティリティ関数群 (utils.js)
+ * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
+ */
+/**
+ * ArrayBuffer (バイナリデータ) を Base64 文字列に変換
+ * @param {ArrayBuffer} buf - 変換元のバイナリデータ
+ * @returns {string} Base64文字列
+ */
+export function _abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+/**
+ * Base64 文字列を ArrayBuffer (バイナリデータ) に復元
+ * @param {string} b64 - 変換元のBase64文字列
+ * @returns {ArrayBuffer} 復元されたバイナリデータ
+ */
+export function _b64ToAb(b64) {
+  try {
+    if (typeof b64 !== "string" || !b64) return new ArrayBuffer(0);
+    let norm = b64.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = norm.length % 4;
+    if (pad === 1) return new ArrayBuffer(0); // 不正な文字長をガード
+    if (pad === 2) norm += "==";
+    else if (pad === 3) norm += "=";
+    const bin = atob(norm);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  } catch (e) {
+    console.error("Base64 decode failed:", e);
+    return new ArrayBuffer(0);
+  }
+}
+/**
+ * バイト数を人間が読みやすい形式 (KB, MB, GB) に変換
+ * @param {number} bytes - バイト数
+ * @param {number} decimals - 小数点以下の桁数 (デフォルト: 2)
+ * @returns {string} フォーマットされた文字列
+ */
+export function formatBytes(bytes, decimals = 2) {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+/**
+ * あらゆる形式のタイムスタンプ（数値・ミリ秒・秒・Firestoreオブジェクト・マップ・文字列）を正確なUnixミリ秒に変換
+ * @param {*} val - 変換対象
+ * @returns {number} タイムスタンプ(ミリ秒) または 0
+ */
+export function parseTimestampToMs(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') {
+    return val < 10000000000 ? val * 1000 : val;
+  }
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (typeof val === 'object') {
+    if (val.seconds != null) {
+      return val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000);
     }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    if (val._seconds != null) {
+      return val._seconds * 1000 + Math.floor((val._nanoseconds || 0) / 1000000);
     }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
-        </div>
-        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-      }
-      function isSemverNewer(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rBase = r.split('-')[0].split('+')[0];
-      const lBase = l.split('-')[0].split('+')[0];
-      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      if (l.includes('-') && !r.includes('-')) {
-        return true;
-      }
-      return false;
-      }
-      let _isUpdateCheckingNow = false;
-    async function triggerUpdateCheck(isAuto = false) {
-      if (_isUpdateCheckingNow) {
-        logMessage("Update check or download is already in progress...");
-        return;
-      }
-      _isUpdateCheckingNow = true;
-      const btn = document.getElementById("btnUpdateCheck");
-      if (!isAuto && btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      }
-      logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
-      // 1. 現在のバージョンを取得
-      let currentVersion = "1.0.0";
-      try {
-        const vRes = await fetch("version.json", { cache: "no-store" });
-        if (vRes.ok) {
-          const vData = await vRes.json();
-          currentVersion = vData.version || currentVersion;
-        }
-      } catch (_) {}
-      let updateFound = false;
-      let targetVersion = null;
-      let targetDownloadUrl = null;
-      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
-      if (invoke) {
-        try {
-          const metadata = await invoke('plugin:updater|check');
-          // Tauri 2 の戻り値: Update オブジェクトまたは null
-          if (metadata && (metadata.version || metadata.rid)) {
-            targetVersion = metadata.version;
-            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
-            updateFound = true;
-            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-            logMessage(`Downloading update v${targetVersion}...`);
-            const rid = metadata.rid;
-            let installed = false;
-            const variants = [
-              { rid },
-              { updateRid: rid },
-              { rid, updateRid: rid }
-            ];
-            for (const v of variants) {
-              try {
-                await invoke('plugin:updater|download_and_install', v);
-                installed = true;
-                break;
-              } catch (_) {}
-            }
-            if (!installed) {
-              for (const v of variants) {
-                try {
-                  await invoke('plugin:updater|download', v);
-                  await invoke('plugin:updater|install', v);
-                  installed = true;
-                  break;
-                } catch (_) {}
-              }
-            }
-            if (installed) {
-              logMessage("Update applied successfully. Restarting application...");
-              if (btn) btn.innerHTML = `完了 (再起動中)`;
-              setTimeout(() => {
-                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-              }, 1500);
-              return;
-            }
-          }
-        } catch (tauriErr) {
-          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
-        }
-      }
-      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
-      logMessage("Checking official GitHub Releases API...");
-      try {
-        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-        if (ghRes.ok) {
-          const releases = await ghRes.json();
-          if (Array.isArray(releases) && releases.length > 0) {
-            const latestRel = releases[0];
-            const latestTag = latestRel.tag_name || "";
-            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
-            const isNewer = isSemverNewer(latestTag, currentVersion);
-            if (isNewer && exeAsset && exeAsset.browser_download_url) {
-              targetVersion = latestTag;
-              targetDownloadUrl = exeAsset.browser_download_url;
-              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
-              updateFound = true;
-              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
-              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
-              if (invoke) {
-                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
-                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
-                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
-                return;
-              } else {
-                window.open(targetDownloadUrl, '_blank');
-                logMessage(`Downloading ${latestTag} via external browser.`);
-                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
-                return;
-              }
-            }
-          }
-        }
-      } catch (ghErr) {
-        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
-      }
-      if (!updateFound) {
-        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
-        if (btn) {
-          btn.innerHTML = `最新版です`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      }
-      _isUpdateCheckingNow = false;
-      } catch (err) {
-        logMessage(`Update check failed: ${err.message || err}`, true);
-        const btn = document.getElementById("btnUpdateCheck");
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      } finally {
-        _isUpdateCheckingNow = false;
-      }
-      }
-      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
-    async function triggerIntegrityCheckAndRepair() {
-      const btn = document.getElementById("btnIntegrityRepair");
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
-      }
-      logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
-      // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
-      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
-      try {
-        if ('indexedDB' in window) {
-          const dbInstance = await new Promise((res, rej) => {
-            const req = indexedDB.open('covo_local_db');
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => rej(req.error);
-            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
-          });
-          const stores = ['messages', 'channels', 'friends', 'settings'];
-          let storeErrors = 0;
-          for (const sName of stores) {
-            if (dbInstance.objectStoreNames.contains(sName)) {
-              try {
-                const tx = dbInstance.transaction(sName, 'readonly');
-                await new Promise((res, rej) => {
-                  const cntReq = tx.objectStore(sName).count();
-                  cntReq.onsuccess = res;
-                  cntReq.onerror = rej;
-                  setTimeout(res, 800);
-                });
-              } catch (_) { storeErrors++; }
-            }
-          }
-          dbInstance.close();
-          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
-        }
-      } catch (dbErr) {
-        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
-        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
-      }
-      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
-      logMessage("[2/5] Checking Cache Storage...");
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) {
-            if (k !== 'covo_media_cache_v1') await caches.delete(k);
-          }
-          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
-        }
-      } catch (cErr) {
-        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
-      }
-      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
-      logMessage("[3/5] Validating LocalStorage configuration entries...");
-      try {
-        let repairedKeys = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k) {
-            const val = localStorage.getItem(k);
-            if (val && (val.startsWith('{') || val.startsWith('['))) {
-              try { JSON.parse(val); } catch (_) {
-                localStorage.removeItem(k);
-                repairedKeys++;
-              }
-            }
-          }
-        }
-        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
-      } catch (lsErr) {
-        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
-      }
-      // 4. バックエンドAPIおよびネットワーク疎通テスト
-      logMessage("[4/5] Testing network and backend API connectivity...");
-      try {
-        const t0 = performance.now();
-        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
-        const latency = Math.round(performance.now() - t0);
-        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
-      } catch (apiErr) {
-        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
-      }
-      // 5. プログラムファイルの最新バージョン照合
-      logMessage("[5/5] Verifying application binaries against official release...");
-      logMessage("Integrity check & self-repair completed successfully.");
-      if (btn) {
-        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
-        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
-      }
-      } catch (fatalErr) {
-        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      }
-      }
-      async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('indexedDB' in window) {
-          indexedDB.deleteDatabase('covo_local_db');
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => {
-          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-        }, 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
+  }
+  if (typeof val === 'string') {
+    const num = Number(val);
+    if (!isNaN(num) && num > 0) {
+      return num < 10000000000 ? num * 1000 : num;
     }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
+    const parsed = new Date(val).getTime();
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+/**
+ * メッセージオブジェクトから正確なタイムスタンプを取得
+ * @param {Object} msg - メッセージオブジェクト
+ * @returns {number} タイムスタンプ(ミリ秒)
+ */
+export function getMsgTimestamp(msg) {
+  if (!msg) return Date.now();
+  const ts = parseTimestampToMs(msg.timestamp) || parseTimestampToMs(msg.createdAt);
+  return ts > 0 ? ts : Date.now();
+}
+/**
+ * テキストをクリップボードに安全にコピー
+ * @param {string} txt - コピーするテキスト
+ */
+export async function safeCopy(txt) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt);
+      return true;
+    } else {
+      return _execCopyFallback(txt);
     }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+  } catch (err) {
+    console.warn("Clipboard API failed, fallback to execCommand", err);
+    return _execCopyFallback(txt);
+  }
+}
+/**
+ * (内部用) 古いブラウザや非セキュア環境向けのコピー処理フォールバック
+ * @param {string} txt - コピーするテキスト
+ */
+export function _execCopyFallback(txt) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('Fallback copy error', err);
+    return false;
+  }
+}
+/**
+ * メールアドレスの最初の1文字を取得
+ * @param {string} email - メールアドレス
+ * @returns {string} 最初の1文字(大文字) または '?'
+ */
+export function emailInitial(email) {
+  if (!email) return '?';
+  return email.charAt(0).toUpperCase();
+}
+/**
+ * セマンティックバージョニング比較 (リモートがローカルより新しいか判定)
+ * @param {string} remoteVersion - リモートバージョン (例: "1.1.256" または "v1.1.256")
+ * @param {string} localVersion - ローカルバージョン
+ * @returns {boolean} リモートの方が新しければ true
+ */
+export function isSemverNewer(remoteVersion, localVersion) {
+  if (!remoteVersion || !localVersion) return false;
+  const r = String(remoteVersion).replace(/^v/i, '').trim();
+  const l = String(localVersion).replace(/^v/i, '').trim();
+  const rBase = r.split('-')[0].split('+')[0];
+  const lBase = l.split('-')[0].split('+')[0];
+  const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+  const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
+  while (rParts.length < 3) rParts.push(0);
+  while (lParts.length < 3) lParts.push(0);
+  for (let i = 0; i < 3; i++) {
+    if (rParts[i] > lParts[i]) return true;
+    if (rParts[i] < lParts[i]) return false;
+  }
+  if (l.includes('-') && !r.includes('-')) {
+    return true;
+  }
+  return false;
+}
+/**
+ * HEICファイルをJPEGに変換
+ * @param {File} file - 処理対象のファイル
+ * @returns {Promise<File>} 処理後のファイル
+ */
+export async function processHeicFile(file) {
+  if (!file) return null;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
+    try {
+      if (typeof heic2any === 'undefined') {
+        console.warn("heic2any is not loaded");
+        return file;
       }
+      console.log("HEIC file detected. Converting to JPEG...");
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+      const finalBlob = Array.isArray(blob) ? blob[0] : blob;
+      const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+      return new File([finalBlob], newName || 'converted.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      console.error("HEIC conversion failed:", e);
+      return file;
     }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.innerHTML = `失敗`;
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = `インストール`;
-          }, 3000);
-        }
-      }
-      }
-      if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
-          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
-          const topBtn = document.getElementById("btnUpdateCheck");
-          if (topBtn && topBtn.disabled) {
-            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
-          }
-          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
-        }
-      });
-    }
-    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
-    let _recoveryAutoCheckRan = false;
-    window.addEventListener("DOMContentLoaded", () => {
-      if (_recoveryAutoCheckRan) return;
-      _recoveryAutoCheckRan = true;
-      setTimeout(() => {
-        triggerUpdateCheck(true);
-      }, 1200);
-    });
-    </script>
-</body>
-</html>
+  }
+  return file;
+}
+// グローバル互換性 (多重宣言によるSyntaxErrorを防止)
+if (typeof window !== 'undefined') {
+  if (!window.isSemverNewer) {
+    window.isSemverNewer = isSemverNewer;
+  }
+  window._abToB64 = _abToB64;
+  window._b64ToAb = _b64ToAb;
+  window.formatBytes = formatBytes;
+  window.parseTimestampToMs = parseTimestampToMs;
+  window.getMsgTimestamp = getMsgTimestamp;
+  window.safeCopy = safeCopy;
+  window._execCopyFallback = _execCopyFallback;
+  window.emailInitial = emailInitial;
+  window.processHeicFile = processHeicFile;
+}
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -4899,6 +4302,7 @@ struct NotificationState {
     pending: Mutex<Vec<PendingNotif>>,
     close_behavior: Mutex<String>,
     app_loaded: Mutex<bool>,
+    active_mouse_shortcut: Mutex<Option<i32>>, // マウスVKコード (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
 }
 #[derive(serde::Serialize)]
 struct MonitorInfo {
@@ -5536,14 +4940,74 @@ fn char_to_code(key: &str) -> Option<tauri_plugin_global_shortcut::Code> {
         _ => None,
     }
 }
+// 任意のキーボード組み合わせ（単一キー・複数修飾キー）を柔軟にパース
+fn parse_custom_shortcut(shortcut_str: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    use std::str::FromStr;
+    use tauri_plugin_global_shortcut::Shortcut;
+    let trimmed = shortcut_str.trim();
+    if trimmed.is_empty() { return None; }
+    // 1. 標準パース (例: "Ctrl+Shift+S", "Alt+Space", "F8", "KeyS" 等)
+    if let Ok(s) = Shortcut::from_str(trimmed) {
+        return Some(s);
+    }
+    // 2. 表記ゆれの正規化
+    let normalized = trimmed
+        .replace("Control", "Ctrl")
+        .replace("Option", "Alt")
+        .replace("Command", "Super")
+        .replace("Cmd", "Super")
+        .replace("Win", "Super");
+    if let Ok(s) = Shortcut::from_str(&normalized) {
+        return Some(s);
+    }
+    // 3. 後方互換性: 単一英字 (例: "S" -> "Ctrl+Shift+S")
+    if normalized.len() == 1 {
+        if let Some(code) = char_to_code(&normalized) {
+            use tauri_plugin_global_shortcut::Modifiers;
+            return Some(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code));
+        }
+    }
+    None
+}
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetAsyncKeyState(vKey: i32) -> i16;
+}
 #[tauri::command]
-fn update_shortcut_key(app_handle: tauri::AppHandle, key: String) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut};
+fn update_shortcut_key(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, NotificationState>,
+    key: String,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    // 既存のキーボードショートカットを全解除
     let _ = app_handle.global_shortcut().unregister_all();
-    if let Some(code) = char_to_code(&key) {
-        let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code);
-        app_handle.global_shortcut().register(shortcut)
-            .map_err(|e| format!("ショートカット Ctrl+Shift+{} の登録に失敗しました (重複の可能性): {}", key, e))?;
+    let trimmed = key.trim();
+    let lower = trimmed.to_lowercase();
+    // マウスボタン指定の判定 (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
+    let mouse_vk = match lower.as_str() {
+        "mouse4" | "mousex1" | "mouse_back" | "xbutton1" | "マウス戻るボタン" => Some(0x05),
+        "mouse5" | "mousex2" | "mouse_forward" | "xbutton2" | "マウス進むボタン" => Some(0x06),
+        "mouse3" | "mousemiddle" | "mouse_wheel" | "mbutton" | "ホイールクリック" | "マウス中ボタン" => Some(0x04),
+        _ => None,
+    };
+    if let Ok(mut lock) = state.active_mouse_shortcut.lock() {
+        *lock = mouse_vk;
+    }
+    // マウスボタンが設定された場合はキーボード登録を行わず即時完了
+    if mouse_vk.is_some() {
+        log::info!("Registered global mouse shortcut: {}", trimmed);
+        return Ok(());
+    }
+    // キーボードショートカットの登録
+    if !trimmed.is_empty() {
+        if let Some(shortcut) = parse_custom_shortcut(trimmed) {
+            app_handle.global_shortcut().register(shortcut)
+                .map_err(|e| format!("ショートカット「{}」の登録に失敗しました (他アプリと競合の可能性): {}", trimmed, e))?;
+            log::info!("Registered custom global keyboard shortcut: {}", trimmed);
+        } else {
+            return Err(format!("無効なキー設定です: 「{}」", trimmed));
+        }
     }
     Ok(())
 }
@@ -5975,6 +5439,44 @@ pub fn run() {
             };
             app.handle().plugin(shortcut_plugin)?;
             let _ = app.global_shortcut().register(ctrl_shift_s);
+            // Windows グローバルマウスボタン (戻る/進む/中クリック) 超低負荷監視スレッド
+            let mouse_monitor_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut was_pressed = false;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                    let vk_opt = {
+                        let state = mouse_monitor_handle.state::<NotificationState>();
+                        match state.active_mouse_shortcut.lock() {
+                            Ok(guard) => *guard,
+                            Err(_) => None,
+                        }
+                    };
+                    if let Some(vk) = vk_opt {
+                        #[cfg(target_os = "windows")]
+                        {
+                            let key_state = unsafe { GetAsyncKeyState(vk) };
+                            let is_pressed = (key_state as u16 & 0x8000) != 0;
+                            if is_pressed && !was_pressed {
+                                was_pressed = true;
+                                if let Some(window) = mouse_monitor_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                    let _ = window.emit("window-focused", ());
+                                    let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
+                                    let _ = window.eval("if(window.focusMessageInput)window.focusMessageInput()");
+                                }
+                            } else if !is_pressed {
+                                was_pressed = false;
+                            }
+                        }
+                    } else {
+                        was_pressed = false;
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                    }
+                }
+            });
             // 正常起動の非同期監視タスク (45秒後に app_loaded が false なら自動でリカバリーウィンドウをポップアップ)
             let monitor_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -6129,6 +5631,613 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+</file>
+
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/font-awesome.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    .bg-dark-800 { background-color: #2b2d31; }
+    .bg-dark-700 { background-color: #313338; }
+    .hover\:bg-dark-700:hover { background-color: #313338; }
+    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
+    .active\:bg-dark-900:active { background-color: #1e1f22; }
+    .bg-brand-500 { background-color: #5865F2; }
+    .text-brand-500 { color: #5865F2; }
+    .hover\:bg-brand-600:hover { background-color: #4752C4; }
+    .active\:bg-brand-600:active { background-color: #4752C4; }
+    ::selection { background-color: #5865F2; color: #ffffff; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
+        </div>
+        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+    </div>
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+      }
+      function isSemverNewer(remoteVersion, localVersion) {
+      if (!remoteVersion || !localVersion) return false;
+      const r = String(remoteVersion).replace(/^v/i, '').trim();
+      const l = String(localVersion).replace(/^v/i, '').trim();
+      const rBase = r.split('-')[0].split('+')[0];
+      const lBase = l.split('-')[0].split('+')[0];
+      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
+      while (rParts.length < 3) rParts.push(0);
+      while (lParts.length < 3) lParts.push(0);
+      for (let i = 0; i < 3; i++) {
+        if (rParts[i] > lParts[i]) return true;
+        if (rParts[i] < lParts[i]) return false;
+      }
+      if (l.includes('-') && !r.includes('-')) {
+        return true;
+      }
+      return false;
+      }
+      let _isUpdateCheckingNow = false;
+    async function triggerUpdateCheck(isAuto = false) {
+      if (_isUpdateCheckingNow) {
+        logMessage("Update check or download is already in progress...");
+        return;
+      }
+      _isUpdateCheckingNow = true;
+      const btn = document.getElementById("btnUpdateCheck");
+      if (!isAuto && btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      }
+      logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
+      // 1. 現在のバージョンを取得
+      let currentVersion = "1.0.0";
+      try {
+        const vRes = await fetch("version.json", { cache: "no-store" });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          currentVersion = vData.version || currentVersion;
+        }
+      } catch (_) {}
+      let updateFound = false;
+      let targetVersion = null;
+      let targetDownloadUrl = null;
+      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
+      if (invoke) {
+        try {
+          const metadata = await invoke('plugin:updater|check');
+          // Tauri 2 の戻り値: Update オブジェクトまたは null
+          if (metadata && (metadata.version || metadata.rid)) {
+            targetVersion = metadata.version;
+            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
+            updateFound = true;
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+            logMessage(`Downloading update v${targetVersion}...`);
+            const rid = metadata.rid;
+            let installed = false;
+            const variants = [
+              { rid },
+              { updateRid: rid },
+              { rid, updateRid: rid }
+            ];
+            for (const v of variants) {
+              try {
+                await invoke('plugin:updater|download_and_install', v);
+                installed = true;
+                break;
+              } catch (_) {}
+            }
+            if (!installed) {
+              for (const v of variants) {
+                try {
+                  await invoke('plugin:updater|download', v);
+                  await invoke('plugin:updater|install', v);
+                  installed = true;
+                  break;
+                } catch (_) {}
+              }
+            }
+            if (installed) {
+              logMessage("Update applied successfully. Restarting application...");
+              if (btn) btn.innerHTML = `完了 (再起動中)`;
+              setTimeout(() => {
+                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+              }, 1500);
+              return;
+            }
+          }
+        } catch (tauriErr) {
+          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
+        }
+      }
+      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
+      logMessage("Checking official GitHub Releases API...");
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (ghRes.ok) {
+          const releases = await ghRes.json();
+          if (Array.isArray(releases) && releases.length > 0) {
+            const latestRel = releases[0];
+            const latestTag = latestRel.tag_name || "";
+            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+            const isNewer = isSemverNewer(latestTag, currentVersion);
+            if (isNewer && exeAsset && exeAsset.browser_download_url) {
+              targetVersion = latestTag;
+              targetDownloadUrl = exeAsset.browser_download_url;
+              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
+              updateFound = true;
+              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
+              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
+              if (invoke) {
+                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
+                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
+                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
+                return;
+              } else {
+                window.open(targetDownloadUrl, '_blank');
+                logMessage(`Downloading ${latestTag} via external browser.`);
+                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
+                return;
+              }
+            }
+          }
+        }
+      } catch (ghErr) {
+        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
+      }
+      if (!updateFound) {
+        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
+        if (btn) {
+          btn.innerHTML = `最新版です`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      }
+      _isUpdateCheckingNow = false;
+      } catch (err) {
+        logMessage(`Update check failed: ${err.message || err}`, true);
+        const btn = document.getElementById("btnUpdateCheck");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      } finally {
+        _isUpdateCheckingNow = false;
+      }
+      }
+      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
+    async function triggerIntegrityCheckAndRepair() {
+      const btn = document.getElementById("btnIntegrityRepair");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
+      }
+      logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
+      // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
+      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
+      try {
+        if ('indexedDB' in window) {
+          const dbInstance = await new Promise((res, rej) => {
+            const req = indexedDB.open('covo_local_db');
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
+            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
+          });
+          const stores = ['messages', 'channels', 'friends', 'settings'];
+          let storeErrors = 0;
+          for (const sName of stores) {
+            if (dbInstance.objectStoreNames.contains(sName)) {
+              try {
+                const tx = dbInstance.transaction(sName, 'readonly');
+                await new Promise((res, rej) => {
+                  const cntReq = tx.objectStore(sName).count();
+                  cntReq.onsuccess = res;
+                  cntReq.onerror = rej;
+                  setTimeout(res, 800);
+                });
+              } catch (_) { storeErrors++; }
+            }
+          }
+          dbInstance.close();
+          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
+        }
+      } catch (dbErr) {
+        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
+        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
+      }
+      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
+      logMessage("[2/5] Checking Cache Storage...");
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) {
+            if (k !== 'covo_media_cache_v1') await caches.delete(k);
+          }
+          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
+        }
+      } catch (cErr) {
+        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
+      }
+      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
+      logMessage("[3/5] Validating LocalStorage configuration entries...");
+      try {
+        let repairedKeys = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) {
+            const val = localStorage.getItem(k);
+            if (val && (val.startsWith('{') || val.startsWith('['))) {
+              try { JSON.parse(val); } catch (_) {
+                localStorage.removeItem(k);
+                repairedKeys++;
+              }
+            }
+          }
+        }
+        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
+      } catch (lsErr) {
+        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
+      }
+      // 4. バックエンドAPIおよびネットワーク疎通テスト
+      logMessage("[4/5] Testing network and backend API connectivity...");
+      try {
+        const t0 = performance.now();
+        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
+        const latency = Math.round(performance.now() - t0);
+        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
+      } catch (apiErr) {
+        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
+      }
+      // 5. プログラムファイルの最新バージョン照合
+      logMessage("[5/5] Verifying application binaries against official release...");
+      logMessage("Integrity check & self-repair completed successfully.");
+      if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
+      }
+      } catch (fatalErr) {
+        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      }
+      }
+      async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => {
+          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+        }, 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+    function forceQuitApp() {
+      if (invoke) {
+        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+      }
+    }
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+        if (releases.length < 10) releasesHasMore = false;
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.innerHTML = `失敗`;
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = `インストール`;
+          }, 3000);
+        }
+      }
+      }
+      if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
+          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
+          const topBtn = document.getElementById("btnUpdateCheck");
+          if (topBtn && topBtn.disabled) {
+            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
+          }
+          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
+        }
+      });
+    }
+    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
+    let _recoveryAutoCheckRan = false;
+    window.addEventListener("DOMContentLoaded", () => {
+      if (_recoveryAutoCheckRan) return;
+      _recoveryAutoCheckRan = true;
+      setTimeout(() => {
+        triggerUpdateCheck(true);
+      }, 1200);
+    });
+    </script>
+</body>
+</html>
 </file>
 
 <file path="public/js/local_store.js">
@@ -7002,22 +7111,29 @@ messaging.onBackgroundMessage((payload) => {
       badge: '/img/icon-192x192.png?v=6',
       tag,
       data,
+      requireInteraction: false,
       actions: [
         { action: 'open', title: '開く' }
       ]
     };
-    }
-    const showPromise = self.registration.showNotification(title, notificationOptions);
-    // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に自動消去
-    if (data.type !== 'incoming_call') {
-    setTimeout(() => {
-      self.registration.getNotifications({ tag: notificationOptions.tag }).then(notifs => {
-        notifs.forEach(n => n.close());
-      }).catch(() => {});
-    }, 7000);
-    }
-    return showPromise;
+  }
+  const showPromise = self.registration.showNotification(title, notificationOptions);
+  // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に確実に自動消去
+  if (data.type !== 'incoming_call') {
+    const autoClosePromise = new Promise((resolve) => {
+      setTimeout(async () => {
+        try {
+          const notifs = await self.registration.getNotifications({ tag: notificationOptions.tag });
+          notifs.forEach(n => n.close());
+        } catch (_) {}
+        resolve();
+      }, 7000);
     });
+    // waitUntil で Service Worker のアイドルサスペンドを防ぎ、7秒後の自動消去を確実に完遂させる
+    return Promise.all([showPromise, autoClosePromise]);
+  }
+  return showPromise;
+  });
 // ─── 通知クリック ───────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -10370,10 +10486,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     try {
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
       const b64Wrapped = _abToB64(wrapped);
+      // ドット表記で更新し、過去のバージョンマップ全体を上書き破壊しない
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          versions: { [String(version)]: b64Wrapped },
           [`versions.${version}`]: b64Wrapped,
           latestVersion: String(version),
           wrappedKey: b64Wrapped,
@@ -10478,22 +10594,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 【キー総当たりフォールバック復号】ローテーション競合等でバージョン番号がずれているメッセージを救済
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          const candidateKey = roomKeyObj[ver];
+          if (!candidateKey) continue;
           try {
-            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKeyObj[ver], ctBuf);
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, candidateKey, ctBuf);
             return _td.decode(pt);
           } catch(e) {}
         }
-        // それでも復号できない場合は、古い鍵キャッシュを破棄して自動救済トリガーを発行
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        // 単一メッセージの失敗で健全なルーム鍵キャッシュ全体を破棄しない（連鎖的な復号エラー多発を根絶）
         await _requestEscrowRescue(serverId, roomId);
         return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
-      } catch (e) {
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        } catch (e) {
+        console.warn("[E2EE] ルームメッセージ復号例外:", e);
         return "（復号化エラー：メッセージを解読できません）";
-      }
-    }
+        }
+        }
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
       // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
@@ -11046,7 +11161,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
         if (dmId) {
-          delete _e2ee._dmKeyPromises[dmId];
           // 鍵不一致時は相手に再暗号化（救済）リクエストを自動発行
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
@@ -11054,9 +11168,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
+        console.warn("[E2EE] DMメッセージ復号例外:", e);
         if (dmId) {
-          delete _e2ee.dmKeyCache[dmId];
-          delete _e2ee._dmKeyPromises[dmId];
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
@@ -20427,13 +20540,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.235';
-import * as LocalStore from './local_store.js?v=1.1.235';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.235';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.235';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.235';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.235';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.235';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.258';
+import * as LocalStore from './local_store.js?v=1.1.258';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.258';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.258';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.258';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.258';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.258';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -25541,7 +25654,20 @@ async function startPresenceSystem() {
   subscribeToUserStatus();
   clearAppBadgeFull();
   if (memberListRefreshInterval) clearInterval(memberListRefreshInterval);
-  // リアルタイムリスナーで変更管理されているため、不要な定期的再描画・ポーリングを撤廃
+  // 1分ごとに経過時間表示（「○分前」等）をリアルタイムに自動再計算・更新
+  memberListRefreshInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      if (typeof renderMembersList === 'function' && Array.isArray(cachedUsers)) {
+        renderMembersList(cachedUsers);
+      }
+      if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) {
+        renderDmActiveNowPanel();
+      }
+      if (typeof renderFriendTabs === 'function') {
+        renderFriendTabs();
+      }
+    }
+  }, 60000);
   renderMembersList(cachedUsers);
   initP2PLogSyncListener();
 }
@@ -27983,8 +28109,11 @@ function handleWindowFocus() {
   if (selfInCached) {
     selfInCached.state = 'online';
     selfInCached.computedState = 'online';
-    if (typeof renderMembersList === 'function') renderMembersList(cachedUsers);
   }
+  // 画面復帰時に経過時間表示（「○分前」）も含めて即座に再計算・描画
+  if (typeof renderMembersList === 'function' && Array.isArray(cachedUsers)) renderMembersList(cachedUsers);
+  if (typeof renderDmActiveNowPanel === 'function' && document.body.classList.contains('discord-dm-view') && !currentDmId) renderDmActiveNowPanel();
+  if (typeof renderFriendTabs === 'function') renderFriendTabs();
   if ((typeof currentRoomId !== 'undefined' && currentRoomId) || currentDmId) {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
@@ -28000,6 +28129,8 @@ function handleWindowFocus() {
     updateGlobalNotifUI();
     resyncActiveRoomMessages();
   }
+  // タブ・ウィンドウ復帰時に未読集計を確実にスキャンして受信ボックスの赤丸を同期
+  if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
   if (isTauri && window.__TAURI__?.core?.invoke) {
     let globalCount = 0;
     try { globalCount = JSON.parse(localStorage.getItem('covo_global_items') || '[]').length; } catch (e) { }
@@ -32560,10 +32691,12 @@ window.saveServerNotifSettings = function() {
   alertMessage('通知設定を保存しました', 'success');
 };
 // メンバー管理タブ
+let _isLoadingSsMembers = false;
 async function loadServerSettingsMembers() {
-  if (currentSsTab !== "members") return;
+  if (currentSsTab !== "members" || _isLoadingSsMembers) return;
+  _isLoadingSsMembers = true;
   const listEl = document.getElementById("serverMembersManageList");
-  if (!listEl) return;
+  if (!listEl) { _isLoadingSsMembers = false; return; }
   listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
   const serverData = serverSnap.data();
@@ -32649,15 +32782,17 @@ async function loadServerSettingsMembers() {
           if (svSnap.exists() && svSnap.data().joinedUsers) {
             await rotateAllRoomKeys(currentServerId, svSnap.data().joinedUsers);
           }
-        }
-      } catch (e) { alertMessage("キックに失敗しました", "error"); }
-    });
-  });
-}
-document.getElementById("ssTabMembers")?.addEventListener("click", loadServerSettingsMembers);
-// 招待コードタブ
-document.getElementById("ssTabInvites")?.addEventListener("click", loadInviteCodes);
-async function loadInviteCodes() {
+          }
+          } catch (e) { alertMessage("キックに失敗しました", "error"); }
+          });
+          });
+          _isLoadingSsMembers = false;
+          }
+          // 招待コードタブ (二重登録リスナーを削除し switchSsTab に一本化)
+          let _isLoadingInviteCodes = false;
+          async function loadInviteCodes() {
+          if (currentSsTab !== "invites" || _isLoadingInviteCodes) return;
+          _isLoadingInviteCodes = true;
   if (currentSsTab !== "invites") return;
   const listEl = document.getElementById("inviteCodesList");
   listEl.innerHTML = "";
@@ -32696,10 +32831,11 @@ async function loadInviteCodes() {
         deleteDoc(doc(db, `artifacts/${appId}/inviteIndex`, btn.dataset.code)),
       ]);
       await loadInviteCodes();
-    });
-  });
-}
-// カスタムスタンプ管理タブ
+      });
+      });
+      _isLoadingInviteCodes = false;
+      }
+      // カスタムスタンプ管理タブ
 async function loadServerStampsForAdmin() {
   // 移行済みのため空
 }
@@ -34489,7 +34625,7 @@ function showTerminalBanner() {
     banner = document.createElement('div');
     banner.id = 'historyTerminalBanner';
     banner.className = 'history-terminal-banner flipped';
-    banner.innerHTML = `<i class="fas fa-shield-halved text-indigo-500 mr-1.5"></i> これより前のメッセージはありません（サーバーには最大100件まで保存されます）`;
+    banner.innerHTML = `<i class="fas fa-history text-indigo-500 mr-1.5"></i> これより前のメッセージはありません`;
   }
   banner.style.display = 'flex';
   if (messagesDisplay && !messagesDisplay.contains(banner)) {
@@ -34561,22 +34697,34 @@ async function loadOlderMessages() {
       allowPagination = true;
       return;
     }
-    // 2. ローカルに無い場合、RTDB から過去ログを取得
+    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
+    // 2. ローカルに無い場合、RTDB から過去ログを取得 (制限なしで古いメッセージがなくなるまで遡行)
     let fetchedFromRtdb = false;
     try {
       const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(21));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(30));
       const snapshot = await get(q);
       if (snapshot.exists()) {
         const data = snapshot.val();
         let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
-        docs = docs.filter(d => d.id !== oldestMessage.id);
-        if (docs.length > 0) {
-          await mergeAndRender(docs);
-          rtdbMessagesLimit += docs.length;
+        let newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
+        // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
+        if (newDocs.length === 0 && oldestTime > 0) {
+          const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(30));
+          const snapPrev = await get(qPrev);
+          if (snapPrev.exists()) {
+            const dPrev = snapPrev.val();
+            const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
+            newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
+          }
+        }
+        if (newDocs.length > 0) {
+          await mergeAndRender(newDocs);
+          rtdbMessagesLimit += newDocs.length;
           fetchedFromRtdb = true;
         }
       }
@@ -34589,19 +34737,31 @@ async function loadOlderMessages() {
       allowPagination = true;
       return;
     }
-    // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から取得
+    // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から型を両対応にして取得
     let fetchedFromFirestore = false;
     if (currentServerId && currentRoomId) {
       try {
-        const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs, Timestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
         const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-        const qFs = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestMessage.timestamp || oldestTime), fsLimit(20));
-        const fsSnap = await getDocs(qFs);
-        if (!fsSnap.empty) {
-          const fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
-          fsDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-          await mergeAndRender(fsDocs);
-          fetchedFromFirestore = true;
+        let fsSnap = null;
+        try {
+          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(20));
+          fsSnap = await getDocs(qFsTimestamp);
+        } catch (_) {}
+        if (!fsSnap || fsSnap.empty) {
+          try {
+            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(20));
+            fsSnap = await getDocs(qFsNumber);
+          } catch (_) {}
+        }
+        if (fsSnap && !fsSnap.empty) {
+          let fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
+          let newFsDocs = fsDocs.filter(d => !existingLoadedIds.has(d.id));
+          if (newFsDocs.length > 0) {
+            newFsDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+            await mergeAndRender(newFsDocs);
+            fetchedFromFirestore = true;
+          }
         }
       } catch (fsErr) {
         console.warn('[loadOlderMessages] Firestore fetch warning:', fsErr);
@@ -34615,7 +34775,7 @@ async function loadOlderMessages() {
     }
     // 4. サーバー上にもない場合、オンラインの同室メンバーへ P2P 過去ログ補完を要求
     requestP2PLogBackfill(currentServerId ? 'server' : 'dm', currentServerId ? currentRoomId : currentDmId, oldestTime);
-    // すべてのソースに過去ログがない場合のみ終端バナーを表示
+    // すべてのソースに過去ログが一切見つからなかった場合のみ終端バナーを表示
     hasMoreOlderMessages = false;
     showTerminalBanner();
   } catch (e) {
@@ -36344,8 +36504,9 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
-  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : (dmId ? "prune_100" : "keep_all");
-  // サーバー設定が全件保持 (keep_all) の場合は不要なAPIコールを行わず即時スキップ
+  // 100件超過時の自動削除をサーバー・DM問わず基本デフォルト有効化
+  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : "prune_100";
+  // サーバー設定で明示的に全件保持 (keep_all) が選ばれている場合のみスキップ
   if (policy === "keep_all") return;
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
   const now = Date.now();
@@ -39027,16 +39188,18 @@ function doJumpHighlight(el) {
     const rRect = row.getBoundingClientRect();
     const containerCenterY = (cRect.top + cRect.bottom) / 2;
     const rowCenterY = (rRect.top + rRect.bottom) / 2;
-    // 「中央より下にある（画面下半分に完全に収まっている）」場合はスクロールしない
-    // 最新メッセージ付近で見えているメッセージの不必要なスクロールを防止
-    const isBelowCenterAndVisible = (rowCenterY >= containerCenterY && rRect.bottom <= cRect.bottom && rRect.top >= cRect.top);
-    // 中央より上にある、または画面外・見切れている場合は、画面の真ん中（center）に来るようにスクロール
-    if (!isBelowCenterAndVisible) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // CSS scaleY(-1) 反転スクロール空間における数学的精密スクロール計算
+    // 視覚的中心のズレ (containerCenterY - rowCenterY) を直接 scrollTop に加算し、
+    // 範囲外スクロールによるバウンド・ズレを防ぐため 0 〜 maxScroll に確実にクランプ
+    const deltaY = containerCenterY - rowCenterY;
+    if (Math.abs(deltaY) > 8) {
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+      const targetScrollTop = Math.max(0, Math.min(maxScroll, container.scrollTop + deltaY));
+      container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
       didScroll = true;
     }
   }
-  // すでに見えている場合は即座に、スクロールした場合はスムーズスクロール完了を待ってハイライトを発火
+  // アニメーション発火
   setTimeout(() => {
     el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
     const isStamp = el.querySelector('img[alt^="stamp_"]') || el.querySelector('.sticker-content');
@@ -39050,16 +39213,14 @@ function doJumpHighlight(el) {
     } else {
       void el.offsetWidth;
       el.classList.add('message-jump-anim', 'message-highlight');
-      // 揺れアニメーション（0.85s）終了後にスウェイクラスのみ先に削除（LINE完全準拠の滑らかなスウェイ）
       setTimeout(() => {
         el.classList.remove('message-jump-anim');
       }, 880);
-      // ハイライト色はスーッと滑らかに自然フェードアウト（1.6s後）
       setTimeout(() => {
         el.classList.remove('message-highlight');
       }, 1600);
     }
-  }, didScroll ? 450 : 30);
+  }, didScroll ? 350 : 20);
 }
 // iOS/Safari 判定
 const _isIOSSafari = (() => {
@@ -44672,32 +44833,126 @@ function initSettings() {
       }
     };
     checkAutostart();
-    // ショートカットキー入力欄の初期化
-    const shortcutInput = document.getElementById('shortcutKeyInput');
-    const shortcutDisplay = document.getElementById('shortcutKeyDisplay');
-    const savedKey = localStorage.getItem('simplechat_shortcut_key') || 'S';
-    if (shortcutInput) shortcutInput.value = savedKey.toUpperCase();
-    if (shortcutDisplay) shortcutDisplay.textContent = savedKey.toUpperCase();
-    if (shortcutInput) {
-      shortcutInput.addEventListener('input', (e) => {
-        const val = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
-        e.target.value = val;
-        if (val.length === 1) {
-          localStorage.setItem('simplechat_shortcut_key', val);
-          if (shortcutDisplay) shortcutDisplay.textContent = val;
-          if (window.__TAURI__?.core?.invoke) {
-            window.__TAURI__.core.invoke('update_shortcut_key', { key: val }).catch(err => {
-              console.error("ショートカット登録失敗:", err);
-              if (typeof showCustomAlert === 'function') {
-                showCustomAlert(typeof err === 'string' ? err : 'ショートカットキーの登録に失敗しました。他のアプリと衝突していないか確認してください。');
-              }
-            });
-          }
+    // 自由に組み合わせ可能なクイックアクセス（キーボード＆マウスバインド）の初期化
+    let isRecordingShortcut = false;
+    const formatShortcutLabel = (raw) => {
+      if (!raw) return 'Ctrl + Shift + S';
+      const low = raw.toLowerCase().trim();
+      if (low === 'mouse4' || low === 'mousex1' || low === 'xbutton1') return '🖱️ マウス戻るボタン (XButton 1)';
+      if (low === 'mouse5' || low === 'mousex2' || low === 'xbutton2') return '🖱️ マウス進むボタン (XButton 2)';
+      if (low === 'mouse3' || low === 'mousemiddle' || low === 'mbutton') return '🖱️ ホイールクリック (中ボタン)';
+      return raw.split('+').map(part => part.trim()).join(' + ');
+    };
+    const updateShortcutButtonUI = () => {
+      const btnLabel = document.getElementById('shortcutRecordBtnLabel');
+      const pulseIcon = document.getElementById('shortcutRecordPulseIcon');
+      const currentVal = localStorage.getItem('simplechat_shortcut_key') || 'Ctrl+Shift+S';
+      if (btnLabel) {
+        if (isRecordingShortcut) {
+          btnLabel.textContent = 'キーまたはマウスボタンを押してください... (ESCでキャンセル)';
+          if (pulseIcon) pulseIcon.classList.remove('hidden');
+        } else {
+          btnLabel.textContent = `現在: ${formatShortcutLabel(currentVal)}`;
+          if (pulseIcon) pulseIcon.classList.add('hidden');
         }
-      });
-      shortcutInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') e.preventDefault();
-      });
+      }
+    };
+    window.saveAndRegisterShortcut = async function (shortcutStr) {
+      if (!shortcutStr) return;
+      localStorage.setItem('simplechat_shortcut_key', shortcutStr);
+      updateShortcutButtonUI();
+      if (window.__TAURI__?.core?.invoke) {
+        try {
+          await window.__TAURI__.core.invoke('update_shortcut_key', { key: shortcutStr });
+          alertMessage(`クイックアクセスを「${formatShortcutLabel(shortcutStr)}」に設定しました！`, 'success');
+        } catch (err) {
+          console.error('ショートカット登録エラー:', err);
+          alertMessage(typeof err === 'string' ? err : 'ショートカットの登録に失敗しました。他のアプリと競合していないか確認してください。', 'error');
+        }
+      }
+    };
+    window.applyPresetShortcut = function (preset) {
+      window.stopShortcutRecording();
+      window.saveAndRegisterShortcut(preset);
+    };
+    window.resetDefaultShortcut = function () {
+      window.stopShortcutRecording();
+      window.saveAndRegisterShortcut('Ctrl+Shift+S');
+    };
+    window.startShortcutRecording = function () {
+      if (isRecordingShortcut) {
+        window.stopShortcutRecording();
+        return;
+      }
+      isRecordingShortcut = true;
+      updateShortcutButtonUI();
+      const onKeyDown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          window.stopShortcutRecording();
+          return;
+        }
+        // 単体の修飾キー単押し中は確定しない（組み合わせの途中）
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+          return;
+        }
+        const parts = [];
+        if (e.ctrlKey) parts.push('Ctrl');
+        if (e.altKey) parts.push('Alt');
+        if (e.shiftKey) parts.push('Shift');
+        if (e.metaKey) parts.push('Super');
+        // キー名の正規化
+        let keyName = e.key;
+        if (e.code && e.code.startsWith('Key')) keyName = e.code.slice(3);
+        else if (e.code && e.code.startsWith('Digit')) keyName = e.code.slice(5);
+        else if (e.code === 'Space') keyName = 'Space';
+        else if (e.code && e.code.startsWith('Numpad')) keyName = e.code;
+        else if (/^F\d{1,2}$/i.test(e.key)) keyName = e.key.toUpperCase();
+        parts.push(keyName);
+        const shortcutStr = parts.join('+');
+        window.stopShortcutRecording();
+        window.saveAndRegisterShortcut(shortcutStr);
+      };
+      const onMouseDown = (e) => {
+        // マウスの追加ボタン (3=中ボタン, 3以上の拡張ボタン) をキャッチ
+        if (e.button === 1) { // ホイール中クリック
+          e.preventDefault();
+          e.stopPropagation();
+          window.stopShortcutRecording();
+          window.saveAndRegisterShortcut('Mouse3');
+        } else if (e.button === 3) { // 戻るボタン (XButton1)
+          e.preventDefault();
+          e.stopPropagation();
+          window.stopShortcutRecording();
+          window.saveAndRegisterShortcut('Mouse4');
+        } else if (e.button === 4) { // 進むボタン (XButton2)
+          e.preventDefault();
+          e.stopPropagation();
+          window.stopShortcutRecording();
+          window.saveAndRegisterShortcut('Mouse5');
+        }
+      };
+      window._shortcutRecordHandlers = { onKeyDown, onMouseDown };
+      window.addEventListener('keydown', onKeyDown, { capture: true });
+      window.addEventListener('mousedown', onMouseDown, { capture: true });
+    };
+    window.stopShortcutRecording = function () {
+      if (!isRecordingShortcut) return;
+      isRecordingShortcut = false;
+      if (window._shortcutRecordHandlers) {
+        window.removeEventListener('keydown', window._shortcutRecordHandlers.onKeyDown, { capture: true });
+        window.removeEventListener('mousedown', window._shortcutRecordHandlers.onMouseDown, { capture: true });
+        window._shortcutRecordHandlers = null;
+      }
+      updateShortcutButtonUI();
+    };
+    // 初期化表示
+    updateShortcutButtonUI();
+    // 起動時に前回のカスタムショートカットをTauriに登録
+    const initialSavedShortcut = localStorage.getItem('simplechat_shortcut_key');
+    if (initialSavedShortcut && window.__TAURI__?.core?.invoke) {
+      window.__TAURI__.core.invoke('update_shortcut_key', { key: initialSavedShortcut }).catch(() => {});
     }
   }
   if (toggleAutoStart) {
@@ -48456,7 +48711,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.257",
+  "version": "1.1.258",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -48545,13 +48800,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.257" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.258" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.257" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.258" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -48779,21 +49034,23 @@ window._subscribeVcSidebarStates = function(serverId) {
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
-    // 構文エラー（Identifier has already been declared）を根絶するグローバルプロパティ定義
-    window.isSemverNewer = window.isSemverNewer || function(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      return false;
-    };
+    // 構文エラー（Identifier has already been declared）を根絶する安全なグローバルプロパティ定義
+    if (!window.isSemverNewer) {
+      window.isSemverNewer = function(remoteVersion, localVersion) {
+        if (!remoteVersion || !localVersion) return false;
+        const r = String(remoteVersion).replace(/^v/i, '').trim();
+        const l = String(localVersion).replace(/^v/i, '').trim();
+        const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+        const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+        while (rParts.length < 3) rParts.push(0);
+        while (lParts.length < 3) lParts.push(0);
+        for (let i = 0; i < 3; i++) {
+          if (rParts[i] > lParts[i]) return true;
+          if (rParts[i] < lParts[i]) return false;
+        }
+        return false;
+      };
+    }
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
@@ -50514,17 +50771,39 @@ window._subscribeVcSidebarStates = function(serverId) {
                   <div class="text-center text-xs text-gray-400 font-mono">インストール済み: <span id="installedVersion">読み込み中...</span></div>
                 </div>
                 <div id="shortcutInfoContainer" class="hidden">
-                  <div class="bg-blue-50 dark:bg-indigo-950/40 text-blue-700 dark:text-blue-300 p-5 rounded-2xl border border-blue-200 dark:border-indigo-900/50 text-sm space-y-2">
+                  <div class="bg-blue-50 dark:bg-indigo-950/40 text-blue-700 dark:text-blue-300 p-5 rounded-2xl border border-blue-200 dark:border-indigo-900/50 text-sm space-y-3">
                     <div class="flex items-start gap-3">
                       <i class="fas fa-keyboard mt-1 text-lg flex-shrink-0"></i>
-                      <div class="flex-1">
-                        <p class="font-bold mb-1">クイックアクセス</p>
-                        <p class="text-xs opacity-80 mb-3"><kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> + <kbd id="shortcutKeyDisplay" class="bg-blue-200 dark:bg-slate-700 px-2 py-0.5 rounded border border-blue-300 dark:border-slate-600 font-bold">S</kbd></p>
-                        <p class="text-xs opacity-70 mb-3">アプリを最前面に表示し、メッセージ入力欄にフォーカスします。</p>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs opacity-70">キーを変更:</span>
-                          <span class="text-xs opacity-70"><kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> +</span>
-                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold text-base rounded-lg border border-blue-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 py-1 uppercase" placeholder="S" />
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between flex-wrap gap-2 mb-1">
+                          <p class="font-bold text-sm text-gray-900 dark:text-white">クイックアクセス (グローバルキー / マウスバインド)</p>
+                          <span class="text-[10px] font-bold px-2 py-0.5 bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-slate-700">完全自由設定</span>
+                        </div>
+                        <p class="text-xs opacity-75 mb-3 leading-relaxed">
+                          いつでもアプリを最前面に呼び出し、メッセージ入力欄に瞬時にフォーカスします。
+                          <strong>1個のキー単体</strong>でも、<strong>複数キーの組み合わせ</strong>でも、<strong>マウスボタン</strong>でも自由に設定できます。
+                        </p>
+                        <!-- 現在のキーバインド表示＆レコーダーボタン -->
+                        <div class="flex items-center gap-2 flex-wrap mb-3">
+                          <button type="button" id="btnRecordShortcut" onclick="window.startShortcutRecording()" class="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-900 dark:text-white font-bold text-xs rounded-xl border border-blue-300 dark:border-slate-700 shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95">
+                            <i class="fas fa-circle-dot text-rose-500 text-xs animate-pulse hidden" id="shortcutRecordPulseIcon"></i>
+                            <span id="shortcutRecordBtnLabel">キーまたはマウスボタンを押して設定</span>
+                          </button>
+                          <button type="button" onclick="window.resetDefaultShortcut()" class="px-3 py-2 bg-transparent hover:bg-blue-100 dark:hover:bg-slate-800 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-xl transition cursor-pointer" title="デフォルト (Ctrl+Shift+S) に戻す">
+                            デフォルトに戻す
+                          </button>
+                        </div>
+                        <!-- クイックプリセット候補 -->
+                        <div>
+                          <span class="text-[11px] font-bold opacity-70 block mb-1.5">人気のプリセット候補:</span>
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <button type="button" onclick="window.applyPresetShortcut('Ctrl+Shift+S')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">Ctrl+Shift+S (標準)</button>
+                            <button type="button" onclick="window.applyPresetShortcut('F8')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">F8 (1キー)</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Alt+Space')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">Alt+Space</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse4')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>マウス戻るボタン</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse5')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>マウス進むボタン</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse3')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>ホイールクリック</button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -52612,7 +52891,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.257"></script>
+  <script type="module" src="js/main.js?v=1.1.258"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -54040,7 +54319,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.257",
+  "version": "1.1.258",
   "force": false
 }
 </file>

@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.256" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.257" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.256" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.257" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -282,24 +282,45 @@
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
+    // 構文エラー（Identifier has already been declared）を根絶する安全なグローバルプロパティ定義
+    if (!window.isSemverNewer) {
+      window.isSemverNewer = function(remoteVersion, localVersion) {
+        if (!remoteVersion || !localVersion) return false;
+        const r = String(remoteVersion).replace(/^v/i, '').trim();
+        const l = String(localVersion).replace(/^v/i, '').trim();
+        const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+        const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+        while (rParts.length < 3) rParts.push(0);
+        while (lParts.length < 3) lParts.push(0);
+        for (let i = 0; i < 3; i++) {
+          if (rParts[i] > lParts[i]) return true;
+          if (rParts[i] < lParts[i]) return false;
+        }
+        return false;
+      };
+    }
+
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
       if (!panel) return;
-      // WebView2初期化ラグでも確実に判定できる堅牢なデスクトップ環境判定
       const isDesktop = Boolean(window.__TAURI__) || Boolean(window.__TAURI_INTERNALS__) || location.origin.includes('localhost') || location.protocol === 'tauri:';
       const desktopView = document.getElementById('emergencyDesktopView');
       const webView = document.getElementById('emergencyWebView');
       const modalTitle = document.getElementById('emergencyModalTitle');
       const modalSub = document.getElementById('emergencyModalSubtitle');
       const headerIcon = document.getElementById('emergencyHeaderIcon');
+      const stopReasonEl = document.getElementById('emergencyStopReasonText');
 
       if (isDesktop) {
         if (desktopView) desktopView.classList.remove('hidden');
         if (webView) webView.classList.add('hidden');
-        if (modalTitle) modalTitle.textContent = "アプリケーション保守 / 自動修復中";
-        if (modalSub) modalSub.textContent = "起動時の問題を検知しました。裏で自動修復と最新アップデートを確認しています。";
+        if (modalTitle) modalTitle.textContent = "アプリケーション保守 / 安全停止中";
+        if (modalSub) modalSub.textContent = "起動処理でエラーを検知しました。以下の操作で直前の安定版に戻すか、自動修復を行えます。";
         if (headerIcon) headerIcon.className = "fas fa-wrench";
-        // Windows版: 自動でバックグラウンドアップデート照合を開始
+        if (stopReasonEl && errMsg) {
+          stopReasonEl.textContent = `停止理由: ${String(errMsg).slice(0, 180)} (直前のアップデートまたは一時的な破損の可能性があります)`;
+        }
+        // Windows版: 直前の安定版へのロールバック情報と修復確認をバックグラウンド実行
         emergencyAutoCheckUpdateAndRepair();
       } else {
         if (webView) webView.classList.remove('hidden');
@@ -307,7 +328,6 @@
         if (modalTitle) modalTitle.textContent = "サービス一時待機 / メンテナンス中";
         if (modalSub) modalSub.textContent = "現在サーバーのメンテナンスを行っているか、一時的に通信が不安定な状態です。管理者が対応しておりますので、しばらくそのままお待ちください。";
         if (headerIcon) headerIcon.className = "fas fa-circle-info";
-        // Web版: 復旧を監視して自動でチャットに復帰するポーリングタイマーを開始
         startWebAutoReconnectPolling();
       }
 
@@ -319,92 +339,130 @@
       }
     };
 
+    // 1つ前の安定バージョンへ戻す (ロールバック実行)
+    window.emergencyRollbackToPreviousVersion = async function(btn) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>直前の安定版を取得中...'; }
+      const invoke = window.__TAURI__?.core?.invoke;
+      try {
+        let curVer = "1.0.0";
+        try {
+          const vRes = await fetch("version.json", { cache: "no-store" });
+          if (vRes.ok) curVer = (await vRes.json()).version || curVer;
+        } catch (_) {}
+
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10', { cache: 'no-store' });
+        if (!ghRes.ok) throw new Error(`GitHub API error: ${ghRes.status}`);
+        const releases = await ghRes.json();
+
+        // 現在のバージョンより前の直前の安定版リリースを特定
+        const cleanCur = curVer.replace(/^v/i, '').trim();
+        let targetPrevRel = null;
+        for (let i = 0; i < releases.length; i++) {
+          const relTag = (releases[i].tag_name || "").replace(/^v/i, '').trim();
+          const hasExe = releases[i].assets?.some(a => a.name?.endsWith(".exe"));
+          if (hasExe) {
+            if (relTag === cleanCur) {
+              // 現在バージョンの次の要素が1つ前
+              if (i + 1 < releases.length) targetPrevRel = releases[i + 1];
+              break;
+            } else if (window.isSemverNewer(cleanCur, relTag) && !targetPrevRel) {
+              targetPrevRel = releases[i];
+              break;
+            }
+          }
+        }
+        if (!targetPrevRel && releases.length > 1) {
+          targetPrevRel = releases[1]; // フォールバック: リストの2番目
+        }
+        if (!targetPrevRel) throw new Error("直前の安定版リリースが見つかりませんでした");
+
+        const exeAsset = targetPrevRel.assets?.find(a => a.name?.endsWith(".exe"));
+        if (!exeAsset || !exeAsset.browser_download_url) throw new Error("インストーラー (.exe) が見つかりませんでした");
+
+        const prevTag = targetPrevRel.tag_name;
+        // ロールバック使用中フラグとバージョンロックをセット（起動時の再クラッシュ防止）
+        localStorage.setItem('covo_rolled_back_from_ver', curVer);
+        localStorage.setItem('covo_ignore_force_update', '1');
+
+        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>${prevTag} をダウンロード中...`;
+        if (invoke) {
+          await invoke('silent_install_past_version', { url: exeAsset.browser_download_url, tag: prevTag });
+          if (btn) btn.innerHTML = `<i class="fas fa-check text-emerald-400"></i> ${prevTag} へ復旧完了（再起動中...）`;
+        } else {
+          window.open(exeAsset.browser_download_url, '_blank');
+          if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザでダウンロード開始`; }
+        }
+      } catch (err) {
+        alert("ロールバック失敗: " + (err.message || err));
+        if (btn) { btn.disabled = false; btn.innerHTML = `<i class="fas fa-clock-rotate-left"></i> 1つ前のバージョンに戻して起動`; }
+      }
+    };
+
     // Windows版: 自動バックグラウンドアップデート＆整合性修復ルーチン
     let _emergencyAutoCheckRunning = false;
     async function emergencyAutoCheckUpdateAndRepair() {
       if (_emergencyAutoCheckRunning) return;
       _emergencyAutoCheckRunning = true;
       const titleEl = document.getElementById('emergencyAutoCheckTitle');
-      const descEl = document.getElementById('emergencyAutoCheckDesc');
       const barEl = document.getElementById('emergencyAutoCheckProgressBar');
       const pctEl = document.getElementById('emergencyAutoCheckPercent');
       const spinner = document.getElementById('emergencyAutoCheckSpinner');
+      const rollbackCard = document.getElementById('emergencyRollbackCard');
+      const fixedBanner = document.getElementById('emergencyFixedUpdateBanner');
+      const fixedDesc = document.getElementById('emergencyFixedUpdateDesc');
+      const prevBadge = document.getElementById('emergencyPrevVerBadge');
 
-      const setProg = (pct, title, desc) => {
+      const setProg = (pct, title) => {
         if (barEl) barEl.style.width = `${pct}%`;
         if (pctEl) pctEl.textContent = `${pct}%`;
         if (titleEl && title) titleEl.textContent = title;
-        if (descEl && desc) descEl.textContent = desc;
       };
 
-      setProg(20, "最新プログラムの確認中...", "最新の修正プログラムがあるか確認しています...");
+      setProg(20, "更新プログラムの確認中...");
       const invoke = window.__TAURI__?.core?.invoke;
-      let updateFound = false;
+      const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
 
-      // 1. 最新バージョンの照合 (Dual-Engine)
       try {
-        if (invoke) {
-          const metadata = await invoke('plugin:updater|check').catch(() => null);
-          if (metadata && (metadata.version || metadata.rid)) {
-            updateFound = true;
-            setProg(60, `最新版 (v${metadata.version}) をダウンロード中...`, "修正プログラムをダウンロードしています...");
-            try {
-              await invoke('plugin:updater|download_and_install', { rid: metadata.rid });
-              setProg(100, "修復アップデート準備完了", "再起動して修正プログラムを適用します...");
-              setTimeout(() => {
-                invoke('restart_app').catch(() => window.location.reload());
-              }, 1800);
-              return;
-            } catch (_) {}
+        let curVer = "1.0.0";
+        try {
+          const vRes = await fetch("version.json", { cache: "no-store" });
+          if (vRes.ok) curVer = (await vRes.json()).version || curVer;
+        } catch (_) {}
+
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (ghRes.ok) {
+          const rels = await ghRes.json();
+          if (Array.isArray(rels) && rels.length > 0) {
+            const latest = rels[0];
+            const latestTag = latest.tag_name || "";
+            const isNewer = window.isSemverNewer(latestTag, curVer);
+
+            // ★ロールバック使用中の場合に、修正版の最新アプデを案内
+            if (rolledBackFrom && window.isSemverNewer(latestTag, rolledBackFrom)) {
+              if (fixedBanner) fixedBanner.classList.remove('hidden');
+              if (fixedDesc) {
+                fixedDesc.textContent = `以前エラーが発生したバージョン (${rolledBackFrom}) の問題が修正された最新バージョン (${latestTag}) が公開されました！`;
+              }
+              const applyFixedBtn = document.getElementById('emergencyApplyFixedBtn');
+              if (applyFixedBtn) {
+                applyFixedBtn.innerHTML = `<i class="fas fa-sparkles mr-1"></i>修正版 (${latestTag}) にアップデート`;
+              }
+            }
+
+            // 直前のバージョン名バッジ更新
+            if (rels.length > 1 && prevBadge) {
+              prevBadge.textContent = `${rels[1].tag_name} へ復帰`;
+            }
           }
         }
       } catch (_) {}
 
-      // 2. GitHub Releases API 直接フォールバック
-      if (!updateFound) {
-        try {
-          let curVer = window.__covo_version || "1.0.0";
-          try {
-            const vRes = await fetch("version.json", { cache: "no-store" });
-            if (vRes.ok) curVer = (await vRes.json()).version || curVer;
-          } catch (_) {}
-          const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-          if (ghRes.ok) {
-            const rels = await ghRes.json();
-            if (Array.isArray(rels) && rels.length > 0) {
-              const latest = rels[0];
-              const latestTag = latest.tag_name || "";
-              const exe = latest.assets?.find(a => a.name?.endsWith(".exe"));
-              const isNewer = typeof isSemverNewer === 'function' ? isSemverNewer(latestTag, curVer) : (window.isSemverNewer ? window.isSemverNewer(latestTag, curVer) : false);
-              if (isNewer && exe && exe.browser_download_url && invoke) {
-                updateFound = true;
-                setProg(50, `最新版 (${latestTag}) をダウンロード中...`, "公式リリースからインストーラーを取得しています...");
-                let unlistenProg = null;
-                try {
-                  if (window.__TAURI__?.event?.listen) {
-                    unlistenProg = await window.__TAURI__.event.listen('download-progress', (e) => {
-                      if (e.payload?.progress) {
-                        setProg(Math.min(95, Math.round(50 + e.payload.progress * 0.45)), `ダウンロード中... (${e.payload.progress}%)`, `インストーラーを取得しています (${e.payload.progress}%)`);
-                      }
-                    });
-                  }
-                } catch (_) {}
-                await invoke('silent_install_past_version', { url: exe.browser_download_url, tag: latestTag });
-                if (unlistenProg) unlistenProg();
-                setProg(100, "ダウンロード完了", "最新版インストーラーを適用して再起動します...");
-                return;
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 3. アップデートがない場合は整合性チェック＆自己修復を自動実行
-      setProg(85, "データ整合性を診断中...", "キャッシュと一時データの整合性を検証しています...");
+      // 整合性自己チェック（キャッシュ・DB）
+      setProg(80, "データ整合性を診断中...");
       try {
         if ('indexedDB' in window) {
           const req = indexedDB.open('covo_local_db');
-          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 1200); });
+          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 800); });
         }
         if ('caches' in window) {
           const keys = await caches.keys();
@@ -412,16 +470,37 @@
         }
       } catch (_) {}
 
-      setProg(100, "自己修復スキャン完了", "プログラムは最新状態です。手動で操作するか再起動をお試しください。");
+      setProg(100, "診断完了 (手動で操作を選択してください)");
       if (spinner) spinner.className = "fas fa-check text-emerald-400";
       _emergencyAutoCheckRunning = false;
     }
 
     // 手動操作アクション群 (Windows / Web)
     window.emergencyApplyLatestUpdate = async function(btn) {
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>確認中...'; }
-      await emergencyAutoCheckUpdateAndRepair();
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>最新版を取得中...'; }
+      const invoke = window.__TAURI__?.core?.invoke;
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (!ghRes.ok) throw new Error("GitHub APIエラー");
+        const releases = await ghRes.json();
+        const latestRel = releases[0];
+        const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+        if (!exeAsset) throw new Error("インストーラーが見つかりません");
+
+        localStorage.removeItem('covo_rolled_back_from_ver');
+        localStorage.removeItem('covo_ignore_force_update');
+
+        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>ダウンロード中...`;
+        if (invoke) {
+          await invoke('silent_install_past_version', { url: exeAsset.browser_download_url, tag: latestRel.tag_name });
+          if (btn) btn.innerHTML = `再起動して適用中...`;
+        } else {
+          window.open(exeAsset.browser_download_url, '_blank');
+        }
+      } catch (err) {
+        alert("アップデートエラー: " + (err.message || err));
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
+      }
     };
 
     window.emergencyRunIntegrityRepair = async function(btn) {
@@ -856,27 +935,63 @@
       <div class="flex-1 overflow-y-auto space-y-4 pr-1">
         <!-- A. Windows デスクトップ版専用ビュー -->
         <div id="emergencyDesktopView" class="space-y-4">
+          <!-- 停止理由の率直な提示 -->
+          <div class="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs text-amber-200 leading-relaxed">
+            <div class="font-bold text-white flex items-center gap-2 mb-1">
+              <i class="fas fa-triangle-exclamation text-amber-400"></i> エラーを検知したため安全停止しました
+            </div>
+            <p id="emergencyStopReasonText">直近のアップデートまたは一時的な通信・データ不整合により、アプリの起動が中断されました。</p>
+          </div>
+
+          <!-- ★最優先救済アクション: 1つ前の安定バージョンへ戻す (ロールバック) -->
+          <div id="emergencyRollbackCard" class="p-4 bg-indigo-500/15 border border-indigo-500/35 rounded-2xl space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fas fa-rotate-left text-indigo-400"></i>
+                <span>1つ前の安定バージョンに戻しますか？</span>
+              </div>
+              <span id="emergencyPrevVerBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-indigo-300">安定版へ復帰</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              アップデート後に問題が起きた場合、直前の安定バージョンにロールバックしてそのまま正常に使用し続けることができます。
+            </p>
+            <button id="emergencyRollbackBtn" onclick="emergencyRollbackToPreviousVersion(this)" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
+              <i class="fas fa-clock-rotate-left"></i> <span id="emergencyRollbackBtnText">1つ前のバージョンに戻して起動</span>
+            </button>
+          </div>
+
+          <!-- ★ロールバック使用中専用: 修正版が届いた時の特別案内バナー -->
+          <div id="emergencyFixedUpdateBanner" class="hidden p-4 bg-emerald-500/15 border border-emerald-500/35 rounded-2xl space-y-2">
+            <div class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+              <i class="fas fa-circle-check"></i>
+              <span>不具合が修正された最新バージョンが公開されました！</span>
+            </div>
+            <div class="text-xs text-gray-200 leading-relaxed" id="emergencyFixedUpdateDesc">
+              以前エラーが発生したため1つ前のバージョンをご利用中ですが、問題が修正された最新バージョンが利用可能です。
+            </div>
+            <button id="emergencyApplyFixedBtn" onclick="emergencyApplyLatestUpdate(this)" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
+              <i class="fas fa-sparkles"></i> <span>修正された最新版にアップデート</span>
+            </button>
+          </div>
+
           <!-- 自動チェック・修復プログレスバー -->
-          <div id="emergencyAutoUpdateBanner" class="p-4 bg-indigo-500/10 border border-indigo-500/25 rounded-2xl space-y-2">
+          <div id="emergencyAutoUpdateBanner" class="p-3.5 bg-gray-800/60 border border-white/10 rounded-2xl space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="font-bold text-indigo-400 flex items-center gap-2">
+              <span class="font-bold text-gray-300 flex items-center gap-2">
                 <i id="emergencyAutoCheckSpinner" class="fas fa-spinner fa-spin text-indigo-400"></i>
-                <span id="emergencyAutoCheckTitle">裏で自動修復・最新アップデートを確認中...</span>
+                <span id="emergencyAutoCheckTitle">裏で修復プログラムの有無を確認中...</span>
               </span>
               <span id="emergencyAutoCheckPercent" class="font-mono text-gray-400 text-[11px]"></span>
             </div>
-            <div class="w-full bg-gray-800 rounded-full h-2 overflow-hidden border border-white/5">
+            <div class="w-full bg-gray-900 rounded-full h-1.5 overflow-hidden border border-white/5">
               <div id="emergencyAutoCheckProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 25%"></div>
-            </div>
-            <div id="emergencyAutoCheckDesc" class="text-[11px] text-gray-400">
-              最新の修正プログラムとプログラムファイルの整合性を自動スキャンしています。
             </div>
           </div>
 
           <!-- アクションカード群 -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button onclick="emergencyApplyLatestUpdate(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyApplyLatestUpdate(this)" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-cloud-arrow-up"></i>
               </div>
               <div class="min-w-0 flex-1">
@@ -884,26 +999,26 @@
                 <div class="text-[10px] text-gray-400 truncate">最新版を取得して修復</div>
               </div>
             </button>
-            <button onclick="emergencyRunIntegrityRepair(this)" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyRunIntegrityRepair(this)" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-shield-halved"></i>
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-bold text-white truncate">整合性チェック & 修復</div>
-                <div class="text-[10px] text-gray-400 truncate">データ破損の自己修復</div>
+                <div class="text-[10px] text-gray-400 truncate">破損データを自己修復</div>
               </div>
             </button>
-            <button onclick="emergencyOpenRecoveryEngine()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyOpenRecoveryEngine()" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-wrench"></i>
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-bold text-white truncate">リカバリーパネル起動</div>
-                <div class="text-[10px] text-gray-400 truncate">ロールバックと詳細管理</div>
+                <div class="text-[10px] text-gray-400 truncate">履歴一覧から選択</div>
               </div>
             </button>
-            <button onclick="emergencyOpenLogFolder()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
-              <div class="w-9 h-9 rounded-xl bg-slate-700 text-gray-300 flex items-center justify-center text-sm flex-shrink-0 group-hover:scale-105 transition-transform">
+            <button onclick="emergencyOpenLogFolder()" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+              <div class="w-8 h-8 rounded-xl bg-slate-700 text-gray-300 flex items-center justify-center text-xs flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i class="fas fa-folder-open"></i>
               </div>
               <div class="min-w-0 flex-1">
@@ -4210,7 +4325,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.256"></script>
+  <script type="module" src="js/main.js?v=1.1.257"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

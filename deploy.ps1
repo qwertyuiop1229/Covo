@@ -75,6 +75,14 @@ if (Test-Path $indexHtmlPath) {
     Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
 }
 
+$mainJsPath = Join-Path $PSScriptRoot 'public\js\main.js'
+if (Test-Path $mainJsPath) {
+    $mainRaw = [System.IO.File]::ReadAllText($mainJsPath, [System.Text.Encoding]::UTF8)
+    $mainPatched = $mainRaw -replace '(\.js)\?v=[0-9.]+', ('$1?v=' + $newVersion)
+    [System.IO.File]::WriteAllText($mainJsPath, $mainPatched, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "       Synced main.js internal import cache busters -> $newVersion" -ForegroundColor Green
+}
+
 $tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
 if (Test-Path $tauriConfPath) {
     $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)

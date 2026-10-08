@@ -21,12 +21,12 @@ self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
 self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
 self._notifEnabled  = true; // 通知トグル状態
 
-// 重複通知防止キャッシュ (iOS PWA多重受信防止)
+// 重複通知防止キャッシュ (iOS PWA多重受信防止・30秒ウィンドウ)
 const _recentNotifs = new Map();
 function _isDuplicate(key) {
   const now = Date.now();
   for (const [k, time] of _recentNotifs.entries()) {
-    if (now - time > 15000) _recentNotifs.delete(k);
+    if (now - time > 30000) _recentNotifs.delete(k);
   }
   if (_recentNotifs.has(key)) return true;
   _recentNotifs.set(key, now);

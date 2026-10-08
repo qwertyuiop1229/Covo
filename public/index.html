@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.257" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.258" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.257" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.258" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -282,21 +282,23 @@
         (s.includes('unexpected token') && !s.includes('main.js'))
       );
     }
-    // 構文エラー（Identifier has already been declared）を根絶するグローバルプロパティ定義
-    window.isSemverNewer = window.isSemverNewer || function(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      return false;
-    };
+    // 構文エラー（Identifier has already been declared）を根絶する安全なグローバルプロパティ定義
+    if (!window.isSemverNewer) {
+      window.isSemverNewer = function(remoteVersion, localVersion) {
+        if (!remoteVersion || !localVersion) return false;
+        const r = String(remoteVersion).replace(/^v/i, '').trim();
+        const l = String(localVersion).replace(/^v/i, '').trim();
+        const rParts = r.split('.').map(p => parseInt(p, 10) || 0);
+        const lParts = l.split('.').map(p => parseInt(p, 10) || 0);
+        while (rParts.length < 3) rParts.push(0);
+        while (lParts.length < 3) lParts.push(0);
+        for (let i = 0; i < 3; i++) {
+          if (rParts[i] > lParts[i]) return true;
+          if (rParts[i] < lParts[i]) return false;
+        }
+        return false;
+      };
+    }
 
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
@@ -2108,17 +2110,39 @@
                   <div class="text-center text-xs text-gray-400 font-mono">インストール済み: <span id="installedVersion">読み込み中...</span></div>
                 </div>
                 <div id="shortcutInfoContainer" class="hidden">
-                  <div class="bg-blue-50 dark:bg-indigo-950/40 text-blue-700 dark:text-blue-300 p-5 rounded-2xl border border-blue-200 dark:border-indigo-900/50 text-sm space-y-2">
+                  <div class="bg-blue-50 dark:bg-indigo-950/40 text-blue-700 dark:text-blue-300 p-5 rounded-2xl border border-blue-200 dark:border-indigo-900/50 text-sm space-y-3">
                     <div class="flex items-start gap-3">
                       <i class="fas fa-keyboard mt-1 text-lg flex-shrink-0"></i>
-                      <div class="flex-1">
-                        <p class="font-bold mb-1">クイックアクセス</p>
-                        <p class="text-xs opacity-80 mb-3"><kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> + <kbd id="shortcutKeyDisplay" class="bg-blue-200 dark:bg-slate-700 px-2 py-0.5 rounded border border-blue-300 dark:border-slate-600 font-bold">S</kbd></p>
-                        <p class="text-xs opacity-70 mb-3">アプリを最前面に表示し、メッセージ入力欄にフォーカスします。</p>
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs opacity-70">キーを変更:</span>
-                          <span class="text-xs opacity-70"><kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Ctrl</kbd> + <kbd class="bg-blue-100 dark:bg-slate-800 px-1 rounded border border-blue-200 dark:border-slate-700">Shift</kbd> +</span>
-                          <input type="text" id="shortcutKeyInput" maxlength="1" class="w-10 text-center bg-white dark:bg-slate-900 text-blue-800 dark:text-blue-300 font-bold text-base rounded-lg border border-blue-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 py-1 uppercase" placeholder="S" />
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between flex-wrap gap-2 mb-1">
+                          <p class="font-bold text-sm text-gray-900 dark:text-white">クイックアクセス (グローバルキー / マウスバインド)</p>
+                          <span class="text-[10px] font-bold px-2 py-0.5 bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-slate-700">完全自由設定</span>
+                        </div>
+                        <p class="text-xs opacity-75 mb-3 leading-relaxed">
+                          いつでもアプリを最前面に呼び出し、メッセージ入力欄に瞬時にフォーカスします。
+                          <strong>1個のキー単体</strong>でも、<strong>複数キーの組み合わせ</strong>でも、<strong>マウスボタン</strong>でも自由に設定できます。
+                        </p>
+                        <!-- 現在のキーバインド表示＆レコーダーボタン -->
+                        <div class="flex items-center gap-2 flex-wrap mb-3">
+                          <button type="button" id="btnRecordShortcut" onclick="window.startShortcutRecording()" class="px-4 py-2.5 bg-white dark:bg-slate-900 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-900 dark:text-white font-bold text-xs rounded-xl border border-blue-300 dark:border-slate-700 shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95">
+                            <i class="fas fa-circle-dot text-rose-500 text-xs animate-pulse hidden" id="shortcutRecordPulseIcon"></i>
+                            <span id="shortcutRecordBtnLabel">キーまたはマウスボタンを押して設定</span>
+                          </button>
+                          <button type="button" onclick="window.resetDefaultShortcut()" class="px-3 py-2 bg-transparent hover:bg-blue-100 dark:hover:bg-slate-800 text-blue-700 dark:text-blue-300 text-xs font-semibold rounded-xl transition cursor-pointer" title="デフォルト (Ctrl+Shift+S) に戻す">
+                            デフォルトに戻す
+                          </button>
+                        </div>
+                        <!-- クイックプリセット候補 -->
+                        <div>
+                          <span class="text-[11px] font-bold opacity-70 block mb-1.5">人気のプリセット候補:</span>
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <button type="button" onclick="window.applyPresetShortcut('Ctrl+Shift+S')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">Ctrl+Shift+S (標準)</button>
+                            <button type="button" onclick="window.applyPresetShortcut('F8')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">F8 (1キー)</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Alt+Space')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer">Alt+Space</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse4')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>マウス戻るボタン</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse5')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>マウス進むボタン</button>
+                            <button type="button" onclick="window.applyPresetShortcut('Mouse3')" class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-100 dark:bg-slate-800 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-slate-700 transition cursor-pointer"><i class="fas fa-mouse mr-1"></i>ホイールクリック</button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -4323,7 +4347,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.257"></script>
+  <script type="module" src="js/main.js?v=1.1.258"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

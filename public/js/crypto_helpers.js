@@ -605,10 +605,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     try {
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
       const b64Wrapped = _abToB64(wrapped);
+      // ドット表記で更新し、過去のバージョンマップ全体を上書き破壊しない
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          versions: { [String(version)]: b64Wrapped },
           [`versions.${version}`]: b64Wrapped,
           latestVersion: String(version),
           wrappedKey: b64Wrapped,
@@ -721,23 +721,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 【キー総当たりフォールバック復号】ローテーション競合等でバージョン番号がずれているメッセージを救済
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          const candidateKey = roomKeyObj[ver];
+          if (!candidateKey) continue;
           try {
-            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKeyObj[ver], ctBuf);
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, candidateKey, ctBuf);
             return _td.decode(pt);
           } catch(e) {}
         }
-
-        // それでも復号できない場合は、古い鍵キャッシュを破棄して自動救済トリガーを発行
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        // 単一メッセージの失敗で健全なルーム鍵キャッシュ全体を破棄しない（連鎖的な復号エラー多発を根絶）
         await _requestEscrowRescue(serverId, roomId);
         return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
-      } catch (e) {
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        } catch (e) {
+        console.warn("[E2EE] ルームメッセージ復号例外:", e);
         return "（復号化エラー：メッセージを解読できません）";
-      }
-    }
+        }
+        }
 
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
@@ -1305,7 +1303,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
         if (dmId) {
-          delete _e2ee._dmKeyPromises[dmId];
           // 鍵不一致時は相手に再暗号化（救済）リクエストを自動発行
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
@@ -1313,9 +1310,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         return `（復号化エラー：DM鍵が一致しません）`;
       } catch (e) {
+        console.warn("[E2EE] DMメッセージ復号例外:", e);
         if (dmId) {
-          delete _e2ee.dmKeyCache[dmId];
-          delete _e2ee._dmKeyPromises[dmId];
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
