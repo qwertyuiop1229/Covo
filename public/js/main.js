@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.261';
-import * as LocalStore from './local_store.js?v=1.1.261';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.261';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.261';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.261';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.261';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.261';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.262';
+import * as LocalStore from './local_store.js?v=1.1.262';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.262';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.262';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.262';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.262';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.262';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -16665,25 +16665,9 @@ function _skRenderTabs() {
       if (e.deltaY !== 0) {
         e.preventDefault();
         tabs.scrollLeft += e.deltaY * 0.85;
-        _skUpdateNavButtons();
       }
     }, { passive: false });
-    // 2. 左右ナビゲーションボタン (< と >)
-    const btnLeft = document.getElementById('stickerTabsScrollLeft');
-    const btnRight = document.getElementById('stickerTabsScrollRight');
-    if (btnLeft) {
-      btnLeft.addEventListener('click', (e) => {
-        e.stopPropagation();
-        tabs.scrollBy({ left: -140, behavior: 'smooth' });
-      });
-    }
-    if (btnRight) {
-      btnRight.addEventListener('click', (e) => {
-        e.stopPropagation();
-        tabs.scrollBy({ left: 140, behavior: 'smooth' });
-      });
-    }
-    // 3. マウスドラッグスクロール (Grab to scroll)
+    // 2. マウスドラッグスクロール (Grab to scroll)
     let isDown = false, startX = 0, scrollLeftStart = 0;
     tabs.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
@@ -16698,7 +16682,6 @@ function _skRenderTabs() {
       const walk = (x - startX) * 1.2;
       if (Math.abs(walk) > 4) {
         tabs.scrollLeft = scrollLeftStart - walk;
-        _skUpdateNavButtons();
       }
     });
     document.addEventListener('mouseup', () => {
@@ -16707,28 +16690,10 @@ function _skRenderTabs() {
         tabs.style.cursor = '';
       }
     });
-    tabs.addEventListener('scroll', () => {
-      _skUpdateNavButtons();
-    });
-  }
-  _twemojiParse(tabs);
-  setTimeout(_skUpdateNavButtons, 60);
-}
-
-function _skUpdateNavButtons() {
-  const tabs = document.getElementById('stickerTabs');
-  const btnLeft = document.getElementById('stickerTabsScrollLeft');
-  const btnRight = document.getElementById('stickerTabsScrollRight');
-  if (!tabs || !btnLeft || !btnRight) return;
-  const maxScroll = tabs.scrollWidth - tabs.clientWidth;
-  if (maxScroll <= 4) {
-    btnLeft.classList.add('hidden');
-    btnRight.classList.add('hidden');
-    return;
-  }
-  btnLeft.classList.toggle('hidden', tabs.scrollLeft <= 4);
-  btnRight.classList.toggle('hidden', tabs.scrollLeft >= maxScroll - 4);
-}
+    }
+    _twemojiParse(tabs);
+    }
+    function _skUpdateNavButtons() {}
 
 function _skRenderGrid(catId) {
   const grid = document.getElementById('stickerGrid');

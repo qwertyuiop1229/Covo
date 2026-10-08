@@ -121,7 +121,6 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     const status = response ? response.status : 500;
     const pathname = url.pathname;
     if (pathname === "/api/admin/serverStatus") return;
-
     // 日別統計にはすべてのリクエスト（静的ファイル含む）を正確に合算
     const today = new Date().toISOString().slice(0, 10);
     if (_cfApiDailyStats.date !== today) {
@@ -134,7 +133,6 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     _cfApiDailyStats.totalRequests++;
     if (status < 400) _cfApiDailyStats.successRequests++;
     else _cfApiDailyStats.errorRequests++;
-
     const routeKey = `${request.method} ${pathname.startsWith('/api/file/') ? '/api/file/*' : pathname}`;
     if (!_cfApiDailyStats.routes[routeKey]) {
       _cfApiDailyStats.routes[routeKey] = { total: 0, success: 0, error: 0 };
@@ -142,12 +140,20 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     _cfApiDailyStats.routes[routeKey].total++;
     if (status < 400) _cfApiDailyStats.routes[routeKey].success++;
     else _cfApiDailyStats.routes[routeKey].error++;
-
     // 静的画像ファイル配信 (GET 200 OK) は詳細ログのリングバッファを圧迫しないよう除外（エラー時は記録）
     const isStaticFileGet = pathname.startsWith('/api/file/') && request.method === 'GET' && status < 400;
     if (isStaticFileGet) return;
-
-    const userId = url.searchParams.get("userId") || url.searchParams.get("uid") || null;
+    // ユーザーIDの高精度解決（クエリパラメータまたはBearerトークンキャッシュから即時特定）
+    let userId = url.searchParams.get("userId") || url.searchParams.get("uid") || null;
+    if (!userId) {
+      try {
+        const authHeader = request.headers.get("Authorization") || "";
+        const token = authHeader.replace("Bearer ", "").trim();
+        if (token && typeof tokenCache !== "undefined" && tokenCache.has(token)) {
+          userId = tokenCache.get(token)?.user?.uid || null;
+        }
+      } catch (_) {}
+    }
     const logEntry = {
       id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7),
       timestamp: Date.now(),
@@ -168,6 +174,12 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
           await env.DB.prepare(
             "INSERT INTO api_audit_logs (id, timestamp, method, path, status, duration_ms, client_ip, user_id, error_message, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
           ).bind(logEntry.id, logEntry.timestamp, logEntry.method, logEntry.pathname, logEntry.status, logEntry.durationMs, logEntry.clientIp, logEntry.userId, logEntry.error, null).run();
+          // D1テーブルの自動プルーニング (最新1000件を超過した古いログを定期整理)
+          if (Math.random() < 0.05) {
+            await env.DB.prepare(
+              "DELETE FROM api_audit_logs WHERE id NOT IN (SELECT id FROM api_audit_logs ORDER BY timestamp DESC LIMIT 1000)"
+            ).run().catch(() => {});
+          }
         } catch (_) {}
       })());
     }

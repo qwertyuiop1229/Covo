@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.261" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.262" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.261" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.262" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -2591,69 +2591,104 @@
         <i class="fas fa-sync-alt text-xs" id="refreshCfStatusIcon"></i>更新
         </button>
         </div>
-        <!-- 1. クォータ & 制限概要カード群 (3列グリッド) -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <!-- カード1: 本日のAPIリクエスト制限 -->
-        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-            <i class="fas fa-bolt text-amber-500"></i>Worker リクエスト
-          </span>
-          <span id="cfReqPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">0%</span>
+        <!-- 1. クォータ & 制限概要カード群 (見やすく整理されたモダン3列グリッド) -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <!-- カード1: 本日のAPIリクエスト制限 -->
+          <div class="bg-slate-50 dark:bg-slate-900/80 p-4.5 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-3 transition-colors">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-gray-600 dark:text-slate-400 flex items-center gap-1.5">
+                <i class="fas fa-bolt text-amber-500"></i>Worker リクエスト
+              </span>
+              <span id="cfReqPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">0%</span>
+            </div>
+            <div>
+              <div class="text-2xl font-black text-gray-900 dark:text-white font-mono tracking-tight flex items-baseline gap-1.5">
+                <span id="cfReqCountText">0 回</span>
+                <span class="text-[11px] text-gray-400 font-normal">/ 100,000回 上限</span>
+              </div>
+              <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden mt-2.5 mb-2 shadow-inner">
+                <div id="cfReqProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="text-[11px] font-medium text-gray-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800/80">
+              <span class="flex items-center gap-1">成功: <strong id="cfReqSuccessText" class="text-emerald-500 font-bold">0</strong></span>
+              <span class="flex items-center gap-1">エラー: <strong id="cfReqErrorText" class="text-rose-500 font-bold">0</strong></span>
+            </div>
+          </div>
+          <!-- カード2: KV ストレージ制限 -->
+          <div class="bg-slate-50 dark:bg-slate-900/80 p-4.5 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-3 transition-colors">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-gray-600 dark:text-slate-400 flex items-center gap-1.5">
+                <i class="fas fa-database text-blue-500"></i>KV ストレージ
+              </span>
+              <span id="cfKvPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">0%</span>
+            </div>
+            <div>
+              <div class="text-2xl font-black text-gray-900 dark:text-white font-mono tracking-tight flex items-baseline gap-1.5">
+                <span id="cfKvUsageText">0 B</span>
+                <span class="text-[11px] text-gray-400 font-normal">/ 1.0 GB 上限</span>
+              </div>
+              <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden mt-2.5 mb-2 shadow-inner">
+                <div id="cfKvProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+              </div>
+            </div>
+            <div class="text-[11px] font-medium text-gray-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800/80">
+              <span>ファイル総数: <strong id="cfKvCountText" class="text-gray-800 dark:text-gray-200 font-bold">0 件</strong></span>
+              <span class="opacity-75">単体上限: 25 MB</span>
+            </div>
+          </div>
+          <!-- カード3: D1 & サービス稼働状態 -->
+          <div class="bg-slate-50 dark:bg-slate-900/80 p-4.5 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-3 transition-colors">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-gray-600 dark:text-slate-400 flex items-center gap-1.5">
+                <i class="fas fa-server text-emerald-500"></i>D1 & サービス稼働
+              </span>
+              <span id="cfServerStatusBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>正常稼働中
+              </span>
+            </div>
+            <div>
+              <div class="text-2xl font-black text-gray-900 dark:text-white font-mono tracking-tight">
+                <span id="cfD1RowCountText">D1 接続済</span>
+              </div>
+              <div class="text-[11px] text-gray-400 mt-1 mb-2">SQLite D1 データベース / 日間上限 500万行</div>
+            </div>
+            <div class="pt-1 border-t border-slate-200/60 dark:border-slate-800/80">
+              <div class="flex items-center gap-1.5 flex-wrap text-[10px] font-mono" id="cfBindingsBadges"></div>
+            </div>
+          </div>
         </div>
-        <div class="flex items-baseline justify-between">
-          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfReqCountText">0 回</span>
-          <span class="text-[10px] text-gray-400 font-mono">/ 100,000回 (上限)</span>
+        <!-- 2. 本日のAPI別 実行集計バッジ一覧 -->
+        <div class="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 space-y-2 transition-colors">
+          <div class="text-xs font-bold text-gray-600 dark:text-slate-400 flex items-center gap-1.5">
+            <i class="fas fa-chart-pie text-indigo-500"></i>本日のAPI別 実行集計
+          </div>
+          <div id="cfRouteStatsList" class="flex flex-wrap gap-2 pt-1"></div>
         </div>
-        <div class="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-          <div id="cfReqProgressBar" class="bg-indigo-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        <!-- 3. 直近API実行監査ログ -->
+        <div class="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 space-y-3 transition-colors">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+              <i class="fas fa-list-check text-indigo-500"></i>直近のAPI実行監査ログ
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center p-0.5 bg-gray-200/80 dark:bg-slate-800 rounded-lg text-xs font-bold">
+                <button type="button" id="cfLogFilterAll" onclick="filterCfApiLogs('all')" class="px-2.5 py-0.5 rounded-lg bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs">すべて</button>
+                <button type="button" id="cfLogFilterSuccess" onclick="filterCfApiLogs('success')" class="px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">成功のみ</button>
+                <button type="button" id="cfLogFilterError" onclick="filterCfApiLogs('error')" class="px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">エラーのみ</button>
+              </div>
+              <button type="button" onclick="copyCfApiLogs()" class="px-2.5 py-1 rounded-lg bg-gray-200/80 hover:bg-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer" title="ログをコピー">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
+          </div>
+          <div id="cfLogsList" class="space-y-2 max-h-64 sm:max-h-72 overflow-y-auto overscroll-contain pr-1 custom-scrollbar"></div>
         </div>
-        <div class="text-[10px] text-gray-400 flex items-center justify-between">
-          <span>成功: <strong id="cfReqSuccessText" class="text-emerald-500">0</strong></span>
-          <span>エラー: <strong id="cfReqErrorText" class="text-rose-500">0</strong></span>
-        </div>
-        </div>
-        <!-- カード2: KV ストレージ制限 -->
-        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-            <i class="fas fa-database text-blue-500"></i>KV ストレージ
-          </span>
-          <span id="cfKvPercentBadge" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">0%</span>
-        </div>
-        <div class="flex items-baseline justify-between">
-          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfKvUsageText">0 B</span>
-          <span class="text-[10px] text-gray-400 font-mono">/ 1.0 GB (上限)</span>
-        </div>
-        <div class="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-          <div id="cfKvProgressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-        </div>
-        <div class="text-[10px] text-gray-400 flex items-center justify-between">
-          <span>ファイル数: <strong id="cfKvCountText" class="text-gray-700 dark:text-gray-200 font-mono">0 件</strong></span>
-          <span>最大: <strong>25 MB/個</strong></span>
-        </div>
-        </div>
-        <!-- カード3: D1 & サービス稼働状態 -->
-        <div class="bg-gray-50 dark:bg-slate-900/70 p-4 rounded-2xl border border-gray-200/80 dark:border-slate-700/60 shadow-xs space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-            <i class="fas fa-server text-emerald-500"></i>D1 & バインディング
-          </span>
-          <span id="cfServerStatusBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>正常稼働中
-          </span>
-        </div>
-        <div class="flex items-baseline justify-between">
-          <span class="text-lg font-black text-gray-900 dark:text-white font-mono" id="cfD1RowCountText">D1 接続済</span>
-          <span class="text-[10px] text-gray-400 font-mono">上限 500万行/日</span>
-        </div>
-        <div class="pt-1 flex items-center gap-1.5 flex-wrap text-[10px]" id="cfBindingsBadges">
-          <!-- バインディングタグ -->
-        </div>
-        </div>
-        </div> class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
-    <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-8 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
-      <button onclick="document.getElementById('windowsDownloadModal').classList.add('hidden')" class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+      </div>
+      <!-- Windows版ダウンロード案内モーダル (独立した最上位オーバーレイとして完全に修復) -->
+      <div id="windowsDownloadModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl w-full max-w-lg p-6 sm:p-8 modal-box animate-pop-in border border-gray-200/80 dark:border-white/10 relative text-gray-800 dark:text-gray-200">
+          <button onclick="document.getElementById('windowsDownloadModal')?.classList.add('hidden')" class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
         <i class="fas fa-times text-base"></i>
       </button>
 
@@ -4407,7 +4442,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.261"></script>
+  <script type="module" src="js/main.js?v=1.1.262"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -4958,13 +4993,7 @@
   <!-- スタンプピッカー -->
   <div id="stickerPicker" data-inspect-ignore="1">
     <div class="sticker-tabs-wrap relative flex items-center select-none">
-      <button type="button" id="stickerTabsScrollLeft" class="sticker-tab-nav-btn left-0 hidden md:flex items-center justify-center" title="前のカテゴリへ">
-        <i class="fas fa-chevron-left text-[10px]"></i>
-      </button>
       <div class="sticker-tabs flex-1" id="stickerTabs"></div>
-      <button type="button" id="stickerTabsScrollRight" class="sticker-tab-nav-btn right-0 hidden md:flex items-center justify-center" title="次のカテゴリへ">
-        <i class="fas fa-chevron-right text-[10px]"></i>
-      </button>
     </div>
     <div class="sticker-grid" id="stickerGrid"></div>
   </div>

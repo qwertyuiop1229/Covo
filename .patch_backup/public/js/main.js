@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.260';
-import * as LocalStore from './local_store.js?v=1.1.260';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.260';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.260';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.260';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.260';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.260';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.261';
+import * as LocalStore from './local_store.js?v=1.1.261';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.261';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.261';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.261';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.261';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.261';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -3949,7 +3949,10 @@ window.loadCfServerStatus = async function () {
     const res = await fetch(`${WORKER_BASE_URL}/api/admin/serverStatus?appId=${appId}`, {
       headers: { "Authorization": `Bearer ${idToken}` }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `HTTP ${res.status}`);
+    }
     const json = await res.json();
     if (!json.success || !json.data) throw new Error(json.error || "データ取得失敗");
 
@@ -4054,7 +4057,7 @@ window.filterCfApiLogs = function (filter) {
     if (isTarget) {
       btn.className = "px-2.5 py-0.5 rounded-lg bg-white dark:bg-indigo-600 text-gray-900 dark:text-white shadow-xs";
     } else {
-      btn.className = "px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800";
+      btn.className = "px-2.5 py-0.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors";
     }
   });
   renderCfLogsList();
@@ -4975,9 +4978,19 @@ window.switchDiscordSettingsTab = function (tab) {
       container.appendChild(shared);
       shared.classList.remove('hidden');
     }
-    // エラータブが既に選択状態なので必ず loadErrorTelemetry を呼ぶ
-    if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
-    if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+    // サブタブがcfstatusだった場合は確実に再マウント
+    if (_currentReportSubTab === 'cfstatus') {
+      const cfCont = document.getElementById('reportSubTabCfStatusContent');
+      const cfShared = document.getElementById('cfStatusSharedContent');
+      if (cfCont && cfShared && cfShared.parentElement !== cfCont) {
+        cfCont.appendChild(cfShared);
+        cfShared.classList.remove('hidden');
+      }
+      if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
+    } else {
+      if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
+      if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+    }
   }
   if (tab === 'cfstatus') {
     const container = document.getElementById('pcCfStatusContainer');
@@ -5571,8 +5584,18 @@ window.openMobileDetail = function (type) {
         container.appendChild(shared);
         shared.classList.remove('hidden');
       }
-      if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
-      if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+      if (_currentReportSubTab === 'cfstatus') {
+        const cfCont = document.getElementById('reportSubTabCfStatusContent');
+        const cfShared = document.getElementById('cfStatusSharedContent');
+        if (cfCont && cfShared && cfShared.parentElement !== cfCont) {
+          cfCont.appendChild(cfShared);
+          cfShared.classList.remove('hidden');
+        }
+        if (typeof loadCfServerStatus === 'function') loadCfServerStatus();
+      } else {
+        if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
+        if (typeof loadAdminFeedbacks === 'function') loadAdminFeedbacks();
+      }
     }
     if (type === 'cfstatus') {
       const container = document.getElementById('mobileCfStatusContainer');
