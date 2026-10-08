@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.258';
-import * as LocalStore from './local_store.js?v=1.1.258';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.258';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.258';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.258';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.258';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.258';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.259';
+import * as LocalStore from './local_store.js?v=1.1.259';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.259';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.259';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.259';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.259';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.259';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -3985,11 +3985,11 @@ function renderCfServerStatusUI(data) {
 
   // バインディングタグ
   const bindingsWrap = document.getElementById('cfBindingsBadges');
-  if (bindingsWrap && data.envBindings) {
-    const eb = data.envBindings;
+  const eb = data.envBindings || limits.bindings || {};
+  if (bindingsWrap) {
     bindingsWrap.innerHTML = `
-      <span class="px-1.5 py-0.5 rounded ${eb.KV_FILES ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500'}">KV: ${eb.KV_FILES ? '✓' : '✗'}</span>
-      <span class="px-1.5 py-0.5 rounded ${eb.D1_DB ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-200 dark:bg-slate-800 text-gray-500'}">D1: ${eb.D1_DB ? '✓' : '未接続'}</span>
+      <span class="px-1.5 py-0.5 rounded ${eb.KV_FILES || eb.FILES_KV ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-500'}">KV: ${eb.KV_FILES || eb.FILES_KV ? '✓' : '✗'}</span>
+      <span class="px-1.5 py-0.5 rounded ${eb.D1_DB || eb.DB_D1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-200 dark:bg-slate-800 text-gray-500'}">D1: ${eb.D1_DB || eb.DB_D1 ? '✓' : '未接続'}</span>
       <span class="px-1.5 py-0.5 rounded ${eb.SERVICE_ACCOUNT_JSON ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-500'}">Firebase: ${eb.SERVICE_ACCOUNT_JSON ? '✓' : '限定'}</span>
       <span class="px-1.5 py-0.5 rounded ${eb.AGORA_APP_ID ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : 'bg-gray-200 dark:bg-slate-800 text-gray-500'}">Agora: ${eb.AGORA_APP_ID ? '✓' : '-'}</span>
     `;
@@ -3998,7 +3998,7 @@ function renderCfServerStatusUI(data) {
   // 4. API別 サマリーバッジ
   const routeStatsWrap = document.getElementById('cfRouteStatsList');
   if (routeStatsWrap) {
-    const routes = data.dailyRouteStats || {};
+    const routes = data.dailyRouteStats || data.stats?.routes || {};
     const routeKeys = Object.keys(routes);
     if (routeKeys.length === 0) {
       routeStatsWrap.innerHTML = '<span class="text-[11px] text-gray-400">本日のAPI実行履歴はまだありません</span>';
@@ -19185,13 +19185,22 @@ async function jumpToUnloadedMessage(msgId) {
             doJumpHighlight(el3, true);
             messagesDisplay.style.transition = 'opacity 0.22s ease-out';
             messagesDisplay.style.opacity = '1';
-            // スウェイ揺動アニメーションを発火
+            // スウェイ揺動アニメーションを発火 (スタンプと通常メッセージを正しく判別)
             setTimeout(() => {
-              el3.classList.remove('message-jump-anim', 'message-highlight');
-              void el3.offsetWidth;
-              el3.classList.add('message-jump-anim', 'message-highlight');
-              setTimeout(() => el3.classList.remove('message-jump-anim'), 880);
-              setTimeout(() => el3.classList.remove('message-highlight'), 1600);
+              const isStamp = el3.querySelector('img[alt^="stamp_"]') || el3.querySelector('.sticker-content') || el3.classList.contains('sticker-bubble');
+              if (isStamp) {
+                const targetNode = el3.querySelector('.sticker-content') || el3;
+                targetNode.classList.remove('stamp-jump-anim');
+                void targetNode.offsetWidth;
+                targetNode.classList.add('stamp-jump-anim');
+                setTimeout(() => targetNode.classList.remove('stamp-jump-anim'), 800);
+              } else {
+                el3.classList.remove('message-jump-anim', 'message-highlight');
+                void el3.offsetWidth;
+                el3.classList.add('message-jump-anim', 'message-highlight');
+                setTimeout(() => el3.classList.remove('message-jump-anim'), 880);
+                setTimeout(() => el3.classList.remove('message-highlight'), 1600);
+              }
               // パス3: ジャンプ安定後にページネーションロックを解除
               allowPagination = true;
             }, 60);

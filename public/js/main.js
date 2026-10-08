@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.259';
-import * as LocalStore from './local_store.js?v=1.1.259';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.259';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.259';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.259';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.259';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.259';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.260';
+import * as LocalStore from './local_store.js?v=1.1.260';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.260';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.260';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.260';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.260';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.260';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -14199,39 +14199,6 @@ document.getElementById("deleteServerBtn")?.addEventListener("click", async () =
 });
 
 // ===== サーバーメッセージ自動消去 / D1キャッシュ管理 =====
-window.saveServerRetentionPolicy = async function () {
-  if (!currentServerId) return;
-  const isOwner = currentServerData?.createdBy === userId ||
-    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  if (!isOwner && !isAdmin) {
-    alertMessage("設定を変更できるのはサーバー管理者のみです", "error");
-    return;
-  }
-  const retentionSel = document.getElementById("serverMessageRetentionSelect");
-  const policy = retentionSel?.value || "keep_all";
-  const btn = document.getElementById("saveRetentionPolicyBtn");
-  const origHtml = btn ? btn.innerHTML : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin text-xs"></i> 保存中...`;
-  }
-  try {
-    await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), {
-      messageRetentionPolicy: policy
-    });
-    currentServerData = { ...currentServerData, messageRetentionPolicy: policy };
-    alertMessage("保管ポリシーを保存しました", "success");
-  } catch (err) {
-    console.error("saveServerRetentionPolicy error:", err);
-    alertMessage("保管ポリシーの保存に失敗しました", "error");
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-    }
-  }
-};
-
 window.executeManualServerPrune = async function () {
   if (!currentServerId) return;
   const isOwner = currentServerData?.createdBy === userId ||
@@ -14240,12 +14207,7 @@ window.executeManualServerPrune = async function () {
     alertMessage("メッセージ整理を実行できるのはサーバー管理者のみです", "error");
     return;
   }
-  const policy = document.getElementById("serverMessageRetentionSelect")?.value || currentServerData?.messageRetentionPolicy || "prune_100";
-  let desc = "サーバーの全チャンネルから、設定された保管ポリシーに基づいて古いメッセージと添付キャッシュを整理します。";
-  if (policy === 'prune_100') desc = "各チャンネルの最新100件を超える古いメッセージおよび添付ファイルを一括整理します。";
-  else if (policy === 'days_30') desc = "30日以上前のメッセージおよび添付ファイルを一括整理します。";
-  else if (policy === 'days_7') desc = "7日以上前のメッセージおよび添付ファイルを一括整理します。";
-
+  const desc = "すべてのチャンネルで最新100件を超える古いメッセージおよび添付ファイルを一括整理します（ピン留めメッセージは保護されます）。";
   if (!await showCustomConfirm("今すぐメッセージと添付キャッシュを整理しますか？", "今すぐ整理", "キャンセル", desc)) {
     return;
   }
@@ -16640,7 +16602,7 @@ function _skRenderTabs() {
     b.dataset.cat = cat.id;
     tabs.appendChild(b);
   });
-  // イベント委譲（twemojiでimg化されてもタブ全体で確実にクリックを拾う）
+  // イベント委譲 & PC向け横スクロール操作性向上 (マウスホイール / ドラッグ / 左右ボタン / 自動吸着)
   if (!_skTabsBound) {
     _skTabsBound = true;
     tabs.addEventListener('click', (e) => {
@@ -16649,9 +16611,76 @@ function _skRenderTabs() {
       _stickerActiveCat = btn.dataset.cat;
       tabs.querySelectorAll('.sticker-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _stickerActiveCat));
       _skRenderGrid(_stickerActiveCat);
+      try { btn.scrollIntoView({ inline: 'nearest', behavior: 'smooth' }); } catch (_) {}
+    });
+    // 1. マウスホイール（縦ホイール）を横スクロールに自動変換 (Discord / LINE PC 準拠)
+    tabs.addEventListener('wheel', (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        tabs.scrollLeft += e.deltaY * 0.85;
+        _skUpdateNavButtons();
+      }
+    }, { passive: false });
+    // 2. 左右ナビゲーションボタン (< と >)
+    const btnLeft = document.getElementById('stickerTabsScrollLeft');
+    const btnRight = document.getElementById('stickerTabsScrollRight');
+    if (btnLeft) {
+      btnLeft.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tabs.scrollBy({ left: -140, behavior: 'smooth' });
+      });
+    }
+    if (btnRight) {
+      btnRight.addEventListener('click', (e) => {
+        e.stopPropagation();
+        tabs.scrollBy({ left: 140, behavior: 'smooth' });
+      });
+    }
+    // 3. マウスドラッグスクロール (Grab to scroll)
+    let isDown = false, startX = 0, scrollLeftStart = 0;
+    tabs.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isDown = true;
+      startX = e.pageX - tabs.offsetLeft;
+      scrollLeftStart = tabs.scrollLeft;
+      tabs.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isDown) return;
+      const x = e.pageX - tabs.offsetLeft;
+      const walk = (x - startX) * 1.2;
+      if (Math.abs(walk) > 4) {
+        tabs.scrollLeft = scrollLeftStart - walk;
+        _skUpdateNavButtons();
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (isDown) {
+        isDown = false;
+        tabs.style.cursor = '';
+      }
+    });
+    tabs.addEventListener('scroll', () => {
+      _skUpdateNavButtons();
     });
   }
   _twemojiParse(tabs);
+  setTimeout(_skUpdateNavButtons, 60);
+}
+
+function _skUpdateNavButtons() {
+  const tabs = document.getElementById('stickerTabs');
+  const btnLeft = document.getElementById('stickerTabsScrollLeft');
+  const btnRight = document.getElementById('stickerTabsScrollRight');
+  if (!tabs || !btnLeft || !btnRight) return;
+  const maxScroll = tabs.scrollWidth - tabs.clientWidth;
+  if (maxScroll <= 4) {
+    btnLeft.classList.add('hidden');
+    btnRight.classList.add('hidden');
+    return;
+  }
+  btnLeft.classList.toggle('hidden', tabs.scrollLeft <= 4);
+  btnRight.classList.toggle('hidden', tabs.scrollLeft >= maxScroll - 4);
 }
 
 function _skRenderGrid(catId) {
@@ -17404,11 +17433,6 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 let _pruneThrottleMap = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
-  // 100件超過時の自動削除をサーバー・DM問わず基本デフォルト有効化
-  const policy = (!dmId && currentServerData?.messageRetentionPolicy) ? currentServerData.messageRetentionPolicy : "prune_100";
-  // サーバー設定で明示的に全件保持 (keep_all) が選ばれている場合のみスキップ
-  if (policy === "keep_all") return;
-
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
   const now = Date.now();
   if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;

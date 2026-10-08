@@ -121,6 +121,32 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     const status = response ? response.status : 500;
     const pathname = url.pathname;
     if (pathname === "/api/admin/serverStatus") return;
+
+    // 日別統計にはすべてのリクエスト（静的ファイル含む）を正確に合算
+    const today = new Date().toISOString().slice(0, 10);
+    if (_cfApiDailyStats.date !== today) {
+      _cfApiDailyStats.date = today;
+      _cfApiDailyStats.totalRequests = 0;
+      _cfApiDailyStats.successRequests = 0;
+      _cfApiDailyStats.errorRequests = 0;
+      _cfApiDailyStats.routes = {};
+    }
+    _cfApiDailyStats.totalRequests++;
+    if (status < 400) _cfApiDailyStats.successRequests++;
+    else _cfApiDailyStats.errorRequests++;
+
+    const routeKey = `${request.method} ${pathname.startsWith('/api/file/') ? '/api/file/*' : pathname}`;
+    if (!_cfApiDailyStats.routes[routeKey]) {
+      _cfApiDailyStats.routes[routeKey] = { total: 0, success: 0, error: 0 };
+    }
+    _cfApiDailyStats.routes[routeKey].total++;
+    if (status < 400) _cfApiDailyStats.routes[routeKey].success++;
+    else _cfApiDailyStats.routes[routeKey].error++;
+
+    // 静的画像ファイル配信 (GET 200 OK) は詳細ログのリングバッファを圧迫しないよう除外（エラー時は記録）
+    const isStaticFileGet = pathname.startsWith('/api/file/') && request.method === 'GET' && status < 400;
+    if (isStaticFileGet) return;
+
     const userId = url.searchParams.get("userId") || url.searchParams.get("uid") || null;
     const logEntry = {
       id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7),
@@ -2087,6 +2113,7 @@ async function handleServerStatus(request, env, url) {
     let d1Status = { bound: Boolean(env.DB), healthy: false, rowCount: 0 };
     if (env.DB) {
       try {
+        await ensureAuditTable(env.DB);
         const d1Check = await env.DB.prepare("SELECT COUNT(*) as cnt FROM messages").first();
         d1Status.healthy = true;
         d1Status.rowCount = d1Check?.cnt || 0;
@@ -2101,6 +2128,7 @@ async function handleServerStatus(request, env, url) {
     let logs = [..._cfApiLogs];
     if (env.DB) {
       try {
+        await ensureAuditTable(env.DB);
         const dbLogs = await env.DB.prepare("SELECT * FROM api_audit_logs ORDER BY timestamp DESC LIMIT 60").all();
         if (dbLogs && dbLogs.results && dbLogs.results.length > 0) {
           const seen = new Set(logs.map(l => l.id));

@@ -462,14 +462,66 @@
     body.dark-server-theme #stickerPicker,
     body.discord-dark-theme #stickerPicker { background: #1e293b; border-color: rgba(255,255,255,0.1); }
     body.discord-dark-theme #stickerPicker { background: #2b2d31; border-color: #383a40; }
+    .sticker-tabs-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      width: 100%;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .sticker-tabs-wrap,
+    body.discord-dark-theme .sticker-tabs-wrap {
+      border-bottom-color: rgba(255,255,255,0.08);
+    }
+    body.discord-dark-theme .sticker-tabs-wrap {
+      border-bottom-color: #1f2023;
+    }
+    .sticker-tab-nav-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 20;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .sticker-tab-nav-btn:hover {
+      background: #ffffff;
+      color: #111827;
+      transform: translateY(-50%) scale(1.1);
+    }
+    .sticker-tab-nav-btn.hidden {
+      display: none !important;
+    }
+    #stickerTabsScrollLeft { left: 4px; }
+    #stickerTabsScrollRight { right: 4px; }
+    body.dark-server-theme .sticker-tab-nav-btn,
+    body.discord-dark-theme .sticker-tab-nav-btn {
+      background: rgba(43, 45, 49, 0.95);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #dbdee1;
+    }
+    body.dark-server-theme .sticker-tab-nav-btn:hover,
+    body.discord-dark-theme .sticker-tab-nav-btn:hover {
+      background: #383a40;
+      color: #ffffff;
+    }
     .sticker-tabs {
-      display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid #f3f4f6;
+      display: flex; gap: 4px; padding: 8px 12px; border-bottom: none;
       overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
+      scroll-behavior: smooth;
     }
     .sticker-tabs::-webkit-scrollbar { display: none; }
-    body.dark-server-theme .sticker-tabs,
-    body.discord-dark-theme .sticker-tabs { border-bottom-color: rgba(255,255,255,0.08); }
-    body.discord-dark-theme .sticker-tabs { border-bottom-color: #1f2023; }
     .sticker-tab {
       flex-shrink: 0; width: 36px; height: 36px; border: none; background: transparent;
       border-radius: 8px; cursor: pointer; font-size: 1.1rem; display: flex;
