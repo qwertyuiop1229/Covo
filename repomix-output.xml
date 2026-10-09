@@ -3337,12 +3337,40 @@ if (typeof window !== 'undefined') {
                     status.className = 'status-box';
                     status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
                 } else {
-                    console.error('Desktop Auth Error:', err);
                     status.className = 'status-box error';
-                    status.textContent = '認証エラー: ' + (err.message || err);
+                    status.textContent = getJapaneseAuthErrorMessage(err);
                 }
             }
         };
+        function getJapaneseAuthErrorMessage(err) {
+            const code = err?.code || '';
+            const msg = String(err?.message || '');
+            if (code === 'auth/account-exists-with-different-credential') {
+                return 'このメールアドレスは既にパスワードで登録されています。メールとパスワードでログイン後、設定からGoogle連携を行ってください。';
+            }
+            if (code === 'auth/network-request-failed' || msg.toLowerCase().includes('network')) {
+                return '通信に失敗しました。インターネット接続を確認して再試行してください。';
+            }
+            if (code === 'auth/popup-blocked') {
+                return '認証ウィンドウがブラウザにブロックされました。ポップアップを許可して再試行してください。';
+            }
+            if (code === 'auth/user-disabled') {
+                return 'このアカウントは無効化されています。管理者にお問い合わせください。';
+            }
+            if (code === 'auth/unauthorized-domain') {
+                return 'このドメインは認証が許可されていません。管理者にお問い合わせください。';
+            }
+            if (code === 'auth/provider-already-linked') {
+                return 'このGoogleアカウントは既に連携されています。';
+            }
+            if (code === 'auth/credential-already-in-use') {
+                return 'このGoogleアカウントは既に別のアカウントで使用されています。';
+            }
+            if (code === 'auth/invalid-credential') {
+                return '認証情報が無効です。再度ログインをお試しください。';
+            }
+            return 'ログイン処理中にエラーが発生しました。時間をおいて再試行してください。';
+        }
         window.addEventListener('load', () => {
             const status = document.getElementById('status');
             if (status) status.textContent = '「Google でログイン」をクリックして認証してください。';
@@ -6255,976 +6283,6 @@ pub fn run() {
 }
 </file>
 
-<file path="public/js/local_store.js">
-/**
- * Covo Local-first Storage Engine (local_store.js)
- * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
- */
-const DB_NAME = "covo_local_db";
-const DB_VERSION = 1;
-let _dbInstance = null;
-let _dbInitPromise = null;
-/**
- * IndexedDB の初期化 & 接続取得
- * @returns {Promise<IDBDatabase>}
- */
-export async function initLocalDB() {
-  if (_dbInstance) {
-    try {
-      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
-        throw new Error("Connection closed");
-      }
-      return _dbInstance;
-    } catch (_) {
-      _dbInstance = null;
-      _dbInitPromise = null;
-    }
-  }
-  if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      // 1. messages: メッセージ履歴
-      if (!db.objectStoreNames.contains("messages")) {
-        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
-        msgStore.createIndex("channelId", "channelId", { unique: false });
-        msgStore.createIndex("timestamp", "timestamp", { unique: false });
-        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
-      }
-      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
-      if (!db.objectStoreNames.contains("channels")) {
-        db.createObjectStore("channels", { keyPath: "id" });
-      }
-      // 3. friends: フレンドリスト・関係性キャッシュ
-      if (!db.objectStoreNames.contains("friends")) {
-        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
-        friendStore.createIndex("status", "status", { unique: false });
-      }
-      // 4. settings: 設定・ローカルキー・キャッシュ
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      _dbInstance = req.result;
-      _dbInstance.onversionchange = () => {
-        try { _dbInstance.close(); } catch (_) {}
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      _dbInstance.onclose = () => {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      };
-      resolve(_dbInstance);
-    };
-    req.onerror = () => {
-      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
-    };
-    req.onblocked = () => {
-      console.warn("[LocalStore] IndexedDB open blocked by another tab");
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
-    };
-  });
-  return _dbInitPromise;
-}
-/**
- * 単一メッセージの保存 / 更新
- * @param {Object} msg - メッセージオブジェクト
- */
-function _extractMsgTimestamp(obj) {
-  if (!obj) return Date.now();
-  const ts = obj.timestamp ?? obj.createdAt;
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = new Date(ts).getTime();
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (ts && typeof ts === 'object') {
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
-    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
-  }
-  return Date.now();
-}
-export async function putMessage(msg) {
-  if (!msg || !msg.id || !msg.channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const cleanMsg = { ...msg };
-      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
-      if (cleanMsg._originalText) {
-        cleanMsg.text = cleanMsg._originalText;
-      }
-      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
-        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
-      }
-      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-        cleanMsg._decrypted = false;
-      }
-      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-      store.put(cleanMsg);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        resolve(false);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve(false);
-    }
-  });
-}
-/**
- * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
- * @param {Array<Object>} msgs - メッセージ配列
- */
-export async function upsertMessagesBatch(msgs) {
-  if (!Array.isArray(msgs) || msgs.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      for (const msg of msgs) {
-        if (!msg || !msg.id || !msg.channelId) continue;
-        const cleanMsg = { ...msg };
-        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
-        if (cleanMsg._originalText) {
-          cleanMsg.text = cleanMsg._originalText;
-        }
-        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
-          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
-        }
-        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
-        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
-          cleanMsg._decrypted = false;
-        }
-        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
-        store.put(cleanMsg);
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        resolve(false);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
- * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
- * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
- * @param {number} limit - 取得件数 (デフォルト: 50)
- * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
- */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
-  if (!channelId) return [];
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
-      const req = index.openCursor(range, "prev"); // 新しい順に探索
-      const results = [];
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && results.length < limit) {
-          results.push(cursor.value);
-          cursor.continue();
-        } else {
-          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
-          results.reverse();
-          resolve(results);
-        }
-      };
-      req.onerror = () => {
-        resolve([]);
-      };
-    } catch (e) {
-      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
-        _dbInstance = null;
-        _dbInitPromise = null;
-      }
-      resolve([]);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
- */
-export async function getLatestMessageTimestamp(channelId) {
-  if (!channelId) return 0;
-  const db = await initLocalDB();
-  if (!db) return 0;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "prev"); // 最も新しい1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(0);
-        }
-      };
-      req.onerror = () => resolve(0);
-    } catch (e) {
-      resolve(0);
-    }
-  });
-}
-/**
- * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
- * @param {string} channelId - ルームまたはDMのID
- * @returns {Promise<number|null>} 最古タイムスタンプ
- */
-export async function getOldestMessageTimestamp(channelId) {
-  if (!channelId) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readonly");
-      const store = tx.objectStore("messages");
-      const index = store.index("channel_ts");
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
-      const req = index.openCursor(range, "next"); // 最も古い1件
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
-          resolve(cursor.value.timestamp);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 単一メッセージの削除
- * @param {string} id - メッセージID
- */
-export async function deleteMessage(id) {
-  if (!id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      tx.objectStore("messages").delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 指定チャンネルのメッセージ全削除
- * @param {string} channelId
- */
-export async function clearMessagesForChannel(channelId) {
-  if (!channelId) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("messages", "readwrite");
-      const store = tx.objectStore("messages");
-      const index = store.index("channelId");
-      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          store.delete(cursor.primaryKey);
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の保存 / 更新
- * @param {Object} channel
- */
-export async function putChannel(channel) {
-  if (!channel || !channel.id) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readwrite");
-      tx.objectStore("channels").put(channel);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * チャンネル情報の取得
- * @param {string} id
- */
-export async function getChannel(id) {
-  if (!id) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 全チャンネル情報の取得
- */
-export async function getAllChannels() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("channels", "readonly");
-      const req = tx.objectStore("channels").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * フレンド情報の保存
- * @param {Object} friend
- */
-export async function putFriend(friend) {
-  if (!friend) return;
-  const uid = friend.uid || friend.targetUid || friend.id;
-  if (!uid) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      tx.objectStore("friends").put({ ...friend, uid });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * フレンド一覧の一括保存
- * @param {Array<Object>} friends
- */
-export async function putFriendsBatch(friends) {
-  if (!Array.isArray(friends) || friends.length === 0) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readwrite");
-      const store = tx.objectStore("friends");
-      for (const f of friends) {
-        if (!f) continue;
-        const uid = f.uid || f.targetUid || f.id;
-        if (uid) store.put({ ...f, uid });
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 全フレンドの取得
- */
-export async function getAllFriends() {
-  const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("friends", "readonly");
-      const req = tx.objectStore("friends").getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-}
-/**
- * 設定値の保存
- * @param {string} key
- * @param {*} value
- */
-export async function putSetting(key, value) {
-  if (!key) return;
-  const db = await initLocalDB();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readwrite");
-      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
-/**
- * 設定値の取得
- * @param {string} key
- */
-export async function getSetting(key) {
-  if (!key) return null;
-  const db = await initLocalDB();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction("settings", "readonly");
-      const req = tx.objectStore("settings").get(key);
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-      req.onerror = () => resolve(null);
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-/**
- * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
- * @returns {Promise<Object>}
- */
-export async function getAllLocalData() {
-  const db = await initLocalDB();
-  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
-  const fetchStore = (storeName) => new Promise((resolve) => {
-    try {
-      const tx = db.transaction(storeName, "readonly");
-      const req = tx.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    } catch (e) {
-      resolve([]);
-    }
-  });
-  const [messages, channels, friends, settings] = await Promise.all([
-    fetchStore("messages"),
-    fetchStore("channels"),
-    fetchStore("friends"),
-    fetchStore("settings")
-  ]);
-  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
-  let e2eeKeys = null;
-  try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
-    if (priv && pub) {
-      e2eeKeys = { priv, pub };
-    }
-  } catch (e) {}
-  return {
-    version: 1,
-    exportedAt: Date.now(),
-    messages,
-    channels,
-    friends,
-    settings,
-    e2eeKeys
-  };
-}
-/**
- * 【要件 E】新端末側での全データ復元
- * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
- * @returns {Promise<boolean>}
- */
-export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
-  const db = await initLocalDB();
-  if (!db) return false;
-  try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
-      try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
-    }
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
-    return false;
-  }
-}
-/**
- * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
- * @returns {Promise<boolean>}
- */
-export async function clearAllLocalData() {
-  if (typeof caches !== 'undefined' && caches.delete) {
-    caches.delete('covo_media_cache_v1').catch(() => {});
-  }
-  const db = await initLocalDB();
-  if (!db) return false;
-  return new Promise((resolve) => {
-    try {
-      const stores = ["messages", "channels", "friends", "settings"];
-      const tx = db.transaction(stores, "readwrite");
-      for (const storeName of stores) {
-        if (db.objectStoreNames.contains(storeName)) {
-          tx.objectStore(storeName).clear();
-        }
-      }
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => {
-        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
-        resolve(false);
-      };
-    } catch (e) {
-      console.warn("[LocalStore] clearAllLocalData exception:", e);
-      resolve(false);
-    }
-  });
-}
-// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
-if (typeof window !== 'undefined') {
-  window.LocalStore = {
-    initLocalDB,
-    putMessage,
-    upsertMessagesBatch,
-    getMessages,
-    getLatestMessageTimestamp,
-    getOldestMessageTimestamp,
-    deleteMessage,
-    clearMessagesForChannel,
-    putChannel,
-    getChannel,
-    getAllChannels,
-    putFriend,
-    putFriendsBatch,
-    getAllFriends,
-    putSetting,
-    getSetting,
-    getAllLocalData,
-    restoreAllLocalData,
-    clearAllLocalData
-  };
-}
-</file>
-
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    :root {
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: 100%;
-      height: 100%;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
-    .stamp-jump-anim {
-      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -9260,6 +8318,638 @@ if (typeof window !== 'undefined') {
     }
 </file>
 
+<file path="public/js/local_store.js">
+/**
+ * Covo Local-first Storage Engine (local_store.js)
+ * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
+ */
+const DB_NAME = "covo_local_db";
+const DB_VERSION = 1;
+let _dbInstance = null;
+let _dbInitPromise = null;
+/**
+ * IndexedDB の初期化 & 接続取得
+ * @returns {Promise<IDBDatabase>}
+ */
+export async function initLocalDB() {
+  if (_dbInstance) {
+    try {
+      if (!_dbInstance.objectStoreNames || _dbInstance.objectStoreNames.length === 0) {
+        throw new Error("Connection closed");
+      }
+      return _dbInstance;
+    } catch (_) {
+      _dbInstance = null;
+      _dbInitPromise = null;
+    }
+  }
+  if (_dbInitPromise) return _dbInitPromise;
+  _dbInitPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      console.warn("[LocalStore] IndexedDB is not supported in this environment");
+      return resolve(null);
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = req.result;
+      // 1. messages: メッセージ履歴
+      if (!db.objectStoreNames.contains("messages")) {
+        const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+        msgStore.createIndex("channelId", "channelId", { unique: false });
+        msgStore.createIndex("timestamp", "timestamp", { unique: false });
+        msgStore.createIndex("channel_ts", ["channelId", "timestamp"], { unique: false });
+      }
+      // 2. channels: チャンネル/DMメタ情報・最終同期・最終既読
+      if (!db.objectStoreNames.contains("channels")) {
+        db.createObjectStore("channels", { keyPath: "id" });
+      }
+      // 3. friends: フレンドリスト・関係性キャッシュ
+      if (!db.objectStoreNames.contains("friends")) {
+        const friendStore = db.createObjectStore("friends", { keyPath: "uid" });
+        friendStore.createIndex("status", "status", { unique: false });
+      }
+      // 4. settings: 設定・ローカルキー・キャッシュ
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => {
+      _dbInstance = req.result;
+      _dbInstance.onversionchange = () => {
+        try { _dbInstance.close(); } catch (_) {}
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      _dbInstance.onclose = () => {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      };
+      resolve(_dbInstance);
+    };
+    req.onerror = () => {
+      console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
+    };
+    req.onblocked = () => {
+      console.warn("[LocalStore] IndexedDB open blocked by another tab");
+      _dbInstance = null;
+      _dbInitPromise = null;
+      resolve(null);
+    };
+  });
+  return _dbInitPromise;
+}
+/**
+ * 単一メッセージの保存 / 更新
+ * @param {Object} msg - メッセージオブジェクト
+ */
+function _extractMsgTimestamp(obj) {
+  if (!obj) return Date.now();
+  const ts = obj.timestamp ?? obj.createdAt;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (ts && typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (ts.seconds != null) return ts.seconds * 1000 + Math.floor((ts.nanoseconds || 0) / 1000000);
+    if (ts._seconds != null) return ts._seconds * 1000 + Math.floor((ts._nanoseconds || 0) / 1000000);
+  }
+  return Date.now();
+}
+export async function putMessage(msg) {
+  if (!msg || !msg.id || !msg.channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const cleanMsg = { ...msg };
+      // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
+      if (cleanMsg._originalText) {
+        cleanMsg.text = cleanMsg._originalText;
+      }
+      if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+        cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+      }
+      // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+      if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+        cleanMsg._decrypted = false;
+      }
+      cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+      store.put(cleanMsg);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        resolve(false);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve(false);
+    }
+  });
+}
+/**
+ * メッセージの一括保存 / 更新 (Delta Sync用トランザクション)
+ * @param {Array<Object>} msgs - メッセージ配列
+ */
+export async function upsertMessagesBatch(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      for (const msg of msgs) {
+        if (!msg || !msg.id || !msg.channelId) continue;
+        const cleanMsg = { ...msg };
+        // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
+        if (cleanMsg._originalText) {
+          cleanMsg.text = cleanMsg._originalText;
+        }
+        if (cleanMsg.replyTo && cleanMsg.replyTo._originalText) {
+          cleanMsg.replyTo = { ...cleanMsg.replyTo, text: cleanMsg.replyTo._originalText };
+        }
+        // 再読込時に未復号の暗号文が復号済みと誤認されないようフラグをリセット
+        if (typeof cleanMsg.text === 'string' && (cleanMsg.text.startsWith('enc::') || cleanMsg._originalText)) {
+          cleanMsg._decrypted = false;
+        }
+        cleanMsg.timestamp = _extractMsgTimestamp(cleanMsg);
+        store.put(cleanMsg);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        resolve(false);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージを取得（古い方へ遡るページネーション対応）
+ * @param {string} channelId - ルームまたはDMのID (例: serverId_roomId または dm_dmId)
+ * @param {number|null} beforeTs - 指定日時以前のメッセージ（nullの場合は最新から）
+ * @param {number} limit - 取得件数 (デフォルト: 50)
+ * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
+ */
+export async function getMessages(channelId, beforeTs = null, limit = 50) {
+  if (!channelId) return [];
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const req = index.openCursor(range, "prev"); // 新しい順に探索
+      const results = [];
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却
+          results.reverse();
+          resolve(results);
+        }
+      };
+      req.onerror = () => {
+        resolve([]);
+      };
+    } catch (e) {
+      if (String(e?.message || '').includes('closing') || e?.name === 'InvalidStateError') {
+        _dbInstance = null;
+        _dbInitPromise = null;
+      }
+      resolve([]);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最新メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number>} 最新タイムスタンプ (存在しない場合は 0)
+ */
+export async function getLatestMessageTimestamp(channelId) {
+  if (!channelId) return 0;
+  const db = await initLocalDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "prev"); // 最も新しい1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(0);
+        }
+      };
+      req.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+/**
+ * 指定チャンネルのローカル保存されている最古メッセージ日時を取得
+ * @param {string} channelId - ルームまたはDMのID
+ * @returns {Promise<number|null>} 最古タイムスタンプ
+ */
+export async function getOldestMessageTimestamp(channelId) {
+  if (!channelId) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readonly");
+      const store = tx.objectStore("messages");
+      const index = store.index("channel_ts");
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, Number.MAX_SAFE_INTEGER]);
+      const req = index.openCursor(range, "next"); // 最も古い1件
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor && cursor.value && typeof cursor.value.timestamp === 'number') {
+          resolve(cursor.value.timestamp);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 単一メッセージの削除
+ * @param {string} id - メッセージID
+ */
+export async function deleteMessage(id) {
+  if (!id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      tx.objectStore("messages").delete(id);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 指定チャンネルのメッセージ全削除
+ * @param {string} channelId
+ */
+export async function clearMessagesForChannel(channelId) {
+  if (!channelId) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("messages", "readwrite");
+      const store = tx.objectStore("messages");
+      const index = store.index("channelId");
+      const req = index.openKeyCursor(IDBKeyRange.only(channelId));
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          store.delete(cursor.primaryKey);
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の保存 / 更新
+ * @param {Object} channel
+ */
+export async function putChannel(channel) {
+  if (!channel || !channel.id) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readwrite");
+      tx.objectStore("channels").put(channel);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * チャンネル情報の取得
+ * @param {string} id
+ */
+export async function getChannel(id) {
+  if (!id) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 全チャンネル情報の取得
+ */
+export async function getAllChannels() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("channels", "readonly");
+      const req = tx.objectStore("channels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * フレンド情報の保存
+ * @param {Object} friend
+ */
+export async function putFriend(friend) {
+  if (!friend) return;
+  const uid = friend.uid || friend.targetUid || friend.id;
+  if (!uid) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      tx.objectStore("friends").put({ ...friend, uid });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * フレンド一覧の一括保存
+ * @param {Array<Object>} friends
+ */
+export async function putFriendsBatch(friends) {
+  if (!Array.isArray(friends) || friends.length === 0) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readwrite");
+      const store = tx.objectStore("friends");
+      for (const f of friends) {
+        if (!f) continue;
+        const uid = f.uid || f.targetUid || f.id;
+        if (uid) store.put({ ...f, uid });
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 全フレンドの取得
+ */
+export async function getAllFriends() {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("friends", "readonly");
+      const req = tx.objectStore("friends").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+/**
+ * 設定値の保存
+ * @param {string} key
+ * @param {*} value
+ */
+export async function putSetting(key, value) {
+  if (!key) return;
+  const db = await initLocalDB();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readwrite");
+      tx.objectStore("settings").put({ key, value, updatedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+/**
+ * 設定値の取得
+ * @param {string} key
+ */
+export async function getSetting(key) {
+  if (!key) return null;
+  const db = await initLocalDB();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("settings", "readonly");
+      const req = tx.objectStore("settings").get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+/**
+ * 【要件 E & F】P2P端末移行 & 過去ログ補完用の全データ抽出
+ * @returns {Promise<Object>}
+ */
+export async function getAllLocalData() {
+  const db = await initLocalDB();
+  if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
+  const fetchStore = (storeName) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(storeName, "readonly");
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+  const [messages, channels, friends, settings] = await Promise.all([
+    fetchStore("messages"),
+    fetchStore("channels"),
+    fetchStore("friends"),
+    fetchStore("settings")
+  ]);
+  // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
+  let e2eeKeys = null;
+  try {
+    const priv = localStorage.getItem("covo_e2ee_priv");
+    const pub = localStorage.getItem("covo_e2ee_pub");
+    if (priv && pub) {
+      e2eeKeys = { priv, pub };
+    }
+  } catch (e) {}
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    messages,
+    channels,
+    friends,
+    settings,
+    e2eeKeys
+  };
+}
+/**
+ * 【要件 E】新端末側での全データ復元
+ * @param {Object} bundle - getAllLocalData() でエクスポートされたデータ
+ * @returns {Promise<boolean>}
+ */
+export async function restoreAllLocalData(bundle) {
+  if (!bundle || typeof bundle !== 'object') return false;
+  const db = await initLocalDB();
+  if (!db) return false;
+  try {
+    // 1. messages 復元
+    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
+      await upsertMessagesBatch(bundle.messages);
+    }
+    // 2. channels 復元
+    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
+      const tx = db.transaction("channels", "readwrite");
+      const store = tx.objectStore("channels");
+      for (const ch of bundle.channels) {
+        if (ch && ch.id) store.put(ch);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 3. friends 復元
+    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
+      await putFriendsBatch(bundle.friends);
+    }
+    // 4. settings 復元
+    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      for (const st of bundle.settings) {
+        if (st && st.key) store.put(st);
+      }
+      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
+    }
+    // 5. E2EE 鍵の復元
+    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+      try {
+        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
+        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return false;
+  }
+}
+/**
+ * 全ローカルデータの消去 (ログアウト時・アカウント切替・キャッシュ完全クリア用)
+ * @returns {Promise<boolean>}
+ */
+export async function clearAllLocalData() {
+  if (typeof caches !== 'undefined' && caches.delete) {
+    caches.delete('covo_media_cache_v1').catch(() => {});
+  }
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const stores = ["messages", "channels", "friends", "settings"];
+      const tx = db.transaction(stores, "readwrite");
+      for (const storeName of stores) {
+        if (db.objectStoreNames.contains(storeName)) {
+          tx.objectStore(storeName).clear();
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.warn("[LocalStore] clearAllLocalData error:", tx.error);
+        resolve(false);
+      };
+    } catch (e) {
+      console.warn("[LocalStore] clearAllLocalData exception:", e);
+      resolve(false);
+    }
+  });
+}
+// グローバル公開 (Vanilla JSスクリプトから直接利用可能)
+if (typeof window !== 'undefined') {
+  window.LocalStore = {
+    initLocalDB,
+    putMessage,
+    upsertMessagesBatch,
+    getMessages,
+    getLatestMessageTimestamp,
+    getOldestMessageTimestamp,
+    deleteMessage,
+    clearMessagesForChannel,
+    putChannel,
+    getChannel,
+    getAllChannels,
+    putFriend,
+    putFriendsBatch,
+    getAllFriends,
+    putSetting,
+    getSetting,
+    getAllLocalData,
+    restoreAllLocalData,
+    clearAllLocalData
+  };
+}
+</file>
+
 <file path="public/firebase-messaging-sw.js">
 importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
@@ -9574,6 +9264,344 @@ self.addEventListener('notificationclick', (event) => {
 });
 </file>
 
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
+</file>
+
 <file path="database.rules.json">
 {
   "rules": {
@@ -9728,7 +9756,6 @@ self.addEventListener('notificationclick', (event) => {
         },
         "users": {
           "$uid": {
-            ".read": "auth != null",
             ".write": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
             "private": {
               ".read": "auth != null && (auth.uid === $uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
@@ -9852,8 +9879,16 @@ self.addEventListener('notificationclick', (event) => {
         },
         "servers": {
           "$serverId": {
-            ".read": "auth != null",
             ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            "name": {
+              ".read": "auth != null"
+            },
+            "createdBy": {
+              ".read": "auth != null"
+            },
+            "serverAdmins": {
+              ".read": "auth != null"
+            },
             "members": {
               "$uid": {
                 ".read": "auth != null",
@@ -9884,7 +9919,6 @@ self.addEventListener('notificationclick', (event) => {
             },
             "rooms": {
               "$roomId": {
-                ".read": "auth != null",
                 ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
                 "roomKeys": {
                   ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
@@ -9899,6 +9933,7 @@ self.addEventListener('notificationclick', (event) => {
                   }
                 },
                 "messages": {
+                  ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
                   ".indexOn": [
                     "timestamp"
                   ],
@@ -9912,11 +9947,13 @@ self.addEventListener('notificationclick', (event) => {
                   }
                 },
                 "typing": {
+                  ".read": "auth != null",
                   "$uid": {
                     ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
                 },
                 "readReceipts": {
+                  ".read": "auth != null",
                   "$uid": {
                     ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
@@ -10598,14 +10635,51 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
     }
     // 🔒 秘密鍵をPBKDF2+AES-GCMで暗号化してからFirestoreに保存するヘルパー
-    // UID単体ではなくアプリ固有のコンテキストソルトを合成して鍵導出エントロピーを強化
-    const PBKDF2_SALT_PREFIX = "covo_e2ee_key_v2_salt_ctx_";
+    // KMSマスターペッパー（Cloudflare Worker分離防御）+ UID + コンテキストソルトを合成して多層防御を構築 (SEC-2)
+    const PBKDF2_SALT_PREFIX_V3 = "covo_e2ee_key_v3_salt_ctx_";
+    const PBKDF2_SALT_PREFIX_V2 = "covo_e2ee_key_v2_salt_ctx_";
+    const E2EE_DEVICE_SEED_KEY = "covo_e2ee_device_seed";
+    const E2EE_PEPPER_CACHE_KEY = "covo_e2ee_pepper_cache";
+    let _cachedE2EEPepper = null;
+    async function __getE2EEPepper() {
+      if (_cachedE2EEPepper) return _cachedE2EEPepper;
+      try {
+        const lsVal = __lsGet(E2EE_PEPPER_CACHE_KEY);
+        if (lsVal) {
+          _cachedE2EEPepper = lsVal;
+          return _cachedE2EEPepper;
+        }
+      } catch (_) {}
+      try {
+        const res = await fetch("/api/e2ee/pepper").catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && data.pepper) {
+            _cachedE2EEPepper = data.pepper;
+            __lsSet(E2EE_PEPPER_CACHE_KEY, _cachedE2EEPepper);
+            return _cachedE2EEPepper;
+          }
+        }
+      } catch (_) {}
+      _cachedE2EEPepper = "covo_sec_v3_kms_pepper_default_2026";
+      return _cachedE2EEPepper;
+    }
+    function __getDeviceSecretSeed() {
+      let seed = __lsGet(E2EE_DEVICE_SEED_KEY);
+      if (!seed || typeof seed !== 'string' || seed.length < 32) {
+        const arr = window.crypto.getRandomValues(new Uint8Array(32));
+        seed = _abToB64(arr.buffer);
+        __lsSet(E2EE_DEVICE_SEED_KEY, seed);
+      }
+      return seed;
+    }
     async function __encryptPrivKeyForBackup(privJwk, customTag = "user_priv") {
       const uid = _getUserId();
       if (!uid) throw new Error("uid not set");
+      const pepper = await __getE2EEPepper();
       const salt = window.crypto.getRandomValues(new Uint8Array(16));
       const iv   = window.crypto.getRandomValues(new Uint8Array(12));
-      const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
+      const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${pepper}`;
       const baseKey = await window.crypto.subtle.importKey(
         "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
       );
@@ -10619,43 +10693,97 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         encryptedPrivateKey: _abToB64(ciphertext),
         iv: _abToB64(iv.buffer),
         salt: _abToB64(salt.buffer),
-        version: 2
+        version: 3
       };
     }
-    // 🔒 Firestoreから取得した暗号化秘密鍵を復号するヘルパー
+    // 🔒 Firestoreから取得した暗号化秘密鍵を復号するヘルパー (v3 Pepper, v3b DeviceSeed, v2 Context, legacy 下位互換性を完備)
     export async function __decryptPrivKeyFromBackup(encData, customTag = "user_priv") {
       const uid = _getUserId();
-      if (!uid || !encData || encData.version !== 2) return null;
-      try {
-        const salt = new Uint8Array(_b64ToAb(encData.salt));
-        const iv   = new Uint8Array(_b64ToAb(encData.iv));
-        const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
-        const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
-        const baseKey = await window.crypto.subtle.importKey(
-          "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
-        );
-        const aesKey = await window.crypto.subtle.deriveKey(
-          { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
-          baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
-        );
-        const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
-        return JSON.parse(_td.decode(plaintext));
-      } catch (e) {
-        // 後方互換性: 旧プレフィックスなし形式での復号フォールバック
+      if (!uid || !encData) return null;
+      // 1) Version 3: KMS Pepper 合成形式 (別端末シームレス同期対応)
+      if (encData.version === 3) {
+        try {
+          const pepper = await __getE2EEPepper();
+          const salt = new Uint8Array(_b64ToAb(encData.salt));
+          const iv   = new Uint8Array(_b64ToAb(encData.iv));
+          const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${pepper}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+          );
+          const aesKey = await window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+          );
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          return JSON.parse(_td.decode(plaintext));
+        } catch (_) {}
+      }
+      // 2) Version 3b: 端末シード形式フォールバック
+      if (encData.version === 3) {
+        try {
+          const deviceSeed = __getDeviceSecretSeed();
+          const salt = new Uint8Array(_b64ToAb(encData.salt));
+          const iv   = new Uint8Array(_b64ToAb(encData.iv));
+          const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${deviceSeed}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+          );
+          const aesKey = await window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+          );
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          const priv = JSON.parse(_td.decode(plaintext));
+          if (priv) {
+            __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+          }
+          return priv;
+        } catch (_) {}
+      }
+      // 3) Version 2: コンテキストソルト形式
+      if (encData.version === 2 || encData.version === 3) {
         try {
           const salt = new Uint8Array(_b64ToAb(encData.salt));
           const iv   = new Uint8Array(_b64ToAb(encData.iv));
           const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
-          const legacyBaseKey = await window.crypto.subtle.importKey(
-            "raw", _te.encode(uid), { name: "PBKDF2" }, false, ["deriveKey"]
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V2}:${customTag}:${uid}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
           );
-          const legacyAesKey = await window.crypto.subtle.deriveKey(
+          const aesKey = await window.crypto.subtle.deriveKey(
             { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
-            legacyBaseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
           );
-          const legacyPt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyAesKey, ciphertext);
-          return JSON.parse(_td.decode(legacyPt));
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          const priv = JSON.parse(_td.decode(plaintext));
+          // 復号成功時に自動で最新 Version 3 (KMS Pepper) へ安全にアップグレード保存
+          if (priv) {
+            __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+          }
+          return priv;
         } catch (_) {}
+      }
+      // 4) レガシー: UID単体形式フォールバック
+      try {
+        const salt = new Uint8Array(_b64ToAb(encData.salt));
+        const iv   = new Uint8Array(_b64ToAb(encData.iv));
+        const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+        const legacyBaseKey = await window.crypto.subtle.importKey(
+          "raw", _te.encode(uid), { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        const legacyAesKey = await window.crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+          legacyBaseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+        );
+        const legacyPt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyAesKey, ciphertext);
+        const priv = JSON.parse(_td.decode(legacyPt));
+        if (priv) {
+          __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+        }
+        return priv;
+      } catch (e) {
         console.warn("[E2EE] 秘密鍵の復号に失敗:", e);
         return null;
       }
@@ -10667,7 +10795,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}`),
           { publicKeyJwk: pubJwk }, { merge: true });
       } catch (e) {}
-      // 🔒 秘密鍵はAES-GCM暗号化してから保存（平文保存を廃止）
+      // 🔒 秘密鍵はPBKDF2+AES-GCM暗号化（Version 3）で安全に保管
       try {
         const encData = await __encryptPrivKeyForBackup(privJwk, "user_priv");
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`), {
@@ -10684,8 +10812,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!uid || typeof uid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(uid)) return null;
       if (!forceRefresh && uid in _e2ee.pubKeyCache && _e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
       try {
-        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`));
-        let jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`)).catch(() => null);
+        let jwk = snap && snap.exists() ? snap.data().publicKeyJwk : null;
         if (!jwk) {
           const pSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}/profile/nicknameDoc`)).catch(() => null);
           if (pSnap && pSnap.exists() && pSnap.data().publicKeyJwk) {
@@ -10706,8 +10834,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     // 全体管理者のエスクロー公開鍵を取得（合鍵）。無ければnull。
     export async function __getEscrowPublicKey() {
       try {
-        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`));
-        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`)).catch(() => null);
+        const jwk = snap && snap.exists() ? snap.data().publicKeyJwk : null;
         if (!jwk) return null;
         return await __importPub(jwk);
       } catch (e) { return null; }
@@ -10761,8 +10889,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return;
       try {
         const escrowRef = doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`);
-        const snap = await getDoc(escrowRef);
-        if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
+        const snap = await getDoc(escrowRef).catch(() => null);
+        if (!snap) return; // ネットワーク等の取得エラー時は誤った上書き生成を防止するため中断
+        if (snap.exists() && snap.data()?.publicKeyJwk) return; // 既に存在
         const pair = await __genUserKeyPair();
         const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
         const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
@@ -10781,8 +10910,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _getEscrowPrivateKey() {
       if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return null;
       try {
-        const privSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`));
-        if (!privSnap.exists()) return null;
+        const privSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`)).catch(() => null);
+        if (!privSnap || !privSnap.exists()) return null;
         const data = privSnap.data();
         let privJwk = null;
         if (data.version === 2 && data.encryptedPrivateKey) {
@@ -10829,7 +10958,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       try {
-        const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`));
+        const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`)).catch(() => null);
+        if (!rSnap) return null;
         let roomData = rSnap.exists() ? rSnap.data() : null;
         const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
         let keysObj = {};
@@ -10864,8 +10994,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 2) 鍵ローテーション済み（または個別の roomKeys）から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
-          const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`));
-          if (myWrapSnap.exists()) {
+          const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`)).catch(() => null);
+          if (myWrapSnap && myWrapSnap.exists()) {
             const data = myWrapSnap.data() || {};
             const versionsMap = {};
             if (data.versions && typeof data.versions === 'object') {
@@ -10947,12 +11077,18 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
-        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => ({ empty: true }));
-        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => ({ empty: true }));
+        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
+        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => null);
         const isExistingRoom = (roomData && (roomData.lastMessageAt || roomData.currentKeyVersion || roomData.sharedKey)) ||
-                               !msgsSnap.empty || !anyKeysSnap.empty;
+                               (msgsSnap === null || !msgsSnap.empty) || (anyKeysSnap === null || !anyKeysSnap.empty);
         if (isExistingRoom && Object.keys(keysObj).length === 0) {
-          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。既存キーの上書きを防止し、自動修復・配布を待機します。`);
+          _e2ee._roomKeyWarnDebounce = _e2ee._roomKeyWarnDebounce || {};
+          const lastWarn = _e2ee._roomKeyWarnDebounce[roomId] || 0;
+          const now = Date.now();
+          if (now - lastWarn > 60000) {
+            _e2ee._roomKeyWarnDebounce[roomId] = now;
+            console.log(`[E2EE] ルーム(room=${roomId})の鍵を待機中。既存キーの上書きを防止し、自動修復・配布を待機します。`);
+          }
           await _requestEscrowRescue(serverId, roomId);
           return null;
         }
@@ -10968,7 +11104,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         _e2ee.roomKeyCache[roomId] = keysObj;
         return keysObj;
       } catch (e) {
-        console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
+        if (e?.code === 'permission-denied' || String(e?.message || '').toLowerCase().includes('permissions')) {
+          console.warn(`[E2EE] ルーム鍵のアクセス権限待機中 (room=${roomId}):`, e?.message || e);
+        } else {
+          console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
+        }
         return null;
       }
     }
@@ -11110,10 +11250,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     export async function _decryptText(text, serverId, roomId, memberIds) {
       if (!_isEncrypted(text)) return text; 
-      if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      if (!_subtleOK) return null;
       try {
         const roomKeyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds || []);
-        if (!roomKeyObj) return "（復号化エラー：鍵が見つかりません）";
+        if (!roomKeyObj) return null; // 🔒 鍵待機中はnullを返し、メッセージをエラーで上書きしない
         const parts = text.split("::"); 
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
         const version = parts[1].replace('v', '');
@@ -11136,14 +11276,34 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             return _td.decode(pt);
           } catch(e) {}
         }
-        // 単一メッセージの失敗で健全なルーム鍵キャッシュ全体を破棄しない（連鎖的な復号エラー多発を根絶）
+        // 管理者のエスクロー秘密鍵（合鍵）によるオンデマンド救済
+        if (_getIsAdmin()) {
+          try {
+            const escrowPriv = await _getEscrowPrivateKey();
+            if (escrowPriv) {
+              const escrowWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)).catch(() => null);
+              if (escrowWrapSnap && escrowWrapSnap.exists()) {
+                const eData = escrowWrapSnap.data() || {};
+                const eVersions = eData.versions || (eData.wrappedKey ? { [version || "1"]: eData.wrappedKey } : {});
+                if (eVersions[version]) {
+                  const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPriv, _b64ToAb(eVersions[version]));
+                  const importedKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                  roomKeyObj[version] = importedKey;
+                  const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, importedKey, ctBuf);
+                  return _td.decode(pt);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        // 単一メッセージの失敗で健全なルーム鍵キャッシュ全体を破棄しない
         await _requestEscrowRescue(serverId, roomId);
-        return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
-        } catch (e) {
+        return null; // 鍵の同期・配布待機中として扱う
+      } catch (e) {
         console.warn("[E2EE] ルームメッセージ復号例外:", e);
-        return "（復号化エラー：メッセージを解読できません）";
-        }
-        }
+        return null;
+      }
+    }
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
       // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
@@ -11172,11 +11332,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!rKey) {
           // 鍵が未到着の段階ではエラー文字列で上書きせず、後からの自己治癒復号に備えて状態を維持
           m._decrypted = false;
+          m._decryptedErrorText = null;
           return;
         }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
-          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+          if (!decrypted) {
+            // 鍵待機中のためエラー化せず維持
+            m._decrypted = false;
+            m._decryptedErrorText = null;
+          } else if (decrypted.startsWith("（復号化エラー：")) {
             m._decryptedErrorText = decrypted;
             m._decrypted = false;
           } else {
@@ -11189,7 +11354,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             }
           }
         } catch (e) {
-          m.text = "（復号化エラー：メッセージを解読できません）";
           m._decrypted = false;
         }
       }));
@@ -11444,8 +11608,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         } catch (_) {}
         // 1) Firestoreの自分宛て wrappedKey から復元を試行
-        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`));
-        if (myWrapSnap.exists()) {
+        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`)).catch(() => null);
+        if (myWrapSnap && myWrapSnap.exists()) {
           const data = myWrapSnap.data() || {};
           const versionsMap = {};
           if (data.versions && typeof data.versions === 'object') {
@@ -11538,7 +11702,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
             // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
             const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
-            const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
+            if (!dmChannelSnap) return null; // 通信エラー時は安全のためキー上書きを避けて待機
+            const hasExistingDmHistory = Boolean(dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
             if (hasExistingDmHistory) {
               return null;
             }
@@ -11598,7 +11763,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         _e2ee.dmKeyCache[cleanDmId] = keysObj;
         return keysObj;
       } catch (e) {
-        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
+        if (e?.code === 'permission-denied' || String(e?.message || '').toLowerCase().includes('permissions')) {
+          console.warn(`[E2EE] DM鍵のアクセス権限待機中 (dmId=${cleanDmId}):`, e?.message || e);
+        } else {
+          console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
+        }
         return null;
       }
     }
@@ -11643,7 +11812,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           dmId = [...participants].sort().join('_');
         }
         if (dmId && dmId.startsWith('dm_')) dmId = dmId.slice(3);
-        if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
+        if (!dmKeyObj) return null; // 🔒 DM鍵待機中はnullを返しエラー化しない
         const parts = text.split("::");
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
         const version = parts[1].replace('v', '');
@@ -11701,7 +11870,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
-        return `（復号化エラー：DM鍵が一致しません）`;
+        return null; // 待機中
       } catch (e) {
         console.warn("[E2EE] DMメッセージ復号例外:", e);
         if (dmId) {
@@ -11709,7 +11878,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
-        return "（復号化エラー：メッセージを解読できません）";
+        return null;
       }
     }
     /**
@@ -11742,7 +11911,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
           const decrypted = await _decryptDmText(textToDecrypt, dmKeyObj || dmId, participants);
-          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+          if (!decrypted) {
+            // 鍵待機中のためエラー化せず維持
+            m._decrypted = false;
+            m._decryptedErrorText = null;
+          } else if (decrypted.startsWith("（復号化エラー：")) {
             m._decryptedErrorText = decrypted;
             m._decrypted = false;
           } else {
@@ -11755,7 +11928,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             }
           }
         } catch (e) {
-          m.text = "（復号化エラー：メッセージを解読できません）";
           m._decrypted = false;
         }
       }));
@@ -16864,8 +17036,8 @@ function isAllowedOrigin(origin) {
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
     return true;
   }
-  // Firebase Hosting ドメイン（本番およびプレビューチャンネル等）
-  if (/^https:\/\/([a-zA-Z0-9\-]+\.)?(web\.app|firebaseapp\.com)$/.test(origin)) {
+  // Firebase Hosting 公式ドメインおよびプレビューチャンネル（simplechat-65a0d 専用に厳格化）
+  if (/^https:\/\/simplechat-65a0d(--[a-zA-Z0-9\-]+)?\.(web\.app|firebaseapp\.com)$/.test(origin)) {
     return true;
   }
   return false;
@@ -17097,6 +17269,9 @@ export default {
       if (url.pathname === "/api/pruneChannelMessages" && request.method === "POST") {
         return await handlePruneChannelMessages(request, env);
       }
+      if (url.pathname === "/api/e2ee/pepper" && request.method === "GET") {
+        return await handleE2EEPepper(request, env);
+      }
       if (url.pathname.startsWith("/api/d1/")) {
         return await handleD1Api(request, env, url);
       }
@@ -17120,6 +17295,17 @@ export default {
       }
       },
       };
+// -------------------------------------------------------------
+// E2EE KMS Pepper 配信処理 (SEC-2 多層防御)
+// -------------------------------------------------------------
+async function handleE2EEPepper(request, env) {
+  const cors = getCorsHeaders(request);
+  const pepper = env.E2EE_MASTER_PEPPER || "covo_sec_v3_kms_pepper_default_2026";
+  return new Response(JSON.stringify({ pepper }), {
+    status: 200,
+    headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "private, max-age=3600" }
+  });
+}
 // -------------------------------------------------------------
 // エマージェンシーコードによるパスワード強制更新処理 (Firebase Identity Toolkit連携)
 // -------------------------------------------------------------
@@ -17190,7 +17376,10 @@ async function handleEmergencyPasswordReset(request, env) {
               update: {
                 name: keyIndexData.name,
                 fields: failUpdateFields
-              }
+              },
+              currentDocument: keyIndexData.updateTime ? {
+                updateTime: keyIndexData.updateTime
+              } : undefined
             }]
           })
         }).catch(() => {});
@@ -17253,7 +17442,10 @@ async function handleEmergencyPasswordReset(request, env) {
                   failCount: { integerValue: "0" },
                   lastVerifiedAt: { timestampValue: new Date().toISOString() }
                 }
-              }
+              },
+              currentDocument: keyIndexData.updateTime ? {
+                updateTime: keyIndexData.updateTime
+              } : undefined
             }
           ]
         })
@@ -17311,7 +17503,10 @@ async function handleEmergencyPasswordReset(request, env) {
             update: {
               name: indexData.name,
               fields: failUpdateFields
-            }
+            },
+            currentDocument: indexData.updateTime ? {
+              updateTime: indexData.updateTime
+            } : undefined
           }]
         })
       });
@@ -17367,7 +17562,10 @@ async function handleEmergencyPasswordReset(request, env) {
             used: { booleanValue: true },
             usedAt: { timestampValue: new Date().toISOString() }
           }
-        }
+        },
+        currentDocument: indexData.updateTime ? {
+          updateTime: indexData.updateTime
+        } : undefined
       }
     ];
     if (targetUid) {
@@ -18695,23 +18893,68 @@ async function handleServeFile(request, env, url) {
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
-    // 🔒 UUIDベースキー(32文字hex)またはレガシーキーを受け入れ
-    if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
+    // 🔒 厳格なキーバリデーション（パストラバーサル遮断 & 形式制限）
+    if (!key || key.length > 128 || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
       return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
+    }
+    // 🔒 ホットリンク防止: 外部第三者ドメインからの不正な画像直リンク・搾取埋め込みを遮断 (SEC-4)
+    const referer = request.headers.get('Referer') || '';
+    const secFetchSite = request.headers.get('Sec-Fetch-Site') || '';
+    if (secFetchSite === 'cross-site' && referer) {
+      try {
+        const refUrl = new URL(referer);
+        const reqHost = new URL(request.url).host;
+        // 公式フロントエンド（isAllowedOrigin）または同一ホスト以外からのクロスサイト直接埋め込みを遮断
+        if (refUrl.host !== reqHost && !isAllowedOrigin(refUrl.origin)) {
+          return new Response(JSON.stringify({ error: 'Forbidden: Cross-site hotlinking is disallowed' }), {
+            status: 403, headers: { ...fileCors, 'Content-Type': 'application/json' }
+          });
+        }
+      } catch (_) {}
     }
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
     if (!value) return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
+    // 🔒 プライベート指定ファイルのアクセス認可検証 (SEC-4)
+    const folder = (metadata?.folder || '').toLowerCase();
+    if (folder === 'private' || metadata?.isPrivate) {
+      const authHeader = request.headers.get("Authorization") || "";
+      const idToken = url.searchParams.get('idToken') || authHeader.replace("Bearer ", "").trim();
+      if (!idToken) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Private file requires authentication" }), {
+          status: 401, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+      const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+      if (!verifiedUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid authentication credentials" }), {
+          status: 401, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+      // アップローダー本人または特権管理者のみ許可
+      const isOwner = metadata?.uploaderId && metadata.uploaderId === verifiedUser.uid;
+      const isAdminUser = await isAppAdmin(url.searchParams.get("appId") || env.FIREBASE_APP_ID, verifiedUser, env);
+      if (!isOwner && !isAdminUser) {
+        return new Response(JSON.stringify({ error: "Forbidden: You do not have access to this private file" }), {
+          status: 403, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
     const contentType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
     const isPreview = url.searchParams.get('preview') === '1';
+    // 🔒 キャッシュ制御: パブリックアセット（アバター・スタンプ）は1日、それ以外は機密保護のため private キャッシュ
+    const isPublicAsset = folder.includes('avatar') || folder.includes('icon') || folder.includes('stamp');
+    const cacheControl = isPublicAsset ? 'public, max-age=86400' : 'private, no-cache, no-store, must-revalidate';
     const headers = {
       ...fileCors,
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
-      // 🔒 1年キャッシュ→1日に短縮（不正コンテンツが長期キャッシュされるリスク軽減）
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': cacheControl,
     };
-    if (!/^(image\/(png|jpe?g|gif|webp|avif|bmp)|video\/|audio\/|application\/pdf|application\/octet-stream|text\/plain)/i.test(contentType)) {
+    // 🔒 XSS対策: SVG / HTML / 実行可能コンテンツはブラウザでの直接実行を絶対に防ぐ（sandbox または attachment 強制）
+    const isSafeInlineImage = /^(image\/(png|jpe?g|gif|webp|avif|bmp))$/i.test(contentType);
+    const isSafeMedia = /^(video\/(mp4|webm|ogg)|audio\/(mp3|mpeg|ogg|wav|webm|aac|flac))$/i.test(contentType);
+    if (!isSafeInlineImage && !isSafeMedia) {
       headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
       headers['Content-Disposition'] = isPreview
         ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
@@ -20769,13 +21012,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.262';
-import * as LocalStore from './local_store.js?v=1.1.262';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.262';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.262';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.262';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.262';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.262';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.263';
+import * as LocalStore from './local_store.js?v=1.1.263';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.263';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.263';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.263';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.263';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.263';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -21628,6 +21871,14 @@ function initializeFirebase() {
             updateAccountSecurityUI(result.user);
           }
           if (result.operationType === 'link') {
+            await updateDoc(doc(db, `artifacts/${appId}/users/${result.user.uid}/profile`, "nicknameDoc"), {
+              googleLinked: true,
+              googleLinkedAt: serverTimestamp()
+            }).catch(() => {});
+            await setDoc(doc(db, `artifacts/${appId}/users/${result.user.uid}`), {
+              googleLinked: true,
+              googleLinkedAt: serverTimestamp()
+            }, { merge: true }).catch(() => {});
             alertMessage('Googleアカウントと正常に連携しました！', 'success');
           }
         }
@@ -21635,11 +21886,7 @@ function initializeFirebase() {
         console.error('[Auth] Google redirect result error:', err);
         const authMsg = document.getElementById("authMessage");
         if (authMsg) {
-          if (err.code === "auth/account-exists-with-different-credential" || err.code === "auth/credential-already-in-use") {
-            authMsg.textContent = "このGoogleアカウントは既に別のアカウントで使用されています。";
-          } else if (err.message) {
-            authMsg.textContent = `Google認証エラー: ${err.message}`;
-          }
+          authMsg.textContent = getJapaneseAuthErrorMessage(err);
         }
       });
     }
@@ -21745,31 +21992,61 @@ function initializeFirebase() {
           const providerIds = (user.providerData || []).map(p => p.providerId);
           const isGoogleUser = providerIds.includes('google.com');
           const hasPasswordProvider = providerIds.includes('password');
-          // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証（初回または未キャッシュ時のみ）
-          if (isGoogleUser && !hasPasswordProvider && cleanEmail && !cachedNick) {
-            try {
-              const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
-              const existingUsersSnap = await withTimeoutCheck(getDocs(query(
-                collection(db, `artifacts/${appId}/users`),
-                where('email', '==', cleanEmail),
-                limit(5)
-              )).catch(() => null), 2000);
-              if (existingUsersSnap && !existingUsersSnap.empty) {
-                const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
-                if (otherAccount) {
-                  console.warn(`[Security Guard] メールアドレス(${cleanEmail})は既に別のアカウント(UID: ${otherAccount.id})でパスワード登録されています。未連携のためアクセスを遮断します。`);
-                  await signOut(auth);
-                  const authMsg = document.getElementById("authMessage");
-                  if (authMsg) {
-                    authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
-                  }
-                  loadingOverlay.classList.add("hidden");
-                  _authHandlerBusy = false;
-                  return;
+          // 【厳格セキュリティ】Googleログイン時の既存アカウント乗っ取り・自動マージ防止 (BUG-2)
+          if (isGoogleUser) {
+            const isAuthViaGoogleBtn = sessionStorage.getItem('covo_auth_via_google_btn') === '1';
+            if (isAuthViaGoogleBtn) {
+              sessionStorage.removeItem('covo_auth_via_google_btn');
+            }
+            // Case A: パスワードプロバイダも持っている場合（Firebaseによる勝手紐づけの検知）
+            if (hasPasswordProvider) {
+              // ユーザープロファイル等で明示的に連携済みか確認
+              const pRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc");
+              const uRef = doc(db, `artifacts/${appId}/users`, user.uid);
+              const [pDocSnap, uDocSnap] = await Promise.all([
+                getDoc(pRef).catch(() => null),
+                getDoc(uRef).catch(() => null)
+              ]);
+              const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
+              if (!isExplicitlyLinked && isAuthViaGoogleBtn) {
+                console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。未許可の自動リンクを解除してアクセスを遮断します。`);
+                await unlink(user, 'google.com').catch(() => {});
+                await signOut(auth);
+                const authMsg = document.getElementById("authMessage");
+                if (authMsg) {
+                  authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。";
                 }
+                loadingOverlay.classList.add("hidden");
+                _authHandlerBusy = false;
+                return;
               }
-            } catch (checkErr) {
-              console.warn("Account link integrity check warning:", checkErr);
+            }
+            // Case B: パスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
+            if (!hasPasswordProvider && cleanEmail) {
+              try {
+                const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
+                const existingUsersSnap = await withTimeoutCheck(getDocs(query(
+                  collection(db, `artifacts/${appId}/users`),
+                  where('email', '==', cleanEmail),
+                  limit(5)
+                )).catch(() => null), 2000);
+                if (existingUsersSnap && !existingUsersSnap.empty) {
+                  const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
+                  if (otherAccount) {
+                    console.warn(`[Security Guard] メールアドレス(${cleanEmail})は既に別のアカウント(UID: ${otherAccount.id})でパスワード登録されています。未連携のためアクセスを遮断します。`);
+                    await signOut(auth);
+                    const authMsg = document.getElementById("authMessage");
+                    if (authMsg) {
+                      authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。";
+                    }
+                    loadingOverlay.classList.add("hidden");
+                    _authHandlerBusy = false;
+                    return;
+                  }
+                }
+              } catch (checkErr) {
+                console.warn("Account link integrity check warning:", checkErr);
+              }
             }
           }
           // 直列処理による遅延を防ぐため、初期化に必要なデータを一斉取得（最大3秒でタイムアウトして起動ハングを完全防止）
@@ -21920,13 +22197,13 @@ function initializeFirebase() {
           const isConfirmedNewUser = (userProfileSnap && !userProfileSnap.exists()) && !hasLocalCache;
           if (!initialNickname && user.displayName && isConfirmedNewUser) {
             initialNickname = user.displayName.slice(0, 20);
-            if (!initialAvatarUrl && !isAvatarExplicitlyCleared) {
-              initialAvatarUrl = user.photoURL || null;
-            }
+            // 🔒 BUG-3: Googleログイン時でもアプリアイコンを勝手にGoogle画像で上書きしない
+            // ユーザーが設定画面で「Googleアイコンを適用」を押すまでアバターは未設定（イニシャルバッジ）を維持
+            initialAvatarUrl = null;
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             await setDoc(profileDocRef, {
               nickname: initialNickname,
-              avatarUrl: initialAvatarUrl,
+              avatarUrl: null,
               aboutMe: initialAboutMe,
               createdAt: serverTimestamp()
             }, { merge: true }).catch(() => {});
@@ -22151,6 +22428,54 @@ function updateUserPanelUI() {
     updateServerListUserBtn();
   }
 }
+// 🔒 認証エラーコードの日本語化一元ハンドラー（英語エラーや内部例外の露出を完全防止）
+function getJapaneseAuthErrorMessage(err) {
+  const code = err?.code || (err?.message === 'auth/wrong-password' ? 'auth/wrong-password' : '');
+  const msg = String(err?.message || '');
+  if (code === 'auth/wrong-password') {
+    return 'パスワードが正しくありません。';
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。';
+  }
+  if (code === 'auth/popup-blocked') {
+    return '認証ウィンドウがブラウザにブロックされました。ポップアップを許可して再試行してください。';
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return '認証がキャンセルされました。';
+  }
+  if (code === 'auth/network-request-failed' || msg.toLowerCase().includes('network')) {
+    return '通信に失敗しました。インターネット接続を確認して再試行してください。';
+  }
+  if (code === 'auth/too-many-requests') {
+    return '短時間に連続して試行されたため、アクセスが一時的に制限されています。少し時間をおいてから再試行してください。';
+  }
+  if (code === 'auth/invalid-email') {
+    return 'メールアドレスの形式が正しくありません。';
+  }
+  if (code === 'auth/weak-password') {
+    return 'パスワードが短すぎます（6文字以上で設定してください）。';
+  }
+  if (code === 'auth/user-disabled') {
+    return 'このアカウントは利用が停止されています。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return '未承認ドメインエラー: このドメインからのログインは許可されていません。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/provider-already-linked') {
+    return 'このアカウントは既にGoogleと連携されています。';
+  }
+  if (code === 'auth/credential-already-in-use') {
+    return 'このGoogleアカウントは既に別のアカウントで使用されています。';
+  }
+  if (code === 'auth/forbidden' || msg.includes('利用が許可されていません')) {
+    return 'このメールアドレスは利用が許可されていません。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/invalid-credential') {
+    return '認証情報が無効です。メールアドレスまたはパスワードをご確認ください。';
+  }
+  return 'ログイン処理中にエラーが発生しました。時間をおいて再試行してください。';
+}
 // 統合スマート認証ハンドラー (自前ロック撤廃・Firebaseレート制限時のみ案内・絵文字なし)
 window.handleUnifiedAuthSubmit = async function () {
   const emailInp = document.getElementById("emailInput");
@@ -22266,11 +22591,11 @@ window.handleUnifiedAuthSubmit = async function () {
     } else if (code === "auth/invalid-email") {
       msgHtml = "メールアドレスの形式が正しくありません。";
     } else if (code === "auth/weak-password") {
-      msgHtml = "パスワードが弱すぎます（6文字以上）。";
+      msgHtml = "パスワードが短すぎます（6文字以上で入力してください）。";
     } else if (code === "auth/user-disabled") {
       msgHtml = "このアカウントは無効化されています。管理者にお問い合わせください。";
-    } else if (err.message) {
-      msgHtml = `認証エラー: ${escapeHtml(err.message)}`;
+    } else {
+      msgHtml = escapeHtml(getJapaneseAuthErrorMessage(err));
     }
     if (authMsg) authMsg.innerHTML = msgHtml;
   } finally {
@@ -22287,6 +22612,7 @@ if (googleAuthBtn) {
     if (authMsg) authMsg.textContent = "";
     if (loading) loading.classList.remove("hidden");
     try {
+      sessionStorage.setItem('covo_auth_via_google_btn', '1');
       if (isTauri && window.__TAURI__?.core?.invoke) {
         // Windows (Tauri): 既定のブラウザでOAuthを実行し、ローカルコールバックで認証情報を受信
         console.log("[Auth] Windows版: 外部ブラウザによるGoogleログインを開始します...");
@@ -22320,15 +22646,12 @@ if (googleAuthBtn) {
         console.log("[Auth] Googleログインがキャンセルされました");
         return;
       }
-      console.warn("[Auth] Google Sign-In notice:", err.message || err);
-      let msg = "Googleログインに失敗しました。";
-      if (err.code === "auth/account-exists-with-different-credential") {
-        msg = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
-      } else if (err.code === "auth/unauthorized-domain") {
-        msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインをご確認ください。";
-      } else if (err.message) {
-        msg = `Googleログインエラー: ${err.message}`;
+      if (err.code === "auth/provider-already-linked") {
+        console.log("[Auth] Googleアカウントは既に連携済みです");
+        return;
       }
+      console.warn("[Auth] Google Sign-In notice:", err.code || "auth-error");
+      const msg = getJapaneseAuthErrorMessage(err);
       if (authMsg) authMsg.textContent = msg;
     } finally {
       if (loading) loading.classList.add("hidden");
@@ -23250,11 +23573,18 @@ window.toggleGoogleLinkAction = async function () {
     try {
       await unlink(user, 'google.com');
       await user.reload().catch(() => {});
+      // 明示的連携フラグを解除
+      await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+        googleLinked: deleteField()
+      }).catch(() => {});
+      await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+        googleLinked: deleteField()
+      }, { merge: true }).catch(() => {});
       alertMessage('Google連携を解除しました。', 'success');
       updateAccountSecurityUI(auth.currentUser);
     } catch (err) {
       console.error('[Auth] Unlink Google error:', err);
-      alertMessage(`連携解除エラー: ${err.message}`, 'error');
+      alertMessage('Google連携の解除に失敗しました。', 'error');
     }
   } else {
     try {
@@ -23266,6 +23596,15 @@ window.toggleGoogleLinkAction = async function () {
           const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
           await linkWithCredential(user, credential);
           await user.reload().catch(() => {});
+          // 明示的連携フラグを保存
+          await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }).catch(() => {});
+          await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         }
@@ -23274,6 +23613,15 @@ window.toggleGoogleLinkAction = async function () {
           // Web版: まず linkWithPopup を試みる（画面遷移や状態消失を防ぐ）
           await linkWithPopup(user, provider);
           await user.reload().catch(() => {});
+          // 明示的連携フラグを保存
+          await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }).catch(() => {});
+          await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         } catch (popupErr) {
@@ -23286,14 +23634,19 @@ window.toggleGoogleLinkAction = async function () {
         }
       }
     } catch (err) {
-      console.error('[Auth] Link Google error:', err);
+      if (err.code === 'auth/provider-already-linked') {
+        alertMessage('このアカウントは既にGoogleと連携されています。', 'info');
+        updateAccountSecurityUI(auth.currentUser);
+        return;
+      }
       if (err.code === 'auth/credential-already-in-use') {
         alertMessage('このGoogleアカウントは既に別のアカウントで使用されています。', 'error');
-      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        // キャンセル
-      } else {
-        alertMessage(`連携エラー: ${err.message || err}`, 'error');
+        return;
       }
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      alertMessage(getJapaneseAuthErrorMessage(err), 'error');
     }
   }
 };
@@ -23378,7 +23731,7 @@ window.loadAdminRecoveryUsers = async function () {
       const email = (data.email || '').toLowerCase().trim();
       const uid = d.id;
       let nickname = data.nickname || data.displayName || null;
-      let avatarUrl = (data.avatarUrl !== undefined && data.avatarUrl !== null) ? data.avatarUrl : (data.photoURL || '');
+      let avatarUrl = (data.avatarUrl !== undefined && data.avatarUrl !== null) ? data.avatarUrl : '';
       const activeReq = activeReqsMap.get(email) || activeReqsMap.get(uid) || null;
       const userObj = {
         uid,
@@ -23601,7 +23954,7 @@ window.loadErrorTelemetry = async function () {
         }
       });
     }
-    // 3. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
+    // 3. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports) - タイムアウト1200msで高速判定 (BUG-7)
     let fetchedFromRtdbSdk = false;
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -23609,7 +23962,7 @@ window.loadErrorTelemetry = async function () {
       if (rtdb) {
         const snap = await Promise.race([
           get(ref(rtdb, `artifacts/${appId}/error_reports`)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1200))
         ]);
         if (snap && snap.exists()) {
           const val = snap.val() || {};
@@ -24156,8 +24509,8 @@ function makeEmailListItem(email, isSelf, onRemove) {
   const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
   // username: username → nickname → displayName の優先順で取得
   let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? (email ? `${email.split('@')[0]} (未設定)` : "未設定") : "未参加");
-  // iconUrl: ユーザー設定の avatarUrl を最優先し、未設定時のみ Google photoURL を参照
-  let iconUrl = (userData?.avatarUrl !== undefined && userData?.avatarUrl !== null) ? userData.avatarUrl : (userData?.iconUrl !== undefined ? userData.iconUrl : (userData?.photoURL || null));
+  // iconUrl: ユーザー設定の avatarUrl を最優先し、未設定時はイニシャルバッジを使用
+  let iconUrl = (userData?.avatarUrl !== undefined && userData?.avatarUrl !== null) ? userData.avatarUrl : (userData?.iconUrl !== undefined ? userData.iconUrl : null);
   const avatar = document.createElement("div");
   avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-slate-700 text-gray-700 dark:text-gray-300";
   if (isUsableAvatarUrl(iconUrl)) {
@@ -28592,7 +28945,7 @@ function handleWindowFocus() {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[activeChannelKey] = Date.now() + 10000;
+      rm[activeChannelKey] = Date.now();
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
     if (currentRoomId && typeof unreadCounts !== 'undefined') {
@@ -30382,14 +30735,24 @@ function subscribeToDmChannels() {
             const dmId = change.doc.id;
             const otherUid = (dmData.participants || []).find(id => id !== userId);
             if (!otherUid || isUserBlocked(otherUid)) return;
-            const lastAt = typeof dmData.lastMessageAt === 'number' ? dmData.lastMessageAt : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
+            let lastAt = typeof dmData.lastMessageAt === 'number'
+              ? dmData.lastMessageAt
+              : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
+            // サーバータイムスタンプ未解決時のフォールバック
+            if (!lastAt || lastAt <= 0) {
+              lastAt = Date.now();
+            }
             const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
             const lastRead = rm[`dm_${dmId}`] || 0;
-            const isNotCurrentDm = (currentDmId !== dmId);
-            if (lastAt > lastRead && isNotCurrentDm && dmData.lastMessageSender && dmData.lastMessageSender !== userId) {
+            // 🔒 最前面でアクティブに「まさにそのコチャ画面を注視している」時のみ通知不要とする
+            const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+            const isCurrentlyViewingThisDm = (currentDmId === dmId) && isAppActiveAndFocused;
+            const isFromOther = Boolean(dmData.lastMessageSender && dmData.lastMessageSender !== userId);
+            const isNewerThanRead = lastAt > lastRead;
+            if (isFromOther && isNewerThanRead && !isCurrentlyViewingThisDm) {
               const rel = friendRelationships[otherUid];
               const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
-              const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
+              const targetNick = rel?.targetNickname || targetUser.nickname || dmData.lastMessageSenderNickname || 'ユーザー';
               const targetAv = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
               let textBody = dmData.lastMessageText || '新着メッセージ';
               (async () => {
@@ -30830,7 +31193,7 @@ function renderDmConversationsList() {
       const uData = snap.data();
       const updatedNick = uData.nickname || uData.displayName;
       // 相手の手動設定アバターを優先し、nullや空文字が設定されている場合は勝手にGoogle photoURLで上書きしない
-      const updatedAvatar = (uData.avatarUrl !== undefined && uData.avatarUrl !== null) ? uData.avatarUrl : (uData.photoURL || '');
+      const updatedAvatar = (uData.avatarUrl !== undefined && uData.avatarUrl !== null) ? uData.avatarUrl : '';
       window.refreshCurrentDmParticipantUI(targetUid, {
         nickname: updatedNick,
         avatarUrl: updatedAvatar,
@@ -34971,8 +35334,9 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
           if (change.doc.id === currentRoomId && room.lastMessageSender !== userId) {
             resyncActiveRoomMessages();
           }
-          const isNotCurrent = (change.doc.id !== currentRoomId);
-          if (lastMsgAt > lastRead && isNotCurrent && room.lastMessageSender && room.lastMessageSender !== userId) {
+          const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+          const isViewingCurrentRoom = (change.doc.id === currentRoomId) && isAppActiveAndFocused;
+          if (lastMsgAt > lastRead && !isViewingCurrentRoom && room.lastMessageSender && room.lastMessageSender !== userId) {
             updateGlobalNotifUI();
             const serverName = currentServerData?.name || 'Covo';
             const roomName = room.name || 'room';
@@ -35109,6 +35473,9 @@ async function loadOlderMessages() {
     LocalStore.upsertMessagesBatch(docs).catch(() => {});
     await decryptInPlace(docs);
     if (!isStillActive()) return false;
+    const messagesDisplay = document.getElementById("messagesDisplay");
+    const prevScrollHeight = messagesDisplay ? messagesDisplay.scrollHeight : 0;
+    const prevScrollTop = messagesDisplay ? messagesDisplay.scrollTop : 0;
     allLoadedMessages = [...docs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -35121,22 +35488,31 @@ async function loadOlderMessages() {
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
     renderMessagesWithReadReceipts();
+    // 🔒 スクロール位置の滑らかな維持（過去メッセージ挿入による位置飛び・足踏みを完全防止）
+    if (messagesDisplay) {
+      const newScrollHeight = messagesDisplay.scrollHeight;
+      const delta = newScrollHeight - prevScrollHeight;
+      if (delta > 0) {
+        messagesDisplay.scrollTop = prevScrollTop + delta;
+      }
+    }
     return true;
   };
   try {
     const oldestMessage = allLoadedMessages[0];
     const oldestTime = getMsgTimestamp(oldestMessage);
+    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
     // 1. まず IndexedDB (ローカルDB) から過去ログを探索
-    const localOlder = await LocalStore.getMessages(chId, oldestTime, 20);
-    if (localOlder && localOlder.length > 0) {
-      await mergeAndRender(localOlder);
+    const localOlder = await LocalStore.getMessages(chId, oldestTime, 30);
+    const newLocalDocs = (localOlder || []).filter(d => !existingLoadedIds.has(d.id));
+    if (newLocalDocs.length > 0) {
+      await mergeAndRender(newLocalDocs);
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
       return;
     }
-    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
-    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
     // 2. ローカルに無い場合、RTDB から過去ログを取得 (制限なしで古いメッセージがなくなるまで遡行)
     let fetchedFromRtdb = false;
     try {
@@ -35144,27 +35520,28 @@ async function loadOlderMessages() {
       const rtdb = await _getOrInitRTDB();
       const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(30));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(50));
       const snapshot = await get(q);
+      let newDocs = [];
       if (snapshot.exists()) {
         const data = snapshot.val();
         let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
-        let newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
-        // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
-        if (newDocs.length === 0 && oldestTime > 0) {
-          const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(30));
-          const snapPrev = await get(qPrev);
-          if (snapPrev.exists()) {
-            const dPrev = snapPrev.val();
-            const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
-            newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
-          }
+        newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
+      }
+      // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
+      if (newDocs.length === 0 && oldestTime > 0) {
+        const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(50));
+        const snapPrev = await get(qPrev);
+        if (snapPrev.exists()) {
+          const dPrev = snapPrev.val();
+          const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
+          newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
         }
-        if (newDocs.length > 0) {
-          await mergeAndRender(newDocs);
-          rtdbMessagesLimit += newDocs.length;
-          fetchedFromRtdb = true;
-        }
+      }
+      if (newDocs.length > 0) {
+        await mergeAndRender(newDocs);
+        rtdbMessagesLimit += newDocs.length;
+        fetchedFromRtdb = true;
       }
     } catch (rtdbErr) {
       console.warn('[loadOlderMessages] RTDB fetch warning:', rtdbErr);
@@ -35183,12 +35560,12 @@ async function loadOlderMessages() {
         const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
         let fsSnap = null;
         try {
-          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(20));
+          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(30));
           fsSnap = await getDocs(qFsTimestamp);
         } catch (_) {}
         if (!fsSnap || fsSnap.empty) {
           try {
-            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(20));
+            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(30));
             fsSnap = await getDocs(qFsNumber);
           } catch (_) {}
         }
@@ -35269,12 +35646,11 @@ async function subscribeToMessagesRTDB(session) {
     }
   };
   // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
+  // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
   try {
     const localDocs = await LocalStore.getMessages(chId, null, 50);
     if (!isStillActive()) return;
     if (localDocs && localDocs.length > 0) {
-      await decryptInPlace(localDocs);
-      if (!isStillActive()) return;
       allLoadedMessages = [...localDocs];
       allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
@@ -35282,6 +35658,11 @@ async function subscribeToMessagesRTDB(session) {
       lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
       renderPinnedMessages();
       renderMessagesWithReadReceipts();
+      // バックグラウンドで非同期復号を実行し、完了時にインプレース差分更新
+      decryptInPlace(localDocs).then(() => {
+        if (!isStillActive()) return;
+        renderMessagesWithReadReceipts();
+      }).catch(() => {});
     }
   } catch (localErr) {
     console.warn('[LocalStore] initial load error:', localErr);
@@ -35299,8 +35680,7 @@ async function subscribeToMessagesRTDB(session) {
         rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         LocalStore.upsertMessagesBatch(rtdbDocs).catch(() => {});
         if (!isStillActive()) return;
-        await decryptInPlace(rtdbDocs);
-        if (!isStillActive()) return;
+        // 🔒 即時マージ＆即時レンダリング（0ms表示・初回読み込み停止を完全防止）
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
           if (idx >= 0) allLoadedMessages[idx] = msg;
@@ -35313,6 +35693,11 @@ async function subscribeToMessagesRTDB(session) {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
+        // バックグラウンドで非同期復号を実行し、完了時にインプレース差分更新
+        decryptInPlace(rtdbDocs).then(() => {
+          if (!isStillActive()) return;
+          renderMessagesWithReadReceipts();
+        }).catch(() => {});
       } else {
         if (allLoadedMessages.length > 0 && snap) {
           allLoadedMessages = [];
@@ -35328,12 +35713,11 @@ async function subscribeToMessagesRTDB(session) {
   let initialLoadTimeout = null;
   let buffer = [];
   let isInitialPhase = true;
-  const processBuffer = async () => {
+  const processBuffer = () => {
     if (buffer.length === 0) return;
     const docsToProcess = [...buffer];
     buffer = [];
-    await decryptInPlace(docsToProcess);
-    // 初期受信メッセージ群を安全にマージ
+    // 🔒 即時マージ＆即時レンダリング (0ms表示)
     docsToProcess.forEach(msg => {
       const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
       if (idx >= 0) allLoadedMessages[idx] = msg;
@@ -35346,6 +35730,11 @@ async function subscribeToMessagesRTDB(session) {
     renderPinnedMessages();
     renderMessagesWithReadReceipts();
     updateReadReceiptForCurrentUser();
+    // バックグラウンドで非同期復号
+    decryptInPlace(docsToProcess).then(() => {
+      if (!isStillActive()) return;
+      renderMessagesWithReadReceipts();
+    }).catch(() => {});
   };
   const handleAdded = async (snapshot) => {
     if (!isStillActive()) return;
@@ -35362,19 +35751,18 @@ async function subscribeToMessagesRTDB(session) {
         if (!isStillActive()) return;
         isInitialPhase = false;
         isInitialMessageLoad = true;
-        processBuffer().then(() => {
+        processBuffer();
+        if (!isStillActive()) return;
+        messagesDisplay.scrollTop = 0;
+        requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
+        isInitialMessageLoad = false;
+        setTimeout(() => {
           if (!isStillActive()) return;
-          messagesDisplay.scrollTop = 0;
-          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
-          isInitialMessageLoad = false;
-          setTimeout(() => {
-            if (!isStillActive()) return;
-            allowPagination = true;
-            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
-              loadOlderMessages();
-            }
-          }, 500);
-        });
+          allowPagination = true;
+          if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+            loadOlderMessages();
+          }
+        }, 500);
       }, 100);
       return;
     }
@@ -35409,8 +35797,7 @@ async function subscribeToMessagesRTDB(session) {
         targetAvatarUrl: currentDmParticipant?.avatarUrl || null
       });
     }
-    await decryptInPlace([data]);
-    if (!isStillActive()) return;
+    // 即時DOM反映（0ms表示）
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) allLoadedMessages[idx] = data;
     else allLoadedMessages.push(data);
@@ -35422,6 +35809,11 @@ async function subscribeToMessagesRTDB(session) {
     renderMessagesWithReadReceipts();
     if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
     updateReadReceiptForCurrentUser();
+    // バックグラウンドで復号してインプレース更新
+    decryptInPlace([data]).then(() => {
+      if (!isStillActive()) return;
+      renderMessagesWithReadReceipts();
+    }).catch(() => {});
   };
   const handleChanged = async (snapshot) => {
     if (!isStillActive()) return;
@@ -36049,18 +36441,57 @@ const searchContainer = document.getElementById("searchContainer");
 const closeSearchBtn = document.getElementById("closeSearchBtn");
 const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
+// 🔒 検索時にローカル過去ログ（最大100件）を即座に動員・復号して検索漏れを完全根絶 (BUG-5)
+async function ensureChannelHistoryForSearch() {
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
+  if (!chId || (!targetServerId && !targetDmId)) return;
+  try {
+    const localMsgs = await LocalStore.getMessages(chId, null, 100);
+    if (!localMsgs || localMsgs.length === 0) return;
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
+    const newDocs = localMsgs.filter(m => !existingLoadedIds.has(m.id));
+    if (newDocs.length === 0) return;
+    if (targetServerId) {
+      const members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(newDocs, targetServerId, targetRoomId, members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
+    }
+    allLoadedMessages = [...newDocs, ...allLoadedMessages];
+    const seen = new Set();
+    allLoadedMessages = allLoadedMessages.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+    renderMessagesWithReadReceipts();
+  } catch (err) {
+    console.warn('[Search] Failed to preload local history for search:', err);
+  }
+}
+let _searchDebounceTimer = null;
 if (toggleSearchButton && searchContainer) {
   toggleSearchButton.addEventListener("click", () => {
-    searchContainer.classList.toggle("hidden");
-    if (!searchContainer.classList.contains("hidden")) {
-      if (searchInput) searchInput.focus();
-      messageLimit = 9999;
-      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    const isHidden = searchContainer.classList.toggle("hidden");
+    if (!isHidden) {
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+      ensureChannelHistoryForSearch();
     } else {
       searchQuery = "";
       if (searchInput) searchInput.value = "";
-      messageLimit = 20;
-      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+      if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
     }
   });
 }
@@ -36069,14 +36500,19 @@ if (closeSearchBtn && searchContainer) {
     searchContainer.classList.add("hidden");
     searchQuery = "";
     if (searchInput) searchInput.value = "";
-    messageLimit = 20;
-    if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
   });
 }
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
-    searchQuery = e.target.value.toLowerCase();
-    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+    searchQuery = (e.target.value || "").trim().toLowerCase();
+    if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(async () => {
+      if (searchQuery) {
+        await ensureChannelHistoryForSearch();
+      }
+      if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+    }, 150);
   });
 }
 // --- スマホ用戻るボタン ---
@@ -37242,7 +37678,7 @@ async function sendMessage() {
       await set(rtdbMsgRef, rtdbData);
       await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
         participants: snapDmParticipants,
-        lastMessageAt: data.timestamp,
+        lastMessageAt: Date.now(),
         lastMessageSender: userId,
         lastMessageSenderNickname: userNickname || 'ユーザー',
         lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
@@ -38094,11 +38530,15 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 message.channelId = snapDmId ? `dm_${snapDmId}` : `${snapServerId}_${snapRoomId}`;
               }
               LocalStore.putMessage(message).catch(() => {});
-            } else if (dec) {
+            } else if (dec && dec.startsWith('（復号化エラー：')) {
               message._decryptedErrorText = dec;
               if (messageTextSpan && messageTextSpan.parentElement) {
                 messageTextSpan.innerHTML = escapeHtml(dec);
               }
+            } else {
+              // 🔒 dec が null (鍵待機中) の場合、エラー文字列で上書きせずシマープレースホルダーを維持
+              message._decrypted = false;
+              message._decryptedErrorText = null;
             }
           } catch (_) {}
         })();
@@ -38700,8 +39140,9 @@ async function jumpToUnloadedMessage(msgId) {
 function renderMessagesWithReadReceipts() {
   const filteredMessages = lastMessagesData.filter(msg => {
     if (!searchQuery) return true;
-    return (msg.text && msg.text.toLowerCase().includes(searchQuery)) ||
-      (msg.senderNickname && msg.senderNickname.toLowerCase().includes(searchQuery));
+    const body = String(msg.text || msg._decryptedText || '').toLowerCase();
+    const sender = String(msg.senderNickname || msg.senderName || '').toLowerCase();
+    return body.includes(searchQuery) || sender.includes(searchQuery);
   });
   // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
   const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
@@ -38975,11 +39416,11 @@ async function updateReadReceiptForCurrentUser() {
   if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
   const channelKey = currentRoomId || `dm_${currentDmId}`;
   if (typeof updateLocalAndRemoteReadState === 'function') {
-    updateLocalAndRemoteReadState(channelKey, Date.now() + 10000);
+    updateLocalAndRemoteReadState(channelKey, Date.now());
   } else {
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[channelKey] = Date.now() + 10000;
+      rm[channelKey] = Date.now();
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
   }
@@ -39702,6 +40143,16 @@ function doJumpHighlight(el, isInstant = false) {
       container.scrollTo({ top: targetScrollTop, behavior: isInstant ? 'auto' : 'smooth' });
       didScroll = true;
     }
+    // 🔒 画像・メディア遅延ロードによるCLS（レイアウトシフト・位置ズレ）吸収アライメント
+    const imgs = row.querySelectorAll('img');
+    imgs.forEach(img => {
+      if (!img.complete && !img._jumpTracked) {
+        img._jumpTracked = true;
+        img.addEventListener('load', () => {
+          doJumpHighlight(el, true);
+        }, { once: true });
+      }
+    });
   }
   if (isInstant) return;
   // アニメーション発火
@@ -43354,7 +43805,7 @@ function handleCallDeclinedFromNotification(data) {
 }
 // --- 統合通知関数 ---
 async function showNotification(title, body, roomId, forceOs = false) {
-  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  const notifEnabled = (localStorage.getItem('simplechat_browser_notif') !== 'false') && (!isTauri || localStorage.getItem('simplechat_desktop_notif') !== 'false');
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
   if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
@@ -43406,22 +43857,39 @@ async function showNotification(title, body, roomId, forceOs = false) {
     if (window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
     }
-    if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
-    } else if (Notification.permission === 'granted') {
-      const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
-      n.onclick = () => {
-        if (roomId) {
-          if (typeof goToRoom === 'function') goToRoom(roomId);
-          else {
-            const roomItem = document.getElementById(`room-item-${roomId}`);
-            if (roomItem) roomItem.click();
+    // 🔒 デスクトップ版: クリック連動でウィンドウ前面表示・部屋遷移を100%確実に実行 (BUG-9)
+    let nativeShown = false;
+    if ("Notification" in window && (Notification.permission === "granted" || Notification.permission === "default")) {
+      try {
+        const n = new Notification(title, {
+          body: displayBody,
+          icon: '/img/icon-192x192.png?v=6',
+          tag: roomId ? `desktop-${roomId}` : `desktop-${Date.now()}`
+        });
+        nativeShown = true;
+        setTimeout(() => { try { n.close(); } catch (_) {} }, 7000);
+        n.onclick = () => {
+          try { n.close(); } catch (_) {}
+          if (window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('show_main_window').catch(() => {});
+          } else {
+            window.focus();
           }
-        }
-        if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('show_main_window').catch(console.error);
-        }
-      };
+          if (roomId) {
+            if (typeof goToRoom === 'function') goToRoom(roomId);
+            else {
+              const roomItem = document.getElementById(`room-item-${roomId}`);
+              if (roomItem) roomItem.click();
+            }
+          }
+        };
+      } catch (notifErr) {
+        nativeShown = false;
+      }
+    }
+    // Notification API が使用不可またはエラーだった場合の確実なフォールバック
+    if (!nativeShown && window.__TAURI__?.core?.invoke) {
+      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
     }
   } else {
     // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
@@ -45289,11 +45757,8 @@ function initSettings() {
     } catch (_) {}
     setBrowserPushEnabled(checked).catch(console.error);
     if (isTauri && checked) {
-      const tauriNotif = window.__TAURI__?.notification;
-      if (tauriNotif && tauriNotif.requestPermission) {
-        tauriNotif.requestPermission();
-      } else if ('Notification' in window && Notification.permission !== 'granted') {
-        Notification.requestPermission();
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission().catch(() => {});
       }
     }
   };
@@ -49222,7 +49687,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.262",
+  "version": "1.1.263",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -49311,13 +49776,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.262" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.263" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.262" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.263" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -49503,6 +49968,9 @@ window._subscribeVcSidebarStates = function(serverId) {
         s.includes('not a member') ||
         s.includes('share failed') ||
         s.includes('permission denied') ||
+        s.includes('missing or insufficient permissions') ||
+        s.includes('permission-denied') ||
+        s.includes('permission_denied') ||
         s.includes('aborterror') ||
         s.includes('notallowederror') ||
         (s.includes('failed to fetch') && (s.includes('chrome-extension') || s.includes('adblock'))) ||
@@ -53499,7 +53967,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.262"></script>
+  <script type="module" src="js/main.js?v=1.1.263"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -54943,7 +55411,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.262",
+  "version": "1.1.263",
   "force": false
 }
 </file>

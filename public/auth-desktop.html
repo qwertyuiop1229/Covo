@@ -194,12 +194,41 @@
                     status.className = 'status-box';
                     status.textContent = '認証がキャンセルされました。「Google でログイン」ボタンを押して再試行してください。';
                 } else {
-                    console.error('Desktop Auth Error:', err);
                     status.className = 'status-box error';
-                    status.textContent = '認証エラー: ' + (err.message || err);
+                    status.textContent = getJapaneseAuthErrorMessage(err);
                 }
             }
         };
+
+        function getJapaneseAuthErrorMessage(err) {
+            const code = err?.code || '';
+            const msg = String(err?.message || '');
+            if (code === 'auth/account-exists-with-different-credential') {
+                return 'このメールアドレスは既にパスワードで登録されています。メールとパスワードでログイン後、設定からGoogle連携を行ってください。';
+            }
+            if (code === 'auth/network-request-failed' || msg.toLowerCase().includes('network')) {
+                return '通信に失敗しました。インターネット接続を確認して再試行してください。';
+            }
+            if (code === 'auth/popup-blocked') {
+                return '認証ウィンドウがブラウザにブロックされました。ポップアップを許可して再試行してください。';
+            }
+            if (code === 'auth/user-disabled') {
+                return 'このアカウントは無効化されています。管理者にお問い合わせください。';
+            }
+            if (code === 'auth/unauthorized-domain') {
+                return 'このドメインは認証が許可されていません。管理者にお問い合わせください。';
+            }
+            if (code === 'auth/provider-already-linked') {
+                return 'このGoogleアカウントは既に連携されています。';
+            }
+            if (code === 'auth/credential-already-in-use') {
+                return 'このGoogleアカウントは既に別のアカウントで使用されています。';
+            }
+            if (code === 'auth/invalid-credential') {
+                return '認証情報が無効です。再度ログインをお試しください。';
+            }
+            return 'ログイン処理中にエラーが発生しました。時間をおいて再試行してください。';
+        }
 
         window.addEventListener('load', () => {
             const status = document.getElementById('status');

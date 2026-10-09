@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.262';
-import * as LocalStore from './local_store.js?v=1.1.262';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.262';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.262';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.262';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.262';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.262';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.263';
+import * as LocalStore from './local_store.js?v=1.1.263';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.263';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.263';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.263';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.263';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.263';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -979,6 +979,14 @@ function initializeFirebase() {
             updateAccountSecurityUI(result.user);
           }
           if (result.operationType === 'link') {
+            await updateDoc(doc(db, `artifacts/${appId}/users/${result.user.uid}/profile`, "nicknameDoc"), {
+              googleLinked: true,
+              googleLinkedAt: serverTimestamp()
+            }).catch(() => {});
+            await setDoc(doc(db, `artifacts/${appId}/users/${result.user.uid}`), {
+              googleLinked: true,
+              googleLinkedAt: serverTimestamp()
+            }, { merge: true }).catch(() => {});
             alertMessage('Googleアカウントと正常に連携しました！', 'success');
           }
         }
@@ -986,11 +994,7 @@ function initializeFirebase() {
         console.error('[Auth] Google redirect result error:', err);
         const authMsg = document.getElementById("authMessage");
         if (authMsg) {
-          if (err.code === "auth/account-exists-with-different-credential" || err.code === "auth/credential-already-in-use") {
-            authMsg.textContent = "このGoogleアカウントは既に別のアカウントで使用されています。";
-          } else if (err.message) {
-            authMsg.textContent = `Google認証エラー: ${err.message}`;
-          }
+          authMsg.textContent = getJapaneseAuthErrorMessage(err);
         }
       });
     }
@@ -1104,31 +1108,63 @@ function initializeFirebase() {
           const isGoogleUser = providerIds.includes('google.com');
           const hasPasswordProvider = providerIds.includes('password');
 
-          // 【厳格セキュリティ】Googleログインだがパスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証（初回または未キャッシュ時のみ）
-          if (isGoogleUser && !hasPasswordProvider && cleanEmail && !cachedNick) {
-            try {
-              const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
-              const existingUsersSnap = await withTimeoutCheck(getDocs(query(
-                collection(db, `artifacts/${appId}/users`),
-                where('email', '==', cleanEmail),
-                limit(5)
-              )).catch(() => null), 2000);
-              if (existingUsersSnap && !existingUsersSnap.empty) {
-                const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
-                if (otherAccount) {
-                  console.warn(`[Security Guard] メールアドレス(${cleanEmail})は既に別のアカウント(UID: ${otherAccount.id})でパスワード登録されています。未連携のためアクセスを遮断します。`);
-                  await signOut(auth);
-                  const authMsg = document.getElementById("authMessage");
-                  if (authMsg) {
-                    authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
-                  }
-                  loadingOverlay.classList.add("hidden");
-                  _authHandlerBusy = false;
-                  return;
+          // 【厳格セキュリティ】Googleログイン時の既存アカウント乗っ取り・自動マージ防止 (BUG-2)
+          if (isGoogleUser) {
+            const isAuthViaGoogleBtn = sessionStorage.getItem('covo_auth_via_google_btn') === '1';
+            if (isAuthViaGoogleBtn) {
+              sessionStorage.removeItem('covo_auth_via_google_btn');
+            }
+
+            // Case A: パスワードプロバイダも持っている場合（Firebaseによる勝手紐づけの検知）
+            if (hasPasswordProvider) {
+              // ユーザープロファイル等で明示的に連携済みか確認
+              const pRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc");
+              const uRef = doc(db, `artifacts/${appId}/users`, user.uid);
+              const [pDocSnap, uDocSnap] = await Promise.all([
+                getDoc(pRef).catch(() => null),
+                getDoc(uRef).catch(() => null)
+              ]);
+              const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
+              if (!isExplicitlyLinked && isAuthViaGoogleBtn) {
+                console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。未許可の自動リンクを解除してアクセスを遮断します。`);
+                await unlink(user, 'google.com').catch(() => {});
+                await signOut(auth);
+                const authMsg = document.getElementById("authMessage");
+                if (authMsg) {
+                  authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。";
                 }
+                loadingOverlay.classList.add("hidden");
+                _authHandlerBusy = false;
+                return;
               }
-            } catch (checkErr) {
-              console.warn("Account link integrity check warning:", checkErr);
+            }
+
+            // Case B: パスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
+            if (!hasPasswordProvider && cleanEmail) {
+              try {
+                const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
+                const existingUsersSnap = await withTimeoutCheck(getDocs(query(
+                  collection(db, `artifacts/${appId}/users`),
+                  where('email', '==', cleanEmail),
+                  limit(5)
+                )).catch(() => null), 2000);
+                if (existingUsersSnap && !existingUsersSnap.empty) {
+                  const otherAccount = existingUsersSnap.docs.find(d => d.id !== user.uid);
+                  if (otherAccount) {
+                    console.warn(`[Security Guard] メールアドレス(${cleanEmail})は既に別のアカウント(UID: ${otherAccount.id})でパスワード登録されています。未連携のためアクセスを遮断します。`);
+                    await signOut(auth);
+                    const authMsg = document.getElementById("authMessage");
+                    if (authMsg) {
+                      authMsg.textContent = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。";
+                    }
+                    loadingOverlay.classList.add("hidden");
+                    _authHandlerBusy = false;
+                    return;
+                  }
+                }
+              } catch (checkErr) {
+                console.warn("Account link integrity check warning:", checkErr);
+              }
             }
           }
 
@@ -1294,13 +1330,13 @@ function initializeFirebase() {
 
           if (!initialNickname && user.displayName && isConfirmedNewUser) {
             initialNickname = user.displayName.slice(0, 20);
-            if (!initialAvatarUrl && !isAvatarExplicitlyCleared) {
-              initialAvatarUrl = user.photoURL || null;
-            }
+            // 🔒 BUG-3: Googleログイン時でもアプリアイコンを勝手にGoogle画像で上書きしない
+            // ユーザーが設定画面で「Googleアイコンを適用」を押すまでアバターは未設定（イニシャルバッジ）を維持
+            initialAvatarUrl = null;
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             await setDoc(profileDocRef, {
               nickname: initialNickname,
-              avatarUrl: initialAvatarUrl,
+              avatarUrl: null,
               aboutMe: initialAboutMe,
               createdAt: serverTimestamp()
             }, { merge: true }).catch(() => {});
@@ -1535,6 +1571,55 @@ function updateUserPanelUI() {
   }
 }
 
+// 🔒 認証エラーコードの日本語化一元ハンドラー（英語エラーや内部例外の露出を完全防止）
+function getJapaneseAuthErrorMessage(err) {
+  const code = err?.code || (err?.message === 'auth/wrong-password' ? 'auth/wrong-password' : '');
+  const msg = String(err?.message || '');
+  if (code === 'auth/wrong-password') {
+    return 'パスワードが正しくありません。';
+  }
+  if (code === 'auth/account-exists-with-different-credential') {
+    return 'このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面のアカウントセキュリティからGoogle連携を行ってください。';
+  }
+  if (code === 'auth/popup-blocked') {
+    return '認証ウィンドウがブラウザにブロックされました。ポップアップを許可して再試行してください。';
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return '認証がキャンセルされました。';
+  }
+  if (code === 'auth/network-request-failed' || msg.toLowerCase().includes('network')) {
+    return '通信に失敗しました。インターネット接続を確認して再試行してください。';
+  }
+  if (code === 'auth/too-many-requests') {
+    return '短時間に連続して試行されたため、アクセスが一時的に制限されています。少し時間をおいてから再試行してください。';
+  }
+  if (code === 'auth/invalid-email') {
+    return 'メールアドレスの形式が正しくありません。';
+  }
+  if (code === 'auth/weak-password') {
+    return 'パスワードが短すぎます（6文字以上で設定してください）。';
+  }
+  if (code === 'auth/user-disabled') {
+    return 'このアカウントは利用が停止されています。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return '未承認ドメインエラー: このドメインからのログインは許可されていません。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/provider-already-linked') {
+    return 'このアカウントは既にGoogleと連携されています。';
+  }
+  if (code === 'auth/credential-already-in-use') {
+    return 'このGoogleアカウントは既に別のアカウントで使用されています。';
+  }
+  if (code === 'auth/forbidden' || msg.includes('利用が許可されていません')) {
+    return 'このメールアドレスは利用が許可されていません。管理者にお問い合わせください。';
+  }
+  if (code === 'auth/invalid-credential') {
+    return '認証情報が無効です。メールアドレスまたはパスワードをご確認ください。';
+  }
+  return 'ログイン処理中にエラーが発生しました。時間をおいて再試行してください。';
+}
+
 // 統合スマート認証ハンドラー (自前ロック撤廃・Firebaseレート制限時のみ案内・絵文字なし)
 window.handleUnifiedAuthSubmit = async function () {
   const emailInp = document.getElementById("emailInput");
@@ -1658,11 +1743,11 @@ window.handleUnifiedAuthSubmit = async function () {
     } else if (code === "auth/invalid-email") {
       msgHtml = "メールアドレスの形式が正しくありません。";
     } else if (code === "auth/weak-password") {
-      msgHtml = "パスワードが弱すぎます（6文字以上）。";
+      msgHtml = "パスワードが短すぎます（6文字以上で入力してください）。";
     } else if (code === "auth/user-disabled") {
       msgHtml = "このアカウントは無効化されています。管理者にお問い合わせください。";
-    } else if (err.message) {
-      msgHtml = `認証エラー: ${escapeHtml(err.message)}`;
+    } else {
+      msgHtml = escapeHtml(getJapaneseAuthErrorMessage(err));
     }
 
     if (authMsg) authMsg.innerHTML = msgHtml;
@@ -1682,6 +1767,7 @@ if (googleAuthBtn) {
     if (loading) loading.classList.remove("hidden");
 
     try {
+      sessionStorage.setItem('covo_auth_via_google_btn', '1');
       if (isTauri && window.__TAURI__?.core?.invoke) {
         // Windows (Tauri): 既定のブラウザでOAuthを実行し、ローカルコールバックで認証情報を受信
         console.log("[Auth] Windows版: 外部ブラウザによるGoogleログインを開始します...");
@@ -1717,15 +1803,12 @@ if (googleAuthBtn) {
         console.log("[Auth] Googleログインがキャンセルされました");
         return;
       }
-      console.warn("[Auth] Google Sign-In notice:", err.message || err);
-      let msg = "Googleログインに失敗しました。";
-      if (err.code === "auth/account-exists-with-different-credential") {
-        msg = "このメールアドレスは既にパスワードで登録されています。先にメールアドレスとパスワードでログインし、設定画面からGoogle連携を行ってください。";
-      } else if (err.code === "auth/unauthorized-domain") {
-        msg = "未承認ドメインエラー: Firebase Console の Authentication > 設定 > 承認済みドメインをご確認ください。";
-      } else if (err.message) {
-        msg = `Googleログインエラー: ${err.message}`;
+      if (err.code === "auth/provider-already-linked") {
+        console.log("[Auth] Googleアカウントは既に連携済みです");
+        return;
       }
+      console.warn("[Auth] Google Sign-In notice:", err.code || "auth-error");
+      const msg = getJapaneseAuthErrorMessage(err);
       if (authMsg) authMsg.textContent = msg;
     } finally {
       if (loading) loading.classList.add("hidden");
@@ -2752,11 +2835,18 @@ window.toggleGoogleLinkAction = async function () {
     try {
       await unlink(user, 'google.com');
       await user.reload().catch(() => {});
+      // 明示的連携フラグを解除
+      await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+        googleLinked: deleteField()
+      }).catch(() => {});
+      await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+        googleLinked: deleteField()
+      }, { merge: true }).catch(() => {});
       alertMessage('Google連携を解除しました。', 'success');
       updateAccountSecurityUI(auth.currentUser);
     } catch (err) {
       console.error('[Auth] Unlink Google error:', err);
-      alertMessage(`連携解除エラー: ${err.message}`, 'error');
+      alertMessage('Google連携の解除に失敗しました。', 'error');
     }
   } else {
     try {
@@ -2768,6 +2858,15 @@ window.toggleGoogleLinkAction = async function () {
           const credential = GoogleAuthProvider.credential(authResult.id_token, authResult.access_token || null);
           await linkWithCredential(user, credential);
           await user.reload().catch(() => {});
+          // 明示的連携フラグを保存
+          await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }).catch(() => {});
+          await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         }
@@ -2776,6 +2875,15 @@ window.toggleGoogleLinkAction = async function () {
           // Web版: まず linkWithPopup を試みる（画面遷移や状態消失を防ぐ）
           await linkWithPopup(user, provider);
           await user.reload().catch(() => {});
+          // 明示的連携フラグを保存
+          await updateDoc(doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc"), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }).catch(() => {});
+          await setDoc(doc(db, `artifacts/${appId}/users/${user.uid}`), {
+            googleLinked: true,
+            googleLinkedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
           alertMessage('Googleアカウントと正常に連携しました！', 'success');
           updateAccountSecurityUI(auth.currentUser);
         } catch (popupErr) {
@@ -2788,14 +2896,19 @@ window.toggleGoogleLinkAction = async function () {
         }
       }
     } catch (err) {
-      console.error('[Auth] Link Google error:', err);
+      if (err.code === 'auth/provider-already-linked') {
+        alertMessage('このアカウントは既にGoogleと連携されています。', 'info');
+        updateAccountSecurityUI(auth.currentUser);
+        return;
+      }
       if (err.code === 'auth/credential-already-in-use') {
         alertMessage('このGoogleアカウントは既に別のアカウントで使用されています。', 'error');
-      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        // キャンセル
-      } else {
-        alertMessage(`連携エラー: ${err.message || err}`, 'error');
+        return;
       }
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      alertMessage(getJapaneseAuthErrorMessage(err), 'error');
     }
   }
 };
@@ -2888,7 +3001,7 @@ window.loadAdminRecoveryUsers = async function () {
       const email = (data.email || '').toLowerCase().trim();
       const uid = d.id;
       let nickname = data.nickname || data.displayName || null;
-      let avatarUrl = (data.avatarUrl !== undefined && data.avatarUrl !== null) ? data.avatarUrl : (data.photoURL || '');
+      let avatarUrl = (data.avatarUrl !== undefined && data.avatarUrl !== null) ? data.avatarUrl : '';
       const activeReq = activeReqsMap.get(email) || activeReqsMap.get(uid) || null;
 
       const userObj = {
@@ -3129,7 +3242,7 @@ window.loadErrorTelemetry = async function () {
         }
       });
     }
-    // 3. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports)
+    // 3. 🛡️ RTDB SDK から直接取得 (artifacts/${appId}/error_reports) - タイムアウト1200msで高速判定 (BUG-7)
     let fetchedFromRtdbSdk = false;
     try {
       const { ref, get } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
@@ -3137,7 +3250,7 @@ window.loadErrorTelemetry = async function () {
       if (rtdb) {
         const snap = await Promise.race([
           get(ref(rtdb, `artifacts/${appId}/error_reports`)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1200))
         ]);
         if (snap && snap.exists()) {
           const val = snap.val() || {};
@@ -3705,8 +3818,8 @@ function makeEmailListItem(email, isSelf, onRemove) {
   const userData = window.__adminUsersByEmail && window.__adminUsersByEmail[email];
   // username: username → nickname → displayName の優先順で取得
   let username = userData?.username || userData?.nickname || userData?.displayName || (userData ? (email ? `${email.split('@')[0]} (未設定)` : "未設定") : "未参加");
-  // iconUrl: ユーザー設定の avatarUrl を最優先し、未設定時のみ Google photoURL を参照
-  let iconUrl = (userData?.avatarUrl !== undefined && userData?.avatarUrl !== null) ? userData.avatarUrl : (userData?.iconUrl !== undefined ? userData.iconUrl : (userData?.photoURL || null));
+  // iconUrl: ユーザー設定の avatarUrl を最優先し、未設定時はイニシャルバッジを使用
+  let iconUrl = (userData?.avatarUrl !== undefined && userData?.avatarUrl !== null) ? userData.avatarUrl : (userData?.iconUrl !== undefined ? userData.iconUrl : null);
 
   const avatar = document.createElement("div");
   avatar.className = "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 overflow-hidden shadow-sm transition-colors bg-gray-300 dark:bg-slate-700 text-gray-700 dark:text-gray-300";
@@ -8418,7 +8531,7 @@ function handleWindowFocus() {
     const activeChannelKey = currentRoomId || `dm_${currentDmId}`;
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[activeChannelKey] = Date.now() + 10000;
+      rm[activeChannelKey] = Date.now();
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
     if (currentRoomId && typeof unreadCounts !== 'undefined') {
@@ -10347,15 +10460,27 @@ function subscribeToDmChannels() {
             const otherUid = (dmData.participants || []).find(id => id !== userId);
             if (!otherUid || isUserBlocked(otherUid)) return;
 
-            const lastAt = typeof dmData.lastMessageAt === 'number' ? dmData.lastMessageAt : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
+            let lastAt = typeof dmData.lastMessageAt === 'number'
+              ? dmData.lastMessageAt
+              : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
+            // サーバータイムスタンプ未解決時のフォールバック
+            if (!lastAt || lastAt <= 0) {
+              lastAt = Date.now();
+            }
+
             const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
             const lastRead = rm[`dm_${dmId}`] || 0;
-            const isNotCurrentDm = (currentDmId !== dmId);
 
-            if (lastAt > lastRead && isNotCurrentDm && dmData.lastMessageSender && dmData.lastMessageSender !== userId) {
+            // 🔒 最前面でアクティブに「まさにそのコチャ画面を注視している」時のみ通知不要とする
+            const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+            const isCurrentlyViewingThisDm = (currentDmId === dmId) && isAppActiveAndFocused;
+            const isFromOther = Boolean(dmData.lastMessageSender && dmData.lastMessageSender !== userId);
+            const isNewerThanRead = lastAt > lastRead;
+
+            if (isFromOther && isNewerThanRead && !isCurrentlyViewingThisDm) {
               const rel = friendRelationships[otherUid];
               const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
-              const targetNick = rel?.targetNickname || targetUser.nickname || 'ユーザー';
+              const targetNick = rel?.targetNickname || targetUser.nickname || dmData.lastMessageSenderNickname || 'ユーザー';
               const targetAv = rel?.targetAvatarUrl || targetUser.avatarUrl || '';
               let textBody = dmData.lastMessageText || '新着メッセージ';
               (async () => {
@@ -10808,7 +10933,7 @@ function renderDmConversationsList() {
       const uData = snap.data();
       const updatedNick = uData.nickname || uData.displayName;
       // 相手の手動設定アバターを優先し、nullや空文字が設定されている場合は勝手にGoogle photoURLで上書きしない
-      const updatedAvatar = (uData.avatarUrl !== undefined && uData.avatarUrl !== null) ? uData.avatarUrl : (uData.photoURL || '');
+      const updatedAvatar = (uData.avatarUrl !== undefined && uData.avatarUrl !== null) ? uData.avatarUrl : '';
       window.refreshCurrentDmParticipantUI(targetUid, {
         nickname: updatedNick,
         avatarUrl: updatedAvatar,
@@ -15299,8 +15424,9 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
             resyncActiveRoomMessages();
           }
 
-          const isNotCurrent = (change.doc.id !== currentRoomId);
-          if (lastMsgAt > lastRead && isNotCurrent && room.lastMessageSender && room.lastMessageSender !== userId) {
+          const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
+          const isViewingCurrentRoom = (change.doc.id === currentRoomId) && isAppActiveAndFocused;
+          if (lastMsgAt > lastRead && !isViewingCurrentRoom && room.lastMessageSender && room.lastMessageSender !== userId) {
             updateGlobalNotifUI();
             const serverName = currentServerData?.name || 'Covo';
             const roomName = room.name || 'room';
@@ -15444,6 +15570,10 @@ async function loadOlderMessages() {
     LocalStore.upsertMessagesBatch(docs).catch(() => {});
     await decryptInPlace(docs);
     if (!isStillActive()) return false;
+    const messagesDisplay = document.getElementById("messagesDisplay");
+    const prevScrollHeight = messagesDisplay ? messagesDisplay.scrollHeight : 0;
+    const prevScrollTop = messagesDisplay ? messagesDisplay.scrollTop : 0;
+
     allLoadedMessages = [...docs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -15456,6 +15586,15 @@ async function loadOlderMessages() {
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
     renderMessagesWithReadReceipts();
+
+    // 🔒 スクロール位置の滑らかな維持（過去メッセージ挿入による位置飛び・足踏みを完全防止）
+    if (messagesDisplay) {
+      const newScrollHeight = messagesDisplay.scrollHeight;
+      const delta = newScrollHeight - prevScrollHeight;
+      if (delta > 0) {
+        messagesDisplay.scrollTop = prevScrollTop + delta;
+      }
+    }
     return true;
   };
 
@@ -15463,18 +15602,19 @@ async function loadOlderMessages() {
     const oldestMessage = allLoadedMessages[0];
     const oldestTime = getMsgTimestamp(oldestMessage);
 
+    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
+
     // 1. まず IndexedDB (ローカルDB) から過去ログを探索
-    const localOlder = await LocalStore.getMessages(chId, oldestTime, 20);
-    if (localOlder && localOlder.length > 0) {
-      await mergeAndRender(localOlder);
+    const localOlder = await LocalStore.getMessages(chId, oldestTime, 30);
+    const newLocalDocs = (localOlder || []).filter(d => !existingLoadedIds.has(d.id));
+    if (newLocalDocs.length > 0) {
+      await mergeAndRender(newLocalDocs);
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
       return;
     }
-
-    // すでに画面にロードされているメッセージの全IDを集合にして重複判定
-    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
 
     // 2. ローカルに無い場合、RTDB から過去ログを取得 (制限なしで古いメッセージがなくなるまで遡行)
     let fetchedFromRtdb = false;
@@ -15483,27 +15623,28 @@ async function loadOlderMessages() {
       const rtdb = await _getOrInitRTDB();
       const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(30));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(50));
       const snapshot = await get(q);
+      let newDocs = [];
       if (snapshot.exists()) {
         const data = snapshot.val();
         let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
-        let newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
-        // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
-        if (newDocs.length === 0 && oldestTime > 0) {
-          const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(30));
-          const snapPrev = await get(qPrev);
-          if (snapPrev.exists()) {
-            const dPrev = snapPrev.val();
-            const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
-            newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
-          }
+        newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
+      }
+      // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
+      if (newDocs.length === 0 && oldestTime > 0) {
+        const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(50));
+        const snapPrev = await get(qPrev);
+        if (snapPrev.exists()) {
+          const dPrev = snapPrev.val();
+          const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
+          newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
         }
-        if (newDocs.length > 0) {
-          await mergeAndRender(newDocs);
-          rtdbMessagesLimit += newDocs.length;
-          fetchedFromRtdb = true;
-        }
+      }
+      if (newDocs.length > 0) {
+        await mergeAndRender(newDocs);
+        rtdbMessagesLimit += newDocs.length;
+        fetchedFromRtdb = true;
       }
     } catch (rtdbErr) {
       console.warn('[loadOlderMessages] RTDB fetch warning:', rtdbErr);
@@ -15523,12 +15664,12 @@ async function loadOlderMessages() {
         const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
         let fsSnap = null;
         try {
-          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(20));
+          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(30));
           fsSnap = await getDocs(qFsTimestamp);
         } catch (_) {}
         if (!fsSnap || fsSnap.empty) {
           try {
-            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(20));
+            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(30));
             fsSnap = await getDocs(qFsNumber);
           } catch (_) {}
         }
@@ -15614,12 +15755,11 @@ async function subscribeToMessagesRTDB(session) {
   };
 
   // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
+  // STEP 1: LINE方式ローカル永続化（IndexedDB）から即時読み込み（0ms / 0KB）
   try {
     const localDocs = await LocalStore.getMessages(chId, null, 50);
     if (!isStillActive()) return;
     if (localDocs && localDocs.length > 0) {
-      await decryptInPlace(localDocs);
-      if (!isStillActive()) return;
       allLoadedMessages = [...localDocs];
       allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
       lastMessagesData = [...allLoadedMessages];
@@ -15627,6 +15767,11 @@ async function subscribeToMessagesRTDB(session) {
       lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
       renderPinnedMessages();
       renderMessagesWithReadReceipts();
+      // バックグラウンドで非同期復号を実行し、完了時にインプレース差分更新
+      decryptInPlace(localDocs).then(() => {
+        if (!isStillActive()) return;
+        renderMessagesWithReadReceipts();
+      }).catch(() => {});
     }
   } catch (localErr) {
     console.warn('[LocalStore] initial load error:', localErr);
@@ -15644,8 +15789,7 @@ async function subscribeToMessagesRTDB(session) {
         rtdbDocs.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
         LocalStore.upsertMessagesBatch(rtdbDocs).catch(() => {});
         if (!isStillActive()) return;
-        await decryptInPlace(rtdbDocs);
-        if (!isStillActive()) return;
+        // 🔒 即時マージ＆即時レンダリング（0ms表示・初回読み込み停止を完全防止）
         rtdbDocs.forEach(msg => {
           const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
           if (idx >= 0) allLoadedMessages[idx] = msg;
@@ -15658,6 +15802,12 @@ async function subscribeToMessagesRTDB(session) {
         renderPinnedMessages();
         renderMessagesWithReadReceipts();
         updateReadReceiptForCurrentUser();
+
+        // バックグラウンドで非同期復号を実行し、完了時にインプレース差分更新
+        decryptInPlace(rtdbDocs).then(() => {
+          if (!isStillActive()) return;
+          renderMessagesWithReadReceipts();
+        }).catch(() => {});
       } else {
         if (allLoadedMessages.length > 0 && snap) {
           allLoadedMessages = [];
@@ -15675,12 +15825,11 @@ async function subscribeToMessagesRTDB(session) {
   let buffer = [];
   let isInitialPhase = true;
 
-  const processBuffer = async () => {
+  const processBuffer = () => {
     if (buffer.length === 0) return;
     const docsToProcess = [...buffer];
     buffer = [];
-    await decryptInPlace(docsToProcess);
-    // 初期受信メッセージ群を安全にマージ
+    // 🔒 即時マージ＆即時レンダリング (0ms表示)
     docsToProcess.forEach(msg => {
       const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
       if (idx >= 0) allLoadedMessages[idx] = msg;
@@ -15693,6 +15842,12 @@ async function subscribeToMessagesRTDB(session) {
     renderPinnedMessages();
     renderMessagesWithReadReceipts();
     updateReadReceiptForCurrentUser();
+
+    // バックグラウンドで非同期復号
+    decryptInPlace(docsToProcess).then(() => {
+      if (!isStillActive()) return;
+      renderMessagesWithReadReceipts();
+    }).catch(() => {});
   };
 
   const handleAdded = async (snapshot) => {
@@ -15710,19 +15865,18 @@ async function subscribeToMessagesRTDB(session) {
         if (!isStillActive()) return;
         isInitialPhase = false;
         isInitialMessageLoad = true;
-        processBuffer().then(() => {
+        processBuffer();
+        if (!isStillActive()) return;
+        messagesDisplay.scrollTop = 0;
+        requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
+        isInitialMessageLoad = false;
+        setTimeout(() => {
           if (!isStillActive()) return;
-          messagesDisplay.scrollTop = 0;
-          requestAnimationFrame(() => { messagesDisplay.scrollTop = 0; });
-          isInitialMessageLoad = false;
-          setTimeout(() => {
-            if (!isStillActive()) return;
-            allowPagination = true;
-            if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
-              loadOlderMessages();
-            }
-          }, 500);
-        });
+          allowPagination = true;
+          if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
+            loadOlderMessages();
+          }
+        }, 500);
       }, 100);
       return;
     }
@@ -15757,8 +15911,7 @@ async function subscribeToMessagesRTDB(session) {
         targetAvatarUrl: currentDmParticipant?.avatarUrl || null
       });
     }
-    await decryptInPlace([data]);
-    if (!isStillActive()) return;
+    // 即時DOM反映（0ms表示）
     const idx = allLoadedMessages.findIndex(m => m.id === data.id);
     if (idx >= 0) allLoadedMessages[idx] = data;
     else allLoadedMessages.push(data);
@@ -15770,6 +15923,12 @@ async function subscribeToMessagesRTDB(session) {
     renderMessagesWithReadReceipts();
     if (wasScrolledToBottom) messagesDisplay.scrollTop = 0;
     updateReadReceiptForCurrentUser();
+
+    // バックグラウンドで復号してインプレース更新
+    decryptInPlace([data]).then(() => {
+      if (!isStillActive()) return;
+      renderMessagesWithReadReceipts();
+    }).catch(() => {});
   };
   const handleChanged = async (snapshot) => {
     if (!isStillActive()) return;
@@ -16441,18 +16600,61 @@ const closeSearchBtn = document.getElementById("closeSearchBtn");
 const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
 
+// 🔒 検索時にローカル過去ログ（最大100件）を即座に動員・復号して検索漏れを完全根絶 (BUG-5)
+async function ensureChannelHistoryForSearch() {
+  const targetServerId = currentServerId;
+  const targetRoomId = currentRoomId;
+  const targetDmId = currentDmId;
+  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
+  const targetServerData = currentServerData;
+  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
+  if (!chId || (!targetServerId && !targetDmId)) return;
+
+  try {
+    const localMsgs = await LocalStore.getMessages(chId, null, 100);
+    if (!localMsgs || localMsgs.length === 0) return;
+    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
+    const newDocs = localMsgs.filter(m => !existingLoadedIds.has(m.id));
+    if (newDocs.length === 0) return;
+
+    if (targetServerId) {
+      const members = (targetServerData && targetServerData.joinedUsers) || [];
+      await decryptMessagesInPlace(newDocs, targetServerId, targetRoomId, members).catch(() => {});
+    } else if (targetDmId) {
+      await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
+    }
+
+    allLoadedMessages = [...newDocs, ...allLoadedMessages];
+    const seen = new Set();
+    allLoadedMessages = allLoadedMessages.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    lastMessagesData = [...allLoadedMessages];
+    messagesIndexMap = {};
+    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+    renderMessagesWithReadReceipts();
+  } catch (err) {
+    console.warn('[Search] Failed to preload local history for search:', err);
+  }
+}
+
+let _searchDebounceTimer = null;
 if (toggleSearchButton && searchContainer) {
   toggleSearchButton.addEventListener("click", () => {
-    searchContainer.classList.toggle("hidden");
-    if (!searchContainer.classList.contains("hidden")) {
-      if (searchInput) searchInput.focus();
-      messageLimit = 9999;
-      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    const isHidden = searchContainer.classList.toggle("hidden");
+    if (!isHidden) {
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+      ensureChannelHistoryForSearch();
     } else {
       searchQuery = "";
       if (searchInput) searchInput.value = "";
-      messageLimit = 20;
-      if (typeof subscribeToMessages === 'function') subscribeToMessages();
+      if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
     }
   });
 }
@@ -16462,15 +16664,20 @@ if (closeSearchBtn && searchContainer) {
     searchContainer.classList.add("hidden");
     searchQuery = "";
     if (searchInput) searchInput.value = "";
-    messageLimit = 20;
-    if (typeof subscribeToMessages === 'function') subscribeToMessages();
+    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
   });
 }
 
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
-    searchQuery = e.target.value.toLowerCase();
-    if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+    searchQuery = (e.target.value || "").trim().toLowerCase();
+    if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(async () => {
+      if (searchQuery) {
+        await ensureChannelHistoryForSearch();
+      }
+      if (typeof renderMessagesWithReadReceipts === 'function') renderMessagesWithReadReceipts();
+    }, 150);
   });
 }
 
@@ -17721,7 +17928,7 @@ async function sendMessage() {
       await set(rtdbMsgRef, rtdbData);
       await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
         participants: snapDmParticipants,
-        lastMessageAt: data.timestamp,
+        lastMessageAt: Date.now(),
         lastMessageSender: userId,
         lastMessageSenderNickname: userNickname || 'ユーザー',
         lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
@@ -18635,11 +18842,15 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 message.channelId = snapDmId ? `dm_${snapDmId}` : `${snapServerId}_${snapRoomId}`;
               }
               LocalStore.putMessage(message).catch(() => {});
-            } else if (dec) {
+            } else if (dec && dec.startsWith('（復号化エラー：')) {
               message._decryptedErrorText = dec;
               if (messageTextSpan && messageTextSpan.parentElement) {
                 messageTextSpan.innerHTML = escapeHtml(dec);
               }
+            } else {
+              // 🔒 dec が null (鍵待機中) の場合、エラー文字列で上書きせずシマープレースホルダーを維持
+              message._decrypted = false;
+              message._decryptedErrorText = null;
             }
           } catch (_) {}
         })();
@@ -19263,8 +19474,9 @@ async function jumpToUnloadedMessage(msgId) {
 function renderMessagesWithReadReceipts() {
   const filteredMessages = lastMessagesData.filter(msg => {
     if (!searchQuery) return true;
-    return (msg.text && msg.text.toLowerCase().includes(searchQuery)) ||
-      (msg.senderNickname && msg.senderNickname.toLowerCase().includes(searchQuery));
+    const body = String(msg.text || msg._decryptedText || '').toLowerCase();
+    const sender = String(msg.senderNickname || msg.senderName || '').toLowerCase();
+    return body.includes(searchQuery) || sender.includes(searchQuery);
   });
 
   // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
@@ -19553,11 +19765,11 @@ async function updateReadReceiptForCurrentUser() {
   if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
   const channelKey = currentRoomId || `dm_${currentDmId}`;
   if (typeof updateLocalAndRemoteReadState === 'function') {
-    updateLocalAndRemoteReadState(channelKey, Date.now() + 10000);
+    updateLocalAndRemoteReadState(channelKey, Date.now());
   } else {
     try {
       const rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}');
-      rm[channelKey] = Date.now() + 10000;
+      rm[channelKey] = Date.now();
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
     } catch (e) { }
   }
@@ -20350,6 +20562,16 @@ function doJumpHighlight(el, isInstant = false) {
       container.scrollTo({ top: targetScrollTop, behavior: isInstant ? 'auto' : 'smooth' });
       didScroll = true;
     }
+    // 🔒 画像・メディア遅延ロードによるCLS（レイアウトシフト・位置ズレ）吸収アライメント
+    const imgs = row.querySelectorAll('img');
+    imgs.forEach(img => {
+      if (!img.complete && !img._jumpTracked) {
+        img._jumpTracked = true;
+        img.addEventListener('load', () => {
+          doJumpHighlight(el, true);
+        }, { once: true });
+      }
+    });
   }
   if (isInstant) return;
   // アニメーション発火
@@ -24258,7 +24480,7 @@ function handleCallDeclinedFromNotification(data) {
 
 // --- 統合通知関数 ---
 async function showNotification(title, body, roomId, forceOs = false) {
-  const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
+  const notifEnabled = (localStorage.getItem('simplechat_browser_notif') !== 'false') && (!isTauri || localStorage.getItem('simplechat_desktop_notif') !== 'false');
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
   if (!forceOs && document.visibilityState === 'visible' && document.hasFocus()) return;
@@ -24310,22 +24532,39 @@ async function showNotification(title, body, roomId, forceOs = false) {
     if (window.__TAURI__?.core?.invoke) {
       window.__TAURI__.core.invoke('set_badge', { hasUnread: true }).catch(console.error);
     }
-    if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
-    } else if (Notification.permission === 'granted') {
-      const n = new Notification(title, { body: displayBody, icon: '/img/icon-192x192.png?v=6' });
-      n.onclick = () => {
-        if (roomId) {
-          if (typeof goToRoom === 'function') goToRoom(roomId);
-          else {
-            const roomItem = document.getElementById(`room-item-${roomId}`);
-            if (roomItem) roomItem.click();
+    // 🔒 デスクトップ版: クリック連動でウィンドウ前面表示・部屋遷移を100%確実に実行 (BUG-9)
+    let nativeShown = false;
+    if ("Notification" in window && (Notification.permission === "granted" || Notification.permission === "default")) {
+      try {
+        const n = new Notification(title, {
+          body: displayBody,
+          icon: '/img/icon-192x192.png?v=6',
+          tag: roomId ? `desktop-${roomId}` : `desktop-${Date.now()}`
+        });
+        nativeShown = true;
+        setTimeout(() => { try { n.close(); } catch (_) {} }, 7000);
+        n.onclick = () => {
+          try { n.close(); } catch (_) {}
+          if (window.__TAURI__?.core?.invoke) {
+            window.__TAURI__.core.invoke('show_main_window').catch(() => {});
+          } else {
+            window.focus();
           }
-        }
-        if (window.__TAURI__?.core?.invoke) {
-          window.__TAURI__.core.invoke('show_main_window').catch(console.error);
-        }
-      };
+          if (roomId) {
+            if (typeof goToRoom === 'function') goToRoom(roomId);
+            else {
+              const roomItem = document.getElementById(`room-item-${roomId}`);
+              if (roomItem) roomItem.click();
+            }
+          }
+        };
+      } catch (notifErr) {
+        nativeShown = false;
+      }
+    }
+    // Notification API が使用不可またはエラーだった場合の確実なフォールバック
+    if (!nativeShown && window.__TAURI__?.core?.invoke) {
+      window.__TAURI__.core.invoke('send_desktop_notification', { title: title, body: displayBody }).catch(console.error);
     }
   } else {
     // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
@@ -26357,11 +26596,8 @@ function initSettings() {
 
     setBrowserPushEnabled(checked).catch(console.error);
     if (isTauri && checked) {
-      const tauriNotif = window.__TAURI__?.notification;
-      if (tauriNotif && tauriNotif.requestPermission) {
-        tauriNotif.requestPermission();
-      } else if ('Notification' in window && Notification.permission !== 'granted') {
-        Notification.requestPermission();
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        Notification.requestPermission().catch(() => {});
       }
     }
   };

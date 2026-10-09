@@ -23,8 +23,8 @@ function isAllowedOrigin(origin) {
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
     return true;
   }
-  // Firebase Hosting ドメイン（本番およびプレビューチャンネル等）
-  if (/^https:\/\/([a-zA-Z0-9\-]+\.)?(web\.app|firebaseapp\.com)$/.test(origin)) {
+  // Firebase Hosting 公式ドメインおよびプレビューチャンネル（simplechat-65a0d 専用に厳格化）
+  if (/^https:\/\/simplechat-65a0d(--[a-zA-Z0-9\-]+)?\.(web\.app|firebaseapp\.com)$/.test(origin)) {
     return true;
   }
   return false;
@@ -261,6 +261,9 @@ export default {
       if (url.pathname === "/api/pruneChannelMessages" && request.method === "POST") {
         return await handlePruneChannelMessages(request, env);
       }
+      if (url.pathname === "/api/e2ee/pepper" && request.method === "GET") {
+        return await handleE2EEPepper(request, env);
+      }
       if (url.pathname.startsWith("/api/d1/")) {
         return await handleD1Api(request, env, url);
       }
@@ -284,6 +287,18 @@ export default {
       }
       },
       };
+
+// -------------------------------------------------------------
+// E2EE KMS Pepper 配信処理 (SEC-2 多層防御)
+// -------------------------------------------------------------
+async function handleE2EEPepper(request, env) {
+  const cors = getCorsHeaders(request);
+  const pepper = env.E2EE_MASTER_PEPPER || "covo_sec_v3_kms_pepper_default_2026";
+  return new Response(JSON.stringify({ pepper }), {
+    status: 200,
+    headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "private, max-age=3600" }
+  });
+}
 
 // -------------------------------------------------------------
 // エマージェンシーコードによるパスワード強制更新処理 (Firebase Identity Toolkit連携)
@@ -356,7 +371,10 @@ async function handleEmergencyPasswordReset(request, env) {
               update: {
                 name: keyIndexData.name,
                 fields: failUpdateFields
-              }
+              },
+              currentDocument: keyIndexData.updateTime ? {
+                updateTime: keyIndexData.updateTime
+              } : undefined
             }]
           })
         }).catch(() => {});
@@ -422,7 +440,10 @@ async function handleEmergencyPasswordReset(request, env) {
                   failCount: { integerValue: "0" },
                   lastVerifiedAt: { timestampValue: new Date().toISOString() }
                 }
-              }
+              },
+              currentDocument: keyIndexData.updateTime ? {
+                updateTime: keyIndexData.updateTime
+              } : undefined
             }
           ]
         })
@@ -482,7 +503,10 @@ async function handleEmergencyPasswordReset(request, env) {
             update: {
               name: indexData.name,
               fields: failUpdateFields
-            }
+            },
+            currentDocument: indexData.updateTime ? {
+              updateTime: indexData.updateTime
+            } : undefined
           }]
         })
       });
@@ -538,7 +562,10 @@ async function handleEmergencyPasswordReset(request, env) {
             used: { booleanValue: true },
             usedAt: { timestampValue: new Date().toISOString() }
           }
-        }
+        },
+        currentDocument: indexData.updateTime ? {
+          updateTime: indexData.updateTime
+        } : undefined
       }
     ];
     if (targetUid) {
@@ -1992,26 +2019,75 @@ async function handleServeFile(request, env, url) {
   try {
     let key = url.pathname.replace('/api/file/', '');
     try { key = decodeURIComponent(key).trim(); } catch (_) {}
-    // 🔒 UUIDベースキー(32文字hex)またはレガシーキーを受け入れ
-    if (!key || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
+    // 🔒 厳格なキーバリデーション（パストラバーサル遮断 & 形式制限）
+    if (!key || key.length > 128 || key.includes('..') || key.includes('/') || key.includes('\\') || !/^[A-Za-z0-9_\-]+$/.test(key) || !env.FILES) {
       return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
     }
+
+    // 🔒 ホットリンク防止: 外部第三者ドメインからの不正な画像直リンク・搾取埋め込みを遮断 (SEC-4)
+    const referer = request.headers.get('Referer') || '';
+    const secFetchSite = request.headers.get('Sec-Fetch-Site') || '';
+    if (secFetchSite === 'cross-site' && referer) {
+      try {
+        const refUrl = new URL(referer);
+        const reqHost = new URL(request.url).host;
+        // 公式フロントエンド（isAllowedOrigin）または同一ホスト以外からのクロスサイト直接埋め込みを遮断
+        if (refUrl.host !== reqHost && !isAllowedOrigin(refUrl.origin)) {
+          return new Response(JSON.stringify({ error: 'Forbidden: Cross-site hotlinking is disallowed' }), {
+            status: 403, headers: { ...fileCors, 'Content-Type': 'application/json' }
+          });
+        }
+      } catch (_) {}
+    }
+
     const { value, metadata } = await env.FILES.getWithMetadata(key, { type: 'arrayBuffer' });
     if (!value) return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { ...fileCors, 'Content-Type': 'application/json' } });
+
+    // 🔒 プライベート指定ファイルのアクセス認可検証 (SEC-4)
+    const folder = (metadata?.folder || '').toLowerCase();
+    if (folder === 'private' || metadata?.isPrivate) {
+      const authHeader = request.headers.get("Authorization") || "";
+      const idToken = url.searchParams.get('idToken') || authHeader.replace("Bearer ", "").trim();
+      if (!idToken) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Private file requires authentication" }), {
+          status: 401, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+      const verifiedUser = await verifyFirebaseIdToken(idToken, env);
+      if (!verifiedUser) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid authentication credentials" }), {
+          status: 401, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+      // アップローダー本人または特権管理者のみ許可
+      const isOwner = metadata?.uploaderId && metadata.uploaderId === verifiedUser.uid;
+      const isAdminUser = await isAppAdmin(url.searchParams.get("appId") || env.FIREBASE_APP_ID, verifiedUser, env);
+      if (!isOwner && !isAdminUser) {
+        return new Response(JSON.stringify({ error: "Forbidden: You do not have access to this private file" }), {
+          status: 403, headers: { ...fileCors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
 
     const contentType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
     const isPreview = url.searchParams.get('preview') === '1';
 
+    // 🔒 キャッシュ制御: パブリックアセット（アバター・スタンプ）は1日、それ以外は機密保護のため private キャッシュ
+    const isPublicAsset = folder.includes('avatar') || folder.includes('icon') || folder.includes('stamp');
+    const cacheControl = isPublicAsset ? 'public, max-age=86400' : 'private, no-cache, no-store, must-revalidate';
+
     const headers = {
       ...fileCors,
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
-      // 🔒 1年キャッシュ→1日に短縮（不正コンテンツが長期キャッシュされるリスク軽減）
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': cacheControl,
     };
 
-    if (!/^(image\/(png|jpe?g|gif|webp|avif|bmp)|video\/|audio\/|application\/pdf|application\/octet-stream|text\/plain)/i.test(contentType)) {
+    // 🔒 XSS対策: SVG / HTML / 実行可能コンテンツはブラウザでの直接実行を絶対に防ぐ（sandbox または attachment 強制）
+    const isSafeInlineImage = /^(image\/(png|jpe?g|gif|webp|avif|bmp))$/i.test(contentType);
+    const isSafeMedia = /^(video\/(mp4|webm|ogg)|audio\/(mp3|mpeg|ogg|wav|webm|aac|flac))$/i.test(contentType);
+    if (!isSafeInlineImage && !isSafeMedia) {
       headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
       headers['Content-Disposition'] = isPreview
         ? `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`
