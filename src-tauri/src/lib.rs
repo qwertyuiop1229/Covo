@@ -314,6 +314,56 @@ fn show_main_window(app_handle: tauri::AppHandle) {
     }
 }
 
+fn is_window_focused(window: &tauri::WebviewWindow) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn GetForegroundWindow() -> isize;
+            fn GetAncestor(hwnd: isize, gaFlags: u32) -> isize;
+        }
+        if let Ok(hwnd_ptr) = window.hwnd() {
+            let current_hwnd = hwnd_ptr.0 as isize;
+            let fg_hwnd = unsafe { GetForegroundWindow() };
+            if current_hwnd != 0 && fg_hwnd != 0 {
+                if current_hwnd == fg_hwnd {
+                    return true;
+                }
+                // GA_ROOT = 2 (ルート祖先ウィンドウを取得して照合)
+                let root_hwnd = unsafe { GetAncestor(fg_hwnd, 2) };
+                if current_hwnd == root_hwnd {
+                    return true;
+                }
+            }
+        }
+    }
+    window.is_focused().unwrap_or(false)
+}
+
+fn toggle_main_window_state(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let is_minimized = window.is_minimized().unwrap_or(false);
+        let is_visible = window.is_visible().unwrap_or(false);
+        let is_focused = is_window_focused(&window);
+
+        if is_visible && !is_minimized && is_focused {
+            let _ = window.minimize();
+        } else {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = window.emit("window-focused", ());
+            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
+            let _ = window.eval("if(window.focusMessageInput)window.focusMessageInput()");
+        }
+    }
+}
+
+#[tauri::command]
+fn toggle_main_window(app_handle: tauri::AppHandle) {
+    toggle_main_window_state(&app_handle);
+}
+
+
 #[tauri::command]
 fn minimize_window(app_handle: tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
@@ -1289,6 +1339,7 @@ pub fn run() {
             start_desktop_google_auth,
             open_in_app_browser_window,
             open_recovery_window,
+            toggle_main_window,
         ])
         .setup(|app| {
             let _handle = app.handle().clone();
@@ -1312,14 +1363,7 @@ pub fn run() {
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |_app, _sc, event: ShortcutEvent| {
                         if event.state() == ShortcutState::Pressed {
-                            if let Some(window) = h.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                let _ = window.emit("window-focused", ());
-                                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
-                                let _ = window.eval("if(window.focusMessageInput) window.focusMessageInput()");
-                            }
+                            toggle_main_window_state(&h);
                         }
                     })
                     .build()
@@ -1349,14 +1393,7 @@ pub fn run() {
                             let is_pressed = (key_state as u16 & 0x8000) != 0;
                             if is_pressed && !was_pressed {
                                 was_pressed = true;
-                                if let Some(window) = mouse_monitor_handle.get_webview_window("main") {
-                                    let _ = window.show();
-                                    let _ = window.unminimize();
-                                    let _ = window.set_focus();
-                                    let _ = window.emit("window-focused", ());
-                                    let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
-                                    let _ = window.eval("if(window.focusMessageInput)window.focusMessageInput()");
-                                }
+                                toggle_main_window_state(&mouse_monitor_handle);
                             } else if !is_pressed {
                                 was_pressed = false;
                             }

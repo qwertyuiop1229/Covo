@@ -6,6 +6,7 @@ let _getUserId = () => null;
 let _getAppId = () => null;
 let _getAuth = () => null;
 let _getIsAdmin = () => (typeof window !== 'undefined' && window.isAdmin ? window.isAdmin : false);
+let _getWorkerBaseUrl = () => 'https://simplechat-api.astro-fray-server.workers.dev';
 
 export function initCryptoContext(deps) {
   if (deps.getDb) _getDb = deps.getDb;
@@ -13,6 +14,7 @@ export function initCryptoContext(deps) {
   if (deps.getAppId) _getAppId = deps.getAppId;
   if (deps.getAuth) _getAuth = deps.getAuth;
   if (deps.getIsAdmin) _getIsAdmin = deps.getIsAdmin;
+  if (deps.getWorkerBaseUrl) _getWorkerBaseUrl = deps.getWorkerBaseUrl;
 }
 
 export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平文と区別する）
@@ -177,7 +179,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
       } catch (_) {}
       try {
-        const res = await fetch("/api/e2ee/pepper").catch(() => null);
+        const workerBase = (_getWorkerBaseUrl && _getWorkerBaseUrl()) || 'https://simplechat-api.astro-fray-server.workers.dev';
+        const pepperUrl = `${workerBase.replace(/\/+$/, '')}/api/e2ee/pepper`;
+        const res = await fetch(pepperUrl).catch(() => null);
         if (res && res.ok) {
           const data = await res.json().catch(() => null);
           if (data && data.pepper) {
