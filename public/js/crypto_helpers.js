@@ -104,17 +104,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (privSnap.exists()) {
               const snapData = privSnap.data();
               let privJwk = null;
-
-              if (snapData.version === 2 && snapData.encryptedPrivateKey) {
-                // 🔒 新形式: AES-GCM暗号化済み → 復号
+              if ((snapData.version === 2 || snapData.version === 3 || snapData.encryptedPrivateKey) && snapData.encryptedPrivateKey) {
+                // 🔒 新形式: AES-GCM暗号化済み (v2 / v3) → 復号
                 privJwk = await __decryptPrivKeyFromBackup(snapData);
                 if (!privJwk) {
                   console.error("[E2EE] 暗号化秘密鍵の復号に失敗しました。既存データの保護のためキーの上書きを阻止します。");
                   return false;
                 }
               } else if (snapData.privateKeyJwk) {
-                // 旧形式: 平文保存 → 使用後に暗号化して移行
-                console.warn("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
+                // 旧形式: 平文保存 → 使用後に暗号化して移行 (テレメトリノイズ防止のためlogへ変更)
+                console.log("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
                 privJwk = snapData.privateKeyJwk;
                 // バックグラウンドで暗号化移行
                 const pubJwk = snapData.publicKeyJwk;
@@ -405,7 +404,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _requestDmKeyRescue(dmId, otherUid) {
       const uid = _getUserId();
       if (!uid || !dmId || !otherUid) return;
-      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = rawDmId.split('_').sort().join('_');
       _e2ee._dmRescueRequestFlags = _e2ee._dmRescueRequestFlags || {};
       const now = Date.now();
       if (_e2ee._dmRescueRequestFlags[cleanDmId] && (now - _e2ee._dmRescueRequestFlags[cleanDmId] < 30000)) {
@@ -1061,7 +1061,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      */
     export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
-      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = rawDmId.split('_').sort().join('_');
       let cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
       if (!cached) {
         // メモリキャッシュに鍵がない場合、自端末の鍵をFirestore/DBから復号ロードして自動取得
@@ -1141,7 +1142,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     export async function _getOrCreateDmKey(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = typeof rawDmId === 'string' ? rawDmId.split('_').sort().join('_') : rawDmId;
       if (!forceGenerateNew && _e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
       if (!forceGenerateNew && _e2ee._dmKeyPromises[cleanDmId]) return _e2ee._dmKeyPromises[cleanDmId];
       const promise = (async () => {
@@ -1163,7 +1165,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     export async function __getOrCreateDmKeyImpl(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = typeof rawDmId === 'string' ? rawDmId.split('_').sort().join('_') : rawDmId;
       const currentUid = _getUserId();
       if (!currentUid) return null;
       try {

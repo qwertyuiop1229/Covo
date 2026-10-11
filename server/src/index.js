@@ -2454,6 +2454,47 @@ async function handleBulkDeleteFiles(request, env) {
             if (cat === "stamps" || folder.includes('stamp')) {
               shouldDelete = true;
             }
+          } else if (deleteType === "unused_avatars") {
+            // 現在 Firestore で使われている全アバターURL & 全サーバーアイコンURLを収集
+            const adminToken = await getAdminTokenForFirestore(env);
+            const activeFileKeys = new Set();
+            if (adminToken) {
+              const projectId = env.FIREBASE_PROJECT_ID;
+              try {
+                const uRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users?pageSize=300`, {
+                  headers: { "Authorization": `Bearer ${adminToken}` }
+                });
+                const uData = await uRes.json();
+                if (uData.documents) {
+                  uData.documents.forEach(d => {
+                    const av = d.fields?.avatarUrl?.stringValue;
+                    if (av) {
+                      const m = av.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+                      if (m) activeFileKeys.add(m[1]);
+                    }
+                  });
+                }
+              } catch (_) {}
+              try {
+                const sRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers?pageSize=300`, {
+                  headers: { "Authorization": `Bearer ${adminToken}` }
+                });
+                const sData = await sRes.json();
+                if (sData.documents) {
+                  sData.documents.forEach(d => {
+                    const ic = d.fields?.iconUrl?.stringValue;
+                    if (ic) {
+                      const m = ic.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+                      if (m) activeFileKeys.add(m[1]);
+                    }
+                  });
+                }
+              } catch (_) {}
+            }
+            const isAvatarOrIcon = cat === 'avatars' || folder.includes('avatar') || folder.includes('icon') || folder.includes('servericons');
+            if (isAvatarOrIcon && !activeFileKeys.has(key.name)) {
+              shouldDelete = true;
+            }
           } else if (deleteType === "all_danger") {
             // 完全初期化: 全ファイルを残さず完全削除
             shouldDelete = true;

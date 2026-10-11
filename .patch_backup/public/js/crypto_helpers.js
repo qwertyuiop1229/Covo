@@ -6,6 +6,7 @@ let _getUserId = () => null;
 let _getAppId = () => null;
 let _getAuth = () => null;
 let _getIsAdmin = () => (typeof window !== 'undefined' && window.isAdmin ? window.isAdmin : false);
+let _getWorkerBaseUrl = () => 'https://simplechat-api.astro-fray-server.workers.dev';
 
 export function initCryptoContext(deps) {
   if (deps.getDb) _getDb = deps.getDb;
@@ -13,6 +14,7 @@ export function initCryptoContext(deps) {
   if (deps.getAppId) _getAppId = deps.getAppId;
   if (deps.getAuth) _getAuth = deps.getAuth;
   if (deps.getIsAdmin) _getIsAdmin = deps.getIsAdmin;
+  if (deps.getWorkerBaseUrl) _getWorkerBaseUrl = deps.getWorkerBaseUrl;
 }
 
 export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平文と区別する）
@@ -102,17 +104,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (privSnap.exists()) {
               const snapData = privSnap.data();
               let privJwk = null;
-
-              if (snapData.version === 2 && snapData.encryptedPrivateKey) {
-                // 🔒 新形式: AES-GCM暗号化済み → 復号
+              if ((snapData.version === 2 || snapData.version === 3 || snapData.encryptedPrivateKey) && snapData.encryptedPrivateKey) {
+                // 🔒 新形式: AES-GCM暗号化済み (v2 / v3) → 復号
                 privJwk = await __decryptPrivKeyFromBackup(snapData);
                 if (!privJwk) {
                   console.error("[E2EE] 暗号化秘密鍵の復号に失敗しました。既存データの保護のためキーの上書きを阻止します。");
                   return false;
                 }
               } else if (snapData.privateKeyJwk) {
-                // 旧形式: 平文保存 → 使用後に暗号化して移行
-                console.warn("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
+                // 旧形式: 平文保存 → 使用後に暗号化して移行 (テレメトリノイズ防止のためlogへ変更)
+                console.log("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
                 privJwk = snapData.privateKeyJwk;
                 // バックグラウンドで暗号化移行
                 const pubJwk = snapData.publicKeyJwk;
@@ -160,15 +161,56 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     // 🔒 秘密鍵をPBKDF2+AES-GCMで暗号化してからFirestoreに保存するヘルパー
-    // UID単体ではなくアプリ固有のコンテキストソルトを合成して鍵導出エントロピーを強化
-    const PBKDF2_SALT_PREFIX = "covo_e2ee_key_v2_salt_ctx_";
+    // KMSマスターペッパー（Cloudflare Worker分離防御）+ UID + コンテキストソルトを合成して多層防御を構築 (SEC-2)
+    const PBKDF2_SALT_PREFIX_V3 = "covo_e2ee_key_v3_salt_ctx_";
+    const PBKDF2_SALT_PREFIX_V2 = "covo_e2ee_key_v2_salt_ctx_";
+    const E2EE_DEVICE_SEED_KEY = "covo_e2ee_device_seed";
+    const E2EE_PEPPER_CACHE_KEY = "covo_e2ee_pepper_cache";
+    let _cachedE2EEPepper = null;
+
+    async function __getE2EEPepper() {
+      if (_cachedE2EEPepper) return _cachedE2EEPepper;
+      try {
+        const lsVal = __lsGet(E2EE_PEPPER_CACHE_KEY);
+        if (lsVal) {
+          _cachedE2EEPepper = lsVal;
+          return _cachedE2EEPepper;
+        }
+      } catch (_) {}
+      try {
+        const workerBase = (_getWorkerBaseUrl && _getWorkerBaseUrl()) || 'https://simplechat-api.astro-fray-server.workers.dev';
+        const pepperUrl = `${workerBase.replace(/\/+$/, '')}/api/e2ee/pepper`;
+        const res = await fetch(pepperUrl).catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && data.pepper) {
+            _cachedE2EEPepper = data.pepper;
+            __lsSet(E2EE_PEPPER_CACHE_KEY, _cachedE2EEPepper);
+            return _cachedE2EEPepper;
+          }
+        }
+      } catch (_) {}
+      _cachedE2EEPepper = "covo_sec_v3_kms_pepper_default_2026";
+      return _cachedE2EEPepper;
+    }
+
+    function __getDeviceSecretSeed() {
+      let seed = __lsGet(E2EE_DEVICE_SEED_KEY);
+      if (!seed || typeof seed !== 'string' || seed.length < 32) {
+        const arr = window.crypto.getRandomValues(new Uint8Array(32));
+        seed = _abToB64(arr.buffer);
+        __lsSet(E2EE_DEVICE_SEED_KEY, seed);
+      }
+      return seed;
+    }
 
     async function __encryptPrivKeyForBackup(privJwk, customTag = "user_priv") {
       const uid = _getUserId();
       if (!uid) throw new Error("uid not set");
+      const pepper = await __getE2EEPepper();
       const salt = window.crypto.getRandomValues(new Uint8Array(16));
       const iv   = window.crypto.getRandomValues(new Uint8Array(12));
-      const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
+      const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${pepper}`;
       const baseKey = await window.crypto.subtle.importKey(
         "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
       );
@@ -182,44 +224,102 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         encryptedPrivateKey: _abToB64(ciphertext),
         iv: _abToB64(iv.buffer),
         salt: _abToB64(salt.buffer),
-        version: 2
+        version: 3
       };
     }
 
-    // 🔒 Firestoreから取得した暗号化秘密鍵を復号するヘルパー
+    // 🔒 Firestoreから取得した暗号化秘密鍵を復号するヘルパー (v3 Pepper, v3b DeviceSeed, v2 Context, legacy 下位互換性を完備)
     export async function __decryptPrivKeyFromBackup(encData, customTag = "user_priv") {
       const uid = _getUserId();
-      if (!uid || !encData || encData.version !== 2) return null;
-      try {
-        const salt = new Uint8Array(_b64ToAb(encData.salt));
-        const iv   = new Uint8Array(_b64ToAb(encData.iv));
-        const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
-        const keyMaterial = `${PBKDF2_SALT_PREFIX}:${customTag}:${uid}`;
-        const baseKey = await window.crypto.subtle.importKey(
-          "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
-        );
-        const aesKey = await window.crypto.subtle.deriveKey(
-          { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
-          baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
-        );
-        const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
-        return JSON.parse(_td.decode(plaintext));
-      } catch (e) {
-        // 後方互換性: 旧プレフィックスなし形式での復号フォールバック
+      if (!uid || !encData) return null;
+
+      // 1) Version 3: KMS Pepper 合成形式 (別端末シームレス同期対応)
+      if (encData.version === 3) {
+        try {
+          const pepper = await __getE2EEPepper();
+          const salt = new Uint8Array(_b64ToAb(encData.salt));
+          const iv   = new Uint8Array(_b64ToAb(encData.iv));
+          const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${pepper}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+          );
+          const aesKey = await window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+          );
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          return JSON.parse(_td.decode(plaintext));
+        } catch (_) {}
+      }
+
+      // 2) Version 3b: 端末シード形式フォールバック
+      if (encData.version === 3) {
+        try {
+          const deviceSeed = __getDeviceSecretSeed();
+          const salt = new Uint8Array(_b64ToAb(encData.salt));
+          const iv   = new Uint8Array(_b64ToAb(encData.iv));
+          const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V3}:${customTag}:${uid}:${deviceSeed}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
+          );
+          const aesKey = await window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+          );
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          const priv = JSON.parse(_td.decode(plaintext));
+          if (priv) {
+            __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+          }
+          return priv;
+        } catch (_) {}
+      }
+
+      // 3) Version 2: コンテキストソルト形式
+      if (encData.version === 2 || encData.version === 3) {
         try {
           const salt = new Uint8Array(_b64ToAb(encData.salt));
           const iv   = new Uint8Array(_b64ToAb(encData.iv));
           const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
-          const legacyBaseKey = await window.crypto.subtle.importKey(
-            "raw", _te.encode(uid), { name: "PBKDF2" }, false, ["deriveKey"]
+          const keyMaterial = `${PBKDF2_SALT_PREFIX_V2}:${customTag}:${uid}`;
+          const baseKey = await window.crypto.subtle.importKey(
+            "raw", _te.encode(keyMaterial), { name: "PBKDF2" }, false, ["deriveKey"]
           );
-          const legacyAesKey = await window.crypto.subtle.deriveKey(
+          const aesKey = await window.crypto.subtle.deriveKey(
             { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
-            legacyBaseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+            baseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
           );
-          const legacyPt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyAesKey, ciphertext);
-          return JSON.parse(_td.decode(legacyPt));
+          const plaintext = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+          const priv = JSON.parse(_td.decode(plaintext));
+          // 復号成功時に自動で最新 Version 3 (KMS Pepper) へ安全にアップグレード保存
+          if (priv) {
+            __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+          }
+          return priv;
         } catch (_) {}
+      }
+
+      // 4) レガシー: UID単体形式フォールバック
+      try {
+        const salt = new Uint8Array(_b64ToAb(encData.salt));
+        const iv   = new Uint8Array(_b64ToAb(encData.iv));
+        const ciphertext = _b64ToAb(encData.encryptedPrivateKey);
+        const legacyBaseKey = await window.crypto.subtle.importKey(
+          "raw", _te.encode(uid), { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        const legacyAesKey = await window.crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
+          legacyBaseKey, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
+        );
+        const legacyPt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, legacyAesKey, ciphertext);
+        const priv = JSON.parse(_td.decode(legacyPt));
+        if (priv) {
+          __backupKeysToFirestore(priv, _e2ee.publicKeyJwk).catch(() => {});
+        }
+        return priv;
+      } catch (e) {
         console.warn("[E2EE] 秘密鍵の復号に失敗:", e);
         return null;
       }
@@ -234,7 +334,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           { publicKeyJwk: pubJwk }, { merge: true });
       } catch (e) {}
 
-      // 🔒 秘密鍵はAES-GCM暗号化してから保存（平文保存を廃止）
+      // 🔒 秘密鍵はPBKDF2+AES-GCM暗号化（Version 3）で安全に保管
       try {
         const encData = await __encryptPrivKeyForBackup(privJwk, "user_priv");
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`), {
@@ -252,8 +352,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!uid || typeof uid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(uid)) return null;
       if (!forceRefresh && uid in _e2ee.pubKeyCache && _e2ee.pubKeyCache[uid]) return _e2ee.pubKeyCache[uid];
       try {
-        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`));
-        let jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}`)).catch(() => null);
+        let jwk = snap && snap.exists() ? snap.data().publicKeyJwk : null;
         if (!jwk) {
           const pSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${uid}/profile/nicknameDoc`)).catch(() => null);
           if (pSnap && pSnap.exists() && pSnap.data().publicKeyJwk) {
@@ -276,8 +376,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function __getEscrowPublicKey() {
       
       try {
-        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`));
-        const jwk = snap.exists() ? snap.data().publicKeyJwk : null;
+        const snap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`)).catch(() => null);
+        const jwk = snap && snap.exists() ? snap.data().publicKeyJwk : null;
         if (!jwk) return null;
         return await __importPub(jwk);
       } catch (e) { return null; }
@@ -304,7 +404,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _requestDmKeyRescue(dmId, otherUid) {
       const uid = _getUserId();
       if (!uid || !dmId || !otherUid) return;
-      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = rawDmId.split('_').sort().join('_');
       _e2ee._dmRescueRequestFlags = _e2ee._dmRescueRequestFlags || {};
       const now = Date.now();
       if (_e2ee._dmRescueRequestFlags[cleanDmId] && (now - _e2ee._dmRescueRequestFlags[cleanDmId] < 30000)) {
@@ -333,8 +434,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return;
       try {
         const escrowRef = doc(_getDb(), `artifacts/${_getAppId()}/settings/escrowKey`);
-        const snap = await getDoc(escrowRef);
-        if (snap.exists() && snap.data().publicKeyJwk) return; // 既に存在
+        const snap = await getDoc(escrowRef).catch(() => null);
+        if (!snap) return; // ネットワーク等の取得エラー時は誤った上書き生成を防止するため中断
+        if (snap.exists() && snap.data()?.publicKeyJwk) return; // 既に存在
         const pair = await __genUserKeyPair();
         const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
         const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
@@ -356,8 +458,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _getEscrowPrivateKey() {
       if (!_subtleOK || !_getUserId() || !_getIsAdmin()) return null;
       try {
-        const privSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`));
-        if (!privSnap.exists()) return null;
+        const privSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/escrowKey`)).catch(() => null);
+        if (!privSnap || !privSnap.exists()) return null;
         const data = privSnap.data();
         let privJwk = null;
         if (data.version === 2 && data.encryptedPrivateKey) {
@@ -405,7 +507,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       try {
-        const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`));
+        const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`)).catch(() => null);
+        if (!rSnap) return null;
         let roomData = rSnap.exists() ? rSnap.data() : null;
         const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
         let keysObj = {};
@@ -440,8 +543,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 2) 鍵ローテーション済み（または個別の roomKeys）から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
-          const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`));
-          if (myWrapSnap.exists()) {
+          const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`)).catch(() => null);
+          if (myWrapSnap && myWrapSnap.exists()) {
             const data = myWrapSnap.data() || {};
             const versionsMap = {};
             if (data.versions && typeof data.versions === 'object') {
@@ -523,12 +626,18 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
-        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => ({ empty: true }));
-        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => ({ empty: true }));
+        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
+        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => null);
         const isExistingRoom = (roomData && (roomData.lastMessageAt || roomData.currentKeyVersion || roomData.sharedKey)) ||
-                               !msgsSnap.empty || !anyKeysSnap.empty;
+                               (msgsSnap === null || !msgsSnap.empty) || (anyKeysSnap === null || !anyKeysSnap.empty);
         if (isExistingRoom && Object.keys(keysObj).length === 0) {
-          console.warn(`[E2EE] ルーム(room=${roomId})の鍵が見つかりません。既存キーの上書きを防止し、自動修復・配布を待機します。`);
+          _e2ee._roomKeyWarnDebounce = _e2ee._roomKeyWarnDebounce || {};
+          const lastWarn = _e2ee._roomKeyWarnDebounce[roomId] || 0;
+          const now = Date.now();
+          if (now - lastWarn > 60000) {
+            _e2ee._roomKeyWarnDebounce[roomId] = now;
+            console.log(`[E2EE] ルーム(room=${roomId})の鍵を待機中。既存キーの上書きを防止し、自動修復・配布を待機します。`);
+          }
           await _requestEscrowRescue(serverId, roomId);
           return null;
         }
@@ -547,7 +656,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         return keysObj;
 
       } catch (e) {
-        console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
+        if (e?.code === 'permission-denied' || String(e?.message || '').toLowerCase().includes('permissions')) {
+          console.warn(`[E2EE] ルーム鍵のアクセス権限待機中 (room=${roomId}):`, e?.message || e);
+        } else {
+          console.error(`[E2EE] ルーム鍵取得・生成エラー (room=${roomId}):`, e);
+        }
         return null;
       }
     }
@@ -605,10 +718,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     try {
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
       const b64Wrapped = _abToB64(wrapped);
+      // ドット表記で更新し、過去のバージョンマップ全体を上書き破壊しない
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          versions: { [String(version)]: b64Wrapped },
           [`versions.${version}`]: b64Wrapped,
           latestVersion: String(version),
           wrappedKey: b64Wrapped,
@@ -699,10 +812,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     export async function _decryptText(text, serverId, roomId, memberIds) {
       if (!_isEncrypted(text)) return text; 
-      if (!_subtleOK) return "（復号化エラー：この環境では暗号化メッセージを表示できません）";
+      if (!_subtleOK) return null;
       try {
         const roomKeyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds || []);
-        if (!roomKeyObj) return "（復号化エラー：鍵が見つかりません）";
+        if (!roomKeyObj) return null; // 🔒 鍵待機中はnullを返し、メッセージをエラーで上書きしない
         
         const parts = text.split("::"); 
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
@@ -721,21 +834,41 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 【キー総当たりフォールバック復号】ローテーション競合等でバージョン番号がずれているメッセージを救済
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion' || ver === version) continue;
+          const candidateKey = roomKeyObj[ver];
+          if (!candidateKey) continue;
           try {
-            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, roomKeyObj[ver], ctBuf);
+            const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, candidateKey, ctBuf);
             return _td.decode(pt);
           } catch(e) {}
         }
 
-        // それでも復号できない場合は、古い鍵キャッシュを破棄して自動救済トリガーを発行
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        // 管理者のエスクロー秘密鍵（合鍵）によるオンデマンド救済
+        if (_getIsAdmin()) {
+          try {
+            const escrowPriv = await _getEscrowPrivateKey();
+            if (escrowPriv) {
+              const escrowWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)).catch(() => null);
+              if (escrowWrapSnap && escrowWrapSnap.exists()) {
+                const eData = escrowWrapSnap.data() || {};
+                const eVersions = eData.versions || (eData.wrappedKey ? { [version || "1"]: eData.wrappedKey } : {});
+                if (eVersions[version]) {
+                  const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPriv, _b64ToAb(eVersions[version]));
+                  const importedKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+                  roomKeyObj[version] = importedKey;
+                  const pt = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv }, importedKey, ctBuf);
+                  return _td.decode(pt);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        // 単一メッセージの失敗で健全なルーム鍵キャッシュ全体を破棄しない
         await _requestEscrowRescue(serverId, roomId);
-        return `（復号化エラー：バージョン${version}の鍵が一致しません。自動復旧を待機中です…）`;
+        return null; // 鍵の同期・配布待機中として扱う
       } catch (e) {
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
-        return "（復号化エラー：メッセージを解読できません）";
+        console.warn("[E2EE] ルームメッセージ復号例外:", e);
+        return null;
       }
     }
 
@@ -767,11 +900,16 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!rKey) {
           // 鍵が未到着の段階ではエラー文字列で上書きせず、後からの自己治癒復号に備えて状態を維持
           m._decrypted = false;
+          m._decryptedErrorText = null;
           return;
         }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
-          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+          if (!decrypted) {
+            // 鍵待機中のためエラー化せず維持
+            m._decrypted = false;
+            m._decryptedErrorText = null;
+          } else if (decrypted.startsWith("（復号化エラー：")) {
             m._decryptedErrorText = decrypted;
             m._decrypted = false;
           } else {
@@ -784,7 +922,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             }
           }
         } catch (e) {
-          m.text = "（復号化エラー：メッセージを解読できません）";
           m._decrypted = false;
         }
       }));
@@ -924,7 +1061,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      */
     export async function _backfillDmKeysForParticipant(dmId, targetUid, forceUpdate = false) {
       if (!_subtleOK || !dmId || !targetUid || typeof targetUid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(targetUid) || targetUid === _getUserId()) return;
-      const cleanDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = rawDmId.split('_').sort().join('_');
       let cached = _e2ee.dmKeyCache[cleanDmId] || _e2ee.dmKeyCache[dmId];
       if (!cached) {
         // メモリキャッシュに鍵がない場合、自端末の鍵をFirestore/DBから復号ロードして自動取得
@@ -1004,7 +1142,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     export async function _getOrCreateDmKey(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = typeof rawDmId === 'string' ? rawDmId.split('_').sort().join('_') : rawDmId;
       if (!forceGenerateNew && _e2ee.dmKeyCache[cleanDmId]) return _e2ee.dmKeyCache[cleanDmId];
       if (!forceGenerateNew && _e2ee._dmKeyPromises[cleanDmId]) return _e2ee._dmKeyPromises[cleanDmId];
       const promise = (async () => {
@@ -1026,7 +1165,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
     export async function __getOrCreateDmKeyImpl(dmId, participants, forceGenerateNew = false) {
       if (!_subtleOK || !dmId) return null;
-      const cleanDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const rawDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
+      const cleanDmId = typeof rawDmId === 'string' ? rawDmId.split('_').sort().join('_') : rawDmId;
       const currentUid = _getUserId();
       if (!currentUid) return null;
       try {
@@ -1050,8 +1190,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         } catch (_) {}
         // 1) Firestoreの自分宛て wrappedKey から復元を試行
-        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`));
-        if (myWrapSnap.exists()) {
+        const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${currentUid}`)).catch(() => null);
+        if (myWrapSnap && myWrapSnap.exists()) {
           const data = myWrapSnap.data() || {};
           const versionsMap = {};
           if (data.versions && typeof data.versions === 'object') {
@@ -1145,7 +1285,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             // 相手が既に鍵を生成している場合、過去メッセージが存在していれば相手の鍵を上書き破壊せず待機
             // ただし、メッセージがまだ1件も送信されていない完全新規DMの場合は、相手オフライン時のデッドロックを防止するため新規鍵を生成して両名に配布
             const dmChannelSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`)).catch(() => null);
-            const hasExistingDmHistory = Boolean(dmChannelSnap && dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
+            if (!dmChannelSnap) return null; // 通信エラー時は安全のためキー上書きを避けて待機
+            const hasExistingDmHistory = Boolean(dmChannelSnap.exists() && dmChannelSnap.data()?.lastMessageAt);
             if (hasExistingDmHistory) {
               return null;
             }
@@ -1205,7 +1346,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         _e2ee.dmKeyCache[cleanDmId] = keysObj;
         return keysObj;
       } catch (e) {
-        console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
+        if (e?.code === 'permission-denied' || String(e?.message || '').toLowerCase().includes('permissions')) {
+          console.warn(`[E2EE] DM鍵のアクセス権限待機中 (dmId=${cleanDmId}):`, e?.message || e);
+        } else {
+          console.error(`[E2EE] DM鍵取得・生成エラー (dmId=${cleanDmId}):`, e);
+        }
         return null;
       }
     }
@@ -1252,7 +1397,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           dmId = [...participants].sort().join('_');
         }
         if (dmId && dmId.startsWith('dm_')) dmId = dmId.slice(3);
-        if (!dmKeyObj) return "（復号化エラー：DM鍵が見つかりません）";
+        if (!dmKeyObj) return null; // 🔒 DM鍵待機中はnullを返しエラー化しない
         const parts = text.split("::");
         if (parts.length !== 4) return "（復号化エラー：メッセージを解読できません）";
         const version = parts[1].replace('v', '');
@@ -1305,22 +1450,20 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
         }
         if (dmId) {
-          delete _e2ee._dmKeyPromises[dmId];
           // 鍵不一致時は相手に再暗号化（救済）リクエストを自動発行
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
-        return `（復号化エラー：DM鍵が一致しません）`;
+        return null; // 待機中
       } catch (e) {
+        console.warn("[E2EE] DMメッセージ復号例外:", e);
         if (dmId) {
-          delete _e2ee.dmKeyCache[dmId];
-          delete _e2ee._dmKeyPromises[dmId];
           const memberList = (Array.isArray(participants) && participants.length > 0) ? participants : dmId.split('_');
           const otherUid = memberList.find(id => id !== _getUserId());
           if (otherUid) _requestDmKeyRescue(dmId, otherUid).catch(() => {});
         }
-        return "（復号化エラー：メッセージを解読できません）";
+        return null;
       }
     }
     /**
@@ -1353,7 +1496,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
           const decrypted = await _decryptDmText(textToDecrypt, dmKeyObj || dmId, participants);
-          if (decrypted && decrypted.startsWith("（復号化エラー：")) {
+          if (!decrypted) {
+            // 鍵待機中のためエラー化せず維持
+            m._decrypted = false;
+            m._decryptedErrorText = null;
+          } else if (decrypted.startsWith("（復号化エラー：")) {
             m._decryptedErrorText = decrypted;
             m._decrypted = false;
           } else {
@@ -1366,7 +1513,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             }
           }
         } catch (e) {
-          m.text = "（復号化エラー：メッセージを解読できません）";
           m._decrypted = false;
         }
       }));

@@ -188,9 +188,9 @@
         btn.disabled = true;
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
       }
-      logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
-
-      // 1. 現在のバージョンを取得
+      try {
+        logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
+        // 1. 現在のバージョンを取得
       let currentVersion = "1.0.0";
       try {
         const vRes = await fetch("version.json", { cache: "no-store" });
@@ -320,9 +320,9 @@
         btn.disabled = true;
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
       }
-      logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
-
-      // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
+      try {
+        logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
+        // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
       logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
       try {
         if ('indexedDB' in window) {

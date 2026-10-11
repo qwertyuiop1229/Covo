@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.264';
-import * as LocalStore from './local_store.js?v=1.1.264';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.264';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.264';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.264';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.264';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.264';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.265';
+import * as LocalStore from './local_store.js?v=1.1.265';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.265';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.265';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.265';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.265';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.265';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -157,7 +157,11 @@ let _cachedIdToken = null;
 let _appVersion = null;
 fetch('/version.json', { cache: 'default' })
   .then(r => r.json())
-  .then(d => { _appVersion = d.version || null; })
+  .then(d => {
+    _appVersion = d.version || null;
+    window._appVersion = _appVersion;
+    window.__covo_version = _appVersion;
+  })
   .catch(() => { _appVersion = null; });
 // 古いコードやキャッシュからの renderServer 呼び出しを安全に処理するフォールバック
 window.renderServer = function (server) {
@@ -645,7 +649,10 @@ window.toggleDevConsole = toggleDevConsole;
 window.clearDevConsole = clearDevConsole;
 window.copyDevConsole = copyDevConsole;
 window.copyDebugText = copyDebugText;
-
+window.getSystemDiagnosticInfo = getSystemDiagnosticInfo;
+window.formatDiagnosticMarkdown = formatDiagnosticMarkdown;
+window.copySystemDiagnosticReport = copySystemDiagnosticReport;
+window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 // ===== トップレベル前方参照安全ラッパー (ReferenceError防止) =====
 function updateAccountSecurityUI(...args) { return window.updateAccountSecurityUI ? window.updateAccountSecurityUI(...args) : null; }
 function setDiscordUIMode(...args) { return window.setDiscordUIMode ? window.setDiscordUIMode(...args) : null; }
@@ -6136,44 +6143,30 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
 
   offscreen.toBlob(async (blob) => {
     if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
-    const progressDiv = document.getElementById('avatarUploadProgress');
-    const progressFill = document.getElementById('avatarUploadProgressFill');
-    const progressText = document.getElementById('avatarUploadProgressText');
-    const confirmBtn = document.getElementById('avatarCropConfirm');
-    const cancelBtn = document.getElementById('avatarCropCancel');
-    progressDiv.classList.remove('hidden');
-    progressFill.style.width = '0%';
-    confirmBtn.disabled = true; cancelBtn.disabled = true;
-    try {
-      const fileUrl = await uploadToExternalService(
-        new File([blob], 'avatar.jpg', { type: 'image/jpeg' }),
-        (pct) => { progressFill.style.width = pct + '%'; progressText.textContent = `アップロード中... ${pct}%`; },
-        'simplechat/avatars',
-        ''
-      );
-      pendingAvatarUrl = fileUrl;
-      if (settingsAvatarPreview) {
-        settingsAvatarPreview.src = fileUrl;
-        settingsAvatarPreview.classList.remove("hidden");
-      }
-      const mobPreview = document.getElementById("mobileAvatarPreview");
-      if (mobPreview) {
-        mobPreview.src = fileUrl;
-        mobPreview.style.display = "";
-        mobPreview.classList.remove("hidden");
-      }
-      document.getElementById("resetAvatarButton")?.classList.remove("hidden");
-      document.getElementById("mobileResetAvatarBtn")?.classList.remove("hidden");
-      avatarCropModal.classList.add('hidden');
-      cropImage = null;
-      checkProfileDirty();
-      alertMessage("アイコンを設定しました。「保存」を押して確定してください", "success");
-    } catch (err) {
-      console.error(err);
-      alertMessage("アップロードに失敗しました: " + err.message, "error");
-    } finally {
-      confirmBtn.disabled = false; cancelBtn.disabled = false;
+    // クロップ確定時はサーバーにアップロードせず、ローカルプレビュー用Blobを保持する
+    window.pendingAvatarBlob = blob;
+    if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
     }
+    const tempUrl = URL.createObjectURL(blob);
+    pendingAvatarUrl = tempUrl;
+    if (settingsAvatarPreview) {
+      settingsAvatarPreview.src = tempUrl;
+      settingsAvatarPreview.classList.remove("hidden");
+    }
+    const mobPreview = document.getElementById("mobileAvatarPreview");
+    if (mobPreview) {
+      mobPreview.src = tempUrl;
+      mobPreview.style.display = "";
+      mobPreview.classList.remove("hidden");
+    }
+    document.getElementById("resetAvatarButton")?.classList.remove("hidden");
+    document.getElementById("mobileResetAvatarBtn")?.classList.remove("hidden");
+    avatarCropModal.classList.add('hidden');
+    cropImage = null;
+    checkProfileDirty();
+    alertMessage("アイコンを設定しました。「保存」を押して確定してください", "success");
+    confirmBtn.disabled = false; cancelBtn.disabled = false;
   }, 'image/jpeg', 0.95);
 });
 
@@ -6319,6 +6312,14 @@ window.resetProfileChanges = function () {
   const mobCounter = document.getElementById("mobileAboutMeCounter");
   if (pcCounter && pcAbout) pcCounter.textContent = `${pcAbout.value.length} / 300`;
   if (mobCounter && mobAbout) mobCounter.textContent = `${mobAbout.value.length} / 300`;
+  if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+    try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+  }
+  window.pendingAvatarBlob = null;
+  if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+    try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+  }
+  window.pendingAvatarBlob = null;
   pendingAvatarUrl = null;
   const pcPreview = document.getElementById("settingsAvatarPreview");
   const mobPreview = document.getElementById("mobileAvatarPreview");
@@ -6473,6 +6474,40 @@ const handleAvatarResetAction = async () => {
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
+    const oldAvatarUrl = userAvatarUrl;
+    // 元のアイコン画像があればKVストレージから完全削除
+    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
+      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+      if (match) {
+        const oldKey = match[1];
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
+      }
+    }
+    if (window.pendingAvatarBlob) {
+      window.pendingAvatarBlob = null;
+    }
+    if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+    }
+    const oldAvatarUrl = userAvatarUrl;
+    // 元のアイコン画像があればKVストレージから完全削除
+    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
+      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+      if (match) {
+        const oldKey = match[1];
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
+      }
+    }
+    if (window.pendingAvatarBlob) {
+      window.pendingAvatarBlob = null;
+    }
+    if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+    }
     const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
     await updateDoc(userProfileRef, { avatarUrl: null });
     const userRef = doc(db, `artifacts/${appId}/users`, userId);
@@ -6641,6 +6676,67 @@ if (saveSettingsBtnEl) {
         }
       } catch (_) {
         determinedBannerColor = getHashColor(userId);
+      }
+      if (window.pendingAvatarBlob) {
+        // 保存ボタンが押された瞬間に初めて KV へアップロード
+        const uploadedUrl = await uploadToExternalService(
+          new File([window.pendingAvatarBlob], 'avatar.jpg', { type: 'image/jpeg' }),
+          null,
+          'simplechat/avatars',
+          ''
+        );
+        const oldAvatarUrl = userAvatarUrl;
+        // 変更前の古いアイコンが自前KVファイルであれば削除
+        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
+          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+          if (match) {
+            const oldKey = match[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+          }
+        }
+        if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+          try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+        }
+        pendingAvatarUrl = uploadedUrl;
+        window.pendingAvatarBlob = null;
+      }
+      if (window.pendingAvatarBlob) {
+        // 保存ボタンが押された瞬間に初めて KV へアップロード
+        const uploadedUrl = await uploadToExternalService(
+          new File([window.pendingAvatarBlob], 'avatar.jpg', { type: 'image/jpeg' }),
+          null,
+          'simplechat/avatars',
+          ''
+        );
+        const oldAvatarUrl = userAvatarUrl;
+        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
+          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+          if (match) {
+            const oldKey = match[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+          }
+        }
+        if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+          try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+        }
+        pendingAvatarUrl = uploadedUrl;
+        window.pendingAvatarBlob = null;
+      } else if (pendingAvatarUrl && pendingAvatarUrl !== userAvatarUrl) {
+        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除
+        const oldAvatarUrl = userAvatarUrl;
+        if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
+          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+          if (match) {
+            const oldKey = match[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+          }
+        }
       }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (determinedBannerColor) {
@@ -10477,8 +10573,8 @@ function subscribeToDmChannels() {
             const isCurrentlyViewingThisDm = (currentDmId === dmId) && isAppActiveAndFocused;
             const isFromOther = Boolean(dmData.lastMessageSender && dmData.lastMessageSender !== userId);
             const isNewerThanRead = lastAt > lastRead;
-
-            if (isFromOther && isNewerThanRead && !isCurrentlyViewingThisDm) {
+            // 開いているDMの通知はメッセージリスナーが一元管理するため二重送信を防止
+            if (currentDmId !== dmId && isFromOther && isNewerThanRead && !isCurrentlyViewingThisDm) {
               const rel = friendRelationships[otherUid];
               const targetUser = (cachedUsers || []).find(u => u.id === otherUid) || {};
               const targetNick = rel?.targetNickname || targetUser.nickname || dmData.lastMessageSenderNickname || 'ユーザー';
@@ -10517,13 +10613,44 @@ function renderDmConversationsList() {
   const container = document.getElementById('dmConversationsList');
   if (!container) return;
   const hiddenMap = safeJsonParse(localStorage.getItem('covo_hidden_dms'), {}) || {};
-  const list = Object.values(dmConversations).filter(dm => {
+  // 同一相手(otherUid)に対する会話を1つに正規化・重複排除 (BUG-DM-DUPL)
+  const uniqueDmMap = new Map();
+  Object.values(dmConversations).forEach(dm => {
+    if (!dm || !dm.id) return;
+    const cleanId = dm.id.replace(/^dm_/, '');
+    const idParts = cleanId.split('_');
+    let otherUid = idParts.find(id => id && id !== userId);
+    if (!otherUid && Array.isArray(dm.participants)) {
+      otherUid = dm.participants.find(id => id && id !== userId);
+    }
+    if (!otherUid || otherUid === userId) return;
+    const canonicalDmId = [userId, otherUid].sort().join('_');
+    const existing = uniqueDmMap.get(otherUid);
+    const dmTime = typeof dm.lastMessageAt === 'number'
+      ? dm.lastMessageAt
+      : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
+    const existingTime = existing
+      ? (typeof existing.lastMessageAt === 'number'
+          ? existing.lastMessageAt
+          : (existing.lastMessageAt?.toMillis?.() || (existing.lastMessageAt?.seconds ? existing.lastMessageAt.seconds * 1000 : 0)))
+      : -1;
+    if (!existing || dm.id === canonicalDmId || dmTime > existingTime) {
+      uniqueDmMap.set(otherUid, {
+        ...dm,
+        id: canonicalDmId,
+        _realDocId: dm.id,
+        _targetUid: otherUid
+      });
+    }
+  });
+  const list = Array.from(uniqueDmMap.values()).filter(dm => {
     if (currentDmId === dm.id) return true;
-    const hiddenAt = hiddenMap[dm.id];
+    const hiddenAt = hiddenMap[dm.id] || hiddenMap[dm._realDocId];
     if (!hiddenAt) return true;
     const lastMsgAt = typeof dm.lastMessageAt === 'number' ? dm.lastMessageAt : (dm.lastMessageAt?.toMillis?.() || (dm.lastMessageAt?.seconds ? dm.lastMessageAt.seconds * 1000 : 0));
     if (lastMsgAt > hiddenAt) {
       delete hiddenMap[dm.id];
+      if (dm._realDocId) delete hiddenMap[dm._realDocId];
       localStorage.setItem('covo_hidden_dms', JSON.stringify(hiddenMap));
       return true;
     }
@@ -10542,12 +10669,13 @@ function renderDmConversationsList() {
   list.sort((a, b) => (b.lastMessageAt?.toMillis?.() || b.lastMessageAt || 0) - (a.lastMessageAt?.toMillis?.() || a.lastMessageAt || 0));
   let hasAnyDmUnread = false;
   container.innerHTML = list.map(dm => {
-    const otherUid = (dm.participants || []).find(id => id !== userId) || userId;
-    const rel = friendRelationships[otherUid];
-    const targetUser = cachedUsers.find(u => u.id === otherUid) || {};
+    const otherUid = dm._targetUid || (dm.participants || []).find(id => id !== userId);
+    if (!otherUid) return '';
     const cachedProf = window._userProfileCache?.get(otherUid);
-    const nickname = cachedProf?.nickname || targetUser.nickname || rel?.targetNickname || 'ユーザー';
-    const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (targetUser?.avatarUrl !== undefined ? targetUser.avatarUrl : (rel?.targetAvatarUrl || ''));
+    const rel = friendRelationships?.[otherUid];
+    const targetUser = (cachedUsers || []).find(u => u && u.id === otherUid) || {};
+    const nickname = cachedProf?.nickname || rel?.targetNickname || targetUser.nickname || 'ユーザー';
+    const avatarUrl = cachedProf?.avatarUrl !== undefined ? cachedProf.avatarUrl : (rel?.targetAvatarUrl !== undefined ? rel.targetAvatarUrl : (targetUser?.avatarUrl || ''));
     const isActive = currentDmId === dm.id;
     const presenceState = computeUserPresenceState(otherUid);
     if (!cachedProf) {
@@ -15427,7 +15555,8 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
 
           const isAppActiveAndFocused = (document.visibilityState === 'visible') && document.hasFocus();
           const isViewingCurrentRoom = (change.doc.id === currentRoomId) && isAppActiveAndFocused;
-          if (lastMsgAt > lastRead && !isViewingCurrentRoom && room.lastMessageSender && room.lastMessageSender !== userId) {
+          // 現在開いている部屋の通知はメッセージリスナーが一元管理するため二重送信を防止
+          if (change.doc.id !== currentRoomId && lastMsgAt > lastRead && !isViewingCurrentRoom && room.lastMessageSender && room.lastMessageSender !== userId) {
             updateGlobalNotifUI();
             const serverName = currentServerData?.name || 'Covo';
             const roomName = room.name || 'room';
@@ -16237,6 +16366,7 @@ function selectRoom(roomId, roomName) {
               await deleteDoc(resDoc.ref).catch(() => {});
               continue;
             }
+            await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
             await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], key.latestVersion);
             await deleteDoc(resDoc.ref).catch(() => {});
           }
@@ -21003,10 +21133,15 @@ async function notifyNewMessage({
   targetAvatarUrl = null
 } = {}) {
   const notifKey = messageId || `${channelId}_${text}_${senderName}`;
+  const contentKey = `${channelId}_${senderName}_${String(text || '').slice(0, 50)}`;
   if (isDm && targetUid && isUserBlocked(targetUid)) return;
-  if (_notifiedMessageIds.has(notifKey)) return;
+  if (_notifiedMessageIds.has(notifKey) || _notifiedMessageIds.has(contentKey)) return;
   _notifiedMessageIds.add(notifKey);
-  setTimeout(() => _notifiedMessageIds.delete(notifKey), 10000);
+  _notifiedMessageIds.add(contentKey);
+  setTimeout(() => {
+    _notifiedMessageIds.delete(notifKey);
+    _notifiedMessageIds.delete(contentKey);
+  }, 6000);
 
   let bodyText = text;
   if (sticker) {
@@ -24519,7 +24654,7 @@ async function showNotification(title, body, roomId, forceOs = false) {
   }
   const now = Date.now();
   const notifKey = `${roomId || ''}_${displayBody}`;
-  if (!forceOs && now - lastNotificationTime < 2500 && notifKey === lastNotificationKey) return;
+  if (!forceOs && now - lastNotificationTime < 4000 && notifKey === lastNotificationKey) return;
   lastNotificationTime = now;
   lastNotificationKey = notifKey;
   lastNotificationBody = displayBody;
