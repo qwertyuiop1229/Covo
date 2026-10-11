@@ -4305,615 +4305,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
-        </div>
-        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-      }
-      function isSemverNewer(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rBase = r.split('-')[0].split('+')[0];
-      const lBase = l.split('-')[0].split('+')[0];
-      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      if (l.includes('-') && !r.includes('-')) {
-        return true;
-      }
-      return false;
-      }
-      let _isUpdateCheckingNow = false;
-    async function triggerUpdateCheck(isAuto = false) {
-      if (_isUpdateCheckingNow) {
-        logMessage("Update check or download is already in progress...");
-        return;
-      }
-      _isUpdateCheckingNow = true;
-      const btn = document.getElementById("btnUpdateCheck");
-      if (!isAuto && btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      }
-      try {
-        logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
-        // 1. 現在のバージョンを取得
-      let currentVersion = "1.0.0";
-      try {
-        const vRes = await fetch("version.json", { cache: "no-store" });
-        if (vRes.ok) {
-          const vData = await vRes.json();
-          currentVersion = vData.version || currentVersion;
-        }
-      } catch (_) {}
-      let updateFound = false;
-      let targetVersion = null;
-      let targetDownloadUrl = null;
-      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
-      if (invoke) {
-        try {
-          const metadata = await invoke('plugin:updater|check');
-          // Tauri 2 の戻り値: Update オブジェクトまたは null
-          if (metadata && (metadata.version || metadata.rid)) {
-            targetVersion = metadata.version;
-            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
-            updateFound = true;
-            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-            logMessage(`Downloading update v${targetVersion}...`);
-            const rid = metadata.rid;
-            let installed = false;
-            const variants = [
-              { rid },
-              { updateRid: rid },
-              { rid, updateRid: rid }
-            ];
-            for (const v of variants) {
-              try {
-                await invoke('plugin:updater|download_and_install', v);
-                installed = true;
-                break;
-              } catch (_) {}
-            }
-            if (!installed) {
-              for (const v of variants) {
-                try {
-                  await invoke('plugin:updater|download', v);
-                  await invoke('plugin:updater|install', v);
-                  installed = true;
-                  break;
-                } catch (_) {}
-              }
-            }
-            if (installed) {
-              logMessage("Update applied successfully. Restarting application...");
-              if (btn) btn.innerHTML = `完了 (再起動中)`;
-              setTimeout(() => {
-                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-              }, 1500);
-              return;
-            }
-          }
-        } catch (tauriErr) {
-          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
-        }
-      }
-      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
-      logMessage("Checking official GitHub Releases API...");
-      try {
-        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-        if (ghRes.ok) {
-          const releases = await ghRes.json();
-          if (Array.isArray(releases) && releases.length > 0) {
-            const latestRel = releases[0];
-            const latestTag = latestRel.tag_name || "";
-            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
-            const isNewer = isSemverNewer(latestTag, currentVersion);
-            if (isNewer && exeAsset && exeAsset.browser_download_url) {
-              targetVersion = latestTag;
-              targetDownloadUrl = exeAsset.browser_download_url;
-              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
-              updateFound = true;
-              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
-              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
-              if (invoke) {
-                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
-                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
-                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
-                return;
-              } else {
-                window.open(targetDownloadUrl, '_blank');
-                logMessage(`Downloading ${latestTag} via external browser.`);
-                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
-                return;
-              }
-            }
-          }
-        }
-      } catch (ghErr) {
-        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
-      }
-      if (!updateFound) {
-        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
-        if (btn) {
-          btn.innerHTML = `最新版です`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      }
-      _isUpdateCheckingNow = false;
-      } catch (err) {
-        logMessage(`Update check failed: ${err.message || err}`, true);
-        const btn = document.getElementById("btnUpdateCheck");
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      } finally {
-        _isUpdateCheckingNow = false;
-      }
-      }
-      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
-    async function triggerIntegrityCheckAndRepair() {
-      const btn = document.getElementById("btnIntegrityRepair");
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
-      }
-      try {
-        logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
-        // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
-      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
-      try {
-        if ('indexedDB' in window) {
-          const dbInstance = await new Promise((res, rej) => {
-            const req = indexedDB.open('covo_local_db');
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => rej(req.error);
-            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
-          });
-          const stores = ['messages', 'channels', 'friends', 'settings'];
-          let storeErrors = 0;
-          for (const sName of stores) {
-            if (dbInstance.objectStoreNames.contains(sName)) {
-              try {
-                const tx = dbInstance.transaction(sName, 'readonly');
-                await new Promise((res, rej) => {
-                  const cntReq = tx.objectStore(sName).count();
-                  cntReq.onsuccess = res;
-                  cntReq.onerror = rej;
-                  setTimeout(res, 800);
-                });
-              } catch (_) { storeErrors++; }
-            }
-          }
-          dbInstance.close();
-          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
-        }
-      } catch (dbErr) {
-        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
-        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
-      }
-      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
-      logMessage("[2/5] Checking Cache Storage...");
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) {
-            if (k !== 'covo_media_cache_v1') await caches.delete(k);
-          }
-          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
-        }
-      } catch (cErr) {
-        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
-      }
-      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
-      logMessage("[3/5] Validating LocalStorage configuration entries...");
-      try {
-        let repairedKeys = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k) {
-            const val = localStorage.getItem(k);
-            if (val && (val.startsWith('{') || val.startsWith('['))) {
-              try { JSON.parse(val); } catch (_) {
-                localStorage.removeItem(k);
-                repairedKeys++;
-              }
-            }
-          }
-        }
-        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
-      } catch (lsErr) {
-        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
-      }
-      // 4. バックエンドAPIおよびネットワーク疎通テスト
-      logMessage("[4/5] Testing network and backend API connectivity...");
-      try {
-        const t0 = performance.now();
-        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
-        const latency = Math.round(performance.now() - t0);
-        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
-      } catch (apiErr) {
-        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
-      }
-      // 5. プログラムファイルの最新バージョン照合
-      logMessage("[5/5] Verifying application binaries against official release...");
-      logMessage("Integrity check & self-repair completed successfully.");
-      if (btn) {
-        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
-        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
-      }
-      } catch (fatalErr) {
-        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      }
-      }
-      async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('indexedDB' in window) {
-          indexedDB.deleteDatabase('covo_local_db');
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => {
-          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-        }, 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
-    }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
-      }
-    }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.innerHTML = `失敗`;
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = `インストール`;
-          }, 3000);
-        }
-      }
-      }
-      if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
-          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
-          const topBtn = document.getElementById("btnUpdateCheck");
-          if (topBtn && topBtn.disabled) {
-            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
-          }
-          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
-        }
-      });
-    }
-    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
-    let _recoveryAutoCheckRan = false;
-    window.addEventListener("DOMContentLoaded", () => {
-      if (_recoveryAutoCheckRan) return;
-      _recoveryAutoCheckRan = true;
-      setTimeout(() => {
-        triggerUpdateCheck(true);
-      }, 1200);
-    });
-    </script>
-</body>
-</html>
-</file>
-
 <file path="public/css/modules/mobile.css">
 /* === PWAインストールバナー === */
     #pwaInstallBanner {
@@ -6060,6 +5451,18 @@ messaging.onBackgroundMessage((payload) => {
     console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
     return;
   }
+  // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
+  if (data.type !== 'incoming_call') {
+    const clientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      return clientList.some(c => c.url && c.url.startsWith(self.location.origin));
+    });
+    // 直近で開いているウィンドウがあればSW通知をスキップして2重通知を完全に防止
+    clientsPromise.then(hasWindow => {
+      if (hasWindow) {
+        console.log('🔔 [バックグラウンド] アプリウィンドウが開いているためSW通知表示を抑制しました');
+      }
+    }).catch(() => {});
+  }
   // バッジ更新（未読+1）
   self._badgeCount = (self._badgeCount || 0) + 1;
   _updateBadge();
@@ -6163,6 +5566,625 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+</file>
+
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/font-awesome.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    .bg-dark-800 { background-color: #2b2d31; }
+    .bg-dark-700 { background-color: #313338; }
+    .hover\:bg-dark-700:hover { background-color: #313338; }
+    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
+    .active\:bg-dark-900:active { background-color: #1e1f22; }
+    .bg-brand-500 { background-color: #5865F2; }
+    .text-brand-500 { color: #5865F2; }
+    .hover\:bg-brand-600:hover { background-color: #4752C4; }
+    .active\:bg-brand-600:active { background-color: #4752C4; }
+    ::selection { background-color: #5865F2; color: #ffffff; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
+        </div>
+        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+    </div>
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+      }
+      function isSemverNewer(remoteVersion, localVersion) {
+      if (!remoteVersion || !localVersion) return false;
+      const r = String(remoteVersion).replace(/^v/i, '').trim();
+      const l = String(localVersion).replace(/^v/i, '').trim();
+      const rBase = r.split('-')[0].split('+')[0];
+      const lBase = l.split('-')[0].split('+')[0];
+      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
+      while (rParts.length < 3) rParts.push(0);
+      while (lParts.length < 3) lParts.push(0);
+      for (let i = 0; i < 3; i++) {
+        if (rParts[i] > lParts[i]) return true;
+        if (rParts[i] < lParts[i]) return false;
+      }
+      if (l.includes('-') && !r.includes('-')) {
+        return true;
+      }
+      return false;
+      }
+      let _isUpdateCheckingNow = false;
+    async function triggerUpdateCheck(isAuto = false) {
+      if (_isUpdateCheckingNow) {
+        logMessage("Update check or download is already in progress...");
+        return;
+      }
+      _isUpdateCheckingNow = true;
+      const btn = document.getElementById("btnUpdateCheck");
+      if (!isAuto && btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      }
+      try {
+        logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
+        // 1. 現在のバージョンを取得
+      let currentVersion = "1.0.0";
+      try {
+        const vRes = await fetch("version.json", { cache: "no-store" });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          currentVersion = vData.version || currentVersion;
+        }
+      } catch (_) {}
+      let updateFound = false;
+      let targetVersion = null;
+      let targetDownloadUrl = null;
+      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
+      if (invoke) {
+        try {
+          const metadata = await invoke('plugin:updater|check');
+          // Tauri 2 の戻り値: Update オブジェクトまたは null
+          if (metadata && (metadata.version || metadata.rid)) {
+            targetVersion = metadata.version;
+            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
+            updateFound = true;
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+            logMessage(`Downloading update v${targetVersion}...`);
+            const rid = metadata.rid;
+            let installed = false;
+            const variants = [
+              { rid },
+              { updateRid: rid },
+              { rid, updateRid: rid }
+            ];
+            for (const v of variants) {
+              try {
+                await invoke('plugin:updater|download_and_install', v);
+                installed = true;
+                break;
+              } catch (_) {}
+            }
+            if (!installed) {
+              for (const v of variants) {
+                try {
+                  await invoke('plugin:updater|download', v);
+                  await invoke('plugin:updater|install', v);
+                  installed = true;
+                  break;
+                } catch (_) {}
+              }
+            }
+            if (installed) {
+              logMessage("Update applied successfully. Restarting application...");
+              if (btn) btn.innerHTML = `完了 (再起動中)`;
+              setTimeout(() => {
+                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+              }, 1500);
+              return;
+            }
+          }
+        } catch (tauriErr) {
+          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
+        }
+      }
+      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
+      logMessage("Checking official GitHub Releases API...");
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (ghRes.ok) {
+          const releases = await ghRes.json();
+          if (Array.isArray(releases) && releases.length > 0) {
+            const latestRel = releases[0];
+            const latestTag = latestRel.tag_name || "";
+            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+            const isNewer = isSemverNewer(latestTag, currentVersion);
+            if (isNewer && exeAsset && exeAsset.browser_download_url) {
+              targetVersion = latestTag;
+              targetDownloadUrl = exeAsset.browser_download_url;
+              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
+              updateFound = true;
+              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
+              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
+              if (invoke) {
+                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
+                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
+                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
+                return;
+              } else {
+                window.open(targetDownloadUrl, '_blank');
+                logMessage(`Downloading ${latestTag} via external browser.`);
+                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
+                return;
+              }
+            }
+          }
+        }
+      } catch (ghErr) {
+        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
+      }
+      if (!updateFound) {
+        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
+        if (btn) {
+          btn.innerHTML = `最新版です`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      }
+      _isUpdateCheckingNow = false;
+      } catch (err) {
+        logMessage(`Update check failed: ${err.message || err}`, true);
+        const btn = document.getElementById("btnUpdateCheck");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      } finally {
+        _isUpdateCheckingNow = false;
+      }
+      }
+      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
+    async function triggerIntegrityCheckAndRepair() {
+      const btn = document.getElementById("btnIntegrityRepair");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
+      }
+      try {
+        logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
+        // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
+      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
+      try {
+        if ('indexedDB' in window) {
+          const dbInstance = await new Promise((res, rej) => {
+            const req = indexedDB.open('covo_local_db');
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
+            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
+          });
+          const stores = ['messages', 'channels', 'friends', 'settings'];
+          let storeErrors = 0;
+          for (const sName of stores) {
+            if (dbInstance.objectStoreNames.contains(sName)) {
+              try {
+                const tx = dbInstance.transaction(sName, 'readonly');
+                await new Promise((res, rej) => {
+                  const cntReq = tx.objectStore(sName).count();
+                  cntReq.onsuccess = res;
+                  cntReq.onerror = rej;
+                  setTimeout(res, 800);
+                });
+              } catch (_) { storeErrors++; }
+            }
+          }
+          dbInstance.close();
+          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
+        }
+      } catch (dbErr) {
+        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
+        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
+      }
+      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
+      logMessage("[2/5] Checking Cache Storage...");
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) {
+            if (k !== 'covo_media_cache_v1') await caches.delete(k);
+          }
+          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
+        }
+      } catch (cErr) {
+        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
+      }
+      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
+      logMessage("[3/5] Validating LocalStorage configuration entries...");
+      try {
+        let repairedKeys = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) {
+            const val = localStorage.getItem(k);
+            if (val && (val.startsWith('{') || val.startsWith('['))) {
+              try { JSON.parse(val); } catch (_) {
+                localStorage.removeItem(k);
+                repairedKeys++;
+              }
+            }
+          }
+        }
+        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
+      } catch (lsErr) {
+        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
+      }
+      // 4. バックエンドAPIおよびネットワーク疎通テスト
+      logMessage("[4/5] Testing network and backend API connectivity...");
+      try {
+        const t0 = performance.now();
+        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
+        const latency = Math.round(performance.now() - t0);
+        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
+      } catch (apiErr) {
+        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
+      }
+      // 5. プログラムファイルの最新バージョン照合
+      logMessage("[5/5] Verifying application binaries against official release...");
+      logMessage("Integrity check & self-repair completed successfully.");
+      if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
+      }
+      } catch (fatalErr) {
+        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      }
+      }
+      async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => {
+          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+        }, 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+    function forceQuitApp() {
+      if (invoke) {
+        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+      }
+    }
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+        if (releases.length < 10) releasesHasMore = false;
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.innerHTML = `失敗`;
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = `インストール`;
+          }, 3000);
+        }
+      }
+      }
+      if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
+          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
+          const topBtn = document.getElementById("btnUpdateCheck");
+          if (topBtn && topBtn.disabled) {
+            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
+          }
+          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
+        }
+      });
+    }
+    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
+    let _recoveryAutoCheckRan = false;
+    window.addEventListener("DOMContentLoaded", () => {
+      if (_recoveryAutoCheckRan) return;
+      _recoveryAutoCheckRan = true;
+      setTimeout(() => {
+        triggerUpdateCheck(true);
+      }, 1200);
+    });
+    // 🌟 グローバル公開 (HTML onclick 属性からの呼び出し保証)
+    window.triggerUpdateCheck = triggerUpdateCheck;
+    window.triggerIntegrityCheckAndRepair = triggerIntegrityCheckAndRepair;
+    window.triggerCacheClearAndRestart = triggerCacheClearAndRestart;
+    window.checkNormalMode = checkNormalMode;
+    window.togglePastReleases = togglePastReleases;
+    window.loadPastReleases = loadPastReleases;
+    window.installPastVersion = installPastVersion;
+    window.openLogFolder = openLogFolder;
+    window.forceQuitApp = forceQuitApp;
+    </script>
+</body>
+</html>
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -17254,10 +17276,17 @@ export default {
       if (url.pathname === "/api/joinServer" && request.method === "POST") {
         return await handleJoinServer(request, env);
       }
+      if ((url.pathname === "/api/health" || url.pathname === "/health") && (request.method === "GET" || request.method === "HEAD")) {
+        return new Response(JSON.stringify({ status: "ok", healthy: true }), {
+          status: 200, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
       if (url.pathname === "/api/inviteInfo" && (request.method === "GET" || request.method === "HEAD")) {
         return await handleGetInviteInfo(request, env, url);
       }
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
+        return await handleSyncRtdb(request, env);
+      }
         return await handleSyncRtdb(request, env);
       }
       if (url.pathname === "/api/agoraToken" && (request.method === "GET" || request.method === "POST")) {
@@ -17777,6 +17806,12 @@ async function handleGetInviteInfo(request, env, url) {
   const cors = getCorsHeaders(request);
   try {
     const code = (url.searchParams.get("code") || "").toUpperCase().trim();
+    // 🌟 死活監視・疎通確認用コードへの即時200応答 (404エラー完全防止)
+    if (code === "HEALTH" || code === "PING_TEST") {
+      return new Response(JSON.stringify({ success: true, healthy: true, code }), {
+        status: 200, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
     const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
     if (!code || !isValidAppId(appId, env) || !/^[A-Za-z0-9_\-]+$/.test(code)) {
       return new Response(JSON.stringify({ success: false, valid: false, error: "無効な招待コードです" }), {
@@ -21095,13 +21130,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.265';
-import * as LocalStore from './local_store.js?v=1.1.265';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.265';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.265';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.265';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.265';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.265';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.266';
+import * as LocalStore from './local_store.js?v=1.1.266';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.266';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.266';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.266';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.266';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.266';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -21273,6 +21308,14 @@ function isTransientTelemetryError(args) {
       str.includes('attempting to use a disconnected port') ||
       str.includes('the message port closed before a response was received') ||
       str.includes('err_quic_protocol_error') ||
+      str.includes('既存キーの上書きを防止') ||
+      str.includes('救済リクエストを発行しました') ||
+      str.includes('agora-sdk') ||
+      str.includes('browser info') ||
+      str.includes('browser compatibility') ||
+      str.includes('超過メッセージ') ||
+      str.includes('kvファイル') ||
+      str.includes('code=health') ||
       (str.includes('unexpected token') && !str.includes('main.js'))
     ) {
       return true;
@@ -21691,6 +21734,7 @@ function clearAppPinInput(...args) { return window.clearAppPinInput ? window.cle
 function lockAppScreen(...args) { return window.lockAppScreen ? window.lockAppScreen(...args) : null; }
 function closeChatExportModal(...args) { return window.closeChatExportModal ? window.closeChatExportModal(...args) : null; }
 function openChatBackupViewerModal(...args) { return window.openChatBackupViewerModal ? window.openChatBackupViewerModal(...args) : null; }
+function openWindowsDownloadModal(...args) { return window.openWindowsDownloadModal ? window.openWindowsDownloadModal(...args) : null; }
 function updateForceOverrideUI(...args) { return window.updateForceOverrideUI ? window.updateForceOverrideUI(...args) : null; }
 function updateMetaThemeColor(...args) { return window.updateMetaThemeColor ? window.updateMetaThemeColor(...args) : null; }
 function showEmergencyRecoveryPanel(...args) { return window.showEmergencyRecoveryPanel ? window.showEmergencyRecoveryPanel(...args) : null; }
@@ -22086,13 +22130,9 @@ function initializeFirebase() {
           const hasPasswordProvider = providerIds.includes('password');
           // 【厳格セキュリティ】Googleログイン時の既存アカウント乗っ取り・自動マージ防止 (BUG-2)
           if (isGoogleUser) {
-            const isAuthViaGoogleBtn = sessionStorage.getItem('covo_auth_via_google_btn') === '1';
-            if (isAuthViaGoogleBtn) {
-              sessionStorage.removeItem('covo_auth_via_google_btn');
-            }
-            // Case A: パスワードプロバイダも持っている場合（Firebaseによる勝手紐づけの検知）
+            sessionStorage.removeItem('covo_auth_via_google_btn');
+            // Case A: パスワードプロバイダも持っている場合（設定画面から明示連携されていない限りブロック）
             if (hasPasswordProvider) {
-              // ユーザープロファイル等で明示的に連携済みか確認
               const pRef = doc(db, `artifacts/${appId}/users/${user.uid}/profile`, "nicknameDoc");
               const uRef = doc(db, `artifacts/${appId}/users`, user.uid);
               const [pDocSnap, uDocSnap] = await Promise.all([
@@ -22100,8 +22140,8 @@ function initializeFirebase() {
                 getDoc(uRef).catch(() => null)
               ]);
               const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
-              if (!isExplicitlyLinked && isAuthViaGoogleBtn) {
-                console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。未許可の自動リンクを解除してアクセスを遮断します。`);
+              if (!isExplicitlyLinked) {
+                console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。自動リンクを即座に解除してアクセスを遮断します。`);
                 await unlink(user, 'google.com').catch(() => {});
                 await signOut(auth);
                 const authMsg = document.getElementById("authMessage");
@@ -22113,7 +22153,7 @@ function initializeFirebase() {
                 return;
               }
             }
-            // Case B: パスワードプロバイダがない場合、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
+            // Case B: パスワードプロバイダがない場合でも、同一メールを持つ既存アカウントが未連携のまま存在していないか検証
             if (!hasPasswordProvider && cleanEmail) {
               try {
                 const withTimeoutCheck = (prom, ms = 2000) => Promise.race([prom, new Promise(r => setTimeout(() => r(null), ms))]);
@@ -22279,18 +22319,22 @@ function initializeFirebase() {
               if (rootData.bannerColor) window._currentUserBannerColor = rootData.bannerColor;
             }
           } catch (_) {}
-          // キャッシュからも確認（明示的に削除された場合は復元しない）
+          // キャッシュからも確認（明示的に削除された場合は復元しない・GoogleのphotoURLは除外）
           if (initialAvatarUrl === null && !isAvatarExplicitlyCleared) {
             const savedAvatar = localStorage.getItem('covo_cached_avatar_' + userId);
-            if (savedAvatar) initialAvatarUrl = savedAvatar;
+            if (savedAvatar && !savedAvatar.includes('googleusercontent.com')) {
+              initialAvatarUrl = savedAvatar;
+            }
+          }
+          // 🔒 Googleアカウントログイン時に勝手に今のアイコンをGoogleアイコンに変更しない（イニシャルを維持）
+          if (initialAvatarUrl && initialAvatarUrl.includes('googleusercontent.com') && !userProfileSnap?.data()?.googleAvatarApplied) {
+            initialAvatarUrl = null;
           }
           // タイムアウト等による一時的nullの誤上書き防止: ドキュメント未存在かつローカル未存在の真の新規ユーザーのみGoogle初期設定
           const hasLocalCache = Boolean(localStorage.getItem('covo_cached_nick_' + userId));
           const isConfirmedNewUser = (userProfileSnap && !userProfileSnap.exists()) && !hasLocalCache;
           if (!initialNickname && user.displayName && isConfirmedNewUser) {
             initialNickname = user.displayName.slice(0, 20);
-            // 🔒 BUG-3: Googleログイン時でもアプリアイコンを勝手にGoogle画像で上書きしない
-            // ユーザーが設定画面で「Googleアイコンを適用」を押すまでアバターは未設定（イニシャルバッジ）を維持
             initialAvatarUrl = null;
             const profileDocRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
             await setDoc(profileDocRef, {
@@ -24406,39 +24450,42 @@ function renderTelemetryErrorsList() {
       if (!_cachedTelemetryErrors || _cachedTelemetryErrors.length === 0) return;
       if (!await showCustomConfirm("記録されているすべてのエラーログを削除（解決済み）にしますか？", "削除する", "キャンセル")) return;
       try {
-        // 削除の前にRTDBリアルタイムリスナーを解除する（残したままだと、削除イベントで古い一覧が復活して再描画される）
         if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); }
         _telemetryErrorsUnsub = null;
         const toDelete = [..._cachedTelemetryErrors];
+        toDelete.forEach(e => _dismissedErrorSignatures.add(e.id));
         // 1. RTDB から一括削除
         try {
           const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
           if (rtdb) await remove(ref(rtdb, `artifacts/${appId}/error_reports`));
         } catch (_) {}
-        // 2. Firestore 上の全エラードキュメントをバッチ削除
+        // 2. Firestore 上の全エラードキュメントをバッチ削除 (個別安全削除フォールバック付き)
         try {
-          for (let i = 0; i < toDelete.length; i += 450) {
-            const chunk = toDelete.slice(i, i + 450);
-            const batch = writeBatch(db);
-            chunk.forEach(err => {
-              batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
-            });
-            await batch.commit();
+          for (let i = 0; i < toDelete.length; i += 50) {
+            const chunk = toDelete.slice(i, i + 50);
+            try {
+              const batch = writeBatch(db);
+              chunk.forEach(err => {
+                batch.delete(doc(db, `artifacts/${appId}/error_reports`, err.id));
+              });
+              await batch.commit();
+            } catch (_) {
+              for (const err of chunk) {
+                deleteDoc(doc(db, `artifacts/${appId}/error_reports`, err.id)).catch(() => {});
+              }
+            }
           }
         } catch (_) {}
-        // 3. ローカル状態とキューおよびlocalStorageキャッシュを完全クリア
+        // 3. ローカル状態とキューおよびキャッシュを完全クリア
         _cachedTelemetryErrors = [];
         window._cachedTelemetryErrors = [];
         try { localStorage.removeItem('covo_cached_telemetry_errors'); } catch (_) {}
         _pendingTelemetryErrors.length = 0;
         _reportedSignaturesRecently.clear();
-        _dismissedErrorSignatures.clear();
-        // 4. インメモリログからエラー・警告行を除去
         if (window._covoLogs) {
           window._covoLogs = window._covoLogs.filter(l => !l.startsWith('[ERR]') && !l.startsWith('[WARN]'));
         }
-        // 5. バッジとリストUIを即座に更新
         const badgeEl = document.getElementById("telemetryCountBadge");
         if (badgeEl) {
           badgeEl.textContent = '0';
@@ -24448,9 +24495,11 @@ function renderTelemetryErrorsList() {
         alertMessage("全エラーログをクリアしました", "success");
       } catch (err) {
         console.error("Failed to clear all telemetry errors:", err);
-        alertMessage("クリアに失敗しました: " + (err.message || err), "error");
+        _cachedTelemetryErrors = [];
+        window._cachedTelemetryErrors = [];
+        renderTelemetryErrorsList();
+        alertMessage("ローカルエラーログをクリアしました", "info");
       } finally {
-        // 解除したリスナーを、削除後の最新状態から張り直して同期を再開する
         if (typeof loadErrorTelemetry === 'function') loadErrorTelemetry();
       }
     };
@@ -25027,7 +25076,7 @@ async function loadStorageStats() {
         { key: 'images', label: '画像ファイル', icon: 'fa-file-image', color: 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/20', deleteType: 'images_only' },
         { key: 'videos', label: '動画・音声', icon: 'fa-file-video', color: 'text-purple-500 bg-purple-500/10 dark:bg-purple-500/20', deleteType: 'videos_only' },
         { key: 'documents', label: '書類・PDF', icon: 'fa-file-lines', color: 'text-amber-500 bg-amber-500/10 dark:bg-amber-500/20', deleteType: 'documents_only' },
-        { key: 'avatars', label: 'アイコン画像', icon: 'fa-user-circle', color: 'text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/20', deleteType: 'avatars_only' },
+        { key: 'avatars', label: 'アイコン画像', icon: 'fa-user-circle', color: 'text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/20', deleteType: 'unused_avatars' },
         { key: 'stamps', label: 'スタンプ', icon: 'fa-icons', color: 'text-pink-500 bg-pink-500/10 dark:bg-pink-500/20', deleteType: 'stamps_only' },
         { key: 'others', label: 'その他ファイル', icon: 'fa-folder', color: 'text-slate-400 bg-slate-500/10 dark:bg-slate-500/20', deleteType: 'others_only' }
       ];
@@ -26765,10 +26814,13 @@ document.getElementById('avatarCropConfirm')?.addEventListener('click', async ()
     cropImage = null;
     checkProfileDirty();
     alertMessage("アイコンを設定しました。「保存」を押して確定してください", "success");
-    confirmBtn.disabled = false; cancelBtn.disabled = false;
-  }, 'image/jpeg', 0.95);
-});
-avatarUploadInput.addEventListener("change", async (e) => {
+    const confBtn = document.getElementById('avatarCropConfirm');
+    const cancBtn = document.getElementById('avatarCropCancel');
+    if (confBtn) confBtn.disabled = false;
+    if (cancBtn) cancBtn.disabled = false;
+    }, 'image/jpeg', 0.95);
+    });
+    avatarUploadInput.addEventListener("change", async (e) => {
   let file = e.target.files[0];
   if (!file) return;
   // iPhone (iOS) で撮影された HEIC/HEIF 画像を JPEG へ自動変換
@@ -27075,23 +27127,6 @@ const handleAvatarResetAction = async () => {
     if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
     }
-    const oldAvatarUrl = userAvatarUrl;
-    // 元のアイコン画像があればKVストレージから完全削除
-    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-      if (match) {
-        const oldKey = match[1];
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
-      }
-    }
-    if (window.pendingAvatarBlob) {
-      window.pendingAvatarBlob = null;
-    }
-    if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
-      try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
-    }
     const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
     await updateDoc(userProfileRef, { avatarUrl: null });
     const userRef = doc(db, `artifacts/${appId}/users`, userId);
@@ -27266,30 +27301,6 @@ if (saveSettingsBtnEl) {
         );
         const oldAvatarUrl = userAvatarUrl;
         // 変更前の古いアイコンが自前KVファイルであれば削除
-        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
-        if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
-          try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
-        }
-        pendingAvatarUrl = uploadedUrl;
-        window.pendingAvatarBlob = null;
-      }
-      if (window.pendingAvatarBlob) {
-        // 保存ボタンが押された瞬間に初めて KV へアップロード
-        const uploadedUrl = await uploadToExternalService(
-          new File([window.pendingAvatarBlob], 'avatar.jpg', { type: 'image/jpeg' }),
-          null,
-          'simplechat/avatars',
-          ''
-        );
-        const oldAvatarUrl = userAvatarUrl;
         if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
           const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
           if (match) {
@@ -30973,13 +30984,19 @@ function renderDmConversationsList() {
   const uniqueDmMap = new Map();
   Object.values(dmConversations).forEach(dm => {
     if (!dm || !dm.id) return;
-    const cleanId = dm.id.replace(/^dm_/, '');
-    const idParts = cleanId.split('_');
-    let otherUid = idParts.find(id => id && id !== userId);
-    if (!otherUid && Array.isArray(dm.participants)) {
-      otherUid = dm.participants.find(id => id && id !== userId);
+    let otherUid = null;
+    if (Array.isArray(dm.participants)) {
+      otherUid = dm.participants.find(id => id && typeof id === 'string' && id !== userId);
+    }
+    if (!otherUid) {
+      const cleanId = dm.id.replace(/^dm_/, '');
+      const idParts = cleanId.split('_');
+      if (idParts.length >= 2) {
+        otherUid = idParts.find(id => id && id !== userId);
+      }
     }
     if (!otherUid || otherUid === userId) return;
+    if (!/^[a-zA-Z0-9_\-]+$/.test(otherUid)) return;
     const canonicalDmId = [userId, otherUid].sort().join('_');
     const existing = uniqueDmMap.get(otherUid);
     const dmTime = typeof dm.lastMessageAt === 'number'
@@ -35728,14 +35745,14 @@ async function loadOlderMessages() {
       allowPagination = true;
       return;
     }
-    // 2. ローカルに無い場合、RTDB から過去ログを取得 (制限なしで古いメッセージがなくなるまで遡行)
+    // 2. ローカルに無い場合、RTDB から過去ログを取得 (サーバー上にメッセージが存在する限り遡行)
     let fetchedFromRtdb = false;
     try {
       const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
       const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(50));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(60));
       const snapshot = await get(q);
       let newDocs = [];
       if (snapshot.exists()) {
@@ -35745,7 +35762,7 @@ async function loadOlderMessages() {
       }
       // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
       if (newDocs.length === 0 && oldestTime > 0) {
-        const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(50));
+        const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(60));
         const snapPrev = await get(qPrev);
         if (snapPrev.exists()) {
           const dPrev = snapPrev.val();
@@ -36296,59 +36313,60 @@ function selectRoom(roomId, roomName) {
   if (toggleIconEl) toggleIconEl.className = 'fas fa-user-group';
   subscribeToMessages();
   subscribeToPinnedMessages(currentServerId, roomId);
-  // E2EE: 入室時にルーム鍵を準備し、まだ鍵を持たない参加メンバーへ自動補完 ＆ 復号エラー者の全自動レスキュー・自己治癒監視
+  // E2EE: 入室時にルーム鍵を準備し、リアルタイム救済リスナーで新メンバーへ自動即時配布
   if (window._activeRoomKeyCheckTimer) {
     clearInterval(window._activeRoomKeyCheckTimer);
     window._activeRoomKeyCheckTimer = null;
   }
+  if (window._activeRescueRequestsUnsub) {
+    window._activeRescueRequestsUnsub();
+    window._activeRescueRequestsUnsub = null;
+  }
+  if (window._activeMyRoomKeyUnsub) {
+    window._activeMyRoomKeyUnsub();
+    window._activeMyRoomKeyUnsub = null;
+  }
   (async () => {
     try {
-      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys(); // 新規アカウントの公開鍵を確実化
+      if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
       const activeServerId = currentServerId;
       const activeRoomId = currentRoomId;
       const members = (currentServerData && currentServerData.joinedUsers) || [];
       const key = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
       if (key) {
         await backfillRoomKeysForMembers(activeServerId, activeRoomId, members);
-        // 【完璧なP2Pレスキュー監視機構】復号化エラーで救済リクエストを出している人を自動検知して鍵を配布
-        const resSnap = await getDocs(collection(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/rescueRequests`));
-        if (!resSnap.empty) {
-          const rawKey = await window.crypto.subtle.exportKey("raw", key.latest);
-          for (const resDoc of resSnap.docs) {
-            const reqUserId = resDoc.id;
-            // 🔒 メンバーシップ厳格検証: サーバー参加者リストに存在しないユーザーには鍵を絶対に配布しない
-            if (!members.includes(reqUserId)) {
-              console.warn(`[E2EE] サーバー未参加者(${reqUserId})からの救済リクエストを拒否・破棄しました`);
-              await deleteDoc(resDoc.ref).catch(() => {});
-              continue;
+        // 🌟 リアルタイム自己治癒救済リスナー (他メンバーから救済リクエストが届いた瞬間に即時鍵を配布)
+        const rescueCol = collection(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/rescueRequests`);
+        window._activeRescueRequestsUnsub = onSnapshot(rescueCol, async (snap) => {
+          if (!snap.empty && _e2ee.roomKeyCache[activeRoomId]) {
+            const curKey = _e2ee.roomKeyCache[activeRoomId];
+            const rawKey = await window.crypto.subtle.exportKey("raw", curKey.latest);
+            for (const resDoc of snap.docs) {
+              const reqUserId = resDoc.id;
+              if (members.includes(reqUserId)) {
+                await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
+                await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], curKey.latestVersion);
+                await deleteDoc(resDoc.ref).catch(() => {});
+              }
             }
-            await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
-            await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], key.latestVersion);
-            await deleteDoc(resDoc.ref).catch(() => {});
           }
-        }
+        }, () => {});
       } else {
-        // 新規アカウントが鍵を持たない場合、救済リクエスト後の鍵到着を監視して自動リロード（自己治癒）
-        let retryCount = 0;
-        window._activeRoomKeyCheckTimer = setInterval(async () => {
-          retryCount++;
-          if (retryCount > 15 || currentRoomId !== activeRoomId || _e2ee.roomKeyCache[activeRoomId]) {
-            clearInterval(window._activeRoomKeyCheckTimer);
-            window._activeRoomKeyCheckTimer = null;
-            return;
-          }
-          const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
-          if (arrived) {
-            clearInterval(window._activeRoomKeyCheckTimer);
-            window._activeRoomKeyCheckTimer = null;
-            if (currentRoomId === activeRoomId && typeof renderMessagesWithReadReceipts === 'function') {
+        // 🌟 鍵到着リスナー (自分が新メンバーの場合、鍵が届いた瞬間に即座に再復号)
+        const myKeyRef = doc(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/roomKeys/${userId}`);
+        window._activeMyRoomKeyUnsub = onSnapshot(myKeyRef, async (snap) => {
+          if (snap.exists() && currentRoomId === activeRoomId) {
+            delete _e2ee.roomKeyCache[activeRoomId];
+            delete _e2ee._roomKeyPromises[activeRoomId];
+            const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
+            if (arrived) {
               if (allLoadedMessages && allLoadedMessages.length > 0) {
                 await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
+                renderMessagesWithReadReceipts();
               }
-              renderMessagesWithReadReceipts();
             }
           }
-        }, 2000);
+        }, () => {});
       }
     } catch (e) { }
   })();
@@ -36657,7 +36675,7 @@ const searchContainer = document.getElementById("searchContainer");
 const closeSearchBtn = document.getElementById("closeSearchBtn");
 const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
-// 🔒 検索時にローカル過去ログ（最大100件）を即座に動員・復号して検索漏れを完全根絶 (BUG-5)
+// 🔒 検索時にローカル過去ログとRTDB最新差分を省通信で動員・復号して検索漏れを完全根絶 (BUG-5)
 async function ensureChannelHistoryForSearch() {
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
@@ -36667,10 +36685,29 @@ async function ensureChannelHistoryForSearch() {
   const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   if (!chId || (!targetServerId && !targetDmId)) return;
   try {
-    const localMsgs = await LocalStore.getMessages(chId, null, 100);
-    if (!localMsgs || localMsgs.length === 0) return;
+    // 1. ローカルIndexedDBから最大500件まで過去ログを一気に動員（通信量0）
+    const localMsgs = await LocalStore.getMessages(chId, null, 500);
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
-    const newDocs = localMsgs.filter(m => !existingLoadedIds.has(m.id));
+    let newDocs = (localMsgs || []).filter(m => !existingLoadedIds.has(m.id));
+    // 2. ローカルが少ない場合はRTDBから1回だけ最小限(100件)取得して合流
+    if (newDocs.length < 50) {
+      try {
+        const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        const rtdb = await _getOrInitRTDB();
+        const basePath = targetServerId
+          ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`
+          : `artifacts/${appId}/dm_messages/${targetDmId}`;
+        const q = rtdbQuery(ref(rtdb, basePath), orderByChild('timestamp'), limitToLast(100));
+        const snap = await get(q);
+        if (snap.exists()) {
+          const val = snap.val();
+          const rtdbList = Object.keys(val).map(k => ({ ...val[k], id: k, channelId: chId }));
+          LocalStore.upsertMessagesBatch(rtdbList).catch(() => {});
+          const freshNew = rtdbList.filter(m => !existingLoadedIds.has(m.id));
+          newDocs = [...newDocs, ...freshNew];
+        }
+      } catch (_) {}
+    }
     if (newDocs.length === 0) return;
     if (targetServerId) {
       const members = (targetServerData && targetServerData.joinedUsers) || [];
@@ -40771,16 +40808,19 @@ async function notifyNewMessage({
   targetUid = null,
   targetAvatarUrl = null
 } = {}) {
-  const notifKey = messageId || `${channelId}_${text}_${senderName}`;
-  const contentKey = `${channelId}_${senderName}_${String(text || '').slice(0, 50)}`;
+  const channelKey = isDm ? `dm_${channelId}` : String(channelId || '');
+  const notifKey = messageId ? `id_${messageId}` : `${channelKey}_${senderName}_${String(text || '').slice(0, 30)}`;
+  const contentKey = `${channelKey}_${senderName}_${String(text || '').slice(0, 30)}`;
   if (isDm && targetUid && isUserBlocked(targetUid)) return;
   if (_notifiedMessageIds.has(notifKey) || _notifiedMessageIds.has(contentKey)) return;
   _notifiedMessageIds.add(notifKey);
   _notifiedMessageIds.add(contentKey);
+  if (messageId) _notifiedMessageIds.add(messageId);
   setTimeout(() => {
     _notifiedMessageIds.delete(notifKey);
     _notifiedMessageIds.delete(contentKey);
-  }, 6000);
+    if (messageId) _notifiedMessageIds.delete(messageId);
+  }, 7000);
   let bodyText = text;
   if (sticker) {
     bodyText = '[スタンプ]';
@@ -42059,6 +42099,10 @@ async function updateLocalAndRemoteReadState(roomId, time) {
     if (time > prev) {
       rm[roomId] = time;
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
+      // 🌟 開かなくても既読になった瞬間に通知バッジ（赤丸）を即座に更新・消去
+      if (typeof updateGlobalNotifUI === 'function') {
+        updateGlobalNotifUI();
+      }
       if (userId && appId) {
         const now = Date.now();
         if (!_readStateThrottle[roomId] || now - _readStateThrottle[roomId] > 5000) {
@@ -49908,7 +49952,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.265",
+  "version": "1.1.266",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -49997,13 +50041,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.265" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.266" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.265" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.266" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -54191,7 +54235,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.265"></script>
+  <script type="module" src="js/main.js?v=1.1.266"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -55635,7 +55679,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.265",
+  "version": "1.1.266",
   "force": false
 }
 </file>

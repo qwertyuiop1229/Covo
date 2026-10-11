@@ -1,10 +1,9 @@
 {
-  "date": "2026-10-11T12:02:54.985Z",
+  "date": "2026-10-11T15:31:50.751Z",
   "files": [
-    "public/recovery.html",
-    "public/js/crypto_helpers.js",
     "public/js/main.js",
-    "public/index.html",
-    "server/src/index.js"
+    "public/firebase-messaging-sw.js",
+    "server/src/index.js",
+    "public/recovery.html"
   ]
 }

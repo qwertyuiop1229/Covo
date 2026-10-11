@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.264';
-import * as LocalStore from './local_store.js?v=1.1.264';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.264';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.264';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.264';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.264';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.264';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.265';
+import * as LocalStore from './local_store.js?v=1.1.265';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.265';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.265';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.265';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.265';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.265';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -157,7 +157,11 @@ let _cachedIdToken = null;
 let _appVersion = null;
 fetch('/version.json', { cache: 'default' })
   .then(r => r.json())
-  .then(d => { _appVersion = d.version || null; })
+  .then(d => {
+    _appVersion = d.version || null;
+    window._appVersion = _appVersion;
+    window.__covo_version = _appVersion;
+  })
   .catch(() => { _appVersion = null; });
 // 古いコードやキャッシュからの renderServer 呼び出しを安全に処理するフォールバック
 window.renderServer = function (server) {
@@ -6312,6 +6316,10 @@ window.resetProfileChanges = function () {
     try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
   }
   window.pendingAvatarBlob = null;
+  if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+    try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+  }
+  window.pendingAvatarBlob = null;
   pendingAvatarUrl = null;
   const pcPreview = document.getElementById("settingsAvatarPreview");
   const mobPreview = document.getElementById("mobileAvatarPreview");
@@ -6466,6 +6474,23 @@ const handleAvatarResetAction = async () => {
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
+    const oldAvatarUrl = userAvatarUrl;
+    // 元のアイコン画像があればKVストレージから完全削除
+    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
+      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+      if (match) {
+        const oldKey = match[1];
+        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
+      }
+    }
+    if (window.pendingAvatarBlob) {
+      window.pendingAvatarBlob = null;
+    }
+    if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+      try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+    }
     const oldAvatarUrl = userAvatarUrl;
     // 元のアイコン画像があればKVストレージから完全削除
     if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
@@ -6676,6 +6701,42 @@ if (saveSettingsBtnEl) {
         }
         pendingAvatarUrl = uploadedUrl;
         window.pendingAvatarBlob = null;
+      }
+      if (window.pendingAvatarBlob) {
+        // 保存ボタンが押された瞬間に初めて KV へアップロード
+        const uploadedUrl = await uploadToExternalService(
+          new File([window.pendingAvatarBlob], 'avatar.jpg', { type: 'image/jpeg' }),
+          null,
+          'simplechat/avatars',
+          ''
+        );
+        const oldAvatarUrl = userAvatarUrl;
+        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
+          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+          if (match) {
+            const oldKey = match[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+          }
+        }
+        if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
+          try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
+        }
+        pendingAvatarUrl = uploadedUrl;
+        window.pendingAvatarBlob = null;
+      } else if (pendingAvatarUrl && pendingAvatarUrl !== userAvatarUrl) {
+        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除
+        const oldAvatarUrl = userAvatarUrl;
+        if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
+          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+          if (match) {
+            const oldKey = match[1];
+            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+          }
+        }
       }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (determinedBannerColor) {
@@ -16305,6 +16366,7 @@ function selectRoom(roomId, roomName) {
               await deleteDoc(resDoc.ref).catch(() => {});
               continue;
             }
+            await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
             await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], key.latestVersion);
             await deleteDoc(resDoc.ref).catch(() => {});
           }

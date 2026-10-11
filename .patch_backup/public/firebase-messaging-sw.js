@@ -256,29 +256,35 @@ messaging.onBackgroundMessage((payload) => {
     const tag = data.messageId
       ? `msg-${data.messageId}`
       : `chat-${data.roomId || 'covo'}`;
-
     notificationOptions = {
       body,
       icon: '/img/icon-192x192.png?v=6',
       badge: '/img/icon-192x192.png?v=6',
       tag,
       data,
+      requireInteraction: false,
       actions: [
         { action: 'open', title: '開く' }
       ]
     };
-    }
-    const showPromise = self.registration.showNotification(title, notificationOptions);
-    // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に自動消去
-    if (data.type !== 'incoming_call') {
-    setTimeout(() => {
-      self.registration.getNotifications({ tag: notificationOptions.tag }).then(notifs => {
-        notifs.forEach(n => n.close());
-      }).catch(() => {});
-    }, 7000);
-    }
-    return showPromise;
+  }
+  const showPromise = self.registration.showNotification(title, notificationOptions);
+  // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に確実に自動消去
+  if (data.type !== 'incoming_call') {
+    const autoClosePromise = new Promise((resolve) => {
+      setTimeout(async () => {
+        try {
+          const notifs = await self.registration.getNotifications({ tag: notificationOptions.tag });
+          notifs.forEach(n => n.close());
+        } catch (_) {}
+        resolve();
+      }, 7000);
     });
+    // waitUntil で Service Worker のアイドルサスペンドを防ぎ、7秒後の自動消去を確実に完遂させる
+    return Promise.all([showPromise, autoClosePromise]);
+  }
+  return showPromise;
+  });
 
 // ─── 通知クリック ───────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
