@@ -129,7 +129,7 @@ async function _sendOfflineIfNoClients() {
 }
 
 // ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
+messaging.onBackgroundMessage(async (payload) => {
   console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
 
   let title = 'Covo';
@@ -230,15 +230,16 @@ messaging.onBackgroundMessage((payload) => {
   }
   // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
   if (data.type !== 'incoming_call') {
-    const clientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      return clientList.some(c => c.url && c.url.startsWith(self.location.origin));
-    });
-    // 直近で開いているウィンドウがあればSW通知をスキップして2重通知を完全に防止
-    clientsPromise.then(hasWindow => {
-      if (hasWindow) {
-        console.log('🔔 [バックグラウンド] アプリウィンドウが開いているためSW通知表示を抑制しました');
-      }
-    }).catch(() => {});
+    let hasActiveAppWindow = false;
+    try {
+      const appClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      hasActiveAppWindow = appClients.some(c => c.url && c.url.startsWith(self.location.origin) && (c.focused || c.visibilityState === 'visible'));
+    } catch (_) {}
+    // 画面が見えている/フォーカス中なら画面側(アプリ内トースト)に任せ、SW通知・バッジ加算は行わない
+    if (hasActiveAppWindow) {
+      console.log('🔔 [バックグラウンド] アプリウィンドウが表示中のためSW通知表示を抑制しました');
+      return;
+    }
   }
   // バッジ更新（未読+1）
   self._badgeCount = (self._badgeCount || 0) + 1;
@@ -261,10 +262,10 @@ messaging.onBackgroundMessage((payload) => {
       ]
     };
   } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
+    // 画面側の Web Notification（tag: chat-{roomId}）と同じタグに揃え、OS側でも同一ルームの通知を1件に集約する
+    const tag = data.roomId
+      ? `chat-${data.roomId}`
+      : (data.messageId ? `msg-${data.messageId}` : 'chat-covo');
     notificationOptions = {
       body,
       icon: '/img/icon-192x192.png?v=6',

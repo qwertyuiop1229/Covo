@@ -52,3 +52,5 @@ tools/logs/
 *.patch
 public/repomix-output.xml
 scratch/
+
+ai-context/

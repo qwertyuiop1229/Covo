@@ -203,10 +203,17 @@ export default {
       if (url.pathname === "/api/joinServer" && request.method === "POST") {
         return await handleJoinServer(request, env);
       }
+      if ((url.pathname === "/api/health" || url.pathname === "/health") && (request.method === "GET" || request.method === "HEAD")) {
+        return new Response(JSON.stringify({ status: "ok", healthy: true }), {
+          status: 200, headers: { ...cors, "Content-Type": "application/json" }
+        });
+      }
       if (url.pathname === "/api/inviteInfo" && (request.method === "GET" || request.method === "HEAD")) {
         return await handleGetInviteInfo(request, env, url);
       }
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
+        return await handleSyncRtdb(request, env);
+      }
         return await handleSyncRtdb(request, env);
       }
       if (url.pathname === "/api/agoraToken" && (request.method === "GET" || request.method === "POST")) {
@@ -755,6 +762,12 @@ async function handleGetInviteInfo(request, env, url) {
   const cors = getCorsHeaders(request);
   try {
     const code = (url.searchParams.get("code") || "").toUpperCase().trim();
+    // 🌟 死活監視・疎通確認用コードへの即時200応答 (404エラー完全防止)
+    if (code === "HEALTH" || code === "PING_TEST") {
+      return new Response(JSON.stringify({ success: true, healthy: true, code }), {
+        status: 200, headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
     const appId = url.searchParams.get("appId") || env.FIREBASE_APP_ID;
     if (!code || !isValidAppId(appId, env) || !/^[A-Za-z0-9_\-]+$/.test(code)) {
       return new Response(JSON.stringify({ success: false, valid: false, error: "無効な招待コードです" }), {

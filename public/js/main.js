@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.266';
-import * as LocalStore from './local_store.js?v=1.1.266';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.266';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.266';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.266';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.266';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.266';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.267';
+import * as LocalStore from './local_store.js?v=1.1.267';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.267';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.267';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.267';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.267';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.267';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -269,7 +269,8 @@ function isTransientTelemetryError(args) {
       str.includes('err_quic_protocol_error') ||
       str.includes('既存キーの上書きを防止') ||
       str.includes('救済リクエストを発行しました') ||
-      str.includes('agora-sdk') ||
+      str.includes('agora-sdk [info') ||
+      str.includes('agora-sdk [warn') ||
       str.includes('browser info') ||
       str.includes('browser compatibility') ||
       str.includes('超過メッセージ') ||
@@ -1137,7 +1138,12 @@ function initializeFirebase() {
                 getDoc(uRef).catch(() => null)
               ]);
               const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
-              if (!isExplicitlyLinked) {
+              // 🔒 Firestoreの読み取りに失敗した場合（通信断・認証伝播待ち等）は「未連携」と断定できないため、正規ユーザーの連携を解除・ログアウトしない
+              const linkStateVerified = pDocSnap !== null && uDocSnap !== null;
+              if (!linkStateVerified && !isExplicitlyLinked) {
+                console.warn('[Security Guard] Google連携状態を確認できなかったため、今回は遮断せずに続行します');
+              }
+              if (linkStateVerified && !isExplicitlyLinked) {
                 console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。自動リンクを即座に解除してアクセスを遮断します。`);
                 await unlink(user, 'google.com').catch(() => {});
                 await signOut(auth);
@@ -6482,22 +6488,26 @@ if (openSettingsBtnEl) {
   });
 }
 
+// 自前KVストレージ上の旧アイコン画像を削除する共通処理（同じ処理を複数箇所に書かないための関数）
+async function _deleteOwnedKvAvatar(avatarUrl, keepUrl = null) {
+  try {
+    if (!avatarUrl || avatarUrl === keepUrl || !avatarUrl.includes('/api/file/')) return;
+    const match = avatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+    if (!match) return;
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+    fetch(`${WORKER_BASE_URL}/api/file/${match[1]}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+  } catch (e) {
+    console.warn('Old avatar delete warn:', e);
+  }
+}
 // アイコンリセットボタン
 const handleAvatarResetAction = async () => {
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
-    const oldAvatarUrl = userAvatarUrl;
-    // 元のアイコン画像があればKVストレージから完全削除
-    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-      if (match) {
-        const oldKey = match[1];
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
-      }
-    }
+    // 旧アイコンの削除は、Firestoreの更新に成功した後に実行する（失敗時にプロフィールが消えた画像を指さないようにする）
+    const prevKvAvatarUrl = userAvatarUrl;
     if (window.pendingAvatarBlob) {
       window.pendingAvatarBlob = null;
     }
@@ -6508,6 +6518,7 @@ const handleAvatarResetAction = async () => {
     await updateDoc(userProfileRef, { avatarUrl: null });
     const userRef = doc(db, `artifacts/${appId}/users`, userId);
     await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+    _deleteOwnedKvAvatar(prevKvAvatarUrl);
     userAvatarUrl = null;
     pendingAvatarUrl = null;
     _profileInitialState.avatarUrl = null;
@@ -6673,6 +6684,8 @@ if (saveSettingsBtnEl) {
       } catch (_) {
         determinedBannerColor = getHashColor(userId);
       }
+      // 旧アイコンの削除は、プロフィール保存（Firestore更新）に成功した後に実行する
+      let prevKvAvatarUrlToDelete = null;
       if (window.pendingAvatarBlob) {
         // 保存ボタンが押された瞬間に初めて KV へアップロード
         const uploadedUrl = await uploadToExternalService(
@@ -6681,34 +6694,15 @@ if (saveSettingsBtnEl) {
           'simplechat/avatars',
           ''
         );
-        const oldAvatarUrl = userAvatarUrl;
-        // 変更前の古いアイコンが自前KVファイルであれば削除
-        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        prevKvAvatarUrlToDelete = userAvatarUrl;
         if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
           try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
         }
         pendingAvatarUrl = uploadedUrl;
         window.pendingAvatarBlob = null;
       } else if (pendingAvatarUrl && pendingAvatarUrl !== userAvatarUrl) {
-        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除
-        const oldAvatarUrl = userAvatarUrl;
-        if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除（保存成功後）
+        prevKvAvatarUrlToDelete = userAvatarUrl;
       }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (determinedBannerColor) {
@@ -6736,6 +6730,7 @@ if (saveSettingsBtnEl) {
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+      _deleteOwnedKvAvatar(prevKvAvatarUrlToDelete, userAvatarUrl);
       try {
         if (userAvatarUrl) {
           localStorage.setItem('covo_cached_avatar_' + userId, userAvatarUrl);
@@ -16343,10 +16338,12 @@ function selectRoom(roomId, roomName) {
         window._activeRescueRequestsUnsub = onSnapshot(rescueCol, async (snap) => {
           if (!snap.empty && _e2ee.roomKeyCache[activeRoomId]) {
             const curKey = _e2ee.roomKeyCache[activeRoomId];
+            // 入室後に参加した新メンバーも救済できるよう、最新のメンバー一覧で判定する
+            const liveMembers = (currentServerId === activeServerId && currentServerData && currentServerData.joinedUsers) || members;
             const rawKey = await window.crypto.subtle.exportKey("raw", curKey.latest);
             for (const resDoc of snap.docs) {
               const reqUserId = resDoc.id;
-              if (members.includes(reqUserId)) {
+              if (liveMembers.includes(reqUserId)) {
                 await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
                 await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], curKey.latestVersion);
                 await deleteDoc(resDoc.ref).catch(() => {});
@@ -16709,7 +16706,22 @@ const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
 
 // 🔒 検索時にローカル過去ログとRTDB最新差分を省通信で動員・復号して検索漏れを完全根絶 (BUG-5)
+// 入力のたびに呼ばれるため、同一チャンネルは60秒に1回・同時実行は1本までに制限する
+const _searchPreloadedAt = new Map();
+let _searchPreloadInFlight = false;
 async function ensureChannelHistoryForSearch() {
+  const chKey = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  if (_searchPreloadInFlight) return;
+  if (Date.now() - (_searchPreloadedAt.get(chKey) || 0) < 60000) return;
+  _searchPreloadInFlight = true;
+  try {
+    await _ensureChannelHistoryForSearchImpl();
+    _searchPreloadedAt.set(chKey, Date.now());
+  } finally {
+    _searchPreloadInFlight = false;
+  }
+}
+async function _ensureChannelHistoryForSearchImpl() {
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
   const targetDmId = currentDmId;
@@ -16722,8 +16734,8 @@ async function ensureChannelHistoryForSearch() {
     const localMsgs = await LocalStore.getMessages(chId, null, 500);
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
     let newDocs = (localMsgs || []).filter(m => !existingLoadedIds.has(m.id));
-    // 2. ローカルが少ない場合はRTDBから1回だけ最小限(100件)取得して合流
-    if (newDocs.length < 50) {
+    // 2. ローカルDBが空の端末（初回・キャッシュ消去直後）に限り、RTDBから最小限(100件)取得して合流
+    if ((localMsgs || []).length === 0 && allLoadedMessages.length < 100) {
       try {
         const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
@@ -16748,6 +16760,8 @@ async function ensureChannelHistoryForSearch() {
     } else if (targetDmId) {
       await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
     }
+    // 準備中にチャンネルを切り替えた場合は、別チャンネルのメッセージを混入させない
+    if (currentServerId !== targetServerId || currentRoomId !== targetRoomId || currentDmId !== targetDmId) return;
     allLoadedMessages = [...newDocs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {

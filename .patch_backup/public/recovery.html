@@ -643,6 +643,16 @@
         triggerUpdateCheck(true);
       }, 1200);
     });
+    // 🌟 グローバル公開 (HTML onclick 属性からの呼び出し保証)
+    window.triggerUpdateCheck = triggerUpdateCheck;
+    window.triggerIntegrityCheckAndRepair = triggerIntegrityCheckAndRepair;
+    window.triggerCacheClearAndRestart = triggerCacheClearAndRestart;
+    window.checkNormalMode = checkNormalMode;
+    window.togglePastReleases = togglePastReleases;
+    window.loadPastReleases = loadPastReleases;
+    window.installPastVersion = installPastVersion;
+    window.openLogFolder = openLogFolder;
+    window.forceQuitApp = forceQuitApp;
     </script>
 </body>
 </html>

@@ -39,8 +39,11 @@
       "public/css/geo_study.css",
       "public/js/voice_engine.js",
       "public/js/voice_engine_v2.js",
+
       "schema.sql",
+      "server/schema.sql",
       "wrangler.toml",
+      "server/wrangler.toml",
       "public/css/font-awesome.min.css",
       "public/css/styles.css",
 
@@ -50,6 +53,10 @@
       "scripts/migrate_firestore_to_rtdb.js",
       "scripts/cleanup_webrtc*.js",
       "scripts/generate_geoguessr_data.py",
+
+      "patch.js",
+      "patch.bat",
+      "deploy.ps1",
 
       "*.png",
       "*.jpg",

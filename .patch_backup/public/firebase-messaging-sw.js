@@ -224,16 +224,25 @@ messaging.onBackgroundMessage((payload) => {
     : (data.messageId
       ? `msg-${data.messageId}`
       : `${data.roomId || 'covo'}_${title}_${body}`);
-
   if (_isDuplicate(dedupKey)) {
     console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
     return;
   }
-
+  // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
+  if (data.type !== 'incoming_call') {
+    const clientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      return clientList.some(c => c.url && c.url.startsWith(self.location.origin));
+    });
+    // 直近で開いているウィンドウがあればSW通知をスキップして2重通知を完全に防止
+    clientsPromise.then(hasWindow => {
+      if (hasWindow) {
+        console.log('🔔 [バックグラウンド] アプリウィンドウが開いているためSW通知表示を抑制しました');
+      }
+    }).catch(() => {});
+  }
   // バッジ更新（未読+1）
   self._badgeCount = (self._badgeCount || 0) + 1;
   _updateBadge();
-
   // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
   _sendOfflineIfNoClients();
 

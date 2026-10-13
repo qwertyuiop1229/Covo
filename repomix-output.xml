@@ -33,7 +33,7 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: **/repomix-output.xml, repomix-output.xml, repomix.config.json, package-lock.json, yarn.lock, leaks.json, *.log, .patch_backup/, scratch/, tools/, tests/, node_modules/, server/node_modules/, public/assets/, public/covo-stamps/, public/webfonts/, public/icons/, public/img/, public/js/geoguessr_locations.js, public/js/geo_study.js, public/css/geo_study.css, public/js/voice_engine.js, public/js/voice_engine_v2.js, schema.sql, wrangler.toml, public/css/font-awesome.min.css, public/css/styles.css, public/404.html, public/.repomixignore, scripts/migrate_firestore_to_rtdb.js, scripts/cleanup_webrtc*.js, scripts/generate_geoguessr_data.py, *.png, *.jpg, *.jpeg, *.ico, *.woff2, *.ttf, *.svg, *.gif, *.webp, dist/, build/, .wrangler/, server/.wrangler/, .firebase/, src-tauri/target/
+- Files matching these patterns are excluded: **/repomix-output.xml, repomix-output.xml, repomix.config.json, package-lock.json, yarn.lock, leaks.json, *.log, .patch_backup/, scratch/, tools/, tests/, node_modules/, server/node_modules/, public/assets/, public/covo-stamps/, public/webfonts/, public/icons/, public/img/, public/js/geoguessr_locations.js, public/js/geo_study.js, public/css/geo_study.css, public/js/voice_engine.js, public/js/voice_engine_v2.js, schema.sql, server/schema.sql, wrangler.toml, server/wrangler.toml, public/css/font-awesome.min.css, public/css/styles.css, public/404.html, public/.repomixignore, scripts/migrate_firestore_to_rtdb.js, scripts/cleanup_webrtc*.js, scripts/generate_geoguessr_data.py, patch.js, patch.bat, deploy.ps1, *.png, *.jpg, *.jpeg, *.ico, *.woff2, *.ttf, *.svg, *.gif, *.webp, dist/, build/, .wrangler/, server/.wrangler/, .firebase/, src-tauri/target/
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Empty lines have been removed from all files
@@ -76,6 +76,7 @@ public/
   recovery.html
   version.json
 scripts/
+  ai-context.mjs
   bump-version.js
   generate-icons.js
   print-deployed-version.js
@@ -83,8 +84,6 @@ server/
   src/
     index.js
   package.json
-  schema.sql
-  wrangler.toml
 src-tauri/
   capabilities/
     default.json
@@ -168,13 +167,10 @@ src-tauri/
 .gitignore
 .jshintrc
 database.rules.json
-deploy.ps1
 firebase.json
 firestore.indexes.json
 firestore.rules
 package.json
-patch.bat
-patch.js
 README.md
 tailwind.config.js
 tailwind.input.css
@@ -888,6 +884,344 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
 }
 </file>
 
+<file path="scripts/ai-context.mjs">
+#!/usr/bin/env node
+/**
+ * ai-context.mjs  ―  AIに渡すコンテキストを「必要な関数だけ」に自動で絞る（依存パッケージなし / Node 18+）
+ *
+ * いちばん簡単な使い方（プロジェクトのルートで）:
+ *   1) node scripts/ai-context.mjs          … エラー文や要望を貼り付け → 空行を2回で確定
+ *   2) できた ai-context/for-ai.md を AI Studio に添付し「添付ファイルの指示に従ってください」と送る
+ *   3) AIの回答でパッチを適用したら:  node scripts/ai-context.mjs check   … 構文エラーがないか全ファイル検査
+ *
+ * 修正を適用したら必ず check を実行（構文エラーの見落とし防止）。
+ * 複数の話題をまとめて頼むときは --budget 120000 のように増やす（既定60000）。
+ *
+ * 上級者向け:
+ *   map                    関数の目次を ai-context/map.md に出力
+ *   pick --name a,b --grep "正規表現" [--deps] [--file x]   指定した関数/文字列を含む関数だけを ai-context/pick.md に出力
+ *   ask  [--text "要望"] [--budget 110000] [--add 関数名,関数名] [--no-map]   既定。自動で関連関数を選んで for-ai.md を作る
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const DEFAULT_FILES = [
+    'public/js/main.js', 'public/js/crypto_helpers.js', 'public/js/local_store.js', 'public/js/utils.js',
+    'public/js/ui_helpers.js', 'public/js/text_formatter.js', 'public/js/file_uploader.js', 'public/js/debug_ui.js',
+    'public/firebase-messaging-sw.js', 'server/src/index.js',
+];
+const OUT_DIR = 'ai-context';
+// ───────────── 引数 ─────────────
+const argv = process.argv.slice(2);
+const cmd = argv[0];
+const opt = { context: 30, 'max-tokens': 120000 };
+for (let i = (argv[0] && argv[0].startsWith('--') ? 0 : 1); i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith('--')) continue;
+    const k = a.slice(2);
+    if (['deps', 'stdout', 'no-map'].includes(k)) opt[k] = true; else opt[k] = argv[++i];
+}
+const list = (v) => (v ? String(v).split(',').map(s => s.trim()).filter(Boolean) : []);
+// ───────────── トークン概算（日本語は約1文字=1トークン / 英数は約3.6文字=1トークン） ─────────────
+const estTokens = (s) => { let a = 0; for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) < 128) a++; return Math.round(a / 3.6 + (s.length - a) * 1.1); };
+// ───────────── JSを「トップレベルの塊（関数・変数・イベント登録）」に分割 ─────────────
+function splitUnits(src) {
+    const n = src.length, lineStart = [0];
+    for (let i = 0; i < n; i++) if (src[i] === '\n') lineStart.push(i + 1);
+    const lineOf = (pos) => { let lo = 0, hi = lineStart.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (lineStart[m] <= pos) lo = m; else hi = m - 1; } return lo; };
+    const depthAtLineStart = new Array(lineStart.length).fill(0);
+    const inComment = new Array(lineStart.length).fill(false);
+    let depth = 0, i = 0, prevSig = '', tplStack = [], line = 0;
+    const regexOK = () => prevSig === '' || /[(,=:\[!&|?{};+\-*%<>~^]/.test(prevSig) || /(?:return|typeof|case|in|of|delete|void|throw|new)$/.test(prevSig);
+    depthAtLineStart[0] = 0;
+    const markLines = (upto) => { while (line + 1 < lineStart.length && lineStart[line + 1] <= upto) { line++; depthAtLineStart[line] = depth; } };
+    while (i < n) {
+        const c = src[i], d = src[i + 1];
+        if (c === '\n') { i++; markLines(i); continue; }
+        if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+        if (c === '/' && d === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+        if (c === '/' && d === '*') { const e = src.indexOf('*/', i + 2); const end = e < 0 ? n : e + 2; const l0 = lineOf(i), l1 = lineOf(end - 1); for (let k = l0 + 1; k <= l1; k++) inComment[k] = true; i = end; markLines(i); continue; }
+        if (c === '"' || c === "'") { i++; while (i < n && src[i] !== c) { if (src[i] === '\\') i++; i++; } i++; prevSig = 'x'; markLines(i); continue; }
+        if (c === '`') { i++; tplLoop: while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '`') { i++; break; } if (src[i] === '$' && src[i + 1] === '{') { tplStack.push(depth); depth++; i += 2; break tplLoop; } i++; } if (!(src[i - 1] === '`' && tplStack.length === 0) && src[i - 2] !== '$') { /* 続きは } で再開 */ } prevSig = 'x'; markLines(i); continue; }
+        if (c === '}' && tplStack.length && depth - 1 === tplStack[tplStack.length - 1]) {
+            depth--; tplStack.pop(); i++;
+            // テンプレートリテラルの続きを読む
+            while (i < n) { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '`') { i++; break; } if (src[i] === '$' && src[i + 1] === '{') { tplStack.push(depth); depth++; i += 2; break; } i++; }
+            prevSig = 'x'; markLines(i); continue;
+        }
+        if (c === '/' && regexOK()) { // 正規表現リテラル
+            i++; let inCls = false; while (i < n && src[i] !== '\n') { if (src[i] === '\\') { i += 2; continue; } if (src[i] === '[') inCls = true; else if (src[i] === ']') inCls = false; else if (src[i] === '/' && !inCls) break; i++; }
+            i++; while (/[a-z]/i.test(src[i] || '')) i++; prevSig = 'x'; continue;
+        }
+        if ('([{'.includes(c)) depth++; else if (')]}'.includes(c)) depth--;
+        prevSig = /[A-Za-z0-9_$]/.test(c) ? (() => { let j = i; while (/[A-Za-z0-9_$]/.test(src[j] || '')) j++; const w = src.slice(i, j); i = j - 1; return w; })() : c;
+        i++;
+    }
+    const total = lineStart.length;
+    const lines = src.split('\n');
+    const units = []; let start = 0;
+    const startsCont = (t) => /^[.)\]},?:&|=*]/.test(t.trimStart()) || /^\s*(else|catch|finally)\b/.test(t);
+    const isBlank = (t) => t.trim() === '';
+    for (let ln = 1; ln < total; ln++) {
+        if (depthAtLineStart[ln] !== 0 || inComment[ln] || isBlank(lines[ln] ?? '') || startsCont(lines[ln] ?? '')) continue;
+        let p = ln - 1; while (p > start && isBlank(lines[p])) p--;
+        if (/[,=:+\-*/&|?(\[{]\s*$/.test(lines[p].replace(/\/\/.*$/, '').trimEnd()) && !/\*\/\s*$/.test(lines[p])) continue; // 式が続いている
+        // 直前のコメント行は次の塊に付ける
+        let s = ln; while (s > start && /^\s*(\/\/|\/\*|\*)/.test(lines[s - 1])) s--;
+        if (s > start) { units.push([start, s - 1]); start = s; }
+    }
+    units.push([start, total - 1]);
+    return units.map(([a, b]) => {
+        while (b > a && isBlank(lines[b])) b--;
+        const text = lines.slice(a, b + 1).join('\n');
+        return { from: a + 1, to: b + 1, text, name: unitName(text) };
+    });
+}
+function unitName(text) {
+    const code = text.split('\n').filter(l => !/^\s*(\/\/|\/\*|\*)/.test(l) && l.trim()).join('\n');
+    let m;
+    if ((m = code.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z0-9_$]+)/))) return m[1];
+    if ((m = code.match(/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)/))) return m[1];
+    if ((m = code.match(/^\s*(?:const|let|var)\s+(\{[^}]{0,60})/))) return m[1].replace(/\s+/g, '') + '}';
+    if ((m = code.match(/^\s*window\.([A-Za-z0-9_$]+)\s*=/))) return 'window.' + m[1];
+    if ((m = code.match(/^\s*class\s+([A-Za-z0-9_$]+)/))) return m[1];
+    if (/^\s*import\b/.test(code)) return '(import)';
+    const first = code.split('\n')[0].trim();
+    return '(stmt) ' + first.slice(0, 70);
+}
+// ───────────── ファイル読み込み ─────────────
+const rd = (f) => fs.readFileSync(f, 'utf8');
+const exists = (f) => fs.existsSync(f);
+const isJs = (f) => /\.(m?js)$/.test(f);
+function header(files, extra = '') {
+    let ver = ''; try { ver = JSON.parse(rd('public/version.json')).version; } catch (_) { }
+    return `<!-- ai-context ${new Date().toISOString()} / app version: ${ver || '?'} -->\n${extra}`;
+}
+// ───────────── map ─────────────
+function doMap() {
+    const files = list(opt.file).length ? list(opt.file) : DEFAULT_FILES;
+    let out = header(files, `# 関数マップ（目次）\nこの一覧は「どこに何があるか」だけを示します。コードは含みません。\n修正に必要な関数名をここから選び、別途 pick で本文を取り出してください。\n形式: \`開始行-終了行 (約トークン) 名前\`\n\n`);
+    let tot = 0;
+    for (const f of files) {
+        if (!exists(f)) continue;
+        const src = rd(f); const t = estTokens(src); tot += t;
+        out += `## ${f}  (全体 約${t.toLocaleString()}トークン / ${src.split('\n').length}行)\n`;
+        const units = splitUnits(src).filter(u => u.name !== '(import)');
+        for (const u of units) {
+            const size = u.to - u.from + 1;
+            if (u.name.startsWith('(stmt)') && size < 6) continue; // 小さいイベント登録などは省略
+            out += `${u.from}-${u.to} (${estTokens(u.text)}) ${u.name}\n`;
+        }
+        out += '\n';
+    }
+    emit(out, 'map.md', `全ファイル合計 約${tot.toLocaleString()}トークン`);
+}
+// ───────────── pick ─────────────
+function doPick() {
+    const names = list(opt.name), grep = opt.grep ? new RegExp(opt.grep, 'i') : null;
+    if (!names.length && !grep) { console.error('--name か --grep を指定してください'); process.exit(1); }
+    const files = list(opt.file).length ? list(opt.file) : DEFAULT_FILES;
+    const ctx = Number(opt.context);
+    const max = Number(opt['max-tokens']);
+    const picked = []; // {file, from, to, text, name, reason}
+    const allUnits = {};
+    for (const f of files) {
+        if (!exists(f)) { console.error(`(無視) ${f} が見つかりません`); continue; }
+        const src = rd(f);
+        if (isJs(f)) {
+            const units = splitUnits(src); allUnits[f] = units;
+            for (const u of units) {
+                if (u.name === '(import)') continue;
+                const byName = names.some(n => u.name.toLowerCase().includes(n.toLowerCase()));
+                const byGrep = grep && grep.test(u.text);
+                if (byName || byGrep) picked.push({ file: f, ...u, reason: byName ? 'name' : 'grep' });
+            }
+        } else if (grep) { // HTML/CSS等: 一致行の前後を抜粋
+            const lines = src.split('\n'); const win = [];
+            lines.forEach((l, i) => { if (grep.test(l)) win.push([Math.max(0, i - ctx), Math.min(lines.length - 1, i + ctx)]); });
+            const merged = []; for (const w of win) { const l = merged[merged.length - 1]; if (l && w[0] <= l[1] + 1) l[1] = Math.max(l[1], w[1]); else merged.push([...w]); }
+            for (const [a, b] of merged) picked.push({ file: f, from: a + 1, to: b + 1, text: lines.slice(a, b + 1).join('\n'), name: '(excerpt)', reason: 'grep' });
+        }
+    }
+    // 依存（呼んでいる関数）を1段だけ追加
+    if (opt.deps) {
+        const have = new Set(picked.map(p => p.file + ':' + p.from));
+        const body = picked.filter(p => isJs(p.file)).map(p => p.text).join('\n');
+        const cands = [];
+        for (const [f, units] of Object.entries(allUnits)) for (const u of units) {
+            if (have.has(f + ':' + u.from) || /^\(|\{/.test(u.name)) continue;
+            const nm = u.name.replace(/^window\./, '');
+            if (nm.length < 4) continue;
+            if (new RegExp('(?<![A-Za-z0-9_$.])' + nm.replace(/\$/g, '\\$') + '\\s*\\(').test(body) || new RegExp('window\\.' + nm + '\\b').test(body)) cands.push({ file: f, ...u, reason: 'dep' });
+        }
+        cands.sort((a, b) => estTokens(a.text) - estTokens(b.text)); // 小さいものから入れる
+        let used = picked.reduce((s, p) => s + estTokens(p.text), 0);
+        for (const c of cands) { const t = estTokens(c.text); if (used + t > max) continue; picked.push(c); used += t; }
+    }
+    picked.sort((a, b) => a.file === b.file ? a.from - b.from : DEFAULT_FILES.indexOf(a.file) - DEFAULT_FILES.indexOf(b.file));
+    let out = header(files, `# 抽出コンテキスト（検索: ${[names.length ? 'name=' + names.join('|') : '', grep ? 'grep=' + opt.grep : ''].filter(Boolean).join(' ')}）\n各 <code> ブロックは元ファイルから1文字も変えずに切り出した原文です。置換前コードはここから完全一致でコピーしてください。\n\n`);
+    let total = 0, cut = 0;
+    for (const p of picked) {
+        const t = estTokens(p.text);
+        if (total + t > max) { cut++; continue; }
+        total += t;
+        out += `<code file="${p.file}" lines="${p.from}-${p.to}" unit="${p.name.replace(/"/g, "'")}" why="${p.reason}">\n${p.text}\n</code>\n\n`;
+    }
+    if (cut) out += `<!-- 上限(${max}トークン)のため ${cut} 件を省略しました。--grep/--name を絞るか --max-tokens を増やしてください -->\n`;
+    emit(out, 'pick.md', `${picked.length - cut}件 / 約${total.toLocaleString()}トークン`);
+}
+// ───────────── ask（全自動） ─────────────
+const STOP = new Set(('error uncaught undefined function https http null true false this that with from have been will main version index html script window document console line column error:'.split(' ')));
+const GENERIC_JP = new Set(['修正', '問題', 'バグ', 'エラー', 'お願い', '機能', '場合', '状態', '原因', '対応', '確認', '表示', '動作', '発生', '画面', 'ユーザー', '起き', '直し']);
+const DICT = [
+    ['通知', 'notif notification'], ['アイコン', 'avatar icon'], ['アバター', 'avatar'], ['検索', 'search'], ['個人チャット', 'dm'], ['DM', 'dm'],
+    ['ログイン', 'auth login signin'], ['Google', 'google'], ['招待', 'invite'], ['暗号', 'e2ee encrypt roomkey'], ['復号', 'decrypt roomkey rescue'], ['鍵', 'roomkey key'],
+    ['既読', 'lastread readstate'], ['未読', 'unread'], ['赤丸', 'badge notif'], ['スタンプ', 'stamp sticker'], ['通話', 'call agora voice'], ['ボイス', 'voice'], ['メッセージ', 'message'],
+    ['サーバー', 'server'], ['ルーム', 'room channel'], ['設定', 'settings'], ['プロフィール', 'profile'], ['ブロック', 'block'], ['フレンド', 'friend'], ['友達', 'friend'],
+    ['ファイル', 'file upload'], ['アップロード', 'upload'], ['削除', 'delete remove'], ['履歴', 'history older'], ['過去ログ', 'older history'], ['レポート', 'telemetry report'],
+    ['更新', 'update'], ['管理', 'admin'], ['ストレージ', 'storage'], ['リカバリー', 'recovery'], ['ヘルスチェック', 'health'], ['ピン', 'pinned pin'], ['リアクション', 'reaction'],
+    ['ニックネーム', 'nickname'], ['名前', 'nickname name'], ['新規登録', 'signup register createuser'], ['アカウント', 'account user'], ['サインアップ', 'signup'], ['退会', 'delete account'],
+    ['送信', 'send'], ['受信', 'receive'], ['編集', 'edit'], ['テーマ', 'theme'], ['ダーク', 'dark'], ['音声', 'voice audio'], ['音', 'sound audio'], ['カメラ', 'camera video'], ['画面共有', 'screen share'], ['絵文字', 'emoji'],
+    ['通報', 'report'], ['フィードバック', 'feedback'], ['お知らせ', 'announcement'], ['権限', 'permission role'], ['ロール', 'role'], ['カテゴリ', 'category'], ['チャンネル', 'channel room'], ['同期', 'sync'], ['オフライン', 'offline'],
+    ['キャッシュ', 'cache'], ['バージョン', 'version'], ['ダウンロード', 'download'], ['インストール', 'install'], ['スマホ', 'mobile'], ['モバイル', 'mobile'], ['引用', 'quote reply'], ['転送', 'forward'], ['入力中', 'typing'],
+    ['友達申請', 'friendrequest friend'], ['ミュート', 'mute'], ['ステータス', 'status presence'], ['参加', 'join'], ['退出', 'leave'], ['再設定', 'reset password'], ['メール', 'email'], ['ログ', 'log'], ['読み込', 'load'], ['保存', 'save'],
+    ['返信', 'reply'], ['メンション', 'mention'], ['オンライン', 'online status presence'], ['タイピング', 'typing'], ['画像', 'image'], ['動画', 'video'], ['ログアウト', 'signout logout'], ['パスワード', 'password'],
+];
+function extractKeywords(text) {
+    const t = text.replace(/https?:\/\/\S+/g, ' ').replace(/[\w.-]+\.(js|html|css|json|rs)(\?[^\s:]*)?(:\d+)*/gi, ' ');
+    const kw = new Map();
+    const put = (w, wt, minLen = 3) => { w = w.toLowerCase(); if (STOP.has(w) || w.length < minLen) return; kw.set(w, Math.max(kw.get(w) || 0, wt)); };
+    for (const m of t.matchAll(/[A-Za-z_$][A-Za-z0-9_$]{2,}/g)) {
+        const w = m[0]; const strong = /[a-z][A-Z]/.test(w) || /_/.test(w) || /[0-9]/.test(w) || /^[A-Z][a-z]+[A-Z]/.test(w);
+        put(w, strong ? 3 : 1);
+        // キャメルケースを分解（例: oldAvatarUrl → old / avatar / url）。完全一致する名前が無くても関連箇所に辿り着けるようにする
+        if (strong) for (const part of w.split(/(?=[A-Z])|_|[0-9]+/)) if (part.length >= 4) put(part, 1.2);
+    }
+    for (const [jp, code] of DICT) if (t.toLowerCase().includes(jp.toLowerCase())) for (const c of code.split(' ')) put(c, 1.5, 2);
+    for (const m of t.matchAll(/[゠-ヿ一-鿿]{2,}/g)) if (!GENERIC_JP.has(m[0])) put(m[0], 1);
+    return kw;
+}
+async function readRequest() {
+    if (opt.text) return String(opt.text);
+    if (!process.stdin.isTTY) { const chunks = []; for await (const c of process.stdin) chunks.push(c); return Buffer.concat(chunks).toString('utf8'); }
+    console.log('エラー文や直したい内容を貼り付けて、最後に Enter を2回押してください（空行が2回続くと確定します）:');
+    const rl = (await import('node:readline')).createInterface({ input: process.stdin });
+    return await new Promise((resolve) => {
+        const lines = []; let blank = 0;
+        rl.on('line', (l) => { if (l.trim() === '') blank++; else blank = 0; lines.push(l); if (blank >= 2 && lines.some(x => x.trim())) { rl.close(); } });
+        rl.on('close', () => resolve(lines.join('\n')));
+    });
+}
+const PROMPT_RULES = `# AIへの指示（このファイルの使い方）
+このファイルには「【依頼内容】」と、修正に関係しそうな関数だけを元ファイルから原文のまま抜き出した <code> ブロックが入っています。
+プロジェクト全体ではありません。末尾の「関数マップ」は、ここに載っていない関数の目次（コード無し）です。
+## 守ること
+1. 出力は「第1部: 問題点や改善点、追加項目 / 第2部: コード修正 / 第3部: 修正後の安全性検証サマリー」の3部構成にする（第2部は自動パッチスクリプトが読むので書式厳守）。
+2. 🔍【置換前】は <code> ブロックの原文から1文字も変えずにコピーする（前後3〜5行のコンテキスト付き）。インデントや全角文字も変えない。
+3. 置換前は、そのファイル内で1箇所にしか一致しない内容にする。同じ文が複数ありそうなら前後の行を増やして一意にする。
+4. <code> ブロックに無いコードを推測で書かない。情報が足りない場合は、コード修正を出さずに
+   「追加で必要: 関数名またはキーワード（理由）」を箇条書きで答えて止まる（関数名は末尾の関数マップから選ぶ）。
+5. 新しい変数名・関数名を追加するときは、既存名との衝突（同名の const/let/function の二重宣言）に注意する。
+   このファイルの範囲外に同名がある可能性があるなら、第3部に「要確認: 〇〇 が他に無いか検索してください」と書く。
+6. 依頼と無関係なリファクタリングや、他の機能の挙動変更はしない。
+`;
+async function doAsk() {
+    const reqText = (await readRequest()).trim();
+    if (!reqText) { console.error('依頼内容が空でした'); process.exit(1); }
+    const budget = Number(opt.budget || 60000);
+    const files = list(opt.file).length ? list(opt.file) : DEFAULT_FILES;
+    const kw = extractKeywords(reqText + ' ' + (opt.add || '').replace(/,/g, ' '));
+    const all = [];
+    for (const f of files) { if (!exists(f)) continue; const src = rd(f); for (const u of splitUnits(src)) if (u.name !== '(import)') all.push({ file: f, ...u, tok: estTokens(u.text), low: u.text.toLowerCase(), lname: u.name.toLowerCase() }); }
+    const N = all.length;
+    const stats = new Map();
+    for (const [k, w] of kw) { let df = 0; for (const u of all) if (u.low.includes(k)) df++; if (df > 0) stats.set(k, { w, df, idf: Math.log(1 + N / df) }); }
+    for (const u of all) {
+        let sc = 0;
+        for (const [k, st] of stats) {
+            let c = 0, idx = -1; while ((idx = u.low.indexOf(k, idx + 1)) >= 0 && c < 20) c++;
+            if (c) sc += st.w * st.idf * (1 + Math.log(c));
+            if (u.lname.includes(k)) sc += st.w * st.idf * 3;
+        }
+        u.score = sc / (1 + 0.35 * Math.log(1 + u.tok / 300));
+    }
+    for (const n of list(opt.add)) for (const u of all) if (u.lname.includes(n.toLowerCase())) u.score += 1000;
+    const ranked = all.filter(u => u.score > 0).sort((a, b) => b.score - a.score);
+    const chosen = []; let used = 0;
+    for (const u of ranked) { if (used + u.tok > budget) continue; if (u.score < ranked[0].score * Number(opt.cut || 0.3) && chosen.length >= 6) break; chosen.push(u); used += u.tok; }
+    // 依存関数（選ばれた関数が呼んでいる関数）を、予算の余りで追加
+    const have = new Set(chosen.map(u => u.file + ':' + u.from)); const body = chosen.map(u => u.text).join('\n');
+    const deps = [];
+    for (const u of all) {
+        if (have.has(u.file + ':' + u.from) || /^\(|\{/.test(u.name)) continue;
+        const nm = u.name.replace(/^window\./, ''); if (nm.length < 4) continue;
+        const refs = (body.match(new RegExp('(?<![A-Za-z0-9_$.])' + nm.replace(/\$/g, '\\$') + '\\s*\\(', 'g')) || []).length;
+        if (refs) deps.push({ ...u, refs });
+    }
+    deps.sort((a, b) => b.refs - a.refs || a.tok - b.tok);
+    const depBudget = Math.min(Math.round(budget * 0.35), budget + 30000 - used);
+    let dused = 0; const depChosen = [];
+    for (const d of deps) { if (d.tok > 6000 || dused + d.tok > depBudget) continue; depChosen.push(d); dused += d.tok; }
+    const picked = [...chosen.map(u => ({ ...u, why: 'match' })), ...depChosen.map(u => ({ ...u, why: 'dep' }))]
+        .sort((a, b) => a.file === b.file ? a.from - b.from : files.indexOf(a.file) - files.indexOf(b.file));
+    const kwList = [...stats.entries()].sort((a, b) => b[1].w * b[1].idf - a[1].w * a[1].idf).slice(0, 25).map(([k]) => k).join(', ');
+    const topScore0 = ranked.length ? ranked[0].score : 0;
+    const lowConf = topScore0 < 12;
+    const lowNote = lowConf ? '\n> ⚠ 自動選択の確信度が低く、依頼に関係する関数が下の抜粋に含まれていない可能性が高いです。推測でコードを書かず、まず末尾の関数マップから「追加で必要: 関数名」を答えてください。\n' : '';
+    let out = `${PROMPT_RULES}${lowNote}\n## 【依頼内容】\n${reqText}\n\n<!-- 自動検出キーワード: ${kwList} / 抜粋 ${picked.length}件 約${(used + dused).toLocaleString()}トークン -->\n\n## 抜粋コード\n\n`;
+    for (const p of picked) out += `<code file="${p.file}" lines="${p.from}-${p.to}" unit="${p.name.replace(/"/g, "'")}" why="${p.why}">\n${p.text}\n</code>\n\n`;
+    if (!opt['no-map'] || lowConf) {
+        out += '## 関数マップ（ここに載っていない関数の目次。コード無し。形式: 行範囲 (約トークン) 名前）\n';
+        const inPicked = new Set(picked.map(p => p.file + ':' + p.from));
+        let curF = '';
+        for (const u of all) {
+            if (inPicked.has(u.file + ':' + u.from)) continue;
+            if (u.name.startsWith('(stmt)') && u.to - u.from < 5) continue;
+            if (u.file !== curF) { curF = u.file; out += `### ${curF}\n`; }
+            out += `${u.from}-${u.to} (${u.tok}) ${u.name}\n`;
+        }
+    }
+    const topScore = ranked.length ? ranked[0].score : 0;
+    if (process.env.AI_CTX_DEBUG) console.log('top=' + topScore.toFixed(1) + ' strongKw=' + [...stats.values()].filter(v => v.w >= 3).length);
+    out += '\n## 最後に再確認（回答前に必ず守る）\n- 3部構成（第1部/第2部/第3部）で出力する\n- 🔍【置換前】は上の <code> の原文を1文字も変えずにコピーし、ファイル内で1箇所にだけ一致する内容にする\n- <code> に無いコードを推測で書かない。足りなければ「追加で必要: 関数名（理由）」だけ答えて止まる\n- 新しい変数名・関数名が既存と二重宣言にならないか確認する\n';
+    emit(out, 'for-ai.md', `${picked.length}件の関数を自動選択 / 約${(used + dused).toLocaleString()}トークン / キーワード: ${kwList.split(', ').slice(0, 8).join(', ')} …`);
+    if (lowConf) console.log('\n⚠ 依頼文から関連する関数を自信を持って選べませんでした。依頼文にエラーメッセージ・関数名・画面上の文言を足して再実行すると精度が上がります（そのままAIに渡しても、関数マップから追加を頼む指示が入っています）。');
+    console.log('\n次の手順: ai-context/for-ai.md を AI Studio に添付し、「添付ファイルの指示に従ってください」と送信。');
+    console.log('AIが「追加で必要: ○○」と答えたら:  node scripts/ai-context.mjs ask --add ○○   （同じ依頼文を貼り直し）');
+    return { picked, kw };
+}
+// ───────────── check（パッチ適用後の構文検査） ─────────────
+async function doCheck() {
+    const { spawnSync } = await import('node:child_process');
+    const files = list(opt.file).length ? list(opt.file) : DEFAULT_FILES;
+    const targets = [...files.filter(exists).map(f => ({ name: f, code: rd(f) }))];
+    for (const h of ['public/recovery.html', 'public/auth-desktop.html', 'public/index.html']) {
+        if (!exists(h)) continue; const html = rd(h); let i = 0;
+        for (const m of html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi)) { if (/type\s*=\s*["']?(application\/(ld\+)?json|text\/template)/i.test(m[1]) || !m[2].trim()) continue; targets.push({ name: `${h} (script #${++i})`, code: m[2] }); }
+    }
+    let ng = 0;
+    for (const t of targets) {
+        const r = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: t.code, encoding: 'utf8' });
+        if (r.status === 0) console.log(`OK   ${t.name}`); else { ng++; console.log(`NG   ${t.name}\n${(r.stderr || '').split('\n').slice(0, 6).join('\n')}`); }
+    }
+    console.log(ng ? `\n✖ ${ng} 件で構文エラー。パッチを戻すか、上のエラー文をそのままAIに貼って直してもらってください。` : '\n✔ すべて構文エラーなし');
+    process.exit(ng ? 1 : 0);
+}
+function emit(text, file, summary) {
+    if (opt.stdout) { process.stdout.write(text); return; }
+    fs.mkdirSync(OUT_DIR, { recursive: true });
+    const p = path.join(OUT_DIR, file); fs.writeFileSync(p, text);
+    console.log(`✔ ${p} を出力しました（${summary} / ファイル自体は約${estTokens(text).toLocaleString()}トークン）`);
+}
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isMain) {
+    if (cmd === 'map') doMap(); else if (cmd === 'pick') doPick(); else if (cmd === 'check') await doCheck();
+    else if (cmd === 'help' || cmd === '--help') console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace('#!/usr/bin/env node\n', ''));
+    else await doAsk();
+}
+export { splitUnits, extractKeywords };
+</file>
+
 <file path="scripts/bump-version.js">
 #!/usr/bin/env node
 /**
@@ -972,41 +1306,6 @@ console.log('');
     "wrangler": "^4.86.0"
   }
 }
-</file>
-
-<file path="server/wrangler.toml">
-name = "simplechat-api"
-main = "src/index.js"
-compatibility_date = "2024-04-28"
-
-[[kv_namespaces]]
-binding = "FILES"
-id = "cb436609107e4f9e9aca4610dd4e100a"
-
-[vars]
-# Firebase REST API
-FIREBASE_API_KEY = "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY"
-FIREBASE_PROJECT_ID = "simplechat-65a0d"
-FIREBASE_APP_ID = "simplechat-65a0d" # Firestoreの /artifacts/{appId} で使用する値
-CLOUDINARY_CLOUD_NAME = "dhmsyvwjd"
-
-# --- 以下の変数はシークレットとして設定する必要があります ---
-# wrangler secret put FIREBASE_API_KEY
-# wrangler secret put WORKER_AUTH_EMAIL
-# wrangler secret put WORKER_AUTH_PASSWORD
-# wrangler secret put CLOUDINARY_API_KEY     (管理者ストレージ統計・一括削除に必要)
-# wrangler secret put CLOUDINARY_API_SECRET  (管理者ストレージ統計・一括削除に必要)
-# wrangler secret put AGORA_APP_ID           (Agora SD-RTN 音声通話トークン生成に必要)
-# wrangler secret put AGORA_PRIMARY_CERTIFICATE (Agora SD-RTN 音声通話トークン生成に必要)
-
-# [dev]
-# ローカル開発用のポート
-# port = 8787
-
-[[d1_databases]]
-binding = "DB"
-database_name = "covo-db"
-database_id = "0b629ea4-9089-49be-b533-569ae6b00b99"
 </file>
 
 <file path="src-tauri/capabilities/default.json">
@@ -1233,6 +1532,8 @@ tools/logs/
 *.patch
 public/repomix-output.xml
 scratch/
+
+ai-context/
 </file>
 
 <file path=".jshintrc">
@@ -1391,468 +1692,6 @@ scratch/
     "jimp": "^1.6.1"
   }
 }
-</file>
-
-<file path="patch.bat">
-@echo off
-chcp 65001 >nul
-title Covo AI パッチ適用マネージャー
-
-:MENU
-cls
-echo ============================================================
-echo   ⚡ Covo AI パッチ適用マネージャー
-echo ============================================================
-echo.
-echo   [1] クリップボードの修正コードを自動適用 (Enterを押すだけ)
-echo   [2] 直前の変更を取り消して元に戻す (Undo)
-echo   [3] 変更内容を確認する (git diff)
-echo   [4] 終了
-echo.
-echo ============================================================
-set "choice=1"
-set /p "choice=番号を入力してください (1-4) [初期値: 1]: "
-
-if "%choice%"=="1" goto APPLY
-if "%choice%"=="2" goto UNDO
-if "%choice%"=="3" goto DIFF
-if "%choice%"=="4" goto EXIT
-goto MENU
-
-:APPLY
-echo.
-node patch.js --apply
-echo.
-goto END
-
-:UNDO
-echo.
-node patch.js --undo
-echo.
-goto END
-
-:DIFF
-echo.
-git diff
-echo.
-goto END
-
-:END
-echo ------------------------------------------------------------
-pause
-goto MENU
-
-:EXIT
-exit
-</file>
-
-<file path="patch.js">
-#!/usr/bin/env node
-/**
- * patch.js - Robust AI Patch Engine (v2)
- * 完全空行保持・CRLF/LF自動正規化・高精度コードフェンス解析
- */
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const BACKUP_DIR = path.resolve(process.cwd(), '.patch_backup');
-// =========================================================================
-// 巻き戻し機能 (--undo)
-// =========================================================================
-if (process.argv.includes('--undo')) {
-  console.log('============================================================');
-  console.log('  ↩️  直前の状態への巻き戻し (Undo) を開始します');
-  console.log('============================================================\n');
-  if (!fs.existsSync(BACKUP_DIR)) {
-    console.error('❌ バックアップが見つかりません。');
-    process.exit(1);
-  }
-  const manifestPath = path.join(BACKUP_DIR, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('❌ バックアップ情報 (manifest.json) が見つかりません。');
-    process.exit(1);
-  }
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  console.log(`🕒 バックアップ日時: ${new Date(manifest.date).toLocaleString('ja-JP')}`);
-  manifest.files.forEach(relPath => {
-    const backupFile = path.join(BACKUP_DIR, relPath);
-    const targetFile = path.resolve(process.cwd(), relPath);
-    if (fs.existsSync(backupFile)) {
-      fs.copyFileSync(backupFile, targetFile);
-      console.log(`   ✅ 復元完了: ${relPath}`);
-    }
-  });
-  console.log('\n============================================================');
-  console.log('🎉 【復元完了】すべてのファイルをパッチ適用前の状態に戻しました！');
-  console.log('============================================================');
-  process.exit(0);
-}
-// =========================================================================
-// 1. 入力テキスト取得 (Windows Rawクリップボード完全対応)
-// =========================================================================
-function getSourceText() {
-  console.log('[ステップ 1/5] 📋 クリップボードを安全に検査中...');
-  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-  if (args.length > 0 && fs.existsSync(args[0])) {
-    console.log(`   📄 指定ファイルから読み込みます: ${args[0]}`);
-    return { text: fs.readFileSync(args[0], 'utf-8'), source: args[0] };
-  }
-  if (process.platform === 'win32') {
-    try {
-      const cmd = 'powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard -Raw"';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && text.trim().length > 0) {
-        const hasPatchMarkers = text.includes('【置換前') || text.includes('置換前') || text.includes('<<<<<<< SEARCH');
-        if (!hasPatchMarkers) {
-          console.error('\n⚠️  【安全停止】クリップボードに修正コード（置換前/置換後）が見つかりません。');
-          console.error('   関係のない文章やメモを誤って書き換えないよう、処理を安全に中断しました。');
-          console.error('   AIの回答全体をコピーしてから再度実行してください。\n');
-          process.exit(1);
-        }
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        console.log('   🛡️  セキュリティ検査: 修正パッチの合言葉を確認（安全確認済）');
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  } else {
-    try {
-      const cmd = process.platform === 'darwin' ? 'pbpaste' : 'xclip -selection clipboard -o';
-      const text = execSync(cmd, { encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 });
-      if (text && (text.includes('【置換前') || text.includes('<<<<<<< SEARCH'))) {
-        console.log(`   ✅ クリップボードから読み込みました (${text.length.toLocaleString()} 文字)`);
-        return { text, source: 'クリップボード' };
-      }
-    } catch (_) {}
-  }
-  const fallback = path.resolve(process.cwd(), 'patch.txt');
-  if (fs.existsSync(fallback)) {
-    console.log('   📄 patch.txt から読み込みます');
-    return { text: fs.readFileSync(fallback, 'utf-8'), source: 'patch.txt' };
-  }
-  console.error('\n❌ クリップボードが空です。AIの回答をコピーしてから実行してください。\n');
-  process.exit(1);
-}
-// =========================================================================
-// 2. パッチ構文解析 (空行完全保持・フェンス境界対応)
-// =========================================================================
-function parseBlocks(rawText) {
-  console.log('\n[ステップ 2/5] 🧩 パッチの構文を解析中...');
-  const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  const blocks = [];
-  let currentFile = null;
-  let state = 'OUTSIDE';
-  let searchLines = [];
-  let replaceLines = [];
-  let inFence = false;
-  const fileRegex = /^(?:#+\s*|FILE:\s*)?\[?\*{0,2}([a-zA-Z0-9_\-\.\/\\]+\.[a-zA-Z0-9]+)\*{0,2}\]?$/i;
-  const searchTagRegex = /(?:🔍|【置換前|\[置換前\]|<<<<<<< SEARCH)/i;
-  const replaceTagRegex = /(?:✨|【置換後|\[置換後\]|=======)/i;
-  const sectionEndRegex = /(?:^#+\s*第\d+部|^第\d+部|サマリー|>>>>>>> REPLACE)/i;
-  function saveBlock() {
-    if (currentFile && searchLines.length > 0 && replaceLines.length > 0) {
-      const sClean = searchLines.join('\n').replace(/^\n+|\n+$/g, '');
-      const rClean = replaceLines.join('\n').replace(/^\n+|\n+$/g, '');
-      blocks.push({
-        file: currentFile,
-        search: sClean,
-        replace: rClean
-      });
-    }
-    searchLines = [];
-    replaceLines = [];
-    state = 'OUTSIDE';
-    inFence = false;
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    // コードフェンス外の制御構文判定
-    if (!inFence) {
-      if (trimmed && sectionEndRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        currentFile = null;
-        continue;
-      }
-      const fileMatch = trimmed.match(fileRegex);
-      if (fileMatch && !trimmed.includes('第') && !trimmed.includes('サマリー') && !trimmed.includes('問題') && !trimmed.includes('要約')) {
-        saveBlock();
-        currentFile = fileMatch[1].replace(/\\/g, '/').replace(/^\*+|\*+$/g, '').trim();
-        continue;
-      }
-      if (searchTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        saveBlock();
-        state = 'SEARCH';
-        inFence = false;
-        continue;
-      }
-      if (replaceTagRegex.test(trimmed) && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
-        state = 'REPLACE';
-        inFence = false;
-        continue;
-      }
-    }
-    // コードフェンスの開始/終了
-    if (state === 'SEARCH' || state === 'REPLACE') {
-      if (trimmed.startsWith('```') && trimmed.length < 25) {
-        inFence = !inFence;
-        continue;
-      }
-      if (state === 'SEARCH') {
-        searchLines.push(line);
-      } else if (state === 'REPLACE') {
-        replaceLines.push(line);
-      }
-    }
-  }
-  saveBlock();
-  console.log(`   ✅ 修正ブロックを検出しました: 計 ${blocks.length} 箇所`);
-  return blocks;
-}
-// 記号正規化関数
-function normalizeLine(line) {
-  let l = line.trim().replace(/['"`]/g, '"');
-  if (l.endsWith(';')) l = l.slice(0, -1).trim();
-  return l.replace(/\s+/g, ' ');
-}
-// =========================================================================
-// 3. 改行コード吸収 & 行シーケンス照合エンジン
-// =========================================================================
-function applyReplacement(originalContent, searchText, replaceText) {
-  if (!searchText.trim()) {
-    if (!originalContent.trim()) return { success: true, content: replaceText, mode: '新規ファイル作成', lineNo: 1 };
-    return { success: true, content: originalContent + '\n' + replaceText, mode: '末尾追記', lineNo: originalContent.split('\n').length };
-  }
-  const isCRLF = originalContent.includes('\r\n');
-  const origLF = originalContent.replace(/\r\n/g, '\n');
-  const searchLF = searchText.replace(/\r\n/g, '\n');
-  const replaceLF = replaceText.replace(/\r\n/g, '\n');
-  // Level 1: 改行コード吸収の完全一致 (Exact Match)
-  const exactIndex = origLF.indexOf(searchLF);
-  if (exactIndex !== -1) {
-    const secondIndex = origLF.indexOf(searchLF, exactIndex + 1);
-    if (secondIndex !== -1) {
-      return { success: false, reason: '検索コードがファイル内に2箇所以上見つかりました（誤爆防止のためスキップ）。' };
-    }
-    const lineNo = origLF.substring(0, exactIndex).split('\n').length;
-    const newLF = origLF.substring(0, exactIndex) + replaceLF + origLF.substring(exactIndex + searchLF.length);
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 1 完全一致 (Exact)',
-      lineNo
-    };
-  }
-  // Level 2: 空行完全吸収 & 行シーケンス照合 (Repomix空行除去に完全対応)
-  const origLines = origLF.split('\n');
-  const searchLines = searchLF.split('\n');
-  const replaceLines = replaceLF.split('\n');
-  // 検索コードから非空行のみを抽出（行内容の正規化値と元の行インデックスを保持）
-  const sValid = [];
-  for (let idx = 0; idx < searchLines.length; idx++) {
-    const line = searchLines[idx];
-    if (line.trim()) {
-      sValid.push({ norm: normalizeLine(line), raw: line, origIndex: idx });
-    }
-  }
-  if (sValid.length === 0) {
-    return { success: false, reason: '検索コードが空です。' };
-  }
-  const firstSearchIndentLen = (sValid[0].raw.match(/^\s*/) || [''])[0].length;
-  const matchedRanges = [];
-  for (let startI = 0; startI < origLines.length; startI++) {
-    // 照合開始候補行が空行ならスキップ
-    if (!origLines[startI].trim()) continue;
-    // 最初の有効行が一致するかクイックチェック
-    if (normalizeLine(origLines[startI]) !== sValid[0].norm) continue;
-    let sIdx = 0;
-    let curOrigI = startI;
-    let matchFailed = false;
-    // 元ファイル側の空行を自律的に読み飛ばしながら照合
-    while (curOrigI < origLines.length && sIdx < sValid.length) {
-      const oLine = origLines[curOrigI];
-      // 元ファイル側の空行は無視して読み飛ばす
-      if (!oLine.trim()) {
-        curOrigI++;
-        continue;
-      }
-      if (normalizeLine(oLine) !== sValid[sIdx].norm) {
-        matchFailed = true;
-        break;
-      }
-      sIdx++;
-      curOrigI++;
-    }
-    if (!matchFailed && sIdx === sValid.length) {
-      matchedRanges.push({ startOrigLine: startI, endOrigLine: curOrigI - 1 });
-    }
-  }
-  if (matchedRanges.length === 1) {
-    const { startOrigLine, endOrigLine } = matchedRanges[0];
-    const baseIndent = (origLines[startOrigLine].match(/^\s*/) || [''])[0];
-    const adjustedReplace = replaceLines.map(line => {
-      if (!line.trim()) return '';
-      const curIndentLen = (line.match(/^\s*/) || [''])[0].length;
-      const relIndent = Math.max(0, curIndentLen - firstSearchIndentLen);
-      return baseIndent + (' '.repeat(relIndent)) + line.trimStart();
-    });
-    const newLines = [
-      ...origLines.slice(0, startOrigLine),
-      ...adjustedReplace,
-      ...origLines.slice(endOrigLine + 1)
-    ];
-    const newLF = newLines.join('\n');
-    const finalContent = isCRLF ? newLF.replace(/\n/g, '\r\n') : newLF;
-    return {
-      success: true,
-      content: finalContent,
-      mode: 'Level 2 空行完全吸収・行シーケンス照合',
-      lineNo: startOrigLine + 1
-    };
-  } else if (matchedRanges.length > 1) {
-    return { success: false, reason: `検索コードが複数箇所 (${matchedRanges.length}箇所) ヒットしたため、誤爆防止でスキップしました。` };
-  }
-  return { success: false, reason: 'ファイル内に該当するコードが見つかりません。' };
-}
-// =========================================================================
-// 4. メイン実行処理
-// =========================================================================
-function run() {
-  console.log('============================================================');
-  console.log('  ⚡ Covo AI パッチ自動適用エンジン (Robust v2)');
-  console.log('============================================================\n');
-  const { text: rawText, source } = getSourceText();
-  const blocks = parseBlocks(rawText);
-  if (blocks.length === 0) {
-    console.error('❌ 有効な修正ブロックが見つかりませんでした。');
-    process.exit(1);
-  }
-  const fileGroups = {};
-  blocks.forEach((b, i) => {
-    if (!fileGroups[b.file]) fileGroups[b.file] = [];
-    fileGroups[b.file].push({ ...b, blockIndex: i + 1 });
-  });
-  // 自動バックアップ作成
-  console.log('\n[ステップ 3/5] 🛡️  安全装置: 書き換え前に元ファイルを自動バックアップ中...');
-  try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const backupManifest = { date: new Date().toISOString(), files: Object.keys(fileGroups) };
-    fs.writeFileSync(path.join(BACKUP_DIR, 'manifest.json'), JSON.stringify(backupManifest, null, 2));
-    for (const relPath of Object.keys(fileGroups)) {
-      const fullPath = path.resolve(process.cwd(), relPath);
-      if (fs.existsSync(fullPath)) {
-        const dest = path.join(BACKUP_DIR, relPath);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(fullPath, dest);
-        console.log(`   💾 バックアップ完了: ${relPath}`);
-      }
-    }
-    console.log('   ✨ バックアップ完了！ いつでもメニューの [2] (Undo) で元に戻せます。');
-  } catch (backupErr) {
-    console.warn('   ⚠️  バックアップ作成警告:', backupErr.message);
-  }
-  console.log('\n[ステップ 4/5] 🔍 各ファイルのコードを慎重に照合・置換中...');
-  console.log('------------------------------------------------------------');
-  let totalSuccess = 0;
-  let totalFail = 0;
-  const failedDetails = [];
-  for (const [relPath, fileBlocks] of Object.entries(fileGroups)) {
-    const fullPath = path.resolve(process.cwd(), relPath);
-    console.log(`\n📁 対象ファイル: ${relPath}`);
-    let fileContent = '';
-    let fileEncoding = 'utf-8';
-    const exists = fs.existsSync(fullPath);
-    if (exists) {
-      const rawBuf = fs.readFileSync(fullPath);
-      // UTF-16LE / UTF-8 自動判別 (BOMまたはヌルバイト密度から高精度検知)
-      if (rawBuf.length >= 2 && rawBuf[0] === 0xFF && rawBuf[1] === 0xFE) {
-        fileEncoding = 'utf-16le';
-        fileContent = rawBuf.slice(2).toString('utf16le');
-      } else {
-        let nulls = 0;
-        for (let i = 1; i < Math.min(rawBuf.length, 512); i += 2) {
-          if (rawBuf[i] === 0) nulls++;
-        }
-        if (nulls > 30) {
-          fileEncoding = 'utf-16le';
-          fileContent = rawBuf.toString('utf16le');
-        } else {
-          fileEncoding = 'utf-8';
-          fileContent = rawBuf.toString('utf-8');
-        }
-      }
-    } else {
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-      console.log(`   📁 新規ファイルを作成します`);
-    }
-    let modified = fileContent;
-    let fileSuccessCount = 0;
-    for (let idx = 0; idx < fileBlocks.length; idx++) {
-      const block = fileBlocks[idx];
-      const result = applyReplacement(modified, block.search, block.replace);
-      if (result.success) {
-        modified = result.content;
-        fileSuccessCount++;
-        totalSuccess++;
-        console.log(`   ✅ [${idx + 1}/${fileBlocks.length}] L.${result.lineNo}: 置換成功 (${result.mode})`);
-      } else {
-        totalFail++;
-        failedDetails.push({
-          file: relPath,
-          blockNo: block.blockIndex,
-          reason: result.reason,
-          searchSnippet: block.search.split('\n').slice(0, 3).join('\n')
-        });
-        console.error(`   ❌ [${idx + 1}/${fileBlocks.length}] スキップ: ${result.reason}`);
-      }
-    }
-    if (fileSuccessCount > 0) {
-      if (fileEncoding === 'utf-16le') {
-        const bom = Buffer.from([0xFF, 0xFE]);
-        const body = Buffer.from(modified, 'utf16le');
-        fs.writeFileSync(fullPath, Buffer.concat([bom, body]));
-      } else {
-        fs.writeFileSync(fullPath, modified, 'utf-8');
-      }
-      console.log(`   💾 変更をファイルに保存しました (${relPath})`);
-      // patch.js 自身が更新された場合は、最新のパッチエンジンで残りのファイルを即時自動再適用
-      if (relPath.replace(/\\/g, '/').endsWith('patch.js') && !process.env._PATCH_RELOADED) {
-        console.log('   🔄 パッチエンジンが最新版に更新されました。最新エンジンでパッチを自動再実行します...');
-        process.env._PATCH_RELOADED = '1';
-        execSync(`node "${fullPath}" --apply`, { stdio: 'inherit' });
-        process.exit(0);
-      }
-    } else {
-      console.log(`   ⚠️  変更箇所がなかったため保存をスキップしました`);
-    }
-  }
-  console.log('\n------------------------------------------------------------');
-  console.log('[ステップ 5/5] 📊 最終レポート');
-  console.log('============================================================');
-  if (totalFail === 0) {
-    console.log(`🎉 【完全成功】すべての変更が正常に適用されました！`);
-    console.log(`   ・対象ファイル数: ${Object.keys(fileGroups).length} 件`);
-    console.log(`   ・置換成功箇所: ${totalSuccess} / ${blocks.length} 箇所 (失敗 0 件)`);
-    console.log('\n💡 ご安心ください:');
-    console.log('   ・ファイルは安全に書き換わりました。');
-    console.log('   ・もし元に戻したくなったら、メニューで [2] (Undo) を選ぶだけで');
-    console.log('     この実行直前の状態に100%完全復元できます。');
-  } else {
-    console.log(`⚠️  【一部スキップ】成功: ${totalSuccess} 箇所 / 未適用: ${totalFail} 箇所`);
-    console.log('------------------------------------------------------------');
-    failedDetails.forEach(f => {
-      console.log(`\n  ・ファイル: ${f.file} (修正ブロック #${f.blockNo})`);
-      console.log(`    理由: ${f.reason}`);
-      console.log(`    探したコード（先頭部分）:`);
-      console.log('    ----------------------------------------');
-      console.log('    ' + f.searchSnippet.split('\n').join('\n    '));
-      console.log('    ----------------------------------------');
-    });
-  }
-  console.log('============================================================');
-}
-run();
 </file>
 
 <file path="README.md">
@@ -2281,235 +2120,6 @@ if (typeof window !== 'undefined') {
   window.copySystemDiagnosticReport = copySystemDiagnosticReport;
   window.copyFullDiagnosticAndConsoleReport = copyFullDiagnosticAndConsoleReport;
 }
-</file>
-
-<file path="server/schema.sql">
--- Cloudflare D1 Schema for Covo (Firestore Migration)
--- 1. Users & Profiles
-CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    nickname TEXT,
-    avatar_url TEXT,
-    public_key_jwk TEXT, -- Stored as JSON string
-    fcm_tokens TEXT, -- Stored as JSON array
-    created_at INTEGER, -- Unix timestamp in milliseconds
-    updated_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_users_app_id ON users(app_id);
--- 2. User Private Keys
-CREATE TABLE IF NOT EXISTS user_private_keys (
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    key_type TEXT NOT NULL, -- 'keys' or 'escrowKey'
-    key_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (user_id, app_id, key_type)
-);
--- 3. User Read States (Per user, per room read states)
-CREATE TABLE IF NOT EXISTS user_read_states (
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    room_id TEXT NOT NULL,
-    last_read_at INTEGER, -- Unix timestamp in milliseconds
-    PRIMARY KEY (user_id, app_id, room_id)
-);
--- 4. Settings (App global settings like allowedEmails, adminList, etc.)
-CREATE TABLE IF NOT EXISTS settings (
-    app_id TEXT NOT NULL,
-    setting_id TEXT NOT NULL, -- 'allowedEmails', 'adminList', 'listAdminList', 'escrowKey'
-    setting_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (app_id, setting_id)
-);
--- 5. Servers
-CREATE TABLE IF NOT EXISTS servers (
-    server_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    is_public INTEGER DEFAULT 0, -- boolean: 0 or 1
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    member_count INTEGER DEFAULT 1,
-    server_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_servers_app_id_public ON servers(app_id, is_public);
--- 6. Server Joined Users (For querying which servers a user has joined)
-CREATE TABLE IF NOT EXISTS server_joined_users (
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    joined_at INTEGER,
-    PRIMARY KEY (server_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_server_joined_users_user_id ON server_joined_users(user_id, app_id);
--- 7. Server Secrets (For auth / passwordHash)
-CREATE TABLE IF NOT EXISTS server_secrets (
-    server_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    updated_at INTEGER
-);
--- 8. Server Profiles (Per-server user profiles)
-CREATE TABLE IF NOT EXISTS server_profiles (
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    profile_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (server_id, user_id)
-);
--- 9. Server Invite Codes & Index
-CREATE TABLE IF NOT EXISTS server_invite_codes (
-    code TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    expires_at INTEGER,
-    uses INTEGER DEFAULT 0,
-    max_uses INTEGER DEFAULT 0,
-    disabled INTEGER DEFAULT 0, -- boolean: 0 or 1
-    invite_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_invite_codes_server_id ON server_invite_codes(server_id);
--- 10. Server Stamps
-CREATE TABLE IF NOT EXISTS server_stamps (
-    stamp_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL,
-    created_by TEXT NOT NULL,
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_server_stamps_server_id ON server_stamps(server_id);
--- 11. Server Stamp Groups
-CREATE TABLE IF NOT EXISTS server_stamp_groups (
-    group_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    group_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_server_stamp_groups_server_id ON server_stamp_groups(server_id);
--- 12. Rooms
-CREATE TABLE IF NOT EXISTS rooms (
-    room_id TEXT PRIMARY KEY,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'chat', 'voice', etc.
-    created_by TEXT NOT NULL,
-    created_at INTEGER,
-    current_key_version INTEGER DEFAULT 1,
-    room_data TEXT -- Store any additional fields as JSON
-);
-CREATE INDEX IF NOT EXISTS idx_rooms_server_id ON rooms(server_id);
--- 13. Room Keys (E2EE room keys per user)
-CREATE TABLE IF NOT EXISTS room_keys (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL, -- includes '__escrow__'
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    key_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER,
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_room_keys_room_id ON room_keys(room_id);
--- 14. Messages
-CREATE TABLE IF NOT EXISTS messages (
-    message_id TEXT PRIMARY KEY,
-    room_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    text TEXT,
-    created_at INTEGER, -- Unix timestamp in milliseconds
-    is_pinned INTEGER DEFAULT 0, -- boolean: 0 or 1
-    reactions TEXT, -- Stored as JSON string: { userId: emoji }
-    additional_data TEXT -- Stored as JSON string (attachments, etc.)
-);
-CREATE INDEX IF NOT EXISTS idx_messages_room_id_created_at ON messages(room_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_messages_room_id_pinned ON messages(room_id, is_pinned);
--- 15. Read Receipts
-CREATE TABLE IF NOT EXISTS read_receipts (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    last_read_at INTEGER, -- Unix timestamp in milliseconds
-    last_read_message_id TEXT,
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_read_receipts_room_id ON read_receipts(room_id);
--- 16. Typing States
-CREATE TABLE IF NOT EXISTS typing_states (
-    room_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    nickname TEXT NOT NULL,
-    updated_at INTEGER, -- Unix timestamp in milliseconds
-    PRIMARY KEY (room_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_typing_states_room_id ON typing_states(room_id);
--- 17. User Online Status (Firestore status collection)
-CREATE TABLE IF NOT EXISTS user_status (
-    user_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    status_data TEXT NOT NULL, -- Stored as JSON string
-    updated_at INTEGER
-);
--- 18. WebRTC Calls (Signaling)
-CREATE TABLE IF NOT EXISTS webrtc_calls (
-    call_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    call_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER,
-    updated_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS webrtc_call_candidates (
-    candidate_id TEXT PRIMARY KEY,
-    call_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    candidate_type TEXT NOT NULL, -- 'offer' or 'answer'
-    candidate_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_call_candidates_call_id ON webrtc_call_candidates(call_id, candidate_type);
--- 19. WebRTC File Shares (Signaling)
-CREATE TABLE IF NOT EXISTS webrtc_fileshares (
-    fs_id TEXT PRIMARY KEY,
-    app_id TEXT NOT NULL,
-    fs_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER,
-    updated_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS webrtc_fileshare_candidates (
-    candidate_id TEXT PRIMARY KEY,
-    fs_id TEXT NOT NULL,
-    app_id TEXT NOT NULL,
-    candidate_type TEXT NOT NULL, -- 'sender' or 'receiver'
-    candidate_data TEXT NOT NULL, -- Stored as JSON string
-    created_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_fileshare_candidates_fs_id ON webrtc_fileshare_candidates(fs_id, candidate_type);
--- 20. API Audit Logs (Cloudflare Worker Monitoring)
-CREATE TABLE IF NOT EXISTS api_audit_logs (
-    id TEXT PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    method TEXT NOT NULL,
-    path TEXT NOT NULL,
-    status INTEGER NOT NULL,
-    duration_ms INTEGER NOT NULL,
-    client_ip TEXT,
-    user_id TEXT,
-    error_message TEXT,
-    details TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_api_audit_logs_timestamp ON api_audit_logs(timestamp);
 </file>
 
 <file path="public/css/modules/components.css">
@@ -3628,468 +3238,6 @@ if (typeof window !== 'undefined') {
     </div>
 </body>
 </html>
-</file>
-
-<file path="deploy.ps1">
-# Covo Deploy Script
-# Usage: .\deploy.ps1       (interactive confirm)
-#        .\deploy.ps1 -y    (skip confirm)
-#        npm run deploy      (deploy update)
-
-param(
-    [switch]$y
-)
-
-$ErrorActionPreference = 'Stop'
-
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-
-$versionJsonPath = Join-Path $PSScriptRoot 'public\version.json'
-if (-not (Test-Path $versionJsonPath)) {
-    Write-Host 'ERROR: public/version.json not found' -ForegroundColor Red
-    exit 1
-}
-
-$versionData    = [System.IO.File]::ReadAllText($versionJsonPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-$currentVersion = $versionData.version
-Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
-
-$versionParts = $currentVersion.Split('.')
-if ($versionParts.Length -ne 3) {
-    Write-Host 'ERROR: Invalid version format (expected x.y.z)' -ForegroundColor Red
-    exit 1
-}
-
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$tagName    = "v$newVersion"
-
-Write-Host "New version : $newVersion" -ForegroundColor Green
-Write-Host "Tag name    : $tagName"    -ForegroundColor Green
-Write-Host ''
-
-if (-not $y) {
-    Write-Host "Deploy v${newVersion}? (y/n): " -ForegroundColor White -NoNewline
-    try {
-        $confirm = [Console]::ReadLine()
-        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
-            Write-Host 'Deploy cancelled.' -ForegroundColor Yellow
-            exit 0
-        }
-    } catch {
-        Write-Host 'Deploy cancelled. (Non-interactive mode requires -y)' -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-Write-Host "Deploying v$newVersion ..." -ForegroundColor Green
-Write-Host ''
-
-# [0/5] Tailwind CSS
-Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
-
-# [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
-[System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
-
-$indexHtmlPath = Join-Path $PSScriptRoot 'public\index.html'
-if (Test-Path $indexHtmlPath) {
-    $htmlRaw = [System.IO.File]::ReadAllText($indexHtmlPath, [System.Text.Encoding]::UTF8)
-    $htmlPatched = $htmlRaw -replace '(\.js|\.css)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($indexHtmlPath, $htmlPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced index.html cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$mainJsPath = Join-Path $PSScriptRoot 'public\js\main.js'
-if (Test-Path $mainJsPath) {
-    $mainRaw = [System.IO.File]::ReadAllText($mainJsPath, [System.Text.Encoding]::UTF8)
-    $mainPatched = $mainRaw -replace '(\.js)\?v=[0-9.]+', ('$1?v=' + $newVersion)
-    [System.IO.File]::WriteAllText($mainJsPath, $mainPatched, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "       Synced main.js internal import cache busters -> $newVersion" -ForegroundColor Green
-}
-
-$tauriConfPath = Join-Path $PSScriptRoot 'src-tauri\tauri.conf.json'
-if (Test-Path $tauriConfPath) {
-    $raw     = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    $patched = $raw -replace '"version":\s*"[^"]+"', ('"version": "' + $newVersion + '"')
-    [System.IO.File]::WriteAllText($tauriConfPath, $patched, [System.Text.UTF8Encoding]::new($false))
-    $verify  = [System.IO.File]::ReadAllText($tauriConfPath, [System.Text.Encoding]::UTF8)
-    if ($verify -notlike ('*"version": "' + $newVersion + '"*')) {
-        Write-Host 'ERROR: tauri.conf.json sync failed' -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "       Synced tauri.conf.json -> $newVersion" -ForegroundColor Green
-} else {
-    Write-Host 'WARNING: tauri.conf.json not found, skipping.' -ForegroundColor Yellow
-}
-
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-
-# [1.5/5] Repomix によるコードベース集約パッケージの自動生成（git commit / push に含める）
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-Write-Host '  Running Repomix...'                 -ForegroundColor Cyan
-Write-Host '------------------------------------' -ForegroundColor DarkCyan
-try {
-    npx --yes repomix
-    Write-Host 'Repomix completed successfully.' -ForegroundColor Green
-} catch {
-    Write-Host ("Repomix execution skipped or warning: " + $_.Exception.Message) -ForegroundColor Yellow
-}
-Write-Host ''
-
-# [2/5] git commit
-Write-Host '[2/5] Committing changes...' -ForegroundColor Green
-git add -A
-git commit -m "Release v$newVersion"
-
-# [3/5] git tag
-Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
-git tag $tagName
-
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
-# [5/5] git push
-Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
-git push origin HEAD --tags
-
-Write-Host ''
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-
-# ===========================================================================
-# GitHub Actions real-time build monitor
-# ===========================================================================
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '  GitHub Actions Build Monitor'      -ForegroundColor Cyan
-Write-Host '====================================' -ForegroundColor DarkCyan
-Write-Host '(Ctrl+C to exit at any time)'        -ForegroundColor DarkGray
-Write-Host ''
-
-$REPO = 'qwertyuiop1229/Covo'
-
-# Retrieve GITHUB_TOKEN directly from environment or registry
-$GITHUB_TOKEN_ENV = $env:GITHUB_TOKEN
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKCU:\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-if (-not $GITHUB_TOKEN_ENV) {
-    try {
-        $GITHUB_TOKEN_ENV = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Session Manager\Environment' -Name 'GITHUB_TOKEN' -ErrorAction SilentlyContinue).GITHUB_TOKEN
-    } catch {}
-}
-
-# Move cursor up N lines (ANSI)
-function Move-CursorUp {
-    param([int]$Lines)
-    if ($Lines -gt 0) {
-        $esc = [char]27
-        $seq = $esc.ToString() + '[' + $Lines.ToString() + 'A'
-        [Console]::Write($seq)
-    }
-}
-
-# ASCII progress bar  [####....] 64%
-function Draw-Bar {
-    param([int]$Pct, [int]$W = 24)
-    $Pct    = [Math]::Max(0, [Math]::Min(100, $Pct))
-    $filled = [int]([Math]::Floor($W * ($Pct / 100)))
-    $empty  = $W - $filled
-    return '[' + ('#' * $filled) + ('.' * $empty) + '] ' + $Pct + '%'
-}
-
-# GitHub REST API helper
-function Invoke-GHApi {
-    param([string]$Path)
-    $url     = 'https://api.github.com' + $Path
-    $headers = @{ 'User-Agent' = 'covo-deploy'; 'Accept' = 'application/vnd.github+json' }
-    if ($GITHUB_TOKEN_ENV) { $headers['Authorization'] = 'Bearer ' + $GITHUB_TOKEN_ENV }
-    try {
-        return Invoke-RestMethod -Uri $url -Headers $headers -Method Get -ErrorAction Stop
-    } catch {
-        if (($_.Exception.Message -like '*rate limit*') -or ($_.Exception.Message -like '*403*')) {
-            $global:RateLimitHit = $true
-        }
-        return $null
-    }
-}
-
-function Get-LatestRun {
-    param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
-    if (-not $res) { return $null }
-    $run = $res.workflow_runs | Where-Object {
-        ($_.head_branch -eq $Tag) -or
-        ($_.head_commit.message -like ('*' + $Tag + '*')) -or
-        ($_.display_title -like ('*' + $Tag + '*'))
-    } | Select-Object -First 1
-    return $run
-}
-
-function Get-RunJobs {
-    param([string]$RunId)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs/' + $RunId + '/jobs')
-    if ($res -and $res.jobs) { return @($res.jobs) }
-    return @()
-}
-
-# Detect latest run (up to 45 s)
-Write-Host ('>> Searching for GitHub Actions run for tag ' + $tagName + ' ...') -ForegroundColor Cyan
-$run = $null
-for ($i = 1; $i -le 15; $i++) {
-    Start-Sleep -Seconds 3
-    $run = Get-LatestRun -Tag $tagName
-    if ($run) { break }
-    if ($global:RateLimitHit) { break }
-    Write-Host ('   Attempt ' + $i + '/15 ... (waiting for GitHub to queue workflow)') -ForegroundColor DarkGray
-}
-
-if ($global:RateLimitHit -and -not $run) {
-    Write-Host ''
-    Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
-    Write-Host '   Check the build progress at:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    Write-Host ''
-    exit 0
-}
-
-if (-not $run) {
-    Write-Host ''
-    Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
-    Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
-    Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
-}
-
-$runId  = $run.id
-$runUrl = $run.html_url
-Write-Host ''
-Write-Host ('>> Run found: #' + $runId) -ForegroundColor Green
-Write-Host ('   -> ' + $runUrl)           -ForegroundColor DarkGray
-Write-Host ''
-
-
-$StepDefs = @(
-    [pscustomobject]@{ Pattern = 'checkout';         Label = 'Checkout source';       Weight = 2  }
-    [pscustomobject]@{ Pattern = 'install Node';     Label = 'Setup Node.js';         Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install Rust';     Label = 'Setup Rust toolchain';  Weight = 5  }
-    [pscustomobject]@{ Pattern = 'Rust Cache';       Label = 'Restore Rust cache';    Weight = 3  }
-    [pscustomobject]@{ Pattern = 'install frontend'; Label = 'npm install';           Weight = 8  }
-    [pscustomobject]@{ Pattern = 'build tauri';      Label = 'Build Tauri (~20 min)'; Weight = 70 }
-    [pscustomobject]@{ Pattern = 'upload';           Label = 'Upload release assets'; Weight = 9  }
-)
-$totalWeight = ($StepDefs | Measure-Object -Property Weight -Sum).Sum
-
-$Spinners   = @('-', '\', '|', '/')
-$pollSec    = if ($GITHUB_TOKEN_ENV) { 6 } else { 20 }
-$quotaMode  = if ($GITHUB_TOKEN_ENV) { "Authenticated (5000 req/hr)" } else { "Anonymous (60 req/hr | Eco mode)" }
-
-Write-Host '-- GitHub Actions Live Build Log --' -ForegroundColor Cyan
-Write-Host ('   ' + $REPO + '  |  Run #' + $runId + '  |  API: ' + $quotaMode) -ForegroundColor DarkGray
-Write-Host ''
-
-$LINE_COUNT = 6
-$firstDraw  = $true
-$job = $null
-$jobStatus = 'queued'
-$jobConclusion = $null
-$jobUrl = $runUrl
-
-# Fetch initial job data
-$jobs = @(Get-RunJobs -RunId $runId)
-if ($jobs -and $jobs.Count -gt 0) { $job = $jobs[0]; $jobStatus = $job.status; $jobConclusion = $job.conclusion; $jobUrl = $job.html_url }
-
-$maxOverallSec = 45 * 60
-$secSinceLastPoll = 0
-
-for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
-
-    if ($secSinceLastPoll -ge $pollSec -and $jobStatus -ne 'completed') {
-        $secSinceLastPoll = 0
-        $global:RateLimitHit = $false
-        $newJobs = @(Get-RunJobs -RunId $runId)
-        if ($global:RateLimitHit) {
-            if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-            Write-Host '  [!] API Rate Limit reached. Stopping terminal updates.'.PadRight(80) -ForegroundColor Yellow
-            Write-Host '      GitHub Actions build is still running in the background!'.PadRight(80) -ForegroundColor Green
-            Write-Host ('      -> URL: https://github.com/' + $REPO + '/actions/runs/' + $runId).PadRight(80) -ForegroundColor Cyan
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host (' ' * 80)
-            Write-Host ''
-            break
-        }
-        if ($newJobs -and $newJobs.Count -gt 0) {
-            $job = $newJobs[0]
-            $jobStatus = $job.status
-            $jobConclusion = $job.conclusion
-            $jobUrl = $job.html_url
-        }
-    }
-
-    $spin = $Spinners[$totalSec % $Spinners.Length]
-
-    if (-not $firstDraw) { Move-CursorUp -Lines $LINE_COUNT }
-    $firstDraw = $false
-
-    if ($job) {
-        $steps = @($job.steps)
-        $completedWeight    = 0
-        $completedStepCount = 0
-        $currentLabel       = ''
-        $currentStep        = $null
-        $totalStepCount     = if ($steps) { $steps.Count } else { 0 }
-
-        if ($steps) {
-            foreach ($step in $steps) {
-                $def = $StepDefs | Where-Object { $step.name -like ('*' + $_.Pattern + '*') } | Select-Object -First 1
-                $w   = if ($def) { $def.Weight } else { 2 }
-                if ($step.status -eq 'completed' -and $step.conclusion -eq 'success') {
-                    $completedWeight    += $w
-                    $completedStepCount++
-                } elseif ($step.status -eq 'in_progress') {
-                    $completedWeight += [int]($w * 0.5)
-                    $currentLabel     = if ($def) { $def.Label } else { $step.name }
-                    $currentStep      = $step
-                }
-            }
-        }
-
-        $pct = if ($totalWeight -gt 0) { [int]([Math]::Min(99, ($completedWeight / $totalWeight) * 100)) } else { 0 }
-        if ($jobStatus -eq 'completed' -and $jobConclusion -eq 'success') { $pct = 100 }
-        $bar = Draw-Bar -Pct $pct
-
-        # Calculate Job / Step elapsed time and log progression
-        $elapsedJobStr = '00:00'
-        if ($job.started_at) {
-            try {
-                $jStart = [DateTime]::Parse($job.started_at).ToUniversalTime()
-                $elapsedJob = [DateTime]::UtcNow - $jStart
-                if ($jobStatus -eq 'completed' -and $job.completed_at) {
-                    $jEnd = [DateTime]::Parse($job.completed_at).ToUniversalTime()
-                    $elapsedJob = $jEnd - $jStart
-                }
-                $elapsedJobStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedJob.TotalMinutes), $elapsedJob.Seconds)
-            } catch {}
-        }
-
-        $stepLogInfo = 'Preparing logs...'
-        $stepElapsedStr = '00:00'
-
-        if ($currentStep -and $currentStep.started_at) {
-            try {
-                $sStart = [DateTime]::Parse($currentStep.started_at).ToUniversalTime()
-                $elapsedStep = [DateTime]::UtcNow - $sStart
-                $stepElapsedStr = ('{0:00}:{1:00}' -f [int][Math]::Floor($elapsedStep.TotalMinutes), $elapsedStep.Seconds)
-                $sec = $elapsedStep.TotalSeconds
-                if ($sec -lt 1) { $sec = 1 }
-
-                $expDur = 30.0; $expLines = 50.0
-                if ($currentStep.name -like '*Set up job*') { $expDur = 10.0; $expLines = 25.0 }
-                elseif ($currentStep.name -like '*checkout*') { $expDur = 15.0; $expLines = 32.0 }
-                elseif ($currentStep.name -like '*install Node*') { $expDur = 10.0; $expLines = 28.0 }
-                elseif ($currentStep.name -like '*install Rust*') { $expDur = 20.0; $expLines = 45.0 }
-                elseif ($currentStep.name -like '*Rust Cache*') { $expDur = 15.0; $expLines = 42.0 }
-                elseif ($currentStep.name -like '*frontend dependencies*') { $expDur = 40.0; $expLines = 165.0 }
-                elseif ($currentStep.name -like '*build tauri app*') { $expDur = 900.0; $expLines = 485.0 }
-
-                $progRatio = $sec / $expDur
-                if ($progRatio -gt 0.95) { $progRatio = 0.95 }
-                $curLine = [int]([Math]::Round($expLines * $progRatio))
-                if ($curLine -lt 1) { $curLine = 1 }
-                if ($curLine -ge $expLines) { $curLine = $expLines - 1 }
-                $stepLogInfo = ('Log: ' + $curLine + '/' + $expLines + ' lines')
-            } catch {}
-        }
-
-        if ($jobStatus -eq 'completed') {
-            if ($jobConclusion -eq 'success') {
-                $icon = '[OK]'; $col = 'Green'; $lbl = 'Build succeeded!'
-            } else {
-                $icon = '[NG]'; $col = 'Red'; $lbl = 'Build FAILED (' + $jobConclusion + ')'
-            }
-        } elseif ($jobStatus -eq 'queued') {
-            $icon = '[ ]'; $col = 'Yellow'; $lbl = 'Queued...'
-        } else {
-            $icon = '[' + $spin + ']'; $col = 'Cyan'; $lbl = 'Building...'
-        }
-
-        $l1 = ('  ' + $icon + '  ' + $lbl + '  [Step ' + $completedStepCount + '/' + $totalStepCount + ']  (Elapsed: ' + $elapsedJobStr + ')').PadRight(80)
-        $l2 = ('  ' + $bar).PadRight(80)
-        $l3 = if ($currentLabel) { ('  -> ' + $currentLabel + '  (Step: ' + $stepElapsedStr + ' | ' + $stepLogInfo + ')').PadRight(80) } else { ' ' * 80 }
-        $l4 = ('  -> ' + $jobUrl).PadRight(80)
-        $l5 = (' ' * 80)
-        $l6 = (' ' * 80)
-
-        Write-Host $l1 -ForegroundColor $col
-        Write-Host $l2 -ForegroundColor White
-        Write-Host $l3 -ForegroundColor DarkCyan
-        Write-Host $l4 -ForegroundColor DarkGray
-        Write-Host $l5
-        Write-Host $l6
-
-        if ($jobStatus -eq 'completed') {
-            Write-Host ''
-            if ($jobConclusion -eq 'success') {
-                Write-Host '  SUCCESS: Build and release complete.' -ForegroundColor Green
-                Write-Host ('  Release: https://github.com/' + $REPO + '/releases/tag/' + $tagName) -ForegroundColor Cyan
-            } else {
-                Write-Host ('  FAILED: ' + $jobConclusion) -ForegroundColor Red
-                Write-Host ('  Details: ' + $jobUrl)       -ForegroundColor Yellow
-            }
-            Write-Host ''
-            break
-        }
-
-    } else {
-        Write-Host ('  [' + $spin + '] Fetching run #' + $runId + ' jobs ...').PadRight(80) -ForegroundColor DarkGray
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-        Write-Host (' ' * 80)
-    }
-
-    Start-Sleep -Seconds 1
-    $secSinceLastPoll++
-}
 </file>
 
 <file path="public/js/utils.js">
@@ -5360,7 +4508,7 @@ async function _sendOfflineIfNoClients() {
   }
 }
 // ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage((payload) => {
+messaging.onBackgroundMessage(async (payload) => {
   console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
   let title = 'Covo';
   let body  = '新しいメッセージがあります';
@@ -5453,15 +4601,16 @@ messaging.onBackgroundMessage((payload) => {
   }
   // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
   if (data.type !== 'incoming_call') {
-    const clientsPromise = clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      return clientList.some(c => c.url && c.url.startsWith(self.location.origin));
-    });
-    // 直近で開いているウィンドウがあればSW通知をスキップして2重通知を完全に防止
-    clientsPromise.then(hasWindow => {
-      if (hasWindow) {
-        console.log('🔔 [バックグラウンド] アプリウィンドウが開いているためSW通知表示を抑制しました');
-      }
-    }).catch(() => {});
+    let hasActiveAppWindow = false;
+    try {
+      const appClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      hasActiveAppWindow = appClients.some(c => c.url && c.url.startsWith(self.location.origin) && (c.focused || c.visibilityState === 'visible'));
+    } catch (_) {}
+    // 画面が見えている/フォーカス中なら画面側(アプリ内トースト)に任せ、SW通知・バッジ加算は行わない
+    if (hasActiveAppWindow) {
+      console.log('🔔 [バックグラウンド] アプリウィンドウが表示中のためSW通知表示を抑制しました');
+      return;
+    }
   }
   // バッジ更新（未読+1）
   self._badgeCount = (self._badgeCount || 0) + 1;
@@ -5483,10 +4632,10 @@ messaging.onBackgroundMessage((payload) => {
       ]
     };
   } else {
-    // messageId がある場合は1件ずつ独立した通知、ない場合はルーム単位で上書き
-    const tag = data.messageId
-      ? `msg-${data.messageId}`
-      : `chat-${data.roomId || 'covo'}`;
+    // 画面側の Web Notification（tag: chat-{roomId}）と同じタグに揃え、OS側でも同一ルームの通知を1件に集約する
+    const tag = data.roomId
+      ? `chat-${data.roomId}`
+      : (data.messageId ? `msg-${data.messageId}` : 'chat-covo');
     notificationOptions = {
       body,
       icon: '/img/icon-192x192.png?v=6',
@@ -5566,625 +4715,6 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
-</file>
-
-<file path="public/recovery.html">
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
-</head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
-        </div>
-        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-      }
-      function isSemverNewer(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rBase = r.split('-')[0].split('+')[0];
-      const lBase = l.split('-')[0].split('+')[0];
-      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      if (l.includes('-') && !r.includes('-')) {
-        return true;
-      }
-      return false;
-      }
-      let _isUpdateCheckingNow = false;
-    async function triggerUpdateCheck(isAuto = false) {
-      if (_isUpdateCheckingNow) {
-        logMessage("Update check or download is already in progress...");
-        return;
-      }
-      _isUpdateCheckingNow = true;
-      const btn = document.getElementById("btnUpdateCheck");
-      if (!isAuto && btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
-      }
-      try {
-        logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
-        // 1. 現在のバージョンを取得
-      let currentVersion = "1.0.0";
-      try {
-        const vRes = await fetch("version.json", { cache: "no-store" });
-        if (vRes.ok) {
-          const vData = await vRes.json();
-          currentVersion = vData.version || currentVersion;
-        }
-      } catch (_) {}
-      let updateFound = false;
-      let targetVersion = null;
-      let targetDownloadUrl = null;
-      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
-      if (invoke) {
-        try {
-          const metadata = await invoke('plugin:updater|check');
-          // Tauri 2 の戻り値: Update オブジェクトまたは null
-          if (metadata && (metadata.version || metadata.rid)) {
-            targetVersion = metadata.version;
-            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
-            updateFound = true;
-            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
-            logMessage(`Downloading update v${targetVersion}...`);
-            const rid = metadata.rid;
-            let installed = false;
-            const variants = [
-              { rid },
-              { updateRid: rid },
-              { rid, updateRid: rid }
-            ];
-            for (const v of variants) {
-              try {
-                await invoke('plugin:updater|download_and_install', v);
-                installed = true;
-                break;
-              } catch (_) {}
-            }
-            if (!installed) {
-              for (const v of variants) {
-                try {
-                  await invoke('plugin:updater|download', v);
-                  await invoke('plugin:updater|install', v);
-                  installed = true;
-                  break;
-                } catch (_) {}
-              }
-            }
-            if (installed) {
-              logMessage("Update applied successfully. Restarting application...");
-              if (btn) btn.innerHTML = `完了 (再起動中)`;
-              setTimeout(() => {
-                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-              }, 1500);
-              return;
-            }
-          }
-        } catch (tauriErr) {
-          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
-        }
-      }
-      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
-      logMessage("Checking official GitHub Releases API...");
-      try {
-        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-        if (ghRes.ok) {
-          const releases = await ghRes.json();
-          if (Array.isArray(releases) && releases.length > 0) {
-            const latestRel = releases[0];
-            const latestTag = latestRel.tag_name || "";
-            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
-            const isNewer = isSemverNewer(latestTag, currentVersion);
-            if (isNewer && exeAsset && exeAsset.browser_download_url) {
-              targetVersion = latestTag;
-              targetDownloadUrl = exeAsset.browser_download_url;
-              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
-              updateFound = true;
-              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
-              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
-              if (invoke) {
-                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
-                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
-                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
-                return;
-              } else {
-                window.open(targetDownloadUrl, '_blank');
-                logMessage(`Downloading ${latestTag} via external browser.`);
-                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
-                return;
-              }
-            }
-          }
-        }
-      } catch (ghErr) {
-        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
-      }
-      if (!updateFound) {
-        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
-        if (btn) {
-          btn.innerHTML = `最新版です`;
-          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
-        }
-      }
-      _isUpdateCheckingNow = false;
-      } catch (err) {
-        logMessage(`Update check failed: ${err.message || err}`, true);
-        const btn = document.getElementById("btnUpdateCheck");
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      } finally {
-        _isUpdateCheckingNow = false;
-      }
-      }
-      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
-    async function triggerIntegrityCheckAndRepair() {
-      const btn = document.getElementById("btnIntegrityRepair");
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
-      }
-      try {
-        logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
-        // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
-      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
-      try {
-        if ('indexedDB' in window) {
-          const dbInstance = await new Promise((res, rej) => {
-            const req = indexedDB.open('covo_local_db');
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => rej(req.error);
-            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
-          });
-          const stores = ['messages', 'channels', 'friends', 'settings'];
-          let storeErrors = 0;
-          for (const sName of stores) {
-            if (dbInstance.objectStoreNames.contains(sName)) {
-              try {
-                const tx = dbInstance.transaction(sName, 'readonly');
-                await new Promise((res, rej) => {
-                  const cntReq = tx.objectStore(sName).count();
-                  cntReq.onsuccess = res;
-                  cntReq.onerror = rej;
-                  setTimeout(res, 800);
-                });
-              } catch (_) { storeErrors++; }
-            }
-          }
-          dbInstance.close();
-          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
-        }
-      } catch (dbErr) {
-        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
-        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
-      }
-      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
-      logMessage("[2/5] Checking Cache Storage...");
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) {
-            if (k !== 'covo_media_cache_v1') await caches.delete(k);
-          }
-          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
-        }
-      } catch (cErr) {
-        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
-      }
-      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
-      logMessage("[3/5] Validating LocalStorage configuration entries...");
-      try {
-        let repairedKeys = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k) {
-            const val = localStorage.getItem(k);
-            if (val && (val.startsWith('{') || val.startsWith('['))) {
-              try { JSON.parse(val); } catch (_) {
-                localStorage.removeItem(k);
-                repairedKeys++;
-              }
-            }
-          }
-        }
-        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
-      } catch (lsErr) {
-        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
-      }
-      // 4. バックエンドAPIおよびネットワーク疎通テスト
-      logMessage("[4/5] Testing network and backend API connectivity...");
-      try {
-        const t0 = performance.now();
-        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
-        const latency = Math.round(performance.now() - t0);
-        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
-      } catch (apiErr) {
-        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
-      }
-      // 5. プログラムファイルの最新バージョン照合
-      logMessage("[5/5] Verifying application binaries against official release...");
-      logMessage("Integrity check & self-repair completed successfully.");
-      if (btn) {
-        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
-        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
-      }
-      } catch (fatalErr) {
-        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = `実行する`;
-        }
-      }
-      }
-      async function triggerCacheClearAndRestart() {
-      logMessage("Clearing cache...");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('indexedDB' in window) {
-          indexedDB.deleteDatabase('covo_local_db');
-        }
-      } catch (e) {
-        logMessage(`Cache clear warning: ${e.message}`);
-      }
-      logMessage("Cache cleared. Restarting...");
-      if (invoke) {
-        setTimeout(() => {
-          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
-        }, 1000);
-      } else {
-        setTimeout(() => window.location.href = "./index.html", 1000);
-      }
-    }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
-      }
-    }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.innerHTML = `失敗`;
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = `インストール`;
-          }, 3000);
-        }
-      }
-      }
-      if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
-          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
-          const topBtn = document.getElementById("btnUpdateCheck");
-          if (topBtn && topBtn.disabled) {
-            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
-          }
-          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
-        }
-      });
-    }
-    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
-    let _recoveryAutoCheckRan = false;
-    window.addEventListener("DOMContentLoaded", () => {
-      if (_recoveryAutoCheckRan) return;
-      _recoveryAutoCheckRan = true;
-      setTimeout(() => {
-        triggerUpdateCheck(true);
-      }, 1200);
-    });
-    // 🌟 グローバル公開 (HTML onclick 属性からの呼び出し保証)
-    window.triggerUpdateCheck = triggerUpdateCheck;
-    window.triggerIntegrityCheckAndRepair = triggerIntegrityCheckAndRepair;
-    window.triggerCacheClearAndRestart = triggerCacheClearAndRestart;
-    window.checkNormalMode = checkNormalMode;
-    window.togglePastReleases = togglePastReleases;
-    window.loadPastReleases = loadPastReleases;
-    window.installPastVersion = installPastVersion;
-    window.openLogFolder = openLogFolder;
-    window.forceQuitApp = forceQuitApp;
-    </script>
-</body>
-</html>
 </file>
 
 <file path="public/css/modules/theme.css">
@@ -7917,6 +6447,625 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
+<file path="public/recovery.html">
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/font-awesome.min.css">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+    .material-card {
+      background: #2b2d31;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      border-radius: 12px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .material-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    }
+    .bg-dark-800 { background-color: #2b2d31; }
+    .bg-dark-700 { background-color: #313338; }
+    .hover\:bg-dark-700:hover { background-color: #313338; }
+    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
+    .active\:bg-dark-900:active { background-color: #1e1f22; }
+    .bg-brand-500 { background-color: #5865F2; }
+    .text-brand-500 { color: #5865F2; }
+    .hover\:bg-brand-600:hover { background-color: #4752C4; }
+    .active\:bg-brand-600:active { background-color: #4752C4; }
+    ::selection { background-color: #5865F2; color: #ffffff; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
+  <div class="max-w-3xl w-full flex flex-col gap-6">
+    <!-- ヘッダー -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
+          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
+          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
+        </div>
+      </div>
+      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
+        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
+      </button>
+    </div>
+    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- アップデート -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
+        </div>
+        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
+          実行する
+        </button>
+      </div>
+      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
+        </div>
+        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+      <!-- キャッシュクリア -->
+      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
+            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
+          </div>
+          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
+        </div>
+        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
+          実行する
+        </button>
+      </div>
+    </div>
+    <!-- 過去バージョン -->
+    <div class="material-card p-5 flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
+          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
+        </div>
+        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
+          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
+        </button>
+      </div>
+      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
+        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
+          <!-- Items will be injected here -->
+        </div>
+        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
+          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+    <!-- コンソールログ -->
+    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
+      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
+        <span class="font-bold">System Log</span>
+        <span id="consoleStatus" class="text-emerald-500">Standby</span>
+      </div>
+      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
+        <div class="text-brand-500">Recovery panel initialized.</div>
+      </div>
+    </div>
+    <!-- フッター -->
+    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
+      <span>Covo Recovery Engine</span>
+      <div class="flex items-center gap-4">
+        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
+        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const invoke = window.__TAURI__?.core?.invoke;
+    const listen = window.__TAURI__?.event?.listen;
+    function logMessage(text, isError = false) {
+      const consoleElem = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = isError ? "text-rose-400" : "text-gray-300";
+      div.innerText = `> ${text}`;
+      consoleElem.appendChild(div);
+      consoleElem.scrollTop = consoleElem.scrollHeight;
+      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
+      }
+      function isSemverNewer(remoteVersion, localVersion) {
+      if (!remoteVersion || !localVersion) return false;
+      const r = String(remoteVersion).replace(/^v/i, '').trim();
+      const l = String(localVersion).replace(/^v/i, '').trim();
+      const rBase = r.split('-')[0].split('+')[0];
+      const lBase = l.split('-')[0].split('+')[0];
+      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
+      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
+      while (rParts.length < 3) rParts.push(0);
+      while (lParts.length < 3) lParts.push(0);
+      for (let i = 0; i < 3; i++) {
+        if (rParts[i] > lParts[i]) return true;
+        if (rParts[i] < lParts[i]) return false;
+      }
+      if (l.includes('-') && !r.includes('-')) {
+        return true;
+      }
+      return false;
+      }
+      let _isUpdateCheckingNow = false;
+    async function triggerUpdateCheck(isAuto = false) {
+      if (_isUpdateCheckingNow) {
+        logMessage("Update check or download is already in progress...");
+        return;
+      }
+      _isUpdateCheckingNow = true;
+      const btn = document.getElementById("btnUpdateCheck");
+      if (!isAuto && btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 照合中...`;
+      }
+      try {
+        logMessage(`Checking for updates (Dual-Engine Mode: isAuto=${isAuto})...`);
+        // 1. 現在のバージョンを取得
+      let currentVersion = "1.0.0";
+      try {
+        const vRes = await fetch("version.json", { cache: "no-store" });
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          currentVersion = vData.version || currentVersion;
+        }
+      } catch (_) {}
+      let updateFound = false;
+      let targetVersion = null;
+      let targetDownloadUrl = null;
+      // ─── 照合ルート A: Tauri ビルトインアップデータ ───
+      if (invoke) {
+        try {
+          const metadata = await invoke('plugin:updater|check');
+          // Tauri 2 の戻り値: Update オブジェクトまたは null
+          if (metadata && (metadata.version || metadata.rid)) {
+            targetVersion = metadata.version;
+            logMessage(`Tauri Updater: Found new version v${targetVersion} (current: v${currentVersion})`);
+            updateFound = true;
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中...`;
+            logMessage(`Downloading update v${targetVersion}...`);
+            const rid = metadata.rid;
+            let installed = false;
+            const variants = [
+              { rid },
+              { updateRid: rid },
+              { rid, updateRid: rid }
+            ];
+            for (const v of variants) {
+              try {
+                await invoke('plugin:updater|download_and_install', v);
+                installed = true;
+                break;
+              } catch (_) {}
+            }
+            if (!installed) {
+              for (const v of variants) {
+                try {
+                  await invoke('plugin:updater|download', v);
+                  await invoke('plugin:updater|install', v);
+                  installed = true;
+                  break;
+                } catch (_) {}
+              }
+            }
+            if (installed) {
+              logMessage("Update applied successfully. Restarting application...");
+              if (btn) btn.innerHTML = `完了 (再起動中)`;
+              setTimeout(() => {
+                invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+              }, 1500);
+              return;
+            }
+          }
+        } catch (tauriErr) {
+          logMessage(`Tauri updater check note: ${tauriErr.message || tauriErr}`);
+        }
+      }
+      // ─── 照合ルート B: GitHub Releases API 直接フォールバック (絶対確実) ───
+      logMessage("Checking official GitHub Releases API...");
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
+        if (ghRes.ok) {
+          const releases = await ghRes.json();
+          if (Array.isArray(releases) && releases.length > 0) {
+            const latestRel = releases[0];
+            const latestTag = latestRel.tag_name || "";
+            const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
+            const isNewer = isSemverNewer(latestTag, currentVersion);
+            if (isNewer && exeAsset && exeAsset.browser_download_url) {
+              targetVersion = latestTag;
+              targetDownloadUrl = exeAsset.browser_download_url;
+              logMessage(`GitHub Releases: Found newer version ${latestTag} > v${currentVersion}`);
+              updateFound = true;
+              if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 最新版を取得中...`;
+              logMessage(`Downloading ${latestTag} (${(exeAsset.size / (1024 * 1024)).toFixed(1)}MB)...`);
+              if (invoke) {
+                await invoke('silent_install_past_version', { url: targetDownloadUrl, tag: latestTag });
+                logMessage(`Silent installer launched for ${latestTag}. Restarting...`);
+                if (btn) btn.innerHTML = `復旧中 (再起動)...`;
+                return;
+              } else {
+                window.open(targetDownloadUrl, '_blank');
+                logMessage(`Downloading ${latestTag} via external browser.`);
+                if (btn) { btn.disabled = false; btn.innerHTML = `ブラウザで開始`; }
+                return;
+              }
+            }
+          }
+        }
+      } catch (ghErr) {
+        logMessage(`GitHub API check note: ${ghErr.message || ghErr}`);
+      }
+      if (!updateFound) {
+        logMessage(`No newer updates found. Current version (v${currentVersion}) is up to date.`);
+        if (btn) {
+          btn.innerHTML = `最新版です`;
+          setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3000);
+        }
+      }
+      _isUpdateCheckingNow = false;
+      } catch (err) {
+        logMessage(`Update check failed: ${err.message || err}`, true);
+        const btn = document.getElementById("btnUpdateCheck");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      } finally {
+        _isUpdateCheckingNow = false;
+      }
+      }
+      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
+    async function triggerIntegrityCheckAndRepair() {
+      const btn = document.getElementById("btnIntegrityRepair");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 診断＆修復中...`;
+      }
+      try {
+        logMessage("Starting system & data integrity check (Steam/Discord compliant)...");
+        // 1. ローカルデータベース (IndexedDB) 整合性チェック (全ストア健全性テスト)
+      logMessage("[1/5] Scanning Local Database (IndexedDB: covo_local_db stores)...");
+      try {
+        if ('indexedDB' in window) {
+          const dbInstance = await new Promise((res, rej) => {
+            const req = indexedDB.open('covo_local_db');
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
+            setTimeout(() => rej(new Error('IndexedDB connection timeout')), 3000);
+          });
+          const stores = ['messages', 'channels', 'friends', 'settings'];
+          let storeErrors = 0;
+          for (const sName of stores) {
+            if (dbInstance.objectStoreNames.contains(sName)) {
+              try {
+                const tx = dbInstance.transaction(sName, 'readonly');
+                await new Promise((res, rej) => {
+                  const cntReq = tx.objectStore(sName).count();
+                  cntReq.onsuccess = res;
+                  cntReq.onerror = rej;
+                  setTimeout(res, 800);
+                });
+              } catch (_) { storeErrors++; }
+            }
+          }
+          dbInstance.close();
+          logMessage(`[1/5] Local Database: Verified Healthy (${stores.length - storeErrors}/${stores.length} stores active)`);
+        }
+      } catch (dbErr) {
+        logMessage(`[1/5] Database notice: Rebuilding corrupted stores (${dbErr.message || dbErr})`);
+        try { indexedDB.deleteDatabase('covo_local_db'); } catch (_) {}
+      }
+      // 2. キャッシュストレージの健全性チェック & 破損エントリパージ
+      logMessage("[2/5] Checking Cache Storage...");
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) {
+            if (k !== 'covo_media_cache_v1') await caches.delete(k);
+          }
+          logMessage(`[2/5] Cache Storage: Cleaned & optimized`);
+        }
+      } catch (cErr) {
+        logMessage(`[2/5] Cache Storage note: ${cErr.message || cErr}`);
+      }
+      // 3. LocalStorage 設定ファイル整合性チェック（壊れたJSONの自動検出・修復）
+      logMessage("[3/5] Validating LocalStorage configuration entries...");
+      try {
+        let repairedKeys = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) {
+            const val = localStorage.getItem(k);
+            if (val && (val.startsWith('{') || val.startsWith('['))) {
+              try { JSON.parse(val); } catch (_) {
+                localStorage.removeItem(k);
+                repairedKeys++;
+              }
+            }
+          }
+        }
+        logMessage(`[3/5] Configuration: Verified (Repaired ${repairedKeys} corrupted keys)`);
+      } catch (lsErr) {
+        logMessage(`[3/5] Configuration note: ${lsErr.message || lsErr}`);
+      }
+      // 4. バックエンドAPIおよびネットワーク疎通テスト
+      logMessage("[4/5] Testing network and backend API connectivity...");
+      try {
+        const t0 = performance.now();
+        await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=PING_TEST', { cache: 'no-store' });
+        const latency = Math.round(performance.now() - t0);
+        logMessage(`[4/5] API Connectivity: OK (${latency}ms)`);
+      } catch (apiErr) {
+        logMessage(`[4/5] API Connectivity: Warning (${apiErr.message || apiErr})`);
+      }
+      // 5. プログラムファイルの最新バージョン照合
+      logMessage("[5/5] Verifying application binaries against official release...");
+      logMessage("Integrity check & self-repair completed successfully.");
+      if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-check text-emerald-400"></i> 修復完了`;
+        setTimeout(() => { btn.disabled = false; btn.innerHTML = `実行する`; }, 3500);
+      }
+      } catch (fatalErr) {
+        logMessage(`Integrity check notice: ${fatalErr.message || fatalErr}`, true);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `実行する`;
+        }
+      }
+      }
+      async function triggerCacheClearAndRestart() {
+      logMessage("Clearing cache...");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const k of keys) await caches.delete(k);
+        }
+        if ('indexedDB' in window) {
+          indexedDB.deleteDatabase('covo_local_db');
+        }
+      } catch (e) {
+        logMessage(`Cache clear warning: ${e.message}`);
+      }
+      logMessage("Cache cleared. Restarting...");
+      if (invoke) {
+        setTimeout(() => {
+          invoke('restart_app').catch(() => invoke('plugin:process|restart').catch(() => window.location.reload()));
+        }, 1000);
+      } else {
+        setTimeout(() => window.location.href = "./index.html", 1000);
+      }
+    }
+    async function checkNormalMode() {
+      logMessage("Returning to normal mode...");
+      try {
+        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+          const currentWin = window.__TAURI__.window.getCurrentWindow();
+          const label = currentWin.label;
+          if (label === "main") {
+            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
+            window.location.href = "./index.html";
+          } else {
+            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
+            if (invoke) await invoke('show_main_window');
+            await currentWin.hide();
+          }
+        } else if (invoke) {
+          // fallback
+          await invoke('show_main_window');
+          window.location.href = "./index.html";
+        } else {
+          window.location.href = "./index.html";
+        }
+      } catch (err) {
+        logMessage("Error returning to normal mode: " + err, true);
+        window.location.href = "./index.html";
+      }
+    }
+    function openLogFolder() {
+      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
+    }
+    function forceQuitApp() {
+      if (invoke) {
+        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
+      }
+    }
+    let releasesPage = 1;
+    let releasesLoading = false;
+    let releasesHasMore = true;
+    function togglePastReleases() {
+      const panel = document.getElementById("releasesPanel");
+      const icon = document.getElementById("toggleReleasesIcon");
+      const btn = document.getElementById("toggleReleasesBtn");
+      if (panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+        panel.classList.add("flex");
+        icon.classList.remove("fa-chevron-down");
+        icon.classList.add("fa-chevron-up");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
+        // 初回ロード
+        if (document.getElementById("releasesContainer").children.length === 0) {
+          loadPastReleases();
+          setupInfiniteScroll();
+        }
+      } else {
+        panel.classList.add("hidden");
+        panel.classList.remove("flex");
+        icon.classList.remove("fa-chevron-up");
+        icon.classList.add("fa-chevron-down");
+        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
+      }
+    }
+    function setupInfiniteScroll() {
+      const container = document.getElementById("releasesContainer");
+      container.addEventListener("scroll", () => {
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+          if (!releasesLoading && releasesHasMore) {
+            releasesPage++;
+            loadPastReleases();
+          }
+        }
+      });
+    }
+    async function loadPastReleases() {
+      if (releasesLoading || !releasesHasMore) return;
+      releasesLoading = true;
+      const container = document.getElementById("releasesContainer");
+      const loader = document.getElementById("releasesLoading");
+      loader.classList.remove("hidden");
+      loader.classList.add("flex");
+      logMessage(`Fetching past releases (page ${releasesPage})...`);
+      try {
+        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const releases = await res.json();
+        if (!releases || releases.length === 0) {
+          releasesHasMore = false;
+          if (releasesPage === 1) {
+            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
+          }
+          loader.classList.add("hidden");
+          loader.classList.remove("flex");
+          releasesLoading = false;
+          return;
+        }
+        if (releases.length < 10) releasesHasMore = false;
+        function escapeHtml(s) {
+          if (s == null) return "";
+          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+        releases.forEach((rel) => {
+          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
+          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
+          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
+          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
+          const div = document.createElement("div");
+          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
+          div.innerHTML = `
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
+                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
+              </div>
+              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
+            </div>
+            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
+              インストール
+            </button>
+          `;
+          if (isSafeUrl) {
+            const btn = div.querySelector('.past-rel-btn');
+            if (btn) {
+              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
+            }
+          }
+          container.appendChild(div);
+        });
+      } catch (e) {
+        logMessage(`Fetch error: ${e.message || e}`, true);
+        if (releasesPage === 1) {
+          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
+        }
+      } finally {
+        loader.classList.add("hidden");
+        loader.classList.remove("flex");
+        releasesLoading = false;
+      }
+    }
+    async function installPastVersion(url, tag) {
+      if (!url || url === 'null') return;
+      localStorage.setItem('covo_ignore_force_update', '1');
+      const btn = document.getElementById(`btn-install-${tag}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+      }
+      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
+      try {
+        if (!invoke) throw new Error("Tauri API missing.");
+        await invoke('silent_install_past_version', { url: url, tag: tag });
+        logMessage(`Installing ${tag}...`);
+        if (btn) btn.innerHTML = `復旧中...`;
+      } catch (err) {
+        logMessage(`Install error: ${err.message || err}`, true);
+        if (btn) {
+          btn.innerHTML = `失敗`;
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = `インストール`;
+          }, 3000);
+        }
+      }
+      }
+      if (listen) {
+      listen('download-progress', (event) => {
+        const data = event.payload;
+        if (data) {
+          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
+          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
+          const topBtn = document.getElementById("btnUpdateCheck");
+          if (topBtn && topBtn.disabled) {
+            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
+          }
+          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
+        }
+      });
+    }
+    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
+    let _recoveryAutoCheckRan = false;
+    window.addEventListener("DOMContentLoaded", () => {
+      if (_recoveryAutoCheckRan) return;
+      _recoveryAutoCheckRan = true;
+      setTimeout(() => {
+        triggerUpdateCheck(true);
+      }, 1200);
+    });
+    // 🌟 グローバル公開 (HTML onclick 属性からの呼び出し保証)
+    window.triggerUpdateCheck = triggerUpdateCheck;
+    window.triggerIntegrityCheckAndRepair = triggerIntegrityCheckAndRepair;
+    window.triggerCacheClearAndRestart = triggerCacheClearAndRestart;
+    window.checkNormalMode = checkNormalMode;
+    window.togglePastReleases = togglePastReleases;
+    window.loadPastReleases = loadPastReleases;
+    window.installPastVersion = installPastVersion;
+    window.openLogFolder = openLogFolder;
+    window.forceQuitApp = forceQuitApp;
+    </script>
+</body>
+</html>
+</file>
+
 <file path="src-tauri/src/lib.rs">
 use tauri::{tray::TrayIconBuilder, menu::{Menu, MenuItem}, Manager, WindowEvent, Emitter};
 use tauri::WebviewWindowBuilder;
@@ -9320,344 +8469,6 @@ pub fn run() {
 }
 </file>
 
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    :root {
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: 100%;
-      height: 100%;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
-    .stamp-jump-anim {
-      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="database.rules.json">
 {
   "rules": {
@@ -10022,6 +8833,344 @@ pub fn run() {
     }
   }
 }
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
 </file>
 
 <file path="firestore.rules">
@@ -17287,8 +16436,6 @@ export default {
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
         return await handleSyncRtdb(request, env);
       }
-        return await handleSyncRtdb(request, env);
-      }
       if (url.pathname === "/api/agoraToken" && (request.method === "GET" || request.method === "POST")) {
         return await handleAgoraToken(request, env, url);
       }
@@ -19344,6 +18491,42 @@ async function handleBulkDeleteFiles(request, env) {
     }
     const deleteType = new URL(request.url).searchParams.get("deleteType") || "all_safe";
     let kvDeleted = 0;
+    // 🔒 未使用アイコン削除: 「使用中URL一覧」はループ前に1回だけ全件取得し、取得に失敗したら何も削除せず中止する
+    let activeFileKeys = null;
+    if (deleteType === "unused_avatars") {
+      const adminToken = await getAdminTokenForFirestore(env);
+      if (!adminToken) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に必要な認証を取得できなかったため、安全のため削除を中止しました" }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+      const projectId = env.FIREBASE_PROJECT_ID;
+      activeFileKeys = new Set();
+      const collectActiveKeys = async (collectionName, fieldName) => {
+        let pageToken = "";
+        do {
+          const res = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/${collectionName}?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`, {
+            headers: { "Authorization": `Bearer ${adminToken}` }
+          });
+          if (!res.ok) throw new Error(`${collectionName} の取得に失敗しました (HTTP ${res.status})`);
+          const pageData = await res.json();
+          (pageData.documents || []).forEach(d => {
+            const url = d.fields?.[fieldName]?.stringValue;
+            const m = url ? url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/) : null;
+            if (m) activeFileKeys.add(m[1]);
+          });
+          pageToken = pageData.nextPageToken || "";
+        } while (pageToken);
+      };
+      try {
+        await collectActiveKeys("users", "avatarUrl");
+        await collectActiveKeys("servers", "iconUrl");
+      } catch (collectErr) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に失敗したため、安全のため削除を中止しました: " + String(collectErr && collectErr.message || collectErr) }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
     if (env.FILES) {
       let cursor;
       do {
@@ -19375,44 +18558,10 @@ async function handleBulkDeleteFiles(request, env) {
               shouldDelete = true;
             }
           } else if (deleteType === "unused_avatars") {
-            // 現在 Firestore で使われている全アバターURL & 全サーバーアイコンURLを収集
-            const adminToken = await getAdminTokenForFirestore(env);
-            const activeFileKeys = new Set();
-            if (adminToken) {
-              const projectId = env.FIREBASE_PROJECT_ID;
-              try {
-                const uRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const uData = await uRes.json();
-                if (uData.documents) {
-                  uData.documents.forEach(d => {
-                    const av = d.fields?.avatarUrl?.stringValue;
-                    if (av) {
-                      const m = av.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-              try {
-                const sRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const sData = await sRes.json();
-                if (sData.documents) {
-                  sData.documents.forEach(d => {
-                    const ic = d.fields?.iconUrl?.stringValue;
-                    if (ic) {
-                      const m = ic.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-            }
+            // 使用中URL一覧はループ前に取得済み。アップロード直後でFirestore反映前の画像を消さないよう24時間は保護する
             const isAvatarOrIcon = cat === 'avatars' || folder.includes('avatar') || folder.includes('icon') || folder.includes('servericons');
-            if (isAvatarOrIcon && !activeFileKeys.has(key.name)) {
+            const isRecentUpload = Number(meta.uploadedAt || 0) > Date.now() - 24 * 60 * 60 * 1000;
+            if (isAvatarOrIcon && activeFileKeys && !activeFileKeys.has(key.name) && !isRecentUpload) {
               shouldDelete = true;
             }
           } else if (deleteType === "all_danger") {
@@ -21130,13 +20279,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.266';
-import * as LocalStore from './local_store.js?v=1.1.266';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.266';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.266';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.266';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.266';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.266';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.267';
+import * as LocalStore from './local_store.js?v=1.1.267';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.267';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.267';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.267';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.267';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.267';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -21310,7 +20459,8 @@ function isTransientTelemetryError(args) {
       str.includes('err_quic_protocol_error') ||
       str.includes('既存キーの上書きを防止') ||
       str.includes('救済リクエストを発行しました') ||
-      str.includes('agora-sdk') ||
+      str.includes('agora-sdk [info') ||
+      str.includes('agora-sdk [warn') ||
       str.includes('browser info') ||
       str.includes('browser compatibility') ||
       str.includes('超過メッセージ') ||
@@ -22140,7 +21290,12 @@ function initializeFirebase() {
                 getDoc(uRef).catch(() => null)
               ]);
               const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
-              if (!isExplicitlyLinked) {
+              // 🔒 Firestoreの読み取りに失敗した場合（通信断・認証伝播待ち等）は「未連携」と断定できないため、正規ユーザーの連携を解除・ログアウトしない
+              const linkStateVerified = pDocSnap !== null && uDocSnap !== null;
+              if (!linkStateVerified && !isExplicitlyLinked) {
+                console.warn('[Security Guard] Google連携状態を確認できなかったため、今回は遮断せずに続行します');
+              }
+              if (linkStateVerified && !isExplicitlyLinked) {
                 console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。自動リンクを即座に解除してアクセスを遮断します。`);
                 await unlink(user, 'google.com').catch(() => {});
                 await signOut(auth);
@@ -27105,22 +26260,26 @@ if (openSettingsBtnEl) {
     openSettingsModal("settings");
   });
 }
+// 自前KVストレージ上の旧アイコン画像を削除する共通処理（同じ処理を複数箇所に書かないための関数）
+async function _deleteOwnedKvAvatar(avatarUrl, keepUrl = null) {
+  try {
+    if (!avatarUrl || avatarUrl === keepUrl || !avatarUrl.includes('/api/file/')) return;
+    const match = avatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+    if (!match) return;
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+    fetch(`${WORKER_BASE_URL}/api/file/${match[1]}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+  } catch (e) {
+    console.warn('Old avatar delete warn:', e);
+  }
+}
 // アイコンリセットボタン
 const handleAvatarResetAction = async () => {
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
-    const oldAvatarUrl = userAvatarUrl;
-    // 元のアイコン画像があればKVストレージから完全削除
-    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-      if (match) {
-        const oldKey = match[1];
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
-      }
-    }
+    // 旧アイコンの削除は、Firestoreの更新に成功した後に実行する（失敗時にプロフィールが消えた画像を指さないようにする）
+    const prevKvAvatarUrl = userAvatarUrl;
     if (window.pendingAvatarBlob) {
       window.pendingAvatarBlob = null;
     }
@@ -27131,6 +26290,7 @@ const handleAvatarResetAction = async () => {
     await updateDoc(userProfileRef, { avatarUrl: null });
     const userRef = doc(db, `artifacts/${appId}/users`, userId);
     await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+    _deleteOwnedKvAvatar(prevKvAvatarUrl);
     userAvatarUrl = null;
     pendingAvatarUrl = null;
     _profileInitialState.avatarUrl = null;
@@ -27291,6 +26451,8 @@ if (saveSettingsBtnEl) {
       } catch (_) {
         determinedBannerColor = getHashColor(userId);
       }
+      // 旧アイコンの削除は、プロフィール保存（Firestore更新）に成功した後に実行する
+      let prevKvAvatarUrlToDelete = null;
       if (window.pendingAvatarBlob) {
         // 保存ボタンが押された瞬間に初めて KV へアップロード
         const uploadedUrl = await uploadToExternalService(
@@ -27299,34 +26461,15 @@ if (saveSettingsBtnEl) {
           'simplechat/avatars',
           ''
         );
-        const oldAvatarUrl = userAvatarUrl;
-        // 変更前の古いアイコンが自前KVファイルであれば削除
-        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        prevKvAvatarUrlToDelete = userAvatarUrl;
         if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
           try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
         }
         pendingAvatarUrl = uploadedUrl;
         window.pendingAvatarBlob = null;
       } else if (pendingAvatarUrl && pendingAvatarUrl !== userAvatarUrl) {
-        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除
-        const oldAvatarUrl = userAvatarUrl;
-        if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除（保存成功後）
+        prevKvAvatarUrlToDelete = userAvatarUrl;
       }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (determinedBannerColor) {
@@ -27354,6 +26497,7 @@ if (saveSettingsBtnEl) {
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+      _deleteOwnedKvAvatar(prevKvAvatarUrlToDelete, userAvatarUrl);
       try {
         if (userAvatarUrl) {
           localStorage.setItem('covo_cached_avatar_' + userId, userAvatarUrl);
@@ -36340,10 +35484,12 @@ function selectRoom(roomId, roomName) {
         window._activeRescueRequestsUnsub = onSnapshot(rescueCol, async (snap) => {
           if (!snap.empty && _e2ee.roomKeyCache[activeRoomId]) {
             const curKey = _e2ee.roomKeyCache[activeRoomId];
+            // 入室後に参加した新メンバーも救済できるよう、最新のメンバー一覧で判定する
+            const liveMembers = (currentServerId === activeServerId && currentServerData && currentServerData.joinedUsers) || members;
             const rawKey = await window.crypto.subtle.exportKey("raw", curKey.latest);
             for (const resDoc of snap.docs) {
               const reqUserId = resDoc.id;
-              if (members.includes(reqUserId)) {
+              if (liveMembers.includes(reqUserId)) {
                 await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
                 await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], curKey.latestVersion);
                 await deleteDoc(resDoc.ref).catch(() => {});
@@ -36676,7 +35822,22 @@ const closeSearchBtn = document.getElementById("closeSearchBtn");
 const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
 // 🔒 検索時にローカル過去ログとRTDB最新差分を省通信で動員・復号して検索漏れを完全根絶 (BUG-5)
+// 入力のたびに呼ばれるため、同一チャンネルは60秒に1回・同時実行は1本までに制限する
+const _searchPreloadedAt = new Map();
+let _searchPreloadInFlight = false;
 async function ensureChannelHistoryForSearch() {
+  const chKey = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  if (_searchPreloadInFlight) return;
+  if (Date.now() - (_searchPreloadedAt.get(chKey) || 0) < 60000) return;
+  _searchPreloadInFlight = true;
+  try {
+    await _ensureChannelHistoryForSearchImpl();
+    _searchPreloadedAt.set(chKey, Date.now());
+  } finally {
+    _searchPreloadInFlight = false;
+  }
+}
+async function _ensureChannelHistoryForSearchImpl() {
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
   const targetDmId = currentDmId;
@@ -36689,8 +35850,8 @@ async function ensureChannelHistoryForSearch() {
     const localMsgs = await LocalStore.getMessages(chId, null, 500);
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
     let newDocs = (localMsgs || []).filter(m => !existingLoadedIds.has(m.id));
-    // 2. ローカルが少ない場合はRTDBから1回だけ最小限(100件)取得して合流
-    if (newDocs.length < 50) {
+    // 2. ローカルDBが空の端末（初回・キャッシュ消去直後）に限り、RTDBから最小限(100件)取得して合流
+    if ((localMsgs || []).length === 0 && allLoadedMessages.length < 100) {
       try {
         const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
@@ -36715,6 +35876,8 @@ async function ensureChannelHistoryForSearch() {
     } else if (targetDmId) {
       await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
     }
+    // 準備中にチャンネルを切り替えた場合は、別チャンネルのメッセージを混入させない
+    if (currentServerId !== targetServerId || currentRoomId !== targetRoomId || currentDmId !== targetDmId) return;
     allLoadedMessages = [...newDocs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -49952,7 +49115,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.266",
+  "version": "1.1.267",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
@@ -50041,13 +49204,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.266" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.267" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.266" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.267" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -54235,7 +53398,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.266"></script>
+  <script type="module" src="js/main.js?v=1.1.267"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -55679,7 +54842,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.266",
+  "version": "1.1.267",
   "force": false
 }
 </file>

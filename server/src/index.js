@@ -214,8 +214,6 @@ export default {
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
         return await handleSyncRtdb(request, env);
       }
-        return await handleSyncRtdb(request, env);
-      }
       if (url.pathname === "/api/agoraToken" && (request.method === "GET" || request.method === "POST")) {
         return await handleAgoraToken(request, env, url);
       }
@@ -2435,6 +2433,42 @@ async function handleBulkDeleteFiles(request, env) {
     const deleteType = new URL(request.url).searchParams.get("deleteType") || "all_safe";
 
     let kvDeleted = 0;
+    // 🔒 未使用アイコン削除: 「使用中URL一覧」はループ前に1回だけ全件取得し、取得に失敗したら何も削除せず中止する
+    let activeFileKeys = null;
+    if (deleteType === "unused_avatars") {
+      const adminToken = await getAdminTokenForFirestore(env);
+      if (!adminToken) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に必要な認証を取得できなかったため、安全のため削除を中止しました" }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+      const projectId = env.FIREBASE_PROJECT_ID;
+      activeFileKeys = new Set();
+      const collectActiveKeys = async (collectionName, fieldName) => {
+        let pageToken = "";
+        do {
+          const res = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/${collectionName}?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`, {
+            headers: { "Authorization": `Bearer ${adminToken}` }
+          });
+          if (!res.ok) throw new Error(`${collectionName} の取得に失敗しました (HTTP ${res.status})`);
+          const pageData = await res.json();
+          (pageData.documents || []).forEach(d => {
+            const url = d.fields?.[fieldName]?.stringValue;
+            const m = url ? url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/) : null;
+            if (m) activeFileKeys.add(m[1]);
+          });
+          pageToken = pageData.nextPageToken || "";
+        } while (pageToken);
+      };
+      try {
+        await collectActiveKeys("users", "avatarUrl");
+        await collectActiveKeys("servers", "iconUrl");
+      } catch (collectErr) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に失敗したため、安全のため削除を中止しました: " + String(collectErr && collectErr.message || collectErr) }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
     if (env.FILES) {
       let cursor;
       do {
@@ -2443,9 +2477,7 @@ async function handleBulkDeleteFiles(request, env) {
           const meta = key.metadata || {};
           const folder = (meta.folder || '').toLowerCase();
           const cat = categorizeKvFile(meta);
-
           let shouldDelete = false;
-
           if (deleteType === "messages_only" || deleteType === "all_safe") {
             // アイコンとスタンプは100%保護し、チャット添付ファイルのみ削除
             if (cat !== "avatars" && cat !== "stamps" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
@@ -2468,44 +2500,10 @@ async function handleBulkDeleteFiles(request, env) {
               shouldDelete = true;
             }
           } else if (deleteType === "unused_avatars") {
-            // 現在 Firestore で使われている全アバターURL & 全サーバーアイコンURLを収集
-            const adminToken = await getAdminTokenForFirestore(env);
-            const activeFileKeys = new Set();
-            if (adminToken) {
-              const projectId = env.FIREBASE_PROJECT_ID;
-              try {
-                const uRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const uData = await uRes.json();
-                if (uData.documents) {
-                  uData.documents.forEach(d => {
-                    const av = d.fields?.avatarUrl?.stringValue;
-                    if (av) {
-                      const m = av.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-              try {
-                const sRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const sData = await sRes.json();
-                if (sData.documents) {
-                  sData.documents.forEach(d => {
-                    const ic = d.fields?.iconUrl?.stringValue;
-                    if (ic) {
-                      const m = ic.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-            }
+            // 使用中URL一覧はループ前に取得済み。アップロード直後でFirestore反映前の画像を消さないよう24時間は保護する
             const isAvatarOrIcon = cat === 'avatars' || folder.includes('avatar') || folder.includes('icon') || folder.includes('servericons');
-            if (isAvatarOrIcon && !activeFileKeys.has(key.name)) {
+            const isRecentUpload = Number(meta.uploadedAt || 0) > Date.now() - 24 * 60 * 60 * 1000;
+            if (isAvatarOrIcon && activeFileKeys && !activeFileKeys.has(key.name) && !isRecentUpload) {
               shouldDelete = true;
             }
           } else if (deleteType === "all_danger") {
