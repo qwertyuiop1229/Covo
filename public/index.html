@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.267" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.268" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.267" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.268" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -272,9 +272,13 @@
         s.includes('could not find callback id') ||
         s.includes('tracking prevention') ||
         s.includes('trackingprevention') ||
+        s.includes('openwindowsdownloadmodal is not defined') ||
+        s.includes('openwindowsdownloadmodal') ||
         s.includes('openpastversionsmodal is not defined') ||
         s.includes('emergencycheckupdate is not defined') ||
         s.includes('pdfjslib is not defined') ||
+        s.includes('direct download failed') ||
+        s.includes('load failed') ||
         s.includes('到着を待機します') ||
         s.includes('dm鍵を生成済みです') ||
         s.includes('geostudy') ||
@@ -302,6 +306,38 @@
         return false;
       };
     }
+
+    // グローバル関数の未定義クラッシュ (ReferenceError: openWindowsDownloadModal is not defined) を防止する先行定義
+    window.openWindowsDownloadModal = window.openWindowsDownloadModal || function () {
+      const ua = navigator.userAgent || '';
+      const isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+      const isAndroid = /android/i.test(ua);
+
+      if (isIos && isSafari) {
+        const iosModal = document.getElementById('iosPwaGuideModal');
+        if (iosModal) {
+          iosModal.classList.remove('hidden');
+          return;
+        }
+      }
+
+      if (isAndroid && (window.deferredPwaPrompt || window.__deferredPwaPrompt)) {
+        const promptEvent = window.deferredPwaPrompt || window.__deferredPwaPrompt;
+        promptEvent.prompt();
+        promptEvent.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted' && typeof alertMessage === 'function') {
+            alertMessage('ホーム画面に追加しました！', 'success');
+          }
+          window.deferredPwaPrompt = null;
+          window.__deferredPwaPrompt = null;
+        });
+        return;
+      }
+
+      const modal = document.getElementById('windowsDownloadModal');
+      if (modal) modal.classList.remove('hidden');
+    };
 
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
@@ -851,6 +887,21 @@
         setTimeout(function() { splash.remove(); }, 300);
       }
     }, 8000);
+    // フォールバック（Safari等でIndexedDBや通信待機が長引いた場合、12秒でログイン画面を先行表示し真っ白フリーズを解除）
+    setTimeout(function() {
+      const isAnyUiShown = document.body.classList.contains("auth-ready") ||
+                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
+                           document.getElementById("appContainer")?.classList.contains("hidden") === false ||
+                           document.getElementById("authContainer")?.classList.contains("hidden") === false ||
+                           document.getElementById("emergencyRecoveryOverlay")?.classList.contains("hidden") === false;
+      if (!isAnyUiShown) {
+        const authContainer = document.getElementById("authContainer");
+        if (authContainer) {
+          authContainer.classList.remove("hidden");
+          console.warn('[Watchdog] 起動待機が長時間に及んだため、ログイン画面を先行表示しました。');
+        }
+      }
+    }, 12000);
     setTimeout(function() {
       const isUiVisible = document.body.classList.contains("auth-ready") ||
                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
@@ -1071,7 +1122,7 @@
                 <div class="text-[10px] text-gray-400 truncate">管理者にフィードバック</div>
               </div>
             </button>
-            <button onclick="openWindowsDownloadModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+            <button onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
               <div class="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm flex-shrink-0">
                 <i class="fab fa-windows"></i>
               </div>
@@ -1226,7 +1277,7 @@
           <i class="fas fa-circle-question"></i>
         </button>
         <!-- Web版専用: Windowsアプリ ダウンロードボタン (Tauri環境以外で表示) -->
-        <button id="titleBarDownloadAppBtn" onclick="openWindowsDownloadModal()" class="titlebar-action-btn text-emerald-500 hover:text-emerald-600" title="Windows版アプリを取得" style="display: none;">
+        <button id="titleBarDownloadAppBtn" onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" class="titlebar-action-btn text-emerald-500 hover:text-emerald-600" title="Windows版アプリを取得" style="display: none;">
           <i class="fas fa-download"></i>
         </button>
 
@@ -3471,7 +3522,7 @@
           </div>
 
           <!-- Web版専用: Windowsアプリ ダウンロードボタン (↓) -->
-          <div class="discord-server-item group mt-1" id="discordDownloadAppBtn" onclick="openWindowsDownloadModal()" title="Windowsアプリをダウンロード" style="display: none;">
+          <div class="discord-server-item group mt-1" id="discordDownloadAppBtn" onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" title="Windowsアプリをダウンロード" style="display: none;">
             <div class="discord-server-pill"></div>
             <div class="discord-server-icon discord-nav-action-icon text-emerald-500 hover:text-white hover:bg-emerald-500">
               <i class="fas fa-download text-lg"></i>
@@ -4448,7 +4499,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.267"></script>
+  <script type="module" src="js/main.js?v=1.1.268"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
