@@ -1,7 +1,14 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
-  content: ["./public/index.html", "./public/**/*.html", "./public/css/styles.css", "./public/js/**/*.js"],
+  content: [
+    // tailwind.safelist.html は public/index.html と public/js/main.js から
+    // 全クラス名を抽出して生成した軽量スキャン用ファイル。
+    // 直接 index.html (456KB) や main.js (1.5MB) をスキャンすると
+    // Tailwind v3 の Zone Allocation OOM が発生するため、このファイルのみスキャンする。
+    // クラスが追加されたら: node scripts/gen_tailwind_safelist.mjs を再実行すること。
+    "./tailwind.safelist.html",
+  ],
   theme: {
     extend: {
       transitionTimingFunction: {

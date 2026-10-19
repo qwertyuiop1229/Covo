@@ -60,7 +60,14 @@ Write-Host ''
 
 # [0/5] Tailwind CSS
 Write-Host '[0/5] Building Tailwind CSS...' -ForegroundColor Green
-node_modules\.bin\tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify
+# NOTE: Tailwind CLI (tailwindcss.cmd) は index.html (456KB) スキャン時に Zone Allocation OOM でクラッシュするため
+#       PostCSS を直接呼び出す scripts/build_tailwind.mjs を使用する。
+#       クラスが追加された場合: node scripts/build_tailwind.mjs --regen
+& "C:\Program Files\nodejs\node.exe" scripts\build_tailwind.mjs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'ERROR: Tailwind CSS build failed!' -ForegroundColor Red
+    exit 1
+}
 
 # [1/5] version.json + tauri.conf.json + index.html
 $vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
