@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.271';
-import * as LocalStore from './local_store.js?v=1.1.271';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.271';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.271';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.271';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.271';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.271';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.273';
+import * as LocalStore from './local_store.js?v=1.1.273';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.273';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.273';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.273';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.273';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.273';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -18778,6 +18778,17 @@ if (menuMentionBtn) {
   });
 }
 
+const menuVoiceRecordBtn = document.getElementById("menuVoiceRecordBtn");
+if (menuVoiceRecordBtn) {
+  menuVoiceRecordBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    plusMenuPopup.classList.add("hidden");
+    if (typeof window.startVoiceRecording === 'function') {
+      window.startVoiceRecording();
+    }
+  });
+}
+
 document.addEventListener("click", (e) => {
   if (plusMenuPopup && e.target !== plusMenuButton && !plusMenuButton.contains(e.target)) {
     plusMenuPopup.classList.add("hidden");
@@ -19187,9 +19198,16 @@ window.createAudioPlayerCard = function({
 
   let resolvedSrc = fileUrl || '';
   let isResolving = false;
+  let _srcSet = false; // fileUrlが渡された場合に即時srcを設定済みかのフラグ
+
+  // fileUrlが最初から提供されている場合は即時srcを設定
+  if (resolvedSrc) {
+    audioEl.src = resolvedSrc;
+    _srcSet = true;
+  }
 
   const ensureSourceLoaded = async () => {
-    if (resolvedSrc && audioEl.src) return true;
+    if (_srcSet && resolvedSrc) return true;
     if (onResolveUrl && !resolvedSrc) {
       isResolving = true;
       playIcon.className = 'fas fa-spinner fa-spin text-sm';
@@ -19197,6 +19215,7 @@ window.createAudioPlayerCard = function({
         resolvedSrc = await onResolveUrl();
         if (resolvedSrc) {
           audioEl.src = resolvedSrc;
+          _srcSet = true;
           return true;
         }
       } catch (err) {
@@ -19208,11 +19227,12 @@ window.createAudioPlayerCard = function({
         isResolving = false;
         playIcon.className = audioEl.paused ? 'fas fa-play text-sm ml-0.5 audio-play-icon' : 'fas fa-pause text-sm audio-play-icon';
       }
-    } else if (resolvedSrc && !audioEl.src) {
+    } else if (resolvedSrc && !_srcSet) {
       audioEl.src = resolvedSrc;
+      _srcSet = true;
       return true;
     }
-    return false;
+    return _srcSet;
   };
 
   playBtn.addEventListener('click', async (e) => {

@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.271" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.273" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.271" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.273" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -3980,17 +3980,15 @@
               <!-- メッセージはここに動的に追加されます -->
             </div>
             <button id="jumpModeExitBtn"
-                class="absolute bottom-4 right-6 bg-[#5865F2] text-white border-0 rounded-full shadow-xl z-50
-                       flex items-center justify-center gap-1.5 px-4 h-9
-                       hover:bg-[#4752c4] active:bg-[#3c45a5]
+                class="absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200
+                       border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50
+                       flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700
                        transition-all duration-300 opacity-0 pointer-events-none translate-y-3"
-                style="min-width:120px;font-size:13px;font-weight:600;"
                 onclick="window.exitJumpMode()">
-                <i class="fas fa-arrow-down" style="font-size:11px;"></i>
-                <span>最新へ移動</span>
+                <i class="fas fa-arrow-down text-xl"></i>
                 <span id="jumpModeUnreadBadge"
-                      class="hidden bg-white text-[#5865F2] rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none ml-0.5"
-                      style="min-width:18px;text-align:center;">0</span>
+                      class="hidden absolute -top-1 -right-1 bg-[#5865F2] text-white rounded-full text-[10px] font-bold leading-none flex items-center justify-center"
+                      style="min-width:18px;height:18px;padding:0 4px;">0</span>
               </button>
           </div>
 
@@ -4068,6 +4066,10 @@
               <button id="menuMentionBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#1e1f22] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-gray-300 transition-colors group">
                 <i class="fas fa-at text-slate-400 dark:text-gray-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
               </button>
+              <div class="plus-menu-divider h-px bg-gray-100 dark:bg-gray-700 my-1.5 mx-2"></div>
+              <button id="menuVoiceRecordBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#1e1f22] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-gray-300 transition-colors group">
+                <i class="fas fa-microphone text-slate-400 dark:text-gray-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ボイスメッセージ</span>
+              </button>
             </div>
             <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#2b2d31] rounded-none border border-b-0 border-gray-200 dark:border-[#1e1f22] w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
             
@@ -4077,7 +4079,6 @@
 
                   class="fas fa-paperclip"></i></button>
               <button id="stickerButton" class="input-side-btn" title="スタンプ" disabled><i class="far fa-smile"></i></button>
-              <button id="voiceRecordButton" class="input-side-btn voice-record-btn" title="ボイスメッセージを録音" disabled><i class="fas fa-microphone"></i></button>
               <input type="file" id="fileAttachInput" class="hidden" multiple />
               <div id="messageInputInner" style="flex:1;min-width:0;">
                 <textarea id="messageInput" placeholder="メッセージを入力" class="flex-1 w-full focus:outline-none"
@@ -4521,7 +4522,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.271"></script>
+  <script type="module" src="js/main.js?v=1.1.273"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -6009,5 +6010,16 @@
   <link rel="stylesheet" href="css/geo_study.css" />
   <script src="js/geo_study.js" defer></script>
   <script src="js/geoguessr_locations.js" defer></script>
+
+  <!-- 音声ファイルプレビューモーダル -->
+  <div id="audioPreviewModal" class="hidden fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4" style="display:none;" onclick="if(event.target===this)window.closeAudioPreviewModal()">
+    <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-md p-4 relative">
+      <div class="flex items-center justify-between mb-3">
+        <span id="modalAudioTitle" class="text-sm font-bold text-gray-800 dark:text-[#dbdee1] truncate flex-1 mr-2">音楽ファイル</span>
+        <button onclick="window.closeAudioPreviewModal()" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#383a40] text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors flex-shrink-0" title="閉じる"><i class="fas fa-times text-sm"></i></button>
+      </div>
+      <div id="modalAudioPlayerContainer"></div>
+    </div>
+  </div>
 </body>
 </html>
