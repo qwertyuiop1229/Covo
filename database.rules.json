@@ -112,11 +112,11 @@
           }
         },
         "error_reports": {
-          ".read": "auth != null",
-          ".write": true,
+          ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+          ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
           "$docId": {
-            ".read": "auth != null",
-            ".write": true
+            ".read": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "newData.exists() || (auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()))"
           }
         },
         "userAffinity": {
@@ -134,7 +134,7 @@
         "recovery_index": {
           "$emailHash": {
             ".read": "auth != null",
-            ".write": "auth != null"
+            ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists()) && (!newData.exists() || newData.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
           }
         },
         "admin_recovery_requests": {

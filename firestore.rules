@@ -125,8 +125,7 @@ service cloud.firestore {
           request.resource.data.message is string &&
           request.resource.data.message.size() > 0 &&
           request.resource.data.message.size() <= 8000;
-        allow read: if isAuthenticated();
-        allow delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
       }
 
       // 緊急アカウントリカバリー保管庫
@@ -498,19 +497,25 @@ service cloud.firestore {
 
       // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
       match /vc_signaling/{sigDocId} {
-        allow read, delete: if isAuthenticated();
-        allow create, update: if isAuthenticated() &&
+        allow read, delete: if isAuthenticated() &&
+          (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() &&
           request.resource.data.fromUid == request.auth.uid &&
           request.resource.data.toUid is string;
+        allow update: if isAuthenticated() &&
+          (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId));
       }
     }
 
     // ルート直下 VC シグナリング (フォールバック用)
     match /vc_signaling/{sigDocId} {
-      allow read, delete: if isAuthenticated();
-      allow create, update: if isAuthenticated() &&
+      allow read, delete: if isAuthenticated() &&
+        (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if isAuthenticated() &&
         request.resource.data.fromUid == request.auth.uid &&
         request.resource.data.toUid is string;
+      allow update: if isAuthenticated() &&
+        (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
     }
 
   }

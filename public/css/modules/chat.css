@@ -400,22 +400,28 @@
       cursor: not-allowed;
     }
 
-    .send-btn {
-      background-color: #374151 !important;
-      color: white !important;
-      border-color: #374151 !important;
+    .send-btn:not(:disabled) {
+      background-color: #5865F2 !important;
+      color: #ffffff !important;
+      border-color: #5865F2 !important;
     }
 
-    .send-btn:hover:not(:disabled) {
-      background-color: #1f2937 !important;
-      border-color: #1f2937 !important;
-      color: white !important;
+    .send-btn:not(:disabled):hover {
+      background-color: #4752c4 !important;
+      border-color: #4752c4 !important;
+      color: #ffffff !important;
+    }
+
+    .send-btn:not(:disabled):active {
+      background-color: #3c45a5 !important;
+      border-color: #3c45a5 !important;
     }
 
     .send-btn:disabled {
       background-color: #e5e7eb !important;
       border-color: #e5e7eb !important;
       color: #9ca3af !important;
+      cursor: not-allowed;
     }
 
     #messageInputInner {

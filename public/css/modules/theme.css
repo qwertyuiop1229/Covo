@@ -772,6 +772,53 @@
       color: #dbdee1 !important;
       border-color: transparent !important;
     }
+    /* ===== Discord Dark: 入力エリア追加調整 ===== */
+    body.discord-dark-theme #messageInputInner {
+      background-color: #383a40 !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+    body.discord-dark-theme #messageInputInner:focus-within {
+      border-color: #404249 !important;
+      box-shadow: none !important;
+    }
+    body.discord-dark-theme textarea#messageInput { color: #dbdee1 !important; }
+    body.discord-dark-theme textarea#messageInput::placeholder { color: #4e5058 !important; }
+    body.discord-dark-theme .input-side-btn {
+      background: #2b2d31 !important;
+      border-color: #383a40 !important;
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .input-side-btn:hover:not(:disabled) {
+      background: #383a40 !important;
+      border-color: #404249 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .input-side-btn:disabled {
+      background: #2b2d31 !important;
+      border-color: #2b2d31 !important;
+      color: #4e5058 !important;
+    }
+    body.discord-dark-theme .send-btn:not(:disabled) {
+      background-color: #5865F2 !important;
+      border-color: #5865F2 !important;
+      color: #ffffff !important;
+    }
+    body.discord-dark-theme .send-btn:not(:disabled):hover {
+      background-color: #4752c4 !important;
+      border-color: #4752c4 !important;
+    }
+    body.discord-dark-theme .send-btn:disabled {
+      background-color: #2b2d31 !important;
+      border-color: #2b2d31 !important;
+      color: #4e5058 !important;
+    }
+    body.discord-dark-theme #replyingToContainer {
+      background: #2b2d31 !important;
+      border-left-color: #383a40 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme #typingIndicator { color: #4e5058; }
     body.discord-dark-theme #userPanel {
       background-color: #232428 !important;
       color: #f2f3f5 !important;
@@ -1139,5 +1186,359 @@
     body.dark-server-theme .vc-bar-btn:hover {
       background: rgba(255, 255, 255, 0.08) !important;
       color: #f1f5f9 !important;
+    }
+
+    /* =========================================================================
+       🎵 Phase 1 コンポーネント (オーディオ波形・添付カード・コード・スポイラー)
+       テーマ調和システム (Dark Navy / Discord Dark / Light)
+       ========================================================================= */
+
+    /* 1. ダークネイビーテーマ (body.dark-server-theme) */
+    body.dark-server-theme .covo-audio-player-card,
+    body.dark-server-theme .covo-attachment-card {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .covo-audio-player-card:hover,
+    body.dark-server-theme .covo-attachment-card:hover {
+      border-color: rgba(99, 102, 241, 0.5) !important;
+    }
+    body.dark-server-theme .covo-audio-player-card .audio-card-download-btn,
+    body.dark-server-theme .covo-attachment-card .attachment-preview-btn,
+    body.dark-server-theme .covo-attachment-card .attachment-download-btn {
+      background-color: #0f172a !important;
+      color: #cbd5e1 !important;
+    }
+    body.dark-server-theme .covo-audio-player-card .audio-card-download-btn:hover,
+    body.dark-server-theme .covo-attachment-card .attachment-preview-btn:hover,
+    body.dark-server-theme .covo-attachment-card .attachment-download-btn:hover {
+      background-color: #5865F2 !important;
+      color: #ffffff !important;
+    }
+    body.dark-server-theme .covo-audio-player-card .audio-wave-bar:not(.bg-\[\#5865F2\]) {
+      background-color: rgba(255, 255, 255, 0.16) !important;
+    }
+    body.dark-server-theme .covo-audio-player-card .audio-speed-btn {
+      background-color: #0f172a !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .covo-audio-player-card .audio-speed-btn:hover {
+      background-color: #334155 !important;
+      color: #f1f5f9 !important;
+    }
+
+    /* ダークネイビーでのコードブロック調和 */
+    body.dark-server-theme .code-block-container {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme .code-block-container > div:first-child {
+      background-color: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #94a3b8 !important;
+    }
+    body.dark-server-theme .code-block-container pre {
+      color: #e2e8f0 !important;
+    }
+    body.dark-server-theme .code-block-fade {
+      background-image: linear-gradient(to top, #1e293b, transparent) !important;
+    }
+    body.dark-server-theme .code-expand-toggle {
+      background-color: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      color: #818cf8 !important;
+    }
+    body.dark-server-theme .code-expand-toggle:hover {
+      background-color: #1e293b !important;
+      color: #a5b4fc !important;
+    }
+
+    /* ===== Discord Dark: コードブロック調和 ===== */
+    body.discord-dark-theme .code-block-container {
+      background-color: #2b2d31 !important;
+      border-color: #1e1f22 !important;
+    }
+    body.discord-dark-theme .code-block-container > div:first-child {
+      background-color: #1e1f22 !important;
+      border-color: rgba(0, 0, 0, 0.3) !important;
+      color: #949ba4 !important;
+    }
+    body.discord-dark-theme .code-block-container pre {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .code-block-fade {
+      background-image: linear-gradient(to top, #2b2d31, transparent) !important;
+    }
+    body.discord-dark-theme .code-expand-toggle {
+      background-color: #1e1f22 !important;
+      border-color: rgba(0, 0, 0, 0.3) !important;
+      color: #5865f2 !important;
+    }
+    body.discord-dark-theme .code-expand-toggle:hover {
+      background-color: #383a40 !important;
+      color: #7983f5 !important;
+    }
+
+    /* ===== ダークネイビー: 送信ボタン Blurple 上書き ===== */
+    body.dark-server-theme .send-btn:not(:disabled) {
+      background-color: #5865F2 !important;
+      border-color: #5865F2 !important;
+      color: #ffffff !important;
+    }
+    body.dark-server-theme .send-btn:not(:disabled):hover {
+      background-color: #4752c4 !important;
+      border-color: #4752c4 !important;
+    }
+    body.dark-server-theme .send-btn:disabled {
+      background-color: #1e293b !important;
+      border-color: #1e293b !important;
+      color: #4e5058 !important;
+    }
+
+    /* ===== ボイスレコーダーボタン: 録音中アニメーション ===== */
+    .voice-record-btn.recording {
+      color: #ef4444 !important;
+      animation: voice-record-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes voice-record-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.08); }
+    }
+
+    /* ダークネイビーでのプレビューモーダル & スポイラー調和 */
+    body.dark-server-theme #textFilePreviewModal > div,
+    body.dark-server-theme #audioPreviewModal > div {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6) !important;
+    }
+    body.dark-server-theme #textFilePreviewModal > div > div:first-child {
+      background-color: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body.dark-server-theme #textFilePreviewModal .bg-gray-950 {
+      background-color: #0b1120 !important;
+    }
+    body.dark-server-theme #audioPreviewModal .shadow-inner {
+      background-color: #1e293b !important;
+    }
+    body.dark-server-theme .covo-spoiler-inline.text-transparent {
+      background-color: #0f172a !important;
+    }
+
+    /* 2. Discordダークテーマ (body.discord-dark-theme) */
+    body.discord-dark-theme .covo-audio-player-card,
+    body.discord-dark-theme .covo-attachment-card {
+      background-color: #2b2d31 !important;
+      border-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .covo-audio-player-card .audio-card-download-btn,
+    body.discord-dark-theme .covo-attachment-card .attachment-preview-btn,
+    body.discord-dark-theme .covo-attachment-card .attachment-download-btn {
+      background-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .covo-audio-player-card .audio-wave-bar:not(.bg-\[\#5865F2\]) {
+      background-color: rgba(78, 80, 88, 0.6) !important;
+    }
+
+    /* 3. ライトテーマ (body:not(.dark-server-theme):not(.discord-dark-theme)) */
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-audio-player-card,
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-attachment-card {
+      background-color: #f2f3f5 !important;
+      border-color: #e3e5e8 !important;
+      color: #313338 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-audio-player-card .audio-card-download-btn,
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-attachment-card .attachment-preview-btn,
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-attachment-card .attachment-download-btn {
+      background-color: #ffffff !important;
+      color: #4e5058 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-audio-player-card .audio-wave-bar:not(.bg-\[\#5865F2\]) {
+      background-color: #d1d5db !important;
+    }
+
+    /* =========================================================================
+       🎙️ Phase 2 コンポーネント (ボイス録音オーバーレイ・ユーザー音量・通話デバイス)
+       テーマ調和システム (Dark Navy / Discord Dark / Light)
+       ========================================================================= */
+
+    /* 1. ダークネイビーテーマ (body.dark-server-theme) */
+    body.dark-server-theme #voiceRecordOverlay {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    }
+    body.dark-server-theme #voiceRecordTimer {
+      color: #f1f5f9 !important;
+    }
+    body.dark-server-theme .covo-user-volume-popover {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #e2e8f0 !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    /* 2. Discordダークテーマ (body.discord-dark-theme) */
+    body.discord-dark-theme #voiceRecordOverlay {
+      background-color: #2b2d31 !important;
+      border-color: #1e1f22 !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+    }
+    body.discord-dark-theme #voiceRecordTimer {
+      color: #dbdee1 !important;
+    }
+    body.discord-dark-theme .covo-user-volume-popover {
+      background-color: #2b2d31 !important;
+      border-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4) !important;
+    }
+    body.discord-dark-theme .discord-device-menu {
+      background: #2b2d31 !important;
+      border-color: #1e1f22 !important;
+      color: #dbdee1 !important;
+    }
+
+    /* 3. ライトテーマ (body:not(.dark-server-theme):not(.discord-dark-theme)) */
+    body:not(.dark-server-theme):not(.discord-dark-theme) #voiceRecordOverlay {
+      background-color: #f2f3f5 !important;
+      border-color: #e3e5e8 !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) #voiceRecordTimer {
+      color: #313338 !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-user-volume-popover {
+      background-color: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      color: #313338 !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .discord-device-menu {
+      background: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      color: #313338 !important;
+    }
+
+    /* 音量ボタン共通スタイル */
+    .discord-tile-vol-btn,
+    .vc-tile-vol-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .discord-tile-vol-btn:hover,
+    .vc-tile-vol-btn:hover {
+      background: #5865F2;
+      border-color: #5865F2;
+      transform: scale(1.08);
+    }
+
+    /* =====================================================================
+       🚀 Phase 3: Discord UX Parity (Jump to Present Pill, OGP Embeds, Drafts)
+       ===================================================================== */
+
+    /* 1. Discord本家準拠 "Jump to Present" フローティングピル */
+    .covo-jump-to-present-pill {
+      background-color: #2b2d31;
+      border: 1px solid #1e1f22;
+      color: #dbdee1;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .covo-jump-to-present-pill:hover {
+      background-color: #35373c;
+      color: #ffffff;
+      border-color: #35373c;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      transform: translateY(-1px) scale(1.02);
+    }
+    .covo-jump-to-present-pill:active {
+      transform: translateY(1px) scale(0.98);
+    }
+    .covo-jump-to-present-pill i {
+      color: #5865f2;
+    }
+    .covo-jump-to-present-pill:hover i {
+      color: #7983f5;
+    }
+
+    body.dark-server-theme .covo-jump-to-present-pill {
+      background-color: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+      color: #e2e8f0 !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+    }
+    body.dark-server-theme .covo-jump-to-present-pill:hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-jump-to-present-pill {
+      background-color: #ffffff !important;
+      border-color: #e3e5e8 !important;
+      color: #313338 !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-jump-to-present-pill:hover {
+      background-color: #f2f3f5 !important;
+      color: #060607 !important;
+    }
+
+    /* 2. 下書きインジケーター (Pencil Badge) */
+    .covo-draft-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      animation: fadeIn 0.2s ease-out;
+    }
+    .covo-draft-badge i {
+      filter: drop-shadow(0 1px 2px rgba(245, 158, 11, 0.25));
+    }
+
+    /* 3. OpenGraph (OGP) リンクプレビュー埋め込みカード */
+    .covo-og-embed-card {
+      max-width: 480px;
+      border-radius: 8px;
+      border-left-width: 4px;
+      border-left-style: solid;
+      background-color: #2b2d31;
+      border-top: 1px solid #1e1f22;
+      border-right: 1px solid #1e1f22;
+      border-bottom: 1px solid #1e1f22;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    body.dark-server-theme .covo-og-embed-card {
+      background-color: #1e293b !important;
+      border-top-color: rgba(255, 255, 255, 0.08) !important;
+      border-right-color: rgba(255, 255, 255, 0.08) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    body:not(.dark-server-theme):not(.discord-dark-theme) .covo-og-embed-card {
+      background-color: #f2f3f5 !important;
+      border-top-color: #e3e5e8 !important;
+      border-right-color: #e3e5e8 !important;
+      border-bottom-color: #e3e5e8 !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    }
+    .covo-og-embed-card a:hover {
+      text-decoration: underline;
     }
 
