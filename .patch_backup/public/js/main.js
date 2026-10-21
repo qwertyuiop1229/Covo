@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.266';
-import * as LocalStore from './local_store.js?v=1.1.266';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.266';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.266';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.266';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.266';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.266';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.274';
+import * as LocalStore from './local_store.js?v=1.1.274';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.274';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.274';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.274';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.274';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.274';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -269,7 +269,10 @@ function isTransientTelemetryError(args) {
       str.includes('err_quic_protocol_error') ||
       str.includes('既存キーの上書きを防止') ||
       str.includes('救済リクエストを発行しました') ||
-      str.includes('agora-sdk') ||
+      str.includes('direct download failed') ||
+      str.includes('load failed') ||
+      str.includes('agora-sdk [info') ||
+      str.includes('agora-sdk [warn') ||
       str.includes('browser info') ||
       str.includes('browser compatibility') ||
       str.includes('超過メッセージ') ||
@@ -954,6 +957,13 @@ function hasServerPermission(serverData, targetUid, permission = 'admin') {
 
 // DOM クリーンアップ関数
 function clearMessagesDOM() {
+  if (window._covoCurrentActiveAudio) {
+    try { window._covoCurrentActiveAudio.pause(); } catch (_) {}
+    window._covoCurrentActiveAudio = null;
+  }
+  if (typeof window.cancelVoiceRecording === 'function') {
+    try { window.cancelVoiceRecording(); } catch (_) {}
+  }
   const messagesDisplay = document.getElementById("messagesDisplay");
   if (messagesDisplay) messagesDisplay.innerHTML = '';
 }
@@ -1137,7 +1147,12 @@ function initializeFirebase() {
                 getDoc(uRef).catch(() => null)
               ]);
               const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
-              if (!isExplicitlyLinked) {
+              // 🔒 Firestoreの読み取りに失敗した場合（通信断・認証伝播待ち等）は「未連携」と断定できないため、正規ユーザーの連携を解除・ログアウトしない
+              const linkStateVerified = pDocSnap !== null && uDocSnap !== null;
+              if (!linkStateVerified && !isExplicitlyLinked) {
+                console.warn('[Security Guard] Google連携状態を確認できなかったため、今回は遮断せずに続行します');
+              }
+              if (linkStateVerified && !isExplicitlyLinked) {
                 console.warn(`[Security Guard] メールアドレス(${cleanEmail})はパスワード登録アカウントですが、設定画面からの明示的なGoogle連携が行われていません。自動リンクを即座に解除してアクセスを遮断します。`);
                 await unlink(user, 'google.com').catch(() => {});
                 await signOut(auth);
@@ -4533,7 +4548,7 @@ window.renderStorageFilesGrid = function() {
 };
 
 window.previewStorageFile = function(url, name, type) {
-  if (type === 'image') {
+  if (type === 'image' || (type !== 'video' && type !== 'audio' && /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(name))) {
     const lb = document.getElementById('imageLightbox');
     const lbImg = document.getElementById('lightboxImage');
     const lbDl = document.getElementById('lightboxDownload');
@@ -4554,6 +4569,25 @@ window.previewStorageFile = function(url, name, type) {
       return;
     }
   }
+
+  // 🎵 音楽 / 音声ファイル プレビュー
+  const isAud = type === 'audio' || (typeof window.isAudioFile === 'function' && window.isAudioFile(name, type)) || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|weba|webm|caf|wma|aiff|aif|mid|midi)$/i.test(name);
+  if (isAud) {
+    if (typeof window.openAudioPreviewModal === 'function') {
+      window.openAudioPreviewModal(url, name);
+      return;
+    }
+  }
+
+  // 📄 テキスト / コードファイル プレビュー
+  const isTxt = type === 'code' || (typeof window.isTextFile === 'function' && window.isTextFile(name, type)) || /\.(txt|md|markdown|json|js|ts|py|html|css|sql|rs|csv|log|env|yml|yaml)$/i.test(name);
+  if (isTxt) {
+    if (typeof window.openTextFilePreview === 'function') {
+      window.openTextFilePreview(url, name, false);
+      return;
+    }
+  }
+
   window.open(url, '_blank');
 };
 
@@ -5333,7 +5367,8 @@ window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
   if (!rid) return;
-  if (typeof rid === 'string' && (rid.startsWith('dm_') || rid.includes('_'))) {
+  const isDmId = typeof rid === 'string' && (rid.startsWith('dm_') || (rid.includes('_') && rid.split('_').length === 2 && rid.split('_').includes(userId)));
+  if (isDmId) {
     const cleanDmId = rid.startsWith('dm_') ? rid.substring(3) : rid;
     const parts = cleanDmId.split('_');
     const otherUid = parts.find(id => id !== userId);
@@ -6482,22 +6517,26 @@ if (openSettingsBtnEl) {
   });
 }
 
+// 自前KVストレージ上の旧アイコン画像を削除する共通処理（同じ処理を複数箇所に書かないための関数）
+async function _deleteOwnedKvAvatar(avatarUrl, keepUrl = null) {
+  try {
+    if (!avatarUrl || avatarUrl === keepUrl || !avatarUrl.includes('/api/file/')) return;
+    const match = avatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
+    if (!match) return;
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
+    fetch(`${WORKER_BASE_URL}/api/file/${match[1]}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
+  } catch (e) {
+    console.warn('Old avatar delete warn:', e);
+  }
+}
 // アイコンリセットボタン
 const handleAvatarResetAction = async () => {
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
-    const oldAvatarUrl = userAvatarUrl;
-    // 元のアイコン画像があればKVストレージから完全削除
-    if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-      const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-      if (match) {
-        const oldKey = match[1];
-        const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-        const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-        fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Reset avatar delete warn:', e));
-      }
-    }
+    // 旧アイコンの削除は、Firestoreの更新に成功した後に実行する（失敗時にプロフィールが消えた画像を指さないようにする）
+    const prevKvAvatarUrl = userAvatarUrl;
     if (window.pendingAvatarBlob) {
       window.pendingAvatarBlob = null;
     }
@@ -6508,6 +6547,7 @@ const handleAvatarResetAction = async () => {
     await updateDoc(userProfileRef, { avatarUrl: null });
     const userRef = doc(db, `artifacts/${appId}/users`, userId);
     await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+    _deleteOwnedKvAvatar(prevKvAvatarUrl);
     userAvatarUrl = null;
     pendingAvatarUrl = null;
     _profileInitialState.avatarUrl = null;
@@ -6673,6 +6713,8 @@ if (saveSettingsBtnEl) {
       } catch (_) {
         determinedBannerColor = getHashColor(userId);
       }
+      // 旧アイコンの削除は、プロフィール保存（Firestore更新）に成功した後に実行する
+      let prevKvAvatarUrlToDelete = null;
       if (window.pendingAvatarBlob) {
         // 保存ボタンが押された瞬間に初めて KV へアップロード
         const uploadedUrl = await uploadToExternalService(
@@ -6681,34 +6723,15 @@ if (saveSettingsBtnEl) {
           'simplechat/avatars',
           ''
         );
-        const oldAvatarUrl = userAvatarUrl;
-        // 変更前の古いアイコンが自前KVファイルであれば削除
-        if (oldAvatarUrl && oldAvatarUrl !== uploadedUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        prevKvAvatarUrlToDelete = userAvatarUrl;
         if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
           try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
         }
         pendingAvatarUrl = uploadedUrl;
         window.pendingAvatarBlob = null;
       } else if (pendingAvatarUrl && pendingAvatarUrl !== userAvatarUrl) {
-        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除
-        const oldAvatarUrl = userAvatarUrl;
-        if (oldAvatarUrl && oldAvatarUrl.includes('/api/file/')) {
-          const match = oldAvatarUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-          if (match) {
-            const oldKey = match[1];
-            const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-            const delParams = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&isAssetDelete=1&appId=${encodeURIComponent(appId)}`;
-            fetch(`${WORKER_BASE_URL}/api/file/${oldKey}?${delParams}`, { method: 'DELETE' }).catch(e => console.warn('Old avatar delete warn:', e));
-          }
-        }
+        // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除（保存成功後）
+        prevKvAvatarUrlToDelete = userAvatarUrl;
       }
       const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
       if (determinedBannerColor) {
@@ -6736,6 +6759,7 @@ if (saveSettingsBtnEl) {
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+      _deleteOwnedKvAvatar(prevKvAvatarUrlToDelete, userAvatarUrl);
       try {
         if (userAvatarUrl) {
           localStorage.setItem('covo_cached_avatar_' + userId, userAvatarUrl);
@@ -10693,6 +10717,7 @@ function renderDmConversationsList() {
           <div class="text-[13px] leading-snug truncate ${isUnread ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-[#949ba4]'}">${escapeHtml(nickname)}</div>
           <div class="text-[11px] leading-normal truncate ${isUnread ? 'text-gray-800 dark:text-[#dbdee1] font-semibold' : 'text-gray-400 dark:text-[#80848e]'}" id="dm-preview-${dm.id}">${escapeHtml(previewText)}</div>
         </div>
+        <span class="covo-draft-badge" id="draft-badge-dm_${dm.id}" title="下書きあり" style="display: ${(typeof window.hasDraftForChannel === 'function' && window.hasDraftForChannel(`dm_${dm.id}`)) ? 'inline-flex' : 'none'};"><i class="fas fa-pencil-alt text-[10px] text-amber-500/90 dark:text-amber-400/90 mr-1.5 flex-shrink-0"></i></span>
         ${isUnread ? `
           <div class="dm-unread-badge-wrap flex-shrink-0 flex items-center ml-auto">
             <span class="dm-unread-badge">${dmUnreadCount > 99 ? '99+' : dmUnreadCount}</span>
@@ -10711,6 +10736,7 @@ function renderDmConversationsList() {
     const oldBadge = homeBtn.querySelector('.discord-home-unread-dot');
     if (oldBadge) oldBadge.remove();
   }
+  if (typeof window.updateDraftBadges === 'function') window.updateDraftBadges();
   }
 
   // 🌟 個チャ (DM) 相手のアイコン・名前・オンライン/オフライン状態を画面全体へ即座に反映するリアクティブ同期関数
@@ -10827,6 +10853,16 @@ function renderDmConversationsList() {
   }
 };
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
+  if (typeof window.saveCurrentDraft === 'function') window.saveCurrentDraft();
+  window._covoLastRenderedCount = null;
+  window._covoUnreadScrolledCount = 0;
+  const _pill = document.getElementById("jumpModeExitBtn");
+  if (_pill) {
+    _pill.classList.add("opacity-0", "pointer-events-none", "translate-y-3");
+    _pill.classList.remove("opacity-100", "pointer-events-auto", "translate-y-0");
+  }
+  const _ub = document.getElementById("jumpModeUnreadBadge");
+  if (_ub) { _ub.classList.add("hidden"); _ub.textContent = "0"; }
   if (!targetUid || targetUid === userId) return;
   const currentSession = ++_activeChannelSessionId;
   if (window.rtdbMessagesUnsub) {
@@ -10901,6 +10937,11 @@ function renderDmConversationsList() {
   document.body.classList.remove('discord-home-view', 'discord-dm-view', 'discord-friends-view', 'discord-discover-view');
   document.body.classList.add('discord-dm-chat', 'in-chat-view');
 
+  if (window._covoCurrentActiveAudio) {
+    try { window._covoCurrentActiveAudio.pause(); } catch (_) {}
+    window._covoCurrentActiveAudio = null;
+  }
+
   const sb = document.getElementById("sidebar");
   if (sb && window.innerWidth < 768) sb.classList.add("mobile-hidden");
 
@@ -10923,10 +10964,13 @@ function renderDmConversationsList() {
   if (messageInput) {
     messageInput.placeholder = `@${targetNickname || 'ユーザー'} へのメッセージ`;
     messageInput.disabled = false;
+    if (typeof window.restoreCurrentDraft === 'function') window.restoreCurrentDraft();
   }
+  if (typeof window.cancelVoiceRecording === 'function') window.cancelVoiceRecording();
   if (fileAttachButton) fileAttachButton.disabled = false;
   { const sbtn = document.getElementById('stickerButton'); if (sbtn) sbtn.disabled = false; }
   { const pbtn = document.getElementById('plusMenuButton'); if (pbtn) pbtn.disabled = false; }
+  { const vbtn = document.getElementById('voiceRecordButton'); if (vbtn) vbtn.disabled = false; }
   if (sendMessageButton) sendMessageButton.disabled = false;
 
   const callBtn = document.getElementById('callButton');
@@ -11024,6 +11068,9 @@ function renderDmConversationsList() {
       delete _e2ee._dmKeyPromises[dmId];
       const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
       if (freshKey && allLoadedMessages.length > 0) {
+        allLoadedMessages.forEach(m => {
+          if (m._decryptionFailed) m._decryptionFailed = false;
+        });
         await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
         renderMessagesWithReadReceipts();
       }
@@ -15426,6 +15473,14 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
       const rightContainer = document.createElement("div");
       rightContainer.className = "flex items-center gap-1";
 
+      const draftBadge = document.createElement("span");
+      draftBadge.className = "covo-draft-badge";
+      draftBadge.id = `draft-badge-server_${serverId}_${docSnap.id}`;
+      draftBadge.title = "下書きあり";
+      draftBadge.style.display = (window.hasDraftForChannel && window.hasDraftForChannel(`${serverId}_${docSnap.id}`)) ? "inline-flex" : "none";
+      draftBadge.innerHTML = '<i class="fas fa-pencil-alt text-[10px] text-amber-500/90 dark:text-amber-400/90 mr-1 flex-shrink-0"></i>';
+      rightContainer.appendChild(draftBadge);
+
       const badgeSpan = document.createElement("span");
       badgeSpan.className = "unread-badge mr-1";
       badgeSpan.id = `unread-badge-${docSnap.id}`;
@@ -15489,6 +15544,8 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
       });
       roomList.appendChild(roomContainer);
     }
+
+    if (typeof window.updateDraftBadges === 'function') window.updateDraftBadges();
 
     // サーバー入室時・切り替え時のルーム自動オープン（PCのみ自動選択、スマホはチャンネル一覧を表示）
     if (currentServerId === serverId && roomDocs.length > 0) {
@@ -16183,6 +16240,16 @@ async function subscribeToMessagesRTDB(session) {
 
 // subscribeToMessagesFirestore removed (permanently using RTDB)
 function selectRoom(roomId, roomName) {
+  if (typeof window.saveCurrentDraft === 'function') window.saveCurrentDraft();
+  window._covoLastRenderedCount = null;
+  window._covoUnreadScrolledCount = 0;
+  const _pill = document.getElementById("jumpModeExitBtn");
+  if (_pill) {
+    _pill.classList.add("opacity-0", "pointer-events-none", "translate-y-3");
+    _pill.classList.remove("opacity-100", "pointer-events-auto", "translate-y-0");
+  }
+  const _ub = document.getElementById("jumpModeUnreadBadge");
+  if (_ub) { _ub.classList.add("hidden"); _ub.textContent = "0"; }
   const currentSession = ++_activeChannelSessionId;
   if (window.rtdbMessagesUnsub) {
     try { window.rtdbMessagesUnsub(); } catch (_) {}
@@ -16197,6 +16264,10 @@ function selectRoom(roomId, roomName) {
     readReceiptsUnsubscribe = null;
   }
   if (typeof clearTypingOnNavigation === 'function') clearTypingOnNavigation();
+  if (window._covoCurrentActiveAudio) {
+    try { window._covoCurrentActiveAudio.pause(); } catch (_) {}
+    window._covoCurrentActiveAudio = null;
+  }
   allLoadedMessages = [];
   lastMessagesData = [];
   messagesIndexMap = {};
@@ -16262,10 +16333,13 @@ function selectRoom(roomId, roomName) {
   if (messageInput) {
     messageInput.placeholder = "メッセージを入力...";
     messageInput.disabled = false;
+    if (typeof window.restoreCurrentDraft === 'function') window.restoreCurrentDraft();
   }
+  if (typeof window.cancelVoiceRecording === 'function') window.cancelVoiceRecording();
   fileAttachButton.disabled = false;
   { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = false; }
   { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = false; }
+  { const vrb = document.getElementById('voiceRecordButton'); if (vrb) vrb.disabled = false; }
   document.getElementById('callButton').disabled = false;
   { const fsb = document.getElementById('fileShareButton'); if (fsb) fsb.disabled = false; }
   prewarmPeerConnection();
@@ -16343,10 +16417,12 @@ function selectRoom(roomId, roomName) {
         window._activeRescueRequestsUnsub = onSnapshot(rescueCol, async (snap) => {
           if (!snap.empty && _e2ee.roomKeyCache[activeRoomId]) {
             const curKey = _e2ee.roomKeyCache[activeRoomId];
+            // 入室後に参加した新メンバーも救済できるよう、最新のメンバー一覧で判定する
+            const liveMembers = (currentServerId === activeServerId && currentServerData && currentServerData.joinedUsers) || members;
             const rawKey = await window.crypto.subtle.exportKey("raw", curKey.latest);
             for (const resDoc of snap.docs) {
               const reqUserId = resDoc.id;
-              if (members.includes(reqUserId)) {
+              if (liveMembers.includes(reqUserId)) {
                 await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId]);
                 await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], curKey.latestVersion);
                 await deleteDoc(resDoc.ref).catch(() => {});
@@ -16364,6 +16440,9 @@ function selectRoom(roomId, roomName) {
             const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
             if (arrived) {
               if (allLoadedMessages && allLoadedMessages.length > 0) {
+                allLoadedMessages.forEach(m => {
+                  if (m._decryptionFailed) m._decryptionFailed = false;
+                });
                 await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
                 renderMessagesWithReadReceipts();
               }
@@ -16475,17 +16554,27 @@ messagesDisplay.addEventListener("scroll", async () => {
   }
 
   const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
+  const jumpUnreadBadge = document.getElementById("jumpModeUnreadBadge");
   if (messagesDisplay.scrollTop <= 20) {
-    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
-    jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+    if (jumpModeExitBtn) {
+      jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-3");
+      jumpModeExitBtn.classList.remove("opacity-100", "pointer-events-auto", "translate-y-0");
+    }
+    window._covoUnreadScrolledCount = 0;
+    if (jumpUnreadBadge) {
+      jumpUnreadBadge.classList.add("hidden");
+      jumpUnreadBadge.textContent = "0";
+    }
 
     // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
     if (isJumpView && !hasMoreJumpNewer) {
       window.exitJumpMode();
     }
-  } else if (isJumpView || messagesDisplay.scrollTop > 300) {
-    jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
-    jumpModeExitBtn.classList.add("opacity-90", "pointer-events-auto", "translate-y-0");
+  } else if (isJumpView || messagesDisplay.scrollTop > 180) {
+    if (jumpModeExitBtn) {
+      jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-3");
+      jumpModeExitBtn.classList.add("opacity-100", "pointer-events-auto", "translate-y-0");
+    }
   }
 
   const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
@@ -16607,9 +16696,15 @@ async function loadJumpNewerMessages() {
 
 window.exitJumpMode = function () {
   const jumpModeExitBtn = document.getElementById('jumpModeExitBtn');
+  const jumpUnreadBadge = document.getElementById('jumpModeUnreadBadge');
   if (jumpModeExitBtn) {
-    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
-    jumpModeExitBtn.classList.remove("opacity-90", "pointer-events-auto", "translate-y-0");
+    jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-3");
+    jumpModeExitBtn.classList.remove("opacity-100", "pointer-events-auto", "translate-y-0");
+  }
+  window._covoUnreadScrolledCount = 0;
+  if (jumpUnreadBadge) {
+    jumpUnreadBadge.classList.add('hidden');
+    jumpUnreadBadge.textContent = '0';
   }
 
   if (isJumpView) {
@@ -16709,7 +16804,22 @@ const searchInput = document.getElementById("searchInput");
 const mobileBackButton = document.getElementById("mobileBackButton");
 
 // 🔒 検索時にローカル過去ログとRTDB最新差分を省通信で動員・復号して検索漏れを完全根絶 (BUG-5)
+// 入力のたびに呼ばれるため、同一チャンネルは60秒に1回・同時実行は1本までに制限する
+const _searchPreloadedAt = new Map();
+let _searchPreloadInFlight = false;
 async function ensureChannelHistoryForSearch() {
+  const chKey = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
+  if (_searchPreloadInFlight) return;
+  if (Date.now() - (_searchPreloadedAt.get(chKey) || 0) < 60000) return;
+  _searchPreloadInFlight = true;
+  try {
+    await _ensureChannelHistoryForSearchImpl();
+    _searchPreloadedAt.set(chKey, Date.now());
+  } finally {
+    _searchPreloadInFlight = false;
+  }
+}
+async function _ensureChannelHistoryForSearchImpl() {
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
   const targetDmId = currentDmId;
@@ -16722,8 +16832,8 @@ async function ensureChannelHistoryForSearch() {
     const localMsgs = await LocalStore.getMessages(chId, null, 500);
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
     let newDocs = (localMsgs || []).filter(m => !existingLoadedIds.has(m.id));
-    // 2. ローカルが少ない場合はRTDBから1回だけ最小限(100件)取得して合流
-    if (newDocs.length < 50) {
+    // 2. ローカルDBが空の端末（初回・キャッシュ消去直後）に限り、RTDBから最小限(100件)取得して合流
+    if ((localMsgs || []).length === 0 && allLoadedMessages.length < 100) {
       try {
         const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
@@ -16748,6 +16858,8 @@ async function ensureChannelHistoryForSearch() {
     } else if (targetDmId) {
       await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
     }
+    // 準備中にチャンネルを切り替えた場合は、別チャンネルのメッセージを混入させない
+    if (currentServerId !== targetServerId || currentRoomId !== targetRoomId || currentDmId !== targetDmId) return;
     allLoadedMessages = [...newDocs, ...allLoadedMessages];
     const seen = new Set();
     allLoadedMessages = allLoadedMessages.filter(m => {
@@ -16834,6 +16946,8 @@ if (mobileBackButton) {
     if (fileAttachButton) fileAttachButton.disabled = true;
     { const sb = document.getElementById('stickerButton'); if (sb) sb.disabled = true; }
     { const pmb = document.getElementById('plusMenuButton'); if (pmb) pmb.disabled = true; }
+    { const vrb = document.getElementById('voiceRecordButton'); if (vrb) vrb.disabled = true; }
+    if (typeof window.cancelVoiceRecording === 'function') window.cancelVoiceRecording();
     if (sendMessageButton) sendMessageButton.disabled = true;
     if (typeof clearAttachedFile === 'function') clearAttachedFile();
     if (typeof cancelReply === 'function') cancelReply();
@@ -17479,6 +17593,7 @@ if (messageInpEl) {
   messageInpEl.addEventListener("input", (e) => {
     // 入力内容に応じて送信ボタンの活性状態を更新
     toggleSendButtonState();
+    if (typeof window.saveCurrentDraft === 'function') window.saveCurrentDraft();
     // メンション機能の判定
     const val = messageInpEl.value;
     const pos = messageInpEl.selectionStart;
@@ -17569,7 +17684,7 @@ function updateFilePreview() {
       ? `${(totalSize / (1024 * 1024)).toFixed(1)} MB`
       : `${(totalSize / 1024).toFixed(1)} KB`;
     if (filePreviewName) {
-      filePreviewName.innerHTML = `<span class="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-xs mr-1">${attachedFiles.length}件</span> ${escapeHtml(attachedFiles[0].name)} 他${attachedFiles.length - 1}件 (${sizeStr})`;
+      filePreviewName.innerHTML = `<span class="bg-[#5865F2]/15 text-[#5865F2] dark:bg-[#5865F2]/25 dark:text-[#7983f5] font-bold px-2 py-0.5 rounded-md text-xs mr-1.5 inline-flex items-center gap-1 shadow-2xs"><i class="fas fa-layer-group text-[10px]"></i>${attachedFiles.length}件</span> <span class="font-semibold text-gray-800 dark:text-gray-200 truncate">${escapeHtml(attachedFiles[0].name)} 他${attachedFiles.length - 1}件</span> <span class="text-xs text-gray-400 font-mono flex-shrink-0">(${sizeStr})</span>`;
     }
     if (filePreviewImage && attachedFiles[0].type && attachedFiles[0].type.startsWith("image/")) {
       filePreviewImage.src = URL.createObjectURL(attachedFiles[0].file);
@@ -17815,6 +17930,16 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     });
   } catch (_) {}
 }
+function adjustTextareaHeight() {
+  try {
+    const mi = document.getElementById("messageInput");
+    if (!mi) return;
+    mi.style.height = "auto";
+    mi.style.height = mi.scrollHeight + "px";
+  } catch (_) {}
+}
+window.adjustTextareaHeight = adjustTextareaHeight;
+
 // 送信ボタンの活性状態を更新する（送信先があり・送信処理中でなく・入力テキストまたは添付ファイルがある時だけ有効）
 function toggleSendButtonState() {
   try {
@@ -17883,6 +18008,7 @@ async function sendMessage() {
   const previousInputText = text;
   messageInput.value = "";
   messageInput.style.height = "auto";
+  if (typeof window.clearCurrentDraft === 'function') window.clearCurrentDraft();
   if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
 
   unreadBoundaryAt = 0;
@@ -18021,17 +18147,21 @@ async function sendMessage() {
           "simplechat/messages",
           snapServerId
         );
-        cacheLocalMediaFile(fileUrl, fileToUpload);
+        const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || currentFileName.startsWith('SPOILER_'));
+        const finalFileName = (isSpoiler && !currentFileName.startsWith('SPOILER_')) ? `SPOILER_${currentFileName}` : currentFileName;
         Object.assign(data, {
           fileData: fileUrl,
-          fileName: currentFileName,
+          fileName: finalFileName,
           fileType: currentAttachedFile.type || 'application/octet-stream',
           fileSize: currentAttachedFile.size || 0,
-          isFileEncrypted: isFileEncrypted
+          isFileEncrypted: isFileEncrypted,
+          isSpoiler: isSpoiler
         });
       } finally {
         if (progressBar) progressBar.classList.add("hidden");
         if (progressFill) progressFill.style.width = "0%";
+        const spInp = document.getElementById("spoilerCheckbox");
+        if (spInp) spInp.checked = false;
       }
     }
     if (snapReplyTo) {
@@ -18050,19 +18180,43 @@ async function sendMessage() {
       const rtdbMsgRef = ref(rtdb, `artifacts/${appId}/dm_messages/${snapDmId}/${newMessageId}`);
       const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
       await set(rtdbMsgRef, rtdbData);
+      const _targetAtt = attachedFile || attachedKvFile;
+      const _getAttSummary = (att, isSp) => {
+        if (isSp) return '（スポイラー添付）';
+        if (!att) return '';
+        const fName = att.name || att.file?.name || '';
+        const fType = att.type || att.file?.type || '';
+        if (att.isVoiceMessage || /voice-message/i.test(fName)) return '（ボイスメッセージ）';
+        if (window.isAudioFile && window.isAudioFile(fName, fType)) return '（音声ファイル）';
+        if (fType.startsWith('image/') || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(fName)) return '（画像）';
+        if (fType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi)$/i.test(fName)) return '（動画）';
+        return '（ファイル）';
+      };
+      const _getAttNotif = (att, isSp) => {
+        if (isSp) return '[スポイラーファイル]';
+        if (!att) return '[ファイル]';
+        const fName = att.name || att.file?.name || '';
+        const fType = att.type || att.file?.type || '';
+        if (att.isVoiceMessage || /voice-message/i.test(fName)) return '[ボイスメッセージ]';
+        if (window.isAudioFile && window.isAudioFile(fName, fType)) return '[音声ファイル]';
+        if (fType.startsWith('image/') || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(fName)) return '[写真]';
+        if (fType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi)$/i.test(fName)) return '[動画]';
+        return '[ファイル]';
+      };
+
       await setDoc(doc(db, `artifacts/${appId}/dm_channels/${snapDmId}`), {
         participants: snapDmParticipants,
         lastMessageAt: Date.now(),
         lastMessageSender: userId,
         lastMessageSenderNickname: userNickname || 'ユーザー',
-        lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+        lastMessageText: wasEncrypted ? textToStore : (text || _getAttSummary(_targetAtt, data.isSpoiler))
       }, { merge: true });
       LocalStore.putMessage({ ...rtdbData, channelId: chId }).catch(() => {});
       const otherUid = snapDmParticipants.find(id => id !== userId);
       if (otherUid) {
         try {
           const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-          const cleanDmBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || (attachedFile ? '[写真]' : attachedKvFile ? '[ファイル]' : '新着メッセージがあります')));
+          const cleanDmBody = formatNotificationBody(wasEncrypted ? '新着メッセージがあります' : (text || _getAttNotif(_targetAtt, data.isSpoiler)));
           const notifPayload = JSON.stringify({
             receiverIds: [otherUid],
             title: userNickname,
@@ -18111,12 +18265,24 @@ async function sendMessage() {
         }
       }
       newMessageId = msgRef.id;
+      const _targetAttRoom = attachedFile || attachedKvFile;
+      const _getAttSummaryRoom = (att, isSp) => {
+        if (isSp) return '（スポイラー添付）';
+        if (!att) return '';
+        const fName = att.name || att.file?.name || '';
+        const fType = att.type || att.file?.type || '';
+        if (att.isVoiceMessage || /voice-message/i.test(fName)) return '（ボイスメッセージ）';
+        if (window.isAudioFile && window.isAudioFile(fName, fType)) return '（音声ファイル）';
+        if (fType.startsWith('image/') || /\.(jpe?g|png|gif|webp|svg|bmp)$/i.test(fName)) return '（画像）';
+        if (fType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi)$/i.test(fName)) return '（動画）';
+        return '（ファイル）';
+      };
       try {
         await updateDoc(doc(db, `artifacts/${appId}/servers/${snapServerId}/rooms/${snapRoomId}`), {
           lastMessageAt: data.timestamp,
           lastMessageSender: userId,
           lastMessageSenderNickname: snapServerNickname || userNickname || 'ユーザー',
-          lastMessageText: wasEncrypted ? textToStore : (text || (attachedFile ? '（画像）' : attachedKvFile ? '（ファイル）' : ''))
+          lastMessageText: wasEncrypted ? textToStore : (text || _getAttSummaryRoom(_targetAttRoom, data.isSpoiler))
         });
       } catch (updateErr) { }
       try {
@@ -18213,10 +18379,12 @@ async function sendMessage() {
     clearFileBtn.addEventListener("click", clearAttachedFile);
     }
     function clearAttachedFile() {
-    attachedFile = null;
-    attachedFiles = [];
-    attachedKvFile = null;
-    updateFilePreview();
+      attachedFile = null;
+      attachedFiles = [];
+      attachedKvFile = null;
+      const sp = document.getElementById("spoilerCheckbox");
+      if (sp) sp.checked = false;
+      updateFilePreview();
     }
     async function sendSingleAttachmentMessage(fileObj, destSnapshot = null) {
     const snapDmId = destSnapshot?.snapDmId ?? currentDmId;
@@ -18260,19 +18428,22 @@ async function sendMessage() {
     }
     const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
     cacheLocalMediaFile(fileUrl, fileToUpload);
+    const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || fileObj.isSpoiler || fileObj.name.startsWith('SPOILER_'));
+    const finalFileName = (isSpoiler && !fileObj.name.startsWith('SPOILER_')) ? `SPOILER_${fileObj.name}` : fileObj.name;
     const data = {
-    userId: userId,
-    senderId: userId,
-    userNickname: snapServerNickname || userNickname || 'ユーザー',
-    senderNickname: snapServerNickname || userNickname || 'ユーザー',
-    senderAvatarUrl: userAvatarUrl || null,
-    timestamp: Date.now(),
-    createdAt: Date.now(),
-    fileData: fileUrl,
-    fileName: fileObj.name,
-    fileType: fileObj.type,
-    fileSize: fileObj.size,
-    isFileEncrypted: isFileEncrypted
+      userId: userId,
+      senderId: userId,
+      userNickname: snapServerNickname || userNickname || 'ユーザー',
+      senderNickname: snapServerNickname || userNickname || 'ユーザー',
+      senderAvatarUrl: userAvatarUrl || null,
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+      fileData: fileUrl,
+      fileName: finalFileName,
+      fileType: fileObj.type,
+      fileSize: fileObj.size,
+      isFileEncrypted: isFileEncrypted,
+      isSpoiler: isSpoiler
     };
     if (snapDmId) {
     const newMessageId = 'dm_msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
@@ -18286,7 +18457,7 @@ async function sendMessage() {
       participants: snapDmParticipants,
       lastMessageAt: data.timestamp,
       lastMessageSender: userId,
-      lastMessageText: '（ファイル）'
+      lastMessageText: isSpoiler ? '（スポイラー添付）' : '（ファイル）'
     }, { merge: true }).catch(() => {});
     const otherUid = snapDmParticipants.find(id => id !== userId);
     if (otherUid) {
@@ -18295,7 +18466,7 @@ async function sendMessage() {
         const notifPayload = JSON.stringify({
           receiverIds: [otherUid],
           title: userNickname,
-          body: '[ファイル]',
+          body: isSpoiler ? '[スポイラーファイル]' : '[ファイル]',
           roomId: snapDmId,
           messageId: newMessageId,
           appId: appId,
@@ -18408,6 +18579,36 @@ fileAttachInput.addEventListener("change", async (e) => {
     if (btnIcon) btnIcon.className = "fas fa-plus";
   }
 });
+
+// --- Discord風 ボイスメッセージ録音ボタン・コントロール ---
+const voiceRecordBtn = document.getElementById("voiceRecordButton");
+const voiceRecordCancelBtn = document.getElementById("voiceRecordCancelBtn");
+const voiceRecordSendBtn = document.getElementById("voiceRecordSendBtn");
+
+if (voiceRecordBtn) {
+  voiceRecordBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (_isVoiceRecording) {
+      window.cancelVoiceRecording();
+    } else {
+      window.startVoiceRecording();
+    }
+  });
+}
+
+if (voiceRecordCancelBtn) {
+  voiceRecordCancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.cancelVoiceRecording();
+  });
+}
+
+if (voiceRecordSendBtn) {
+  voiceRecordSendBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.sendVoiceRecording();
+  });
+}
 
 // --- ドラッグ＆ドロップ ---
 const dropOverlay = document.getElementById("dropOverlay");
@@ -18591,6 +18792,17 @@ if (menuMentionBtn) {
     plusMenuPopup.classList.add("hidden");
     openMentionPopup("");
     messageInput.focus();
+  });
+}
+
+const menuVoiceRecordBtn = document.getElementById("menuVoiceRecordBtn");
+if (menuVoiceRecordBtn) {
+  menuVoiceRecordBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    plusMenuPopup.classList.add("hidden");
+    if (typeof window.startVoiceRecording === 'function') {
+      window.startVoiceRecording();
+    }
   });
 }
 
@@ -18807,6 +19019,1201 @@ window.renderPdfCanvas = async function (url, canvas, hintW, hintH) {
   }
 };
 
+// =========================================================================
+// 🎵 音楽・音声 & 添付ファイル 洗練システム (Discord準拠)
+// =========================================================================
+
+// 全ての音楽・音声拡張子の完全判定
+window.isAudioFile = function(fileName, fileType) {
+  if (typeof fileType === 'string' && fileType.startsWith('video/')) {
+    return false;
+  }
+  if (typeof fileName === 'string') {
+    if (/\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|weba|caf|wma|aiff|aif|aifc|mid|midi|amr|ac3|mp2|mka)$/i.test(fileName)) {
+      return true;
+    }
+    // .webm は音声MIMEタイプ明示、またはボイスメッセージ命名規則の場合のみ音声として扱う（動画.webmの誤判定防止）
+    if (/\.webm$/i.test(fileName)) {
+      return (typeof fileType === 'string' && fileType.startsWith('audio/')) || /voice-message/i.test(fileName);
+    }
+    if (/voice-message/i.test(fileName) && (!fileType || !fileType.startsWith('video/'))) {
+      return true;
+    }
+  }
+  if (typeof fileType === 'string') {
+    if (fileType.startsWith('audio/') ||
+        fileType === 'application/ogg' ||
+        fileType === 'application/x-ogg') {
+      return true;
+    }
+  }
+  return false;
+};
+
+// プレビュー可能なテキスト/コード拡張子の判定
+window.isTextFile = function(fileName, fileType) {
+  if (typeof fileName === 'string') {
+    if (/\.(txt|md|markdown|json|js|mjs|cjs|ts|jsx|tsx|html|htm|css|scss|sass|less|xml|yaml|yml|sql|py|rs|go|c|cpp|h|hpp|cs|java|sh|bash|zsh|bat|cmd|ps1|csv|tsv|ini|conf|env|log|properties|toml)$/i.test(fileName)) {
+      return true;
+    }
+  }
+  if (typeof fileType === 'string') {
+    if (fileType.startsWith('text/') ||
+        fileType === 'application/json' ||
+        fileType === 'application/javascript' ||
+        fileType === 'application/xml') {
+      return true;
+    }
+  }
+  return false;
+};
+
+// ファイルカテゴリ分類とDiscord調バッジ・アイコン
+window.getFileCategory = function(fileName, fileType) {
+  const name = String(fileName || '').toLowerCase();
+  const type = String(fileType || '').toLowerCase();
+  if (window.isAudioFile(name, type)) {
+    return { type: 'audio', icon: 'fas fa-headphones', badge: 'bg-violet-500/15 text-violet-600 dark:bg-violet-500/25 dark:text-violet-400 border border-violet-500/20' };
+  }
+  if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/i.test(name) || type.includes('zip') || type.includes('compressed') || type.includes('tar')) {
+    return { type: 'archive', icon: 'fas fa-file-zipper', badge: 'bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400 border border-amber-500/20' };
+  }
+  if (window.isTextFile(name, type)) {
+    return { type: 'code', icon: 'fas fa-file-code', badge: 'bg-blue-500/15 text-blue-600 dark:bg-blue-500/25 dark:text-blue-400 border border-blue-500/20' };
+  }
+  if (/\.(doc|docx|odt|rtf|pages)$/i.test(name) || type.includes('word') || type.includes('document')) {
+    return { type: 'doc', icon: 'fas fa-file-lines', badge: 'bg-sky-500/15 text-sky-600 dark:bg-sky-500/25 dark:text-sky-400 border border-sky-500/20' };
+  }
+  if (/\.(xls|xlsx|numbers|csv|tsv)$/i.test(name) || type.includes('excel') || type.includes('spreadsheet')) {
+    return { type: 'sheet', icon: 'fas fa-file-excel', badge: 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400 border border-emerald-500/20' };
+  }
+  if (/\.(ppt|pptx|key)$/i.test(name) || type.includes('presentation') || type.includes('powerpoint')) {
+    return { type: 'presentation', icon: 'fas fa-file-powerpoint', badge: 'bg-rose-500/15 text-rose-600 dark:bg-rose-500/25 dark:text-rose-400 border border-rose-500/20' };
+  }
+  if (/\.pdf$/i.test(name) || type === 'application/pdf') {
+    return { type: 'pdf', icon: 'fas fa-file-pdf', badge: 'bg-red-500/15 text-red-600 dark:bg-red-500/25 dark:text-red-400 border border-red-500/20' };
+  }
+  return { type: 'other', icon: 'fas fa-file', badge: 'bg-gray-500/15 text-gray-600 dark:bg-gray-500/25 dark:text-gray-400 border border-gray-500/20' };
+};
+
+window.formatAudioDuration = function(seconds) {
+  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+};
+
+// 🎵 Discord準拠 インラインオーディオプレイヤーカード生成
+window.createAudioPlayerCard = function({
+  fileUrl,
+  fileName,
+  fileSize,
+  fileType,
+  isFileEncrypted,
+  isMyMessage,
+  onResolveUrl,
+  onDownload
+}) {
+  const container = document.createElement('div');
+  // ダークモード・ライトモードそれぞれ最適化されたデザイン (Discord本家カラー準拠)
+  container.className = 'covo-audio-player-card mt-2 p-3 sm:p-3.5 rounded-2xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs max-w-sm sm:max-w-md w-full select-none transition-all hover:border-[#5865F2]/50';
+
+  const ext = (fileName || 'audio').split('.').pop().toUpperCase().slice(0, 5);
+  const sizeText = fileSize ? (fileSize >= 1048576 ? `${(fileSize / 1048576).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(1)} KB`) : '';
+
+  container.innerHTML = `
+    <!-- トラック情報ヘッダー -->
+    <div class="flex items-center justify-between gap-2.5 mb-2.5">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-xl bg-violet-500/15 text-violet-600 dark:bg-violet-500/25 dark:text-violet-400 flex items-center justify-center flex-shrink-0 shadow-xs">
+          <i class="fas fa-headphones text-sm"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs sm:text-sm font-bold text-gray-900 dark:text-gray-100 truncate audio-card-title">${escapeHtml(fileName || '音声ファイル')}</div>
+          <div class="text-[10px] text-gray-500 dark:text-[#949ba4] font-mono flex items-center gap-1.5 mt-0.5">
+            <span class="px-1 py-0.2 rounded font-bold bg-violet-500/10 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300">${escapeHtml(ext)}</span>
+            ${sizeText ? `<span>${escapeHtml(sizeText)}</span>` : ''}
+            ${isFileEncrypted ? '<span class="text-emerald-500 dark:text-emerald-400 flex items-center gap-0.5"><i class="fas fa-lock text-[9px]"></i> E2EE</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <button type="button" class="audio-card-download-btn w-8 h-8 rounded-xl bg-white/80 hover:bg-[#5865F2] hover:text-white dark:bg-[#1e1f22] dark:hover:bg-[#5865F2] dark:hover:text-white text-gray-600 dark:text-[#dbdee1] flex items-center justify-center transition-all flex-shrink-0 shadow-xs cursor-pointer" title="ダウンロード">
+        <i class="fas fa-arrow-down-to-line text-xs"></i>
+      </button>
+    </div>
+
+    <!-- プレイヤーコントロール列 -->
+    <div class="flex items-center gap-3">
+      <!-- 再生/一時停止ボタン -->
+      <button type="button" class="audio-card-play-btn w-10 h-10 rounded-full bg-[#5865F2] hover:bg-[#4752c4] text-white flex items-center justify-center shadow-md active:scale-95 transition-transform flex-shrink-0 cursor-pointer" title="再生">
+        <i class="fas fa-play text-sm ml-0.5 audio-play-icon"></i>
+      </button>
+
+      <!-- シークバー & タイムスタンプ -->
+      <div class="flex-1 min-w-0 flex flex-col gap-1">
+        <!-- Discord風 オーディオ波形 (Waveform) シークバー -->
+        <div class="audio-waveform-container relative w-full h-7 flex items-center gap-[2.5px] cursor-pointer group py-1 select-none" title="クリックでシーク">
+          <!-- 波形バー群が動的生成されます -->
+        </div>
+        <!-- 時間表示 & 速度切替 -->
+        <div class="flex items-center justify-between text-[11px] font-mono text-gray-500 dark:text-[#949ba4]">
+          <span class="audio-time-current font-bold text-gray-700 dark:text-gray-300">0:00</span>
+          <div class="flex items-center gap-2">
+            <button type="button" class="audio-speed-btn px-1.5 py-0.2 rounded text-[10px] font-bold bg-gray-200/80 hover:bg-gray-300 dark:bg-[#1e1f22] dark:hover:bg-[#383a40] text-gray-700 dark:text-[#dbdee1] transition-colors cursor-pointer" title="再生速度切替">1.0x</button>
+            <span class="audio-time-total font-medium">--:--</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const audioEl = document.createElement('audio');
+  audioEl.preload = 'metadata';
+  audioEl.style.display = 'none';
+  container.appendChild(audioEl);
+
+  const playBtn = container.querySelector('.audio-card-play-btn');
+  const playIcon = container.querySelector('.audio-play-icon');
+  const waveContainer = container.querySelector('.audio-waveform-container');
+  const timeCurrent = container.querySelector('.audio-time-current');
+  const timeTotal = container.querySelector('.audio-time-total');
+  const speedBtn = container.querySelector('.audio-speed-btn');
+  const downloadBtn = container.querySelector('.audio-card-download-btn');
+
+  // 30本の波形バーをファイル情報に基づき自然な形状で生成
+  const waveBarsCount = 30;
+  let waveSeed = 0;
+  const seedStr = (fileName || 'audio') + (fileSize || 12345);
+  for (let i = 0; i < seedStr.length; i++) {
+    waveSeed = ((waveSeed << 5) - waveSeed) + seedStr.charCodeAt(i);
+    waveSeed |= 0;
+  }
+  for (let i = 0; i < waveBarsCount; i++) {
+    waveSeed = (waveSeed * 9301 + 49297) % 233280;
+    const rnd = waveSeed / 233280;
+    const heightPct = Math.round(20 + rnd * 80);
+    const bar = document.createElement('div');
+    bar.className = 'audio-wave-bar flex-1 rounded-full select-none bg-gray-300/80 dark:bg-[#4e5058]/60 transition-all duration-75';
+    bar.style.height = `${heightPct}%`;
+    bar.style.minWidth = '2px';
+    bar.style.maxWidth = '4.5px';
+    waveContainer.appendChild(bar);
+  }
+
+  const updateWaveform = (pct) => {
+    const bars = waveContainer.querySelectorAll('.audio-wave-bar');
+    const activeCount = Math.floor(pct * waveBarsCount);
+    bars.forEach((bar, idx) => {
+      if (pct > 0 && idx < activeCount) {
+        bar.className = 'audio-wave-bar flex-1 rounded-full select-none bg-[#5865F2] shadow-xs scale-y-100 transition-all duration-75';
+      } else {
+        bar.className = 'audio-wave-bar flex-1 rounded-full select-none bg-gray-300/80 dark:bg-[#4e5058]/60 group-hover:bg-gray-400 dark:group-hover:bg-[#5c5e66] transition-all duration-75';
+      }
+    });
+  };
+  updateWaveform(0);
+
+  let resolvedSrc = fileUrl || '';
+  let isResolving = false;
+  let _srcSet = false; // fileUrlが渡された場合に即時srcを設定済みかのフラグ
+
+  // fileUrlが最初から提供されている場合は即時srcを設定
+  if (resolvedSrc) {
+    audioEl.src = resolvedSrc;
+    _srcSet = true;
+  }
+
+  const ensureSourceLoaded = async () => {
+    if (_srcSet && resolvedSrc) return true;
+    if (onResolveUrl && !resolvedSrc) {
+      isResolving = true;
+      playIcon.className = 'fas fa-spinner fa-spin text-sm';
+      try {
+        resolvedSrc = await onResolveUrl();
+        if (resolvedSrc) {
+          audioEl.src = resolvedSrc;
+          _srcSet = true;
+          return true;
+        }
+      } catch (err) {
+        if (typeof alertMessage === 'function') {
+          alertMessage('音声ファイルの読み込みに失敗しました: ' + (err.message || ''), 'error');
+        }
+        return false;
+      } finally {
+        isResolving = false;
+        playIcon.className = audioEl.paused ? 'fas fa-play text-sm ml-0.5 audio-play-icon' : 'fas fa-pause text-sm audio-play-icon';
+      }
+    } else if (resolvedSrc && !_srcSet) {
+      audioEl.src = resolvedSrc;
+      _srcSet = true;
+      return true;
+    }
+    return _srcSet;
+  };
+
+  playBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (isResolving) return;
+    const ok = await ensureSourceLoaded();
+    if (!ok && !audioEl.src) return;
+
+    if (audioEl.paused) {
+      // 単一再生管理: 他の再生中オーディオがあれば一時停止
+      if (window._covoCurrentActiveAudio && window._covoCurrentActiveAudio !== audioEl) {
+        try { window._covoCurrentActiveAudio.pause(); } catch (_) {}
+      }
+      window._covoCurrentActiveAudio = audioEl;
+
+      audioEl.play().catch(err => {
+        console.warn('Audio play failed:', err);
+        playIcon.className = 'fas fa-exclamation-triangle text-sm audio-play-icon text-amber-500';
+      });
+    } else {
+      audioEl.pause();
+    }
+  });
+
+  audioEl.addEventListener('play', () => {
+    playIcon.className = 'fas fa-pause text-sm audio-play-icon';
+  });
+
+  audioEl.addEventListener('pause', () => {
+    playIcon.className = 'fas fa-play text-sm ml-0.5 audio-play-icon';
+  });
+
+  audioEl.addEventListener('ended', () => {
+    try { audioEl.currentTime = 0; } catch (_) {}
+    playIcon.className = 'fas fa-play text-sm ml-0.5 audio-play-icon';
+    updateWaveform(0);
+    timeCurrent.textContent = '0:00';
+  });
+
+  audioEl.addEventListener('error', () => {
+    console.warn('Audio decode error:', audioEl.error);
+    playIcon.className = 'fas fa-exclamation-triangle text-sm audio-play-icon text-amber-500';
+    playBtn.title = '再生エラー (クリックで再試行)';
+  });
+
+  audioEl.addEventListener('timeupdate', () => {
+    if (!audioEl.duration) return;
+    const pct = audioEl.currentTime / audioEl.duration;
+    updateWaveform(pct);
+    timeCurrent.textContent = window.formatAudioDuration(audioEl.currentTime);
+  });
+
+  let pendingSeekPct = null;
+
+  audioEl.addEventListener('loadedmetadata', () => {
+    if (audioEl.duration && isFinite(audioEl.duration)) {
+      timeTotal.textContent = window.formatAudioDuration(audioEl.duration);
+      if (pendingSeekPct !== null) {
+        audioEl.currentTime = pendingSeekPct * audioEl.duration;
+        updateWaveform(pendingSeekPct);
+        timeCurrent.textContent = window.formatAudioDuration(audioEl.currentTime);
+        pendingSeekPct = null;
+      }
+    }
+  });
+
+  // 波形シークバーのスムーズなクリック & ドラッグ操作（PC/スマホ両対応）
+  let isWaveScrubbing = false;
+  const seekAtPointer = async (clientX) => {
+    if (!audioEl.src) {
+      const ok = await ensureSourceLoaded();
+      if (!ok && !audioEl.src) return;
+    }
+    const rect = waveContainer.getBoundingClientRect();
+    if (!rect.width) return;
+    const clickX = clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, clickX / rect.width));
+    if (audioEl.duration && isFinite(audioEl.duration)) {
+      audioEl.currentTime = pct * audioEl.duration;
+      updateWaveform(pct);
+      timeCurrent.textContent = window.formatAudioDuration(audioEl.currentTime);
+    } else {
+      pendingSeekPct = pct;
+      updateWaveform(pct);
+    }
+  };
+
+  waveContainer.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    isWaveScrubbing = true;
+    try { waveContainer.setPointerCapture(e.pointerId); } catch (_) {}
+    seekAtPointer(e.clientX);
+  });
+  waveContainer.addEventListener('pointermove', (e) => {
+    if (!isWaveScrubbing) return;
+    e.stopPropagation();
+    seekAtPointer(e.clientX);
+  });
+  const stopWaveScrub = (e) => {
+    if (!isWaveScrubbing) return;
+    isWaveScrubbing = false;
+    try { waveContainer.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  waveContainer.addEventListener('pointerup', stopWaveScrub);
+  waveContainer.addEventListener('pointercancel', stopWaveScrub);
+
+  // 再生速度トグル (1.0x -> 1.25x -> 1.5x -> 2.0x)
+  const speeds = [1.0, 1.25, 1.5, 2.0];
+  let currentSpeedIdx = 0;
+  speedBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    currentSpeedIdx = (currentSpeedIdx + 1) % speeds.length;
+    const spd = speeds[currentSpeedIdx];
+    audioEl.defaultPlaybackRate = spd;
+    audioEl.playbackRate = spd;
+    speedBtn.textContent = `${spd.toFixed(spd % 1 === 0 ? 1 : 2)}x`;
+  });
+
+  // ダウンロードボタン
+  downloadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (onDownload) {
+      onDownload();
+    } else if (resolvedSrc && typeof downloadFile === 'function') {
+      downloadFile(resolvedSrc, fileName, fileType || 'audio/mpeg');
+    }
+  });
+
+  if (resolvedSrc && !isFileEncrypted) {
+    audioEl.src = resolvedSrc;
+  }
+
+  return container;
+};
+
+// 📎 Discord準拠 洗練された添付ファイルカード生成 (ダーク/ライト両対応)
+window.createDiscordAttachmentCard = function({
+  fileUrl,
+  fileName,
+  fileSize,
+  fileType,
+  isFileEncrypted,
+  isMyMessage,
+  onResolveUrl,
+  onDownload,
+  onPreview
+}) {
+  const container = document.createElement('div');
+  // Discord本家デザイン準拠: ダークモードは #2b2d31, ライトモードは #f2f3f5
+  container.className = 'covo-attachment-card mt-2 p-3 sm:p-3.5 rounded-2xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs max-w-sm sm:max-w-md w-full select-none transition-all hover:border-[#5865F2]/50 flex items-center justify-between gap-3 group';
+
+  const cat = window.getFileCategory(fileName, fileType);
+  const ext = (fileName || 'file').split('.').pop().toUpperCase().slice(0, 5);
+  const sizeText = fileSize ? (fileSize >= 1048576 ? `${(fileSize / 1048576).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(1)} KB`) : '';
+  const canPreview = window.isTextFile(fileName, fileType) || /\.pdf$/i.test(fileName) || (fileType && fileType.startsWith('image/'));
+
+  container.innerHTML = `
+    <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer attachment-main-click">
+      <div class="w-10 h-10 rounded-2xl ${cat.badge} flex items-center justify-center flex-shrink-0 shadow-xs text-lg transition-transform group-hover:scale-105">
+        <i class="${cat.icon}"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="text-xs sm:text-sm font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-[#5865F2] transition-colors">${escapeHtml(fileName || '添付ファイル')}</div>
+        <div class="text-[10px] text-gray-500 dark:text-[#949ba4] font-mono flex items-center gap-1.5 mt-0.5">
+          <span class="px-1.5 py-0.2 rounded font-bold bg-gray-200 dark:bg-[#1e1f22] text-gray-700 dark:text-gray-300">${escapeHtml(ext)}</span>
+          ${sizeText ? `<span>${escapeHtml(sizeText)}</span>` : ''}
+          ${isFileEncrypted ? '<span class="text-emerald-500 dark:text-emerald-400 flex items-center gap-0.5"><i class="fas fa-lock text-[9px]"></i> E2EE</span>' : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5 flex-shrink-0">
+      ${canPreview ? `
+        <button type="button" class="attachment-preview-btn w-8 h-8 rounded-xl bg-white/80 hover:bg-[#5865F2] hover:text-white dark:bg-[#1e1f22] dark:hover:bg-[#5865F2] dark:hover:text-white text-gray-600 dark:text-[#dbdee1] flex items-center justify-center transition-all shadow-xs cursor-pointer" title="プレビュー">
+          <i class="fas fa-eye text-xs"></i>
+        </button>
+      ` : ''}
+      <button type="button" class="attachment-download-btn w-8 h-8 rounded-xl bg-white/80 hover:bg-[#5865F2] hover:text-white dark:bg-[#1e1f22] dark:hover:bg-[#5865F2] dark:hover:text-white text-gray-600 dark:text-[#dbdee1] flex items-center justify-center transition-all shadow-xs cursor-pointer" title="ダウンロード">
+        <i class="fas fa-arrow-down-to-line text-xs"></i>
+      </button>
+    </div>
+  `;
+
+  const mainClickArea = container.querySelector('.attachment-main-click');
+  const previewBtn = container.querySelector('.attachment-preview-btn');
+  const downloadBtn = container.querySelector('.attachment-download-btn');
+
+  const triggerPreview = () => {
+    if (onPreview) {
+      onPreview();
+    } else if (canPreview) {
+      if (window.isTextFile(fileName, fileType)) {
+        window.openTextFilePreview(fileUrl, fileName, isFileEncrypted, onResolveUrl);
+      } else if (onDownload) {
+        onDownload();
+      }
+    } else if (onDownload) {
+      onDownload();
+    }
+  };
+
+  const triggerDownload = () => {
+    if (onDownload) {
+      onDownload();
+    } else if (fileUrl && typeof downloadFile === 'function') {
+      downloadFile(fileUrl, fileName, fileType || 'application/octet-stream');
+    }
+  };
+
+  if (previewBtn) {
+    previewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerPreview();
+    });
+  }
+
+  downloadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    triggerDownload();
+  });
+
+  mainClickArea.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (canPreview) {
+      triggerPreview();
+    } else {
+      triggerDownload();
+    }
+  });
+
+  return container;
+};
+
+// 📄 テキスト・コード用インアプリプレビューモーダル制御
+window.openTextFilePreview = async function(fileUrl, fileName, isFileEncrypted, onResolveUrl) {
+  const modal = document.getElementById('textFilePreviewModal');
+  const titleEl = document.getElementById('textPreviewTitle');
+  const metaEl = document.getElementById('textPreviewMeta');
+  const codeEl = document.getElementById('textPreviewCode');
+  const downloadBtn = document.getElementById('textPreviewDownloadBtn');
+  if (!modal || !codeEl) return;
+
+  if (titleEl) titleEl.textContent = fileName || 'ファイルプレビュー';
+  if (metaEl) metaEl.textContent = '読み込み中...';
+  codeEl.textContent = 'ファイルを読み込み中...';
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+
+  try {
+    let resolved = fileUrl;
+    if (onResolveUrl && (!resolved || isFileEncrypted)) {
+      resolved = await onResolveUrl();
+    }
+    if (!resolved) throw new Error('ファイルのURLを取得できませんでした');
+
+    const res = await fetch(resolved);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const textContent = await res.text();
+
+    const lines = textContent.split('\n');
+    const lineCount = lines.length;
+    const byteSize = new Blob([textContent]).size;
+    const sizeStr = byteSize >= 1048576 ? `${(byteSize / 1048576).toFixed(1)} MB` : `${(byteSize / 1024).toFixed(1)} KB`;
+
+    if (metaEl) metaEl.textContent = `${lineCount} 行 • ${sizeStr}`;
+    codeEl.textContent = textContent;
+
+    const lineNumsEl = document.getElementById('textPreviewLineNumbers');
+    if (lineNumsEl) {
+      lineNumsEl.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+    }
+
+    if (downloadBtn) {
+      downloadBtn.onclick = () => {
+        if (typeof downloadFile === 'function') {
+          downloadFile(resolved, fileName, 'text/plain; charset=utf-8');
+        }
+      };
+    }
+  } catch (err) {
+    if (metaEl) metaEl.textContent = '読み込みエラー';
+    codeEl.textContent = `ファイルのプレビューに失敗しました:\n${err.message || err}`;
+    const lineNumsEl = document.getElementById('textPreviewLineNumbers');
+    if (lineNumsEl) lineNumsEl.textContent = '1';
+  }
+};
+
+window.closeTextFilePreview = function() {
+  const modal = document.getElementById('textFilePreviewModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+};
+
+window.copyTextPreviewContent = function() {
+  const codeEl = document.getElementById('textPreviewCode');
+  if (codeEl) {
+    const text = codeEl.textContent || '';
+    if (window.safeCopy) window.safeCopy(text);
+    else navigator.clipboard.writeText(text);
+    const copyBtn = document.getElementById('textPreviewCopyBtn');
+    if (copyBtn) {
+      const orig = copyBtn.innerHTML;
+      copyBtn.innerHTML = '<i class="fas fa-check text-xs"></i> <span>コピー済</span>';
+      setTimeout(() => { copyBtn.innerHTML = orig; }, 1500);
+    }
+  }
+};
+
+// 🎵 音楽・オーディオ用プレビューモーダル制御
+window.openAudioPreviewModal = function(url, fileName) {
+  const modal = document.getElementById('audioPreviewModal');
+  const titleEl = document.getElementById('modalAudioTitle');
+  const containerEl = document.getElementById('modalAudioPlayerContainer');
+  if (!modal || !containerEl) return;
+
+  if (titleEl) titleEl.textContent = fileName || '音楽ファイル';
+  containerEl.innerHTML = '';
+  const card = window.createAudioPlayerCard({
+    fileUrl: url,
+    fileName: fileName,
+    fileSize: 0,
+    fileType: 'audio/mpeg',
+    isFileEncrypted: false,
+    isMyMessage: false,
+    onDownload: () => {
+      if (typeof downloadFile === 'function') {
+        downloadFile(url, fileName, 'audio/mpeg');
+      }
+    }
+  });
+  containerEl.appendChild(card);
+
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+};
+
+window.closeAudioPreviewModal = function() {
+  const modal = document.getElementById('audioPreviewModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+    const audioEl = modal.querySelector('audio');
+    if (audioEl) {
+      try { audioEl.pause(); } catch (_) {}
+    }
+  }
+};
+
+// =========================================================================
+// 🎙️ Phase 2: ボイスメッセージ & ユーザー音量・ハードウェアデバイス管理
+// =========================================================================
+
+// --- 1. ユーザー別音量管理マネージャー (0%〜200%) ---
+window.covoVolumeManager = {
+  getVolume(targetUid) {
+    if (!targetUid) return 100;
+    try {
+      const v = localStorage.getItem(`covo_user_vol_${targetUid}`);
+      if (v !== null && !isNaN(Number(v))) {
+        return Math.max(0, Math.min(200, Math.round(Number(v))));
+      }
+    } catch (_) {}
+    return 100;
+  },
+
+  setVolume(targetUid, volumePercent) {
+    if (!targetUid) return;
+    const clamped = Math.max(0, Math.min(200, Math.round(Number(volumePercent) || 0)));
+    try {
+      localStorage.setItem(`covo_user_vol_${targetUid}`, String(clamped));
+    } catch (_) {}
+
+    // 1. Agora リモートトラックへの適用 (1-on-1 および VoiceEngine)
+    try {
+      const agoraUser = (window._voiceEngine && window._voiceEngine._agoraRemote && window._voiceEngine._agoraRemote.get(String(targetUid))) ||
+                        (typeof _remoteUsers !== 'undefined' && _remoteUsers && _remoteUsers.get(String(targetUid)));
+      if (agoraUser?.audioTrack?.setVolume) {
+        agoraUser.audioTrack.setVolume(clamped);
+      }
+    } catch (_) {}
+
+    // 2. P2P WebRTC / HTMLAudioElement への適用
+    try {
+      const audioEl = (window._voiceEngine && window._voiceEngine._audioElements && window._voiceEngine._audioElements.get(String(targetUid))) ||
+                      document.getElementById(`remote-audio-${targetUid}`);
+      if (audioEl) {
+        if (audioEl._covoGainNode) {
+          audioEl._covoGainNode.gain.value = clamped / 100;
+        } else {
+          audioEl.volume = Math.max(0, Math.min(1.0, clamped / 100));
+        }
+      }
+    } catch (_) {}
+
+    // 3. 開いているポップオーバー内の表示をリアルタイム同期
+    const valBadge = document.getElementById(`covoUserVolVal-${targetUid}`);
+    if (valBadge) {
+      valBadge.textContent = clamped === 0 ? '消音 (0%)' : (clamped > 100 ? `${clamped}% (増幅)` : `${clamped}%`);
+      valBadge.className = clamped === 0 ? 'text-rose-500 font-bold' : (clamped > 100 ? 'text-amber-500 font-bold' : 'text-gray-700 dark:text-gray-200 font-bold');
+    }
+    const iconEl = document.getElementById(`covoUserVolIcon-${targetUid}`);
+    if (iconEl) {
+      iconEl.className = clamped === 0 ? 'fas fa-volume-xmark text-rose-500' : (clamped < 60 ? 'fas fa-volume-low text-indigo-500' : 'fas fa-volume-high text-indigo-500');
+    }
+  },
+
+  applyToAudioElement(targetUid, audioEl) {
+    if (!targetUid || !audioEl) return;
+    const vol = this.getVolume(targetUid);
+    try {
+      if (audioEl._covoGainNode) {
+        audioEl._covoGainNode.gain.value = vol / 100;
+      } else {
+        audioEl.volume = Math.max(0, Math.min(1.0, vol / 100));
+      }
+    } catch (_) {}
+  },
+
+  applyToAgoraTrack(targetUid, audioTrack) {
+    if (!targetUid || !audioTrack) return;
+    const vol = this.getVolume(targetUid);
+    try {
+      if (typeof audioTrack.setVolume === 'function') {
+        audioTrack.setVolume(vol);
+      }
+    } catch (_) {}
+  },
+
+  openVolumePopover(targetUid, targetName, targetAvatar, triggerEl, event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+
+    const existing = document.getElementById('covoUserVolumePopover');
+    if (existing) existing.remove();
+
+    const currentVol = this.getVolume(targetUid);
+    const popover = document.createElement('div');
+    popover.id = 'covoUserVolumePopover';
+    popover.className = 'covo-user-volume-popover fixed z-50 p-3.5 rounded-2xl shadow-xl border border-gray-200/90 dark:border-white/10 bg-[#f2f3f5] dark:bg-[#1e293b] text-gray-800 dark:text-gray-100 select-none animate-fadeIn';
+    popover.style.width = '250px';
+
+    const safeName = escapeHtml(targetName || 'ユーザー');
+    const avatarHtml = isUsableAvatarUrl(targetAvatar)
+      ? `<img src="${escapeHtml(targetAvatar)}" alt="${safeName}" class="w-8 h-8 rounded-full object-cover flex-shrink-0 shadow-xs" />`
+      : `<div class="w-8 h-8 rounded-full bg-[#5865F2] text-white flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-xs">${safeName.charAt(0)}</div>`;
+
+    popover.innerHTML = `
+      <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-gray-300/80 dark:border-white/10">
+        <div class="flex items-center gap-2 min-w-0">
+          ${avatarHtml}
+          <div class="min-w-0 flex-1">
+            <div class="text-xs font-bold truncate text-gray-900 dark:text-gray-100">${safeName}</div>
+            <div class="text-[10px] text-gray-500 dark:text-gray-400 font-mono">ユーザー音量調節</div>
+          </div>
+        </div>
+        <button type="button" class="covo-vol-close-btn w-6 h-6 rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+
+      <div class="space-y-2.5">
+        <div class="flex items-center justify-between text-xs">
+          <span class="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 font-medium">
+            <i id="covoUserVolIcon-${targetUid}" class="${currentVol === 0 ? 'fas fa-volume-xmark text-rose-500' : (currentVol < 60 ? 'fas fa-volume-low text-indigo-500' : 'fas fa-volume-high text-indigo-500')}"></i>
+            <span>音量</span>
+          </span>
+          <span id="covoUserVolVal-${targetUid}" class="${currentVol === 0 ? 'text-rose-500 font-bold' : (currentVol > 100 ? 'text-amber-500 font-bold' : 'text-gray-700 dark:text-gray-200 font-bold')}">
+            ${currentVol === 0 ? '消音 (0%)' : (currentVol > 100 ? `${currentVol}% (増幅)` : `${currentVol}%`)}
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input type="range" id="covoUserVolSlider-${targetUid}" min="0" max="200" step="1" value="${currentVol}"
+            class="covo-volume-slider flex-1 h-1.5 rounded-lg appearance-none cursor-pointer bg-gray-300 dark:bg-gray-700 accent-[#5865F2]" />
+        </div>
+
+        <div class="grid grid-cols-3 gap-1 pt-1">
+          <button type="button" class="covo-vol-btn-0 py-1 rounded-md text-[10px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-center transition-colors cursor-pointer">0% 消音</button>
+          <button type="button" class="covo-vol-btn-100 py-1 rounded-md text-[10px] font-bold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-center transition-colors cursor-pointer">100% 通常</button>
+          <button type="button" class="covo-vol-btn-200 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-center transition-colors cursor-pointer">200% 増幅</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(popover);
+
+    const popW = 250;
+    const popH = 160;
+    let clientX = event?.clientX;
+    let clientY = event?.clientY;
+    if (clientX === undefined || clientY === undefined) {
+      if (triggerEl) {
+        const rect = triggerEl.getBoundingClientRect();
+        clientX = rect.left;
+        clientY = rect.bottom + 8;
+      } else {
+        clientX = window.innerWidth / 2 - popW / 2;
+        clientY = window.innerHeight / 2 - popH / 2;
+      }
+    }
+
+    let posX = Math.max(12, Math.min(window.innerWidth - popW - 12, clientX));
+    let posY = Math.max(12, Math.min(window.innerHeight - popH - 12, clientY));
+    popover.style.left = `${posX}px`;
+    popover.style.top = `${posY}px`;
+
+    const slider = popover.querySelector(`#covoUserVolSlider-${targetUid}`);
+    slider.addEventListener('input', (e) => {
+      window.covoVolumeManager.setVolume(targetUid, e.target.value);
+    });
+
+    popover.querySelector('.covo-vol-btn-0')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.covoVolumeManager.setVolume(targetUid, 0);
+      if (slider) slider.value = 0;
+    });
+    popover.querySelector('.covo-vol-btn-100')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.covoVolumeManager.setVolume(targetUid, 100);
+      if (slider) slider.value = 100;
+    });
+    popover.querySelector('.covo-vol-btn-200')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.covoVolumeManager.setVolume(targetUid, 200);
+      if (slider) slider.value = 200;
+    });
+
+    popover.querySelector('.covo-vol-close-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      popover.remove();
+    });
+
+    const closeOnOutside = (ev) => {
+      if (!popover.contains(ev.target) && (!triggerEl || !triggerEl.contains(ev.target))) {
+        popover.remove();
+        document.removeEventListener('pointerdown', closeOnOutside);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('pointerdown', closeOnOutside);
+    }, 10);
+  }
+};
+
+// --- 2. ボイスメッセージ録音コントローラー ---
+let _voiceMediaRecorder = null;
+let _voiceRecordStream = null;
+let _voiceRecordAudioCtx = null;
+let _voiceRecordAnalyser = null;
+let _voiceRecordAnimFrame = null;
+let _voiceRecordTimerInterval = null;
+let _voiceRecordSeconds = 0;
+let _voiceRecordChunks = [];
+let _isVoiceRecording = false;
+
+window.startVoiceRecording = async function() {
+  if (_isVoiceRecording) return;
+  if (!currentRoomId && !currentDmId) {
+    if (typeof alertMessage === 'function') alertMessage('チャンネルまたはDMを選択してください', 'warning');
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (typeof alertMessage === 'function') alertMessage('お使いの環境は音声録音に対応していません', 'error');
+    return;
+  }
+
+  try {
+    const savedMic = localStorage.getItem('covo_selected_mic') || '';
+    const audioConstraint = savedMic ? { deviceId: { ideal: savedMic }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint, video: false });
+    _voiceRecordStream = stream;
+
+    let mimeType = 'audio/webm;codecs=opus';
+    if (typeof MediaRecorder.isTypeSupported === 'function') {
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+        mimeType = 'audio/ogg;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else {
+        mimeType = '';
+      }
+    }
+
+    const options = mimeType ? { mimeType } : undefined;
+    _voiceMediaRecorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+    _voiceRecordChunks = [];
+
+    _voiceMediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        _voiceRecordChunks.push(e.data);
+      }
+    };
+
+    // Web Audio API によるリアルタイム波形可視化
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        _voiceRecordAudioCtx = new AudioCtx();
+        const source = _voiceRecordAudioCtx.createMediaStreamSource(stream);
+        _voiceRecordAnalyser = _voiceRecordAudioCtx.createAnalyser();
+        _voiceRecordAnalyser.fftSize = 64;
+        source.connect(_voiceRecordAnalyser);
+      }
+    } catch (e) {
+      console.warn('AudioContext init failed for voice recording:', e);
+    }
+
+    _isVoiceRecording = true;
+    _voiceRecordSeconds = 0;
+    { const _vrBtn = document.getElementById('voiceRecordButton'); if (_vrBtn) _vrBtn.classList.add('recording'); }
+
+    const overlay = document.getElementById('voiceRecordOverlay');
+    const timerEl = document.getElementById('voiceRecordTimer');
+    const liveWave = document.getElementById('voiceRecordLiveWave');
+    if (overlay) {
+      overlay.classList.remove('hidden');
+      overlay.style.display = 'flex';
+    }
+    // 録音中は通常の入力ボタン行を隠す（sendMessageButton の親div）
+    { const _sb = document.getElementById('sendMessageButton'); if (_sb && _sb.parentElement) _sb.parentElement.style.display = 'none'; }
+
+
+    if (timerEl) timerEl.textContent = '0:00';
+
+    if (liveWave) {
+      liveWave.innerHTML = '';
+      for (let i = 0; i < 24; i++) {
+        const bar = document.createElement('div');
+        bar.className = 'voice-live-bar flex-1 rounded-full bg-[#5865F2] transition-all duration-75';
+        bar.style.height = '4px';
+        bar.style.minWidth = '2px';
+        bar.style.maxWidth = '4px';
+        liveWave.appendChild(bar);
+      }
+    }
+
+    const dataArray = _voiceRecordAnalyser ? new Uint8Array(_voiceRecordAnalyser.frequencyBinCount) : null;
+    const updateLiveWave = () => {
+      if (!_isVoiceRecording) return;
+      if (_voiceRecordAnalyser && dataArray && liveWave) {
+        _voiceRecordAnalyser.getByteFrequencyData(dataArray);
+        const bars = liveWave.querySelectorAll('.voice-live-bar');
+        const step = Math.max(1, Math.floor(dataArray.length / bars.length));
+        bars.forEach((bar, idx) => {
+          const val = dataArray[idx * step] || 0;
+          const pct = Math.max(15, Math.min(100, Math.round((val / 255) * 100)));
+          bar.style.height = `${pct}%`;
+        });
+      }
+      _voiceRecordAnimFrame = requestAnimationFrame(updateLiveWave);
+    };
+    if (_voiceRecordAnalyser) {
+      _voiceRecordAnimFrame = requestAnimationFrame(updateLiveWave);
+    }
+
+    _voiceRecordTimerInterval = setInterval(() => {
+      _voiceRecordSeconds++;
+      if (timerEl) {
+        const m = Math.floor(_voiceRecordSeconds / 60);
+        const s = _voiceRecordSeconds % 60;
+        timerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+      }
+      if (_voiceRecordSeconds >= 300) {
+        window.sendVoiceRecording();
+      }
+    }, 1000);
+
+    _voiceMediaRecorder.start(250);
+  } catch (err) {
+    console.error('Failed to start voice recording:', err);
+    _cleanupVoiceRecording();
+    if (typeof alertMessage === 'function') {
+      alertMessage('マイクの初期化に失敗しました: ' + (err.message || 'アクセスが拒否されました'), 'error');
+    }
+  }
+};
+
+window.cancelVoiceRecording = function() {
+  if (!_isVoiceRecording) return;
+  _cleanupVoiceRecording();
+  if (typeof alertMessage === 'function') alertMessage('ボイスメッセージを破棄しました', 'info');
+};
+
+function _cleanupVoiceRecording() {
+  _isVoiceRecording = false;
+  { const _vrBtn = document.getElementById('voiceRecordButton'); if (_vrBtn) _vrBtn.classList.remove('recording'); }
+  if (_voiceRecordTimerInterval) {
+    clearInterval(_voiceRecordTimerInterval);
+    _voiceRecordTimerInterval = null;
+  }
+  if (_voiceRecordAnimFrame) {
+    cancelAnimationFrame(_voiceRecordAnimFrame);
+    _voiceRecordAnimFrame = null;
+  }
+  if (_voiceRecordAudioCtx) {
+    try { _voiceRecordAudioCtx.close(); } catch (_) {}
+    _voiceRecordAudioCtx = null;
+  }
+  _voiceRecordAnalyser = null;
+  if (_voiceRecordStream) {
+    _voiceRecordStream.getTracks().forEach(track => {
+      try { track.stop(); } catch (_) {}
+    });
+    _voiceRecordStream = null;
+  }
+  if (_voiceMediaRecorder && _voiceMediaRecorder.state !== 'inactive') {
+    try { _voiceMediaRecorder.stop(); } catch (_) {}
+  }
+  _voiceMediaRecorder = null;
+  _voiceRecordChunks = [];
+  _voiceRecordSeconds = 0;
+
+  const overlay = document.getElementById('voiceRecordOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+  }
+  // 入力ボタン行を元に戻す（sendMessageButton の親div）
+  { const _sb = document.getElementById('sendMessageButton'); if (_sb && _sb.parentElement) _sb.parentElement.style.display = ''; }
+}
+
+window.sendVoiceRecording = async function() {
+  if (!_isVoiceRecording || !_voiceMediaRecorder) return;
+  const recordedDuration = _voiceRecordSeconds;
+  if (recordedDuration < 1) {
+    window.cancelVoiceRecording();
+    if (typeof alertMessage === 'function') alertMessage('録音時間が短すぎます (1秒以上録音してください)', 'warning');
+    return;
+  }
+
+  const recorder = _voiceMediaRecorder;
+  const mimeType = recorder.mimeType || 'audio/webm';
+  const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
+
+  recorder.onstop = async () => {
+    try {
+      const blob = new Blob(_voiceRecordChunks, { type: mimeType });
+      if (blob.size === 0) {
+        if (typeof alertMessage === 'function') alertMessage('音声データの取得に失敗しました', 'error');
+        return;
+      }
+      const voiceFile = new File([blob], `voice-message-${Date.now()}.${ext}`, { type: mimeType });
+
+      attachedFiles = [{
+        file: voiceFile,
+        name: voiceFile.name,
+        type: voiceFile.type,
+        size: voiceFile.size,
+        isVoiceMessage: true
+      }];
+      attachedFile = attachedFiles[0];
+
+      // ボイスメッセージ送信時は既存の入力欄下書きテキストを安全に保全
+      const currentDraftBackup = (typeof messageInput !== 'undefined' && messageInput) ? messageInput.value : '';
+      if (typeof messageInput !== 'undefined' && messageInput) messageInput.value = '';
+
+      if (typeof sendMessage === 'function') {
+        await sendMessage();
+      }
+
+      if (currentDraftBackup && typeof messageInput !== 'undefined' && messageInput && !messageInput.value) {
+        messageInput.value = currentDraftBackup;
+        if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+        if (typeof adjustTextareaHeight === 'function') adjustTextareaHeight();
+      }
+    } catch (err) {
+      console.error('Send voice recording error:', err);
+      if (typeof alertMessage === 'function') alertMessage('ボイスメッセージの送信に失敗しました: ' + (err.message || ''), 'error');
+    }
+  };
+
+  try {
+    recorder.stop();
+  } catch (_) {}
+
+  if (_voiceRecordTimerInterval) { clearInterval(_voiceRecordTimerInterval); _voiceRecordTimerInterval = null; }
+  if (_voiceRecordAnimFrame) { cancelAnimationFrame(_voiceRecordAnimFrame); _voiceRecordAnimFrame = null; }
+  if (_voiceRecordAudioCtx) { try { _voiceRecordAudioCtx.close(); } catch (_) {} _voiceRecordAudioCtx = null; }
+  if (_voiceRecordStream) {
+    _voiceRecordStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+    _voiceRecordStream = null;
+  }
+  _isVoiceRecording = false;
+  { const _vrBtn = document.getElementById('voiceRecordButton'); if (_vrBtn) _vrBtn.classList.remove('recording'); }
+  const overlay = document.getElementById('voiceRecordOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+  }
+  // 入力ボタン行を元に戻す（sendMessageButton の親div）
+  { const _sb = document.getElementById('sendMessageButton'); if (_sb && _sb.parentElement) _sb.parentElement.style.display = ''; }
+};
+
+// =========================================================================
+// ✏️ Phase 3: 下書き (Drafts) 永続化 & インジケーター管理システム (Discord準拠)
+// =========================================================================
+window._covoDrafts = new Map();
+try {
+  const saved = sessionStorage.getItem('covo_channel_drafts');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    Object.entries(parsed).forEach(([k, v]) => {
+      if (typeof v === 'string' && v.trim()) window._covoDrafts.set(k, v);
+    });
+  }
+} catch (_) {}
+
+window.getCurrentChannelKey = function() {
+  if (currentServerId && currentRoomId) {
+    return `${currentServerId}_${currentRoomId}`;
+  }
+  if (currentDmId) {
+    return `dm_${currentDmId}`;
+  }
+  return null;
+};
+
+window.hasDraftForChannel = function(key) {
+  if (!key) return false;
+  const d = window._covoDrafts.get(key);
+  return Boolean(d && d.trim().length > 0);
+};
+
+window._persistDraftsToStorage = function() {
+  try {
+    const obj = {};
+    window._covoDrafts.forEach((v, k) => {
+      if (v && v.trim().length > 0) obj[k] = v;
+    });
+    sessionStorage.setItem('covo_channel_drafts', JSON.stringify(obj));
+  } catch (_) {}
+};
+
+window.saveCurrentDraft = function() {
+  const key = window.getCurrentChannelKey();
+  if (!key || typeof messageInput === 'undefined' || !messageInput) return;
+  const text = messageInput.value;
+  if (text && text.trim().length > 0) {
+    window._covoDrafts.set(key, text);
+  } else {
+    window._covoDrafts.delete(key);
+  }
+  window._persistDraftsToStorage();
+  window.updateDraftBadges();
+};
+
+window.restoreCurrentDraft = function() {
+  const key = window.getCurrentChannelKey();
+  if (!key || typeof messageInput === 'undefined' || !messageInput) return;
+  const draft = window._covoDrafts.get(key) || '';
+  messageInput.value = draft;
+  if (typeof adjustTextareaHeight === 'function') adjustTextareaHeight();
+  if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
+};
+
+window.clearCurrentDraft = function() {
+  const key = window.getCurrentChannelKey();
+  if (!key) return;
+  window._covoDrafts.delete(key);
+  window._persistDraftsToStorage();
+  window.updateDraftBadges();
+};
+
+window.updateDraftBadges = function() {
+  // サーバーチャンネルの下書き鉛筆バッジ
+  document.querySelectorAll('[id^="draft-badge-server_"]').forEach(el => {
+    const chKey = el.id.replace('draft-badge-server_', '');
+    el.style.display = window.hasDraftForChannel(chKey) ? 'inline-flex' : 'none';
+  });
+  // DMの下書き鉛筆バッジ
+  document.querySelectorAll('[id^="draft-badge-dm_"]').forEach(el => {
+    const dmKey = el.id.replace('draft-badge-dm_', 'dm_');
+    el.style.display = window.hasDraftForChannel(dmKey) ? 'inline-flex' : 'none';
+  });
+};
+
+// =========================================================================
+// 🌐 Phase 3: OpenGraph (OGP) リンク埋め込みカード生成 (Discord準拠)
+// =========================================================================
+window._covoOgCache = window._covoOgCache || new Map();
+
+window.extractFirstOgUrl = function(text) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`]+`/g, '');
+  const m = clean.match(/https?:\/\/[^\s<>"'　]+/i);
+  if (!m) return null;
+  let rawUrl = m[0];
+  rawUrl = rawUrl.replace(/[.,;:!?)\],，。、）」』】]+$/, '');
+  if (/\.(png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|m4a)$/i.test(rawUrl)) {
+    return null;
+  }
+  return rawUrl;
+};
+
+window.attachDiscordOgEmbed = async function(container, targetUrl) {
+  if (!container || !targetUrl) return;
+  let ogData = window._covoOgCache.get(targetUrl);
+  if (!ogData) {
+    try {
+      const workerBase = typeof WORKER_BASE_URL !== 'undefined' ? WORKER_BASE_URL : 'https://simplechat-api.astro-fray-server.workers.dev';
+      const res = await fetch(`${workerBase}/api/fetchOg?url=${encodeURIComponent(targetUrl)}`);
+      if (res.ok) {
+        ogData = await res.json();
+        if (ogData && ogData.success) {
+          window._covoOgCache.set(targetUrl, ogData);
+        }
+      }
+    } catch (_) {
+      return;
+    }
+  }
+
+  if (!ogData || !ogData.success || (!ogData.title && !ogData.description && !ogData.image)) {
+    return;
+  }
+
+  if (!container.parentElement && !document.body.contains(container)) return;
+
+  if (container.querySelector(`.covo-og-embed-card[data-og-url="${escapeHtml(targetUrl)}"]`)) {
+    return;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'covo-og-embed-card mt-2.5 p-3 rounded-xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs max-w-sm sm:max-w-md w-full select-none transition-all flex flex-col gap-1.5 border-l-4 animate-fadeIn';
+  card.dataset.ogUrl = targetUrl;
+
+  const leftColor = ogData.themeColor && /^#[0-9a-fA-F]{6}$/.test(ogData.themeColor) ? ogData.themeColor : '#5865F2';
+  card.style.borderLeftColor = leftColor;
+
+  const siteNameHtml = ogData.siteName ? `
+    <div class="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 dark:text-[#949ba4] truncate">
+      ${ogData.favicon ? `<img src="${escapeHtml(ogData.favicon)}" class="w-3.5 h-3.5 rounded object-contain flex-shrink-0" onerror="this.style.display='none'"/>` : ''}
+      <span class="truncate">${escapeHtml(ogData.siteName)}</span>
+    </div>
+  ` : '';
+
+  const titleHtml = ogData.title ? `
+    <a href="${escapeHtml(ogData.url || targetUrl)}" target="_blank" rel="noopener noreferrer" class="text-xs sm:text-sm font-bold text-[#5865F2] hover:underline line-clamp-2 leading-snug cursor-pointer">
+      ${escapeHtml(ogData.title)}
+    </a>
+  ` : '';
+
+  const descHtml = ogData.description ? `
+    <div class="text-[11px] text-gray-600 dark:text-[#dbdee1] line-clamp-3 leading-relaxed whitespace-pre-wrap">
+      ${escapeHtml(ogData.description)}
+    </div>
+  ` : '';
+
+  const imgHtml = ogData.image ? `
+    <div class="mt-1.5 rounded-lg overflow-hidden max-h-48 bg-black/5 dark:bg-black/20 flex items-center justify-center">
+      <img src="${escapeHtml(ogData.image)}" alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto max-h-48 object-cover rounded-lg" loading="lazy" onerror="this.parentElement.remove()" />
+    </div>
+  ` : '';
+
+  card.innerHTML = `${siteNameHtml}${titleHtml}${descHtml}${imgHtml}`;
+  container.appendChild(card);
+};
+
 function createMessageElement(message, messageId, readByCount = 0) {
   const snapDmId = currentDmId;
   const snapServerId = currentServerId;
@@ -18961,6 +20368,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
               message._decryptedErrorText = null;
               if (messageTextSpan && messageTextSpan.parentElement) {
                 messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(dec);
+                const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(dec) : null;
+                if (ogUrl && window.attachDiscordOgEmbed) window.attachDiscordOgEmbed(messageElement, ogUrl);
               }
               if (!message.channelId && (snapServerId || snapDmId)) {
                 message.channelId = snapDmId ? `dm_${snapDmId}` : `${snapServerId}_${snapRoomId}`;
@@ -18981,6 +20390,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
       }
     } else {
       messageTextSpan.innerHTML = escapeHtmlAndLinkUrls(textToDisplay);
+      const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(textToDisplay) : null;
+      if (ogUrl && window.attachDiscordOgEmbed) window.attachDiscordOgEmbed(messageElement, ogUrl);
       // 自分がメンションされていたらハイライト (自分が送信したメッセージは除く)
       if (message.senderId !== userId && (textToDisplay.includes(`@${userNickname}`) || textToDisplay.includes('@all'))) {
         messageElement.classList.add("mention-highlight");
@@ -19032,15 +20443,42 @@ function createMessageElement(message, messageId, readByCount = 0) {
     return card;
   };
 
-  if (message.fileData && message.fileName) {
-    // 既に欠落（404）と分かっているURLは、fetch通信を一切行わずに直ちに期限切れカードを表示（404エラー完全防止）
-    const targetFileDataUrl = message.fileData;
-    if (message._fileExpired || isFileMissing(targetFileDataUrl)) {
+  // 📎 添付ファイル・メディア表示 (暗号化ファイル / KVファイル / 全音声拡張子に完全対応)
+  const targetAttachmentUrl = message.fileData || message.kvFileUrl;
+  if (targetAttachmentUrl && message.fileName) {
+    if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
       message._fileExpired = true;
       messageElement.appendChild(createExpiredFileCard(message.fileName));
     } else {
+      // 復号 URL リゾルバー（E2EE暗号化ファイル・キャッシュ対応）
+      const resolveAttachmentBlobUrl = async () => {
+        if (message._decryptedFileUrl) return message._decryptedFileUrl;
+        const rawUrl = message.fileData || message.kvFileUrl;
+        if (!message.isFileEncrypted) return rawUrl;
+        let key;
+        if (snapDmId) {
+          key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+        } else {
+          key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
+        }
+        if (!key) throw new Error("暗号化鍵が見つかりません");
+        const res = await fetchWithMediaCache(rawUrl);
+        if (res.status === 404 || res.status === 410) {
+          markFileAsMissing(rawUrl);
+          message._fileExpired = true;
+          throw new Error("ファイルが見つかりません（期限切れまたは削除）");
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const buf = await res.arrayBuffer();
+        if (!buf || buf.byteLength < 29) throw new Error("ファイルが破損しているか読み込めません");
+        const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
+        const blob = new Blob([dec], { type: message.fileType || 'application/octet-stream' });
+        message._decryptedFileUrl = URL.createObjectURL(blob);
+        return message._decryptedFileUrl;
+      };
+
       const setMediaSrc = (element, propName, url) => {
-        if (message._fileExpired || isFileMissing(targetFileDataUrl)) {
+        if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
           message._fileExpired = true;
           const expiredCard = createExpiredFileCard(message.fileName);
           element.replaceWith(expiredCard);
@@ -19060,39 +20498,10 @@ function createMessageElement(message, messageId, readByCount = 0) {
                   element.replaceWith(card);
                   return;
                 }
-                let key;
-                if (snapDmId) {
-                  key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
-                } else {
-                  key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
-                }
-                if (!key) {
-                  // 鍵の取得待機中は削除カードにせず、そのままリトライ待機
-                  return;
-                }
-                const res = await fetchWithMediaCache(message.fileData);
-                if (res.status === 404 || res.status === 410) {
-                  markFileAsMissing(message.fileData);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  element.replaceWith(expiredCard);
-                  return;
-                }
-                if (!res.ok) {
-                  return;
-                }
-                const buf = await res.arrayBuffer();
-                if (!buf || buf.byteLength < 29) {
-                  const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
-                  element.replaceWith(expiredCard);
-                  return;
-                }
-                const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
-                const blob = new Blob([dec], { type: message.fileType });
-                message._decryptedFileUrl = URL.createObjectURL(blob);
-                if (propName) element[propName] = message._decryptedFileUrl;
+                const blobUrl = await resolveAttachmentBlobUrl();
+                if (propName) element[propName] = blobUrl;
                 if (element.tagName === 'IMG') element.style.opacity = '1';
-                if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
+                if (element.tagName === 'CANVAS') window.renderPdfCanvas(blobUrl, element);
               } catch (_) {
                 message._decryptionFailed = true;
                 const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
@@ -19101,13 +20510,13 @@ function createMessageElement(message, messageId, readByCount = 0) {
             })();
           }
         } else {
-          const targetUrl = url || message.fileData;
-          if (propName) element[propName] = targetUrl;
+          const directUrl = url || targetAttachmentUrl;
+          if (propName) element[propName] = directUrl;
           if (element.tagName === 'IMG') {
             element.onerror = () => {
-              fetch(targetUrl, { method: 'HEAD' }).then(res => {
+              fetch(directUrl, { method: 'HEAD' }).then(res => {
                 if (res.status === 404 || res.status === 410) {
-                  markFileAsMissing(targetUrl);
+                  markFileAsMissing(directUrl);
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName);
                   element.replaceWith(expiredCard);
@@ -19116,9 +20525,9 @@ function createMessageElement(message, messageId, readByCount = 0) {
             };
           } else if (element.tagName === 'VIDEO') {
             element.onerror = () => {
-              fetch(targetUrl, { method: 'HEAD' }).then(res => {
+              fetch(directUrl, { method: 'HEAD' }).then(res => {
                 if (res.status === 404 || res.status === 410) {
-                  markFileAsMissing(targetUrl);
+                  markFileAsMissing(directUrl);
                   message._fileExpired = true;
                   const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
                   element.replaceWith(expiredCard);
@@ -19126,51 +20535,135 @@ function createMessageElement(message, messageId, readByCount = 0) {
               }).catch(() => {});
             };
           }
-          if (element.tagName === 'CANVAS') window.renderPdfCanvas(targetUrl, element);
+          if (element.tagName === 'CANVAS') window.renderPdfCanvas(directUrl, element);
         }
       };
 
-      if (message.fileType && message.fileType.startsWith('image/')) {
+      // 👁️ スポイラー判定 (Discord互換: isSpoiler または ファイル名に SPOILER_ 含む)
+      const isSpoiler = Boolean(
+        message.isSpoiler ||
+        (typeof message.fileName === 'string' && (message.fileName.startsWith('SPOILER_') || message.fileName.includes('[SPOILER]')))
+      );
+
+      const appendWithSpoilerSupport = (mediaNode) => {
+        if (!isSpoiler) {
+          messageElement.appendChild(mediaNode);
+          return;
+        }
+
+        const spoilerWrapper = document.createElement('div');
+        spoilerWrapper.className = 'covo-spoiler-wrapper relative inline-block max-w-full rounded-2xl overflow-hidden mt-2 select-none group/spoiler';
+
+        const veil = document.createElement('div');
+        veil.className = 'spoiler-veil filter blur-2xl select-none pointer-events-none transition-all duration-300 transform scale-[1.03]';
+        veil.appendChild(mediaNode);
+        spoilerWrapper.appendChild(veil);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'spoiler-overlay absolute inset-0 bg-black/60 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer z-10 transition-opacity p-4';
+        overlay.innerHTML = `
+          <div class="px-3.5 py-1.5 rounded-full bg-black/85 hover:bg-black text-white text-xs font-bold tracking-widest uppercase flex items-center gap-1.5 shadow-lg border border-white/20 transition-transform active:scale-95">
+            <i class="fas fa-eye-slash text-xs"></i> SPOILER
+          </div>
+          <span class="text-[10px] text-gray-300 mt-1.5 font-medium">クリックして表示</span>
+        `;
+        spoilerWrapper.appendChild(overlay);
+
+        const rehideBtn = document.createElement('button');
+        rehideBtn.type = 'button';
+        rehideBtn.className = 'spoiler-rehide-btn hidden absolute top-2 right-2 w-7 h-7 rounded-full bg-black/75 hover:bg-black text-white flex items-center justify-center shadow-md z-20 cursor-pointer transition-transform hover:scale-110';
+        rehideBtn.title = 'もう一度隠す';
+        rehideBtn.innerHTML = '<i class="fas fa-eye-slash text-xs"></i>';
+        spoilerWrapper.appendChild(rehideBtn);
+
+        const reveal = (e) => {
+          e.stopPropagation();
+          veil.classList.remove('filter', 'blur-2xl', 'select-none', 'pointer-events-none', 'scale-[1.03]');
+          overlay.style.display = 'none';
+          rehideBtn.classList.remove('hidden');
+        };
+
+        const hide = (e) => {
+          e.stopPropagation();
+          veil.classList.add('filter', 'blur-2xl', 'select-none', 'pointer-events-none', 'scale-[1.03]');
+          overlay.style.display = 'flex';
+          rehideBtn.classList.add('hidden');
+          // 音声・動画が再生中なら一時停止して音漏れを防止
+          const mediaEls = veil.querySelectorAll('audio, video');
+          mediaEls.forEach(el => {
+            try { el.pause(); } catch (_) {}
+          });
+        };
+
+        overlay.addEventListener('click', reveal);
+        rehideBtn.addEventListener('click', hide);
+
+        messageElement.appendChild(spoilerWrapper);
+      };
+
+      // 🎵 1. 音声ファイル判定 (全ての音楽・音声形式)
+      if (window.isAudioFile(message.fileName, message.fileType)) {
+        const audioCard = window.createAudioPlayerCard({
+          fileUrl: message._decryptedFileUrl || (message.isFileEncrypted ? '' : targetAttachmentUrl),
+          fileName: message.fileName,
+          fileSize: message.fileSize,
+          fileType: message.fileType,
+          isFileEncrypted: Boolean(message.isFileEncrypted),
+          isMyMessage: isMyMessage,
+          onResolveUrl: resolveAttachmentBlobUrl,
+          onDownload: async () => {
+            try {
+              const url = await resolveAttachmentBlobUrl();
+              downloadFile(url, message.fileName, message.fileType || 'audio/mpeg');
+            } catch (e) {
+              alertMessage(e.message || 'ダウンロードに失敗しました', 'error');
+            }
+          }
+        });
+        appendWithSpoilerSupport(audioCard);
+      }
+      // 🖼️ 2. 画像ファイル判定
+      else if ((message.fileType && message.fileType.startsWith('image/')) || /\.(jpe?g|png|gif|webp|svg|bmp|ico)$/i.test(message.fileName)) {
         const img = document.createElement('img');
         img.className = 'mt-2 rounded-lg max-w-full h-auto cursor-pointer object-contain transition-opacity';
         img.style.maxHeight = '250px';
         img.loading = 'eager';
         setMediaSrc(img, 'src');
         img.addEventListener("click", () => {
-          const url = message._decryptedFileUrl || message.fileData;
+          const url = message._decryptedFileUrl || targetAttachmentUrl;
           openPhotoSwipeModal(url, message.fileName);
         });
-        messageElement.appendChild(img);
-      } else if (message.fileType && message.fileType.startsWith('video/')) {
+        appendWithSpoilerSupport(img);
+      }
+      // 🎬 3. 動画ファイル判定
+      else if ((message.fileType && message.fileType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|ogv)$/i.test(message.fileName)) {
         const video = document.createElement('video');
         video.controls = true;
         video.className = 'mt-2 rounded-lg max-w-full h-auto';
         video.style.maxHeight = '250px';
         setMediaSrc(video, 'src');
-        messageElement.appendChild(video);
-      } else if (message.fileType === 'application/pdf') {
-        // Teams風PDFカードを作成
+        appendWithSpoilerSupport(video);
+      }
+      // 📑 4. PDFファイル判定
+      else if (message.fileType === 'application/pdf' || /\.pdf$/i.test(message.fileName)) {
         const pdfWrapper = document.createElement('div');
         pdfWrapper.className = 'mt-2 cursor-pointer inline-block';
 
         const thumbContainer = document.createElement('div');
-        thumbContainer.className = 'relative w-32 h-40 rounded-lg border border-gray-200 bg-gray-50 flex flex-col items-center justify-center overflow-hidden shadow-sm';
+        thumbContainer.className = 'relative w-32 h-40 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#2b2d31] flex flex-col items-center justify-center overflow-hidden shadow-xs';
         thumbContainer.style.flexShrink = '0';
 
-        // PDFバッジ（右上）
         const badge = document.createElement('div');
-        badge.className = 'absolute top-1 right-1 bg-red-500 text-white rounded shadow-sm z-20 flex items-center gap-0.5 pointer-events-none';
+        badge.className = 'absolute top-1 right-1 bg-red-500 text-white rounded shadow-xs z-20 flex items-center gap-0.5 pointer-events-none';
         badge.style.cssText = 'font-size:10px;font-weight:700;padding:2px 5px;';
         badge.innerHTML = '<i class="fas fa-file-pdf"></i> PDF';
         thumbContainer.appendChild(badge);
 
-        // デフォルトアイコン（canvas読み込み成功時に非表示）
         const iconDiv = document.createElement('div');
         iconDiv.className = 'absolute inset-0 flex flex-col items-center justify-center gap-1 z-10 default-pdf-icon pointer-events-none';
         iconDiv.innerHTML = '<i class="fas fa-file-pdf text-red-400 text-3xl opacity-40"></i>';
         thumbContainer.appendChild(iconDiv);
 
-        // サムネイルcanvas
         const thumbCanvas = document.createElement('canvas');
         thumbCanvas.className = 'absolute inset-0 z-0 pdf-thumb-canvas';
         thumbCanvas.style.cssText = 'width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.3s;';
@@ -19178,9 +20671,8 @@ function createMessageElement(message, messageId, readByCount = 0) {
 
         pdfWrapper.appendChild(thumbContainer);
 
-        // ファイル名ラベル
         const pdfLabel = document.createElement('div');
-        pdfLabel.className = 'text-xs text-gray-500 mt-1 flex items-center gap-1';
+        pdfLabel.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1';
         const labelIcon = document.createElement('i');
         labelIcon.className = 'fas fa-file-pdf text-red-500 flex-shrink-0';
         const safeName = document.createElement('span');
@@ -19191,185 +20683,67 @@ function createMessageElement(message, messageId, readByCount = 0) {
         pdfLabel.appendChild(safeName);
         pdfWrapper.appendChild(pdfLabel);
 
-        // クリックでPDFプレビュー
         pdfWrapper.addEventListener('click', () => {
-          if (message._fileExpired || isFileMissing(message.fileData)) {
+          if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
             alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
             return;
           }
-          const url = message._decryptedFileUrl || message.fileData;
+          const url = message._decryptedFileUrl || targetAttachmentUrl;
           openPdfLightbox(url, message.fileName);
         });
 
-        messageElement.appendChild(pdfWrapper);
+        appendWithSpoilerSupport(pdfWrapper);
 
-        // DOMに追加されてからサムネイルを描画
-        const renderThumb = () => {
-          if (message._fileExpired || isFileMissing(message.fileData)) {
+        const renderThumb = async () => {
+          if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
             message._fileExpired = true;
             const expiredCard = createExpiredFileCard(message.fileName);
             pdfWrapper.replaceWith(expiredCard);
             return;
           }
-          // 暗号化ファイルの場合はまず復号する
           if (message.isFileEncrypted) {
-            if (message._decryptedFileUrl) {
-              window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
-            } else {
-              (async () => {
-                try {
-                  let key;
-                  if (snapDmId) {
-                    key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
-                  } else {
-                    key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
-                  }
-                  if (!key) return;
-                  const res = await fetchWithMediaCache(message.fileData);
-                  if (res.status === 404 || res.status === 410) {
-                    markFileAsMissing(message.fileData); // 欠落URLとして学習・永続キャッシュ
-                    message._fileExpired = true;
-                    const expiredCard = createExpiredFileCard(message.fileName);
-                    pdfWrapper.replaceWith(expiredCard);
-                    return;
-                  }
-                  if (!res.ok) return;
-                  const buf = await res.arrayBuffer();
-                  if (!buf || buf.byteLength < 29) {
-                    const expiredCard = createExpiredFileCard(message.fileName, 'ファイルが破損しているか読み込めません');
-                    pdfWrapper.replaceWith(expiredCard);
-                    return;
-                  }
-                  const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
-                  const blob = new Blob([dec], { type: 'application/pdf' });
-                  message._decryptedFileUrl = URL.createObjectURL(blob);
-                  window.renderPdfCanvas(message._decryptedFileUrl, thumbCanvas, 128, 160);
-                } catch (e) {
-                  message._decryptionFailed = true;
-                  const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-                  try { pdfWrapper.replaceWith(errCard); } catch (_) {}
-                }
-              })();
+            try {
+              const url = await resolveAttachmentBlobUrl();
+              window.renderPdfCanvas(url, thumbCanvas, 128, 160);
+            } catch (_) {
+              const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+              try { pdfWrapper.replaceWith(errCard); } catch (_) {}
             }
-          } else if (message.fileData && message.fileData.startsWith('http')) {
-            window.renderPdfCanvas(message.fileData, thumbCanvas, 128, 160);
+          } else {
+            window.renderPdfCanvas(targetAttachmentUrl, thumbCanvas, 128, 160);
           }
         };
 
         requestAnimationFrame(() => requestAnimationFrame(renderThumb));
-      } else {
-        const fileAttachmentDiv = document.createElement("div");
-        fileAttachmentDiv.className = `mt-2 p-2 rounded-lg border border-gray-300 ${isMyMessage ? "bg-gray-200" : "bg-gray-100"} flex items-center space-x-2 cursor-pointer`;
-        fileAttachmentDiv.style.color = "#333";
-        const fnSpan = document.createElement("span");
-        fnSpan.className = "flex-1 text-sm font-semibold truncate";
-        fnSpan.textContent = message.fileName;
-        const arrSpan = document.createElement("span");
-        arrSpan.textContent = "▼";
-        fileAttachmentDiv.appendChild(fnSpan);
-        fileAttachmentDiv.appendChild(arrSpan);
-
-        fileAttachmentDiv.addEventListener("click", async () => {
-          if (message._fileExpired || isFileMissing(message.fileData)) {
-            message._fileExpired = true;
-            alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-            const expiredCard = createExpiredFileCard(message.fileName);
-            fileAttachmentDiv.replaceWith(expiredCard);
-            return;
-          }
-          if (message.isFileEncrypted && !message._decryptedFileUrl) {
+      }
+      // 📦 5. その他の添付ファイル (コード、ZIP、ドキュメントなど) -> Discord準拠 洗練カード (Dark/Light両対応)
+      else {
+        const attachCard = window.createDiscordAttachmentCard({
+          fileUrl: message._decryptedFileUrl || (message.isFileEncrypted ? '' : targetAttachmentUrl),
+          fileName: message.fileName,
+          fileSize: message.fileSize,
+          fileType: message.fileType,
+          isFileEncrypted: Boolean(message.isFileEncrypted),
+          isMyMessage: isMyMessage,
+          onResolveUrl: resolveAttachmentBlobUrl,
+          onPreview: () => {
+            if (window.isTextFile(message.fileName, message.fileType)) {
+              window.openTextFilePreview(targetAttachmentUrl, message.fileName, Boolean(message.isFileEncrypted), resolveAttachmentBlobUrl);
+            } else {
+              downloadFile(message._decryptedFileUrl || targetAttachmentUrl, message.fileName, message.fileType);
+            }
+          },
+          onDownload: async () => {
             try {
-              let key;
-              if (snapDmId) {
-                key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
-              } else {
-                key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
-              }
-              if (!key) throw new Error("鍵が見つかりません");
-              const res = await fetchWithMediaCache(message.fileData);
-              if (res.status === 404 || res.status === 410) {
-                markFileAsMissing(message.fileData);
-                message._fileExpired = true;
-                alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-                const expiredCard = createExpiredFileCard(message.fileName);
-                fileAttachmentDiv.replaceWith(expiredCard);
-                return;
-              }
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              const buf = await res.arrayBuffer();
-              if (!buf || buf.byteLength < 29) {
-                throw new Error("ファイルが破損しているか読み込めません");
-              }
-              const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
-              const blob = new Blob([dec], { type: message.fileType });
-              message._decryptedFileUrl = URL.createObjectURL(blob);
+              const url = await resolveAttachmentBlobUrl();
+              downloadFile(url, message.fileName, message.fileType || 'application/octet-stream');
             } catch (e) {
-              alertMessage("ファイルの復号または読み込みに失敗しました: " + (e.message || ''), "error");
-              return;
+              alertMessage(e.message || 'ダウンロードに失敗しました', 'error');
             }
           }
-          const url = message._decryptedFileUrl || message.fileData;
-          downloadFile(url, message.fileName, message.fileType);
         });
-        messageElement.appendChild(fileAttachmentDiv);
+        appendWithSpoilerSupport(attachCard);
       }
-    }
-  }
-  // KV ファイル添付カード
-  if (message.kvFileUrl && message.fileName) {
-    const targetKvUrl = message.kvFileUrl;
-    if (message._fileExpired || isFileMissing(targetKvUrl)) {
-      message._fileExpired = true;
-      const card = createExpiredFileCard(message.fileName);
-      messageElement.appendChild(card);
-    } else {
-      const kvDiv = document.createElement("div");
-      kvDiv.className = `mt-2 p-2.5 rounded-xl border ${isMyMessage ? "border-gray-400 bg-gray-300" : "border-gray-200 bg-gray-50"} flex items-center gap-2.5 cursor-pointer select-none`;
-      const iconWrap = document.createElement("div");
-      iconWrap.className = "flex-shrink-0 w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center";
-      iconWrap.innerHTML = '<i class="fas fa-paperclip text-gray-500 text-sm"></i>';
-      const infoDiv = document.createElement("div");
-      infoDiv.className = "flex-1 min-w-0";
-      const nameSpan = document.createElement("div");
-      nameSpan.className = "text-sm font-semibold text-gray-800 truncate";
-      nameSpan.textContent = message.fileName;
-      const metaSpan = document.createElement("div");
-      metaSpan.className = "text-xs text-gray-400";
-      if (message.fileSize) {
-        metaSpan.textContent = message.fileSize >= 1048576
-          ? `${(message.fileSize / 1048576).toFixed(1)} MB`
-          : `${(message.fileSize / 1024).toFixed(1)} KB`;
-      }
-      infoDiv.appendChild(nameSpan);
-      infoDiv.appendChild(metaSpan);
-      const dlIcon = document.createElement("div");
-      dlIcon.className = "flex-shrink-0 text-gray-400";
-      dlIcon.innerHTML = '<i class="fas fa-download text-sm"></i>';
-      kvDiv.appendChild(iconWrap);
-      kvDiv.appendChild(infoDiv);
-      kvDiv.appendChild(dlIcon);
-      kvDiv.addEventListener("click", async () => {
-        if (message._fileExpired || isFileMissing(message.kvFileUrl)) {
-          message._fileExpired = true;
-          alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-          const expiredCard = createExpiredFileCard(message.fileName);
-          kvDiv.replaceWith(expiredCard);
-          return;
-        }
-        try {
-          const res = await fetchWithMediaCache(message.kvFileUrl).catch(() => null);
-          if (res && (res.status === 404 || res.status === 410)) {
-            markFileAsMissing(message.kvFileUrl);
-            message._fileExpired = true;
-            alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
-            const expiredCard = createExpiredFileCard(message.fileName);
-            kvDiv.replaceWith(expiredCard);
-            return;
-          }
-        } catch (_) {}
-        downloadFile(message.kvFileUrl, message.fileName, message.fileType || 'application/octet-stream');
-      });
-      messageElement.appendChild(kvDiv);
     }
   }
 
@@ -19603,6 +20977,25 @@ function renderMessagesWithReadReceipts() {
     return body.includes(searchQuery) || sender.includes(searchQuery);
   });
 
+  // スクロール中に新しいメッセージを受信した場合の「最新へジャンプ」バッジ連動
+  if (typeof window._covoLastRenderedCount === 'number' && filteredMessages.length > window._covoLastRenderedCount) {
+    const diff = filteredMessages.length - window._covoLastRenderedCount;
+    if (messagesDisplay && messagesDisplay.scrollTop > 100) {
+      window._covoUnreadScrolledCount = (window._covoUnreadScrolledCount || 0) + diff;
+      const badge = document.getElementById("jumpModeUnreadBadge");
+      if (badge) {
+        badge.textContent = window._covoUnreadScrolledCount > 99 ? '99+' : window._covoUnreadScrolledCount;
+        badge.classList.remove('hidden');
+      }
+      const exitBtn = document.getElementById("jumpModeExitBtn");
+      if (exitBtn) {
+        exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+        exitBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+      }
+    }
+  }
+  window._covoLastRenderedCount = filteredMessages.length;
+
   // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
   const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
   const existingRowsMap = new Map();
@@ -19709,12 +21102,22 @@ function renderMessagesWithReadReceipts() {
         const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText)) || (typeof msg.text === 'string' && msg.text.startsWith('enc::'));
         if (msg._decrypted && typeof msg.text === 'string' && !msg.text.startsWith('enc::')) {
           textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
+          if (ogUrl && window.attachDiscordOgEmbed) {
+            const bEl = row.querySelector('.message-bubble');
+            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
+          }
         } else if (msg._decryptedErrorText) {
           textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);
         } else if (isEnc) {
           textSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
         } else {
           textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
+          if (ogUrl && window.attachDiscordOgEmbed) {
+            const bEl = row.querySelector('.message-bubble');
+            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
+          }
         }
       }
       const bubbleElement = row.querySelector('.message-bubble');
@@ -20231,11 +21634,12 @@ if (downloadMsgBtn) {
           setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
         }
       } catch (err) {
-        console.error("Direct download failed:", err);
+        console.warn("Direct download via blob fetch failed, falling back to direct link download:", err?.message || err);
         const a = document.createElement('a');
         a.href = fileUrl;
         a.download = selectedMessageForContext.fileName || 'download';
         a.target = '_blank';
+        a.rel = 'noopener noreferrer';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
       }
     }
@@ -21233,7 +22637,7 @@ async function notifyNewMessage({
     );
   } else {
     // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、OS通知を送信
-    showNotification(notifTitle, notifBody, channelId);
+    showNotification(notifTitle, notifBody, channelId, serverId);
   }
   // 🌟 新着通知を covo_global_items に確実に登録・更新
   try {
@@ -22130,7 +23534,22 @@ function renderPinnedMessages() {
   const contentWrap = document.createElement("div");
   contentWrap.className = "announcement-content-wrap";
 
-  const latestText = latestMsg._decryptedErrorText || latestMsg.text || (latestMsg.fileType?.startsWith('image') ? "（画像）" : latestMsg.fileData ? "（ファイル）" : latestMsg.sticker ? "（スタンプ）" : "...");
+  const getAnnouncementText = (m) => {
+    if (!m) return '...';
+    if (m._decryptedErrorText) return m._decryptedErrorText;
+    if (m.text) return m.text;
+    const fn = m.fileName || '';
+    const ft = m.fileType || '';
+    if (m.isVoiceMessage || /voice-message/i.test(fn)) return "（ボイスメッセージ）";
+    if ((typeof window.isAudioFile === 'function' && window.isAudioFile(fn, ft)) || (typeof ft === 'string' && ft.startsWith('audio/'))) return "（音声ファイル）";
+    if (typeof ft === 'string' && ft.startsWith('image/')) return "（画像）";
+    if (typeof ft === 'string' && ft.startsWith('video/')) return "（動画）";
+    if (m.fileData || m.fileName) return "（ファイル）";
+    if (m.sticker) return "（スタンプ）";
+    return "...";
+  };
+
+  const latestText = getAnnouncementText(latestMsg);
   contentWrap.innerHTML = `
     <span class="announcement-sender">${escapeHtml(latestMsg.senderNickname || 'ユーザー')}:</span>
     <span class="announcement-text">${escapeHtml(latestText)}</span>
@@ -22192,7 +23611,7 @@ function renderPinnedMessages() {
 
       const itemContent = document.createElement("div");
       itemContent.className = "announcement-item-content";
-      const itemText = msg._decryptedErrorText || msg.text || (msg.fileType?.startsWith('image') ? "（画像）" : msg.fileData ? "（ファイル）" : msg.sticker ? "（スタンプ）" : "...");
+      const itemText = getAnnouncementText(msg);
       itemContent.innerHTML = `
         <span class="announcement-sender">${escapeHtml(msg.senderNickname || 'ユーザー')}:</span>
         <span class="announcement-text">${escapeHtml(itemText)}</span>
@@ -23926,6 +25345,13 @@ function setupAgoraClientEvents(client) {
       _remoteUsers.set(user.uid, user);
       if (mediaType === "audio") {
         user.audioTrack?.play();
+        if (window.covoVolumeManager && user.audioTrack) {
+          window.covoVolumeManager.applyToAgoraTrack(user.uid, user.audioTrack);
+        }
+        const savedSpeaker = localStorage.getItem('covo_selected_speaker');
+        if (savedSpeaker && user.audioTrack?.setPlaybackDevice) {
+          user.audioTrack.setPlaybackDevice(savedSpeaker).catch(() => {});
+        }
       }
       if (mediaType === "video") {
         renderParticipantTiles();
@@ -24076,13 +25502,21 @@ function renderParticipantTiles() {
       ? `<img src="${escapeHtml(p.avatarUrl)}" alt="${safeName}" class="w-full h-full object-cover rounded-full" />`
       : `<span>${escapeHtml(initial)}</span>`;
     return `
-      <div class="discord-participant-tile" id="${p.isLocal ? 'participant-tile-local' : `participant-tile-${p.uid}`}">
+      <div class="discord-participant-tile" id="${p.isLocal ? 'participant-tile-local' : `participant-tile-${p.uid}`}" ${p.isLocal ? '' : `oncontextmenu="window.covoVolumeManager.openVolumePopover('${p.uid}', '${safeName}', '${escapeHtml(p.avatarUrl)}', this, event); return false;"`}>
         <!-- ビデオ映像コンテナ -->
         <div class="discord-tile-video-container ${p.hasVideo ? '' : 'hidden'}" id="${p.videoContainerId}"></div>
         <!-- アバター（ビデオOFF時） -->
         <div class="discord-tile-avatar ${p.hasVideo ? 'hidden' : ''}">
           ${avatarHtml}
         </div>
+        <!-- 右上 アクションボタン (音量調節) -->
+        ${p.isLocal ? '' : `
+          <div class="absolute top-2.5 right-2.5 z-10">
+            <button type="button" class="discord-tile-vol-btn" title="音量を調節 (0%〜200%)" onclick="window.covoVolumeManager.openVolumePopover('${p.uid}', '${safeName}', '${escapeHtml(p.avatarUrl)}', this, event)">
+              <i class="fas fa-volume-high"></i>
+            </button>
+          </div>
+        `}
         <!-- 左下名前ピル -->
         <div class="discord-tile-name-pill">
           <span class="truncate">${safeName}${p.isLocal ? ' (あなた)' : ''}</span>
@@ -24410,6 +25844,25 @@ window.toggleCamera = async function () {
     const sinkIdSupported = typeof document.createElement('audio').setSinkId === 'function';
     const isGlobalAdmin = typeof isAdmin !== 'undefined' && isAdmin;
     const currentModeOverride = window._voiceEngine?._modeOverride || 'auto';
+
+    const savedMic = localStorage.getItem('covo_selected_mic') || '';
+    const savedCam = localStorage.getItem('covo_selected_cam') || '';
+    const savedSpeaker = localStorage.getItem('covo_selected_speaker') || '';
+
+    // ハードウェアデバイスの動的接続/切断監視
+    if (!window._covoDeviceChangeListenerAdded && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      window._covoDeviceChangeListenerAdded = true;
+      navigator.mediaDevices.addEventListener('devicechange', async () => {
+        console.log('[Hardware] オーディオ・ビデオデバイスの変更を検知しました');
+        const m = document.getElementById("callDeviceMenu");
+        if (m && m.classList.contains("show")) {
+          // メニューが開いている場合は再取得して表示を更新
+          window.toggleCallDeviceMenu();
+          window.toggleCallDeviceMenu();
+        }
+      });
+    }
+
     const adminModeSection = isGlobalAdmin ? `
       <div class="pt-3 mt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
         <div class="flex items-center justify-between">
@@ -24447,20 +25900,20 @@ window.toggleCamera = async function () {
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-microphone mr-1.5 text-emerald-500"></i>入力デバイス (マイク)</label>
           <select id="callMicSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            ${mics.length > 0 ? mics.map(m => `<option value="${escapeHtml(m.deviceId)}">${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">マイクが見つかりません</option>'}
+            ${mics.length > 0 ? mics.map(m => `<option value="${escapeHtml(m.deviceId)}" ${savedMic === m.deviceId ? 'selected' : ''}>${escapeHtml(m.label || `マイク ${m.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">マイクが見つかりません</option>'}
           </select>
         </div>
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-video mr-1.5 text-indigo-500"></i>カメラ (ビデオ)</label>
           <select id="callCamSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            ${cams.length > 0 ? cams.map(c => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || `カメラ ${c.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">カメラが見つかりません</option>'}
+            ${cams.length > 0 ? cams.map(c => `<option value="${escapeHtml(c.deviceId)}" ${savedCam === c.deviceId ? 'selected' : ''}>${escapeHtml(c.label || `カメラ ${c.deviceId.slice(0,5)}`)}</option>`).join('') : '<option value="">カメラが見つかりません</option>'}
           </select>
         </div>
         ${speakers.length > 0 && sinkIdSupported ? `
         <div>
           <label class="block font-bold text-gray-600 dark:text-gray-400 mb-1.5"><i class="fas fa-volume-high mr-1.5 text-blue-500"></i>出力デバイス (スピーカー)</label>
           <select id="callSpeakerSelect" class="w-full bg-gray-100 dark:bg-[#1e1f22] border border-gray-300 dark:border-white/10 rounded-xl p-2 text-base text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}">${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</option>`).join('')}
+            ${speakers.map(s => `<option value="${escapeHtml(s.deviceId)}" ${savedSpeaker === s.deviceId ? 'selected' : ''}>${escapeHtml(s.label || `スピーカー ${s.deviceId.slice(0,5)}`)}</option>`).join('')}
           </select>
         </div>
         ` : ''}
@@ -24472,6 +25925,7 @@ window.toggleCamera = async function () {
       micSel.onchange = async () => {
         const devId = micSel.value;
         if (!devId) return;
+        localStorage.setItem('covo_selected_mic', devId);
         try {
           if (window._voiceEngine && window._voiceEngine.isActive) {
             await window._voiceEngine.switchMicrophone(devId);
@@ -24489,6 +25943,7 @@ window.toggleCamera = async function () {
       camSel.onchange = async () => {
         const devId = camSel.value;
         if (!devId) return;
+        localStorage.setItem('covo_selected_cam', devId);
         try {
           if (window._voiceEngine && window._voiceEngine.isActive) {
             await window._voiceEngine.switchCamera(devId);
@@ -24506,6 +25961,7 @@ window.toggleCamera = async function () {
       spkSel.onchange = async () => {
         const devId = spkSel.value;
         if (devId) {
+          localStorage.setItem('covo_selected_speaker', devId);
           if (window._voiceEngine && window._voiceEngine.isActive && typeof window._voiceEngine.switchSpeaker === 'function') {
             await window._voiceEngine.switchSpeaker(devId).catch(() => {});
           }
@@ -24614,7 +26070,7 @@ function handleCallDeclinedFromNotification(data) {
 }
 
 // --- 統合通知関数 ---
-async function showNotification(title, body, roomId, forceOs = false) {
+async function showNotification(title, body, roomId, serverId = null, forceOs = false) {
   const notifEnabled = (localStorage.getItem('simplechat_browser_notif') !== 'false') && (!isTauri || localStorage.getItem('simplechat_desktop_notif') !== 'false');
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
@@ -24686,8 +26142,11 @@ async function showNotification(title, body, roomId, forceOs = false) {
             window.focus();
           }
           if (roomId) {
-            if (typeof goToRoom === 'function') goToRoom(roomId);
-            else {
+            if (serverId && serverId !== currentServerId && typeof goToServerRoom === 'function') {
+              goToServerRoom(serverId, roomId);
+            } else if (typeof goToRoom === 'function') {
+              goToRoom(roomId);
+            } else {
               const roomItem = document.getElementById(`room-item-${roomId}`);
               if (roomItem) roomItem.click();
             }
@@ -24721,8 +26180,11 @@ async function showNotification(title, body, roomId, forceOs = false) {
             window.focus();
             try { n.close(); } catch (_) {}
             if (roomId) {
-              if (typeof goToRoom === 'function') goToRoom(roomId);
-              else {
+              if (serverId && serverId !== currentServerId && typeof goToServerRoom === 'function') {
+                goToServerRoom(serverId, roomId);
+              } else if (typeof goToRoom === 'function') {
+                goToRoom(roomId);
+              } else {
                 const roomItem = document.getElementById(`room-item-${roomId}`);
                 if (roomItem) roomItem.click();
               }
@@ -24744,7 +26206,7 @@ async function showNotification(title, body, roomId, forceOs = false) {
                 icon: '/img/icon-192x192.png?v=6',
                 badge: '/img/icon-192x192.png?v=6',
                 tag: notifTag,
-                data: { roomId }
+                data: { roomId, serverId }
               }).then(() => {
                 setTimeout(() => {
                   reg.getNotifications({ tag: notifTag }).then(list => {
@@ -27074,6 +28536,29 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    // -6. ボイスメッセージ録音中であればキャンセル
+    if (typeof _isVoiceRecording !== 'undefined' && _isVoiceRecording) {
+      if (typeof window.cancelVoiceRecording === 'function') window.cancelVoiceRecording();
+      return;
+    }
+    // -5. ユーザー音量ポップオーバー
+    const userVolPop = document.getElementById('covoUserVolumePopover');
+    if (userVolPop) {
+      userVolPop.remove();
+      return;
+    }
+    // -4. テキスト/コードプレビューモーダル
+    const textPreviewModal = document.getElementById('textFilePreviewModal');
+    if (textPreviewModal && textPreviewModal.style.display !== 'none' && !textPreviewModal.classList.contains('hidden')) {
+      if (typeof window.closeTextFilePreview === 'function') window.closeTextFilePreview();
+      return;
+    }
+    // -3. オーディオプレビューモーダル
+    const audioPreviewModal = document.getElementById('audioPreviewModal');
+    if (audioPreviewModal && audioPreviewModal.style.display !== 'none' && !audioPreviewModal.classList.contains('hidden')) {
+      if (typeof window.closeAudioPreviewModal === 'function') window.closeAudioPreviewModal();
+      return;
+    }
     // -2. アバター高解像度拡大モーダル
     const avatarLightboxEl = document.getElementById('avatarLightbox');
     if (avatarLightboxEl && avatarLightboxEl.style.display !== 'none' && !avatarLightboxEl.classList.contains('hidden')) {
@@ -29537,6 +31022,13 @@ class VoiceEngine {
           audioEl.muted = true;
         }
         audioEl.srcObject = e.streams[0];
+        if (window.covoVolumeManager) {
+          window.covoVolumeManager.applyToAudioElement(peerUid, audioEl);
+        }
+        const savedSpeaker = localStorage.getItem('covo_selected_speaker');
+        if (savedSpeaker && typeof audioEl.setSinkId === 'function') {
+          audioEl.setSinkId(savedSpeaker).catch(() => {});
+        }
         const playPromise = audioEl.play();
         if (playPromise !== undefined) {
           playPromise.catch(err => {
@@ -29948,6 +31440,13 @@ class VoiceEngine {
           console.warn('[VoiceEngine] Agora subscribe失敗:', e)
         );
         if (mediaType === 'audio' && user.audioTrack) {
+          if (window.covoVolumeManager) {
+            window.covoVolumeManager.applyToAgoraTrack(user.uid, user.audioTrack);
+          }
+          const savedSpeaker = localStorage.getItem('covo_selected_speaker');
+          if (savedSpeaker && typeof user.audioTrack.setPlaybackDevice === 'function') {
+            user.audioTrack.setPlaybackDevice(savedSpeaker).catch(() => {});
+          }
           if (typeof _isUserPanelDeafened !== 'undefined' && _isUserPanelDeafened) {
             try { user.audioTrack.setVolume(0); } catch (_) {}
           }
@@ -30552,8 +32051,15 @@ class VoiceEngine {
       const muteIcon = m.isMuted ? '<i class="fas fa-microphone-slash" style="color:#f87171;font-size:0.6rem;margin-left:2px"></i>' : '';
       const safeUid = escapeHtml(uid);
 
-      return `<div class="vc-grid-tile" id="vc-tile-${safeUid}" style="${tileStyle}">
+      return `<div class="vc-grid-tile relative group/vctile" id="vc-tile-${safeUid}" style="${tileStyle}" ${isMe ? '' : `oncontextmenu="window.covoVolumeManager.openVolumePopover('${safeUid}', '${safeName}', '${escapeHtml(avatarSrc)}', this, event); return false;"`}>
         <div class="vc-grid-avatar">${avatarHtml}</div>
+        ${isMe ? '' : `
+          <div class="absolute top-2 right-2 z-10 opacity-0 group-hover/vctile:opacity-100 transition-opacity">
+            <button type="button" class="vc-tile-vol-btn" title="音量を調整 (0%〜200%)" onclick="window.covoVolumeManager.openVolumePopover('${safeUid}', '${safeName}', '${escapeHtml(avatarSrc)}', this, event)">
+              <i class="fas fa-volume-high"></i>
+            </button>
+          </div>
+        `}
         <div class="vc-grid-tile-name">
           <span class="vc-grid-tile-name-text">${safeName}${isMe ? ' (あなた)' : ''}</span>
           ${muteIcon}

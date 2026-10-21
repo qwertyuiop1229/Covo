@@ -85,6 +85,61 @@ function isFileExtensionBlocked(fileName) {
   }
   return false;
 }
+
+// 🎵 拡張子からの正確なMIMEタイプ推定ヘルパー（あらゆる音楽・動画・静的ファイルに対応）
+function inferMimeType(fileName, fallbackType) {
+  if (!fileName || typeof fileName !== 'string') return fallbackType || 'application/octet-stream';
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  const mimeMap = {
+    // 音楽 / 音声形式 (全対応)
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    oga: 'audio/ogg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    flac: 'audio/flac',
+    opus: 'audio/opus',
+    weba: 'audio/webm',
+    webm: 'audio/webm',
+    caf: 'audio/x-caf',
+    wma: 'audio/x-ms-wma',
+    aiff: 'audio/aiff',
+    aif: 'audio/aiff',
+    aifc: 'audio/aiff',
+    mid: 'audio/midi',
+    midi: 'audio/midi',
+    amr: 'audio/amr',
+    ac3: 'audio/ac3',
+    mp2: 'audio/mpeg',
+    mka: 'audio/x-matroska',
+    // 動画形式
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    ogv: 'video/ogg',
+    // 画像形式
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    ico: 'image/x-icon',
+    // 文書 / コード形式
+    pdf: 'application/pdf',
+    txt: 'text/plain; charset=utf-8',
+    md: 'text/markdown; charset=utf-8',
+    json: 'application/json; charset=utf-8',
+    js: 'text/javascript; charset=utf-8',
+    html: 'text/html; charset=utf-8',
+    css: 'text/css; charset=utf-8',
+    csv: 'text/csv; charset=utf-8'
+  };
+  return mimeMap[ext] || fallbackType || 'application/octet-stream';
+}
+
 // --- Cloudflare API 監査・稼働メトリクスロガー ---
 const _cfApiLogs = [];
 const _cfApiDailyStats = {
@@ -214,8 +269,6 @@ export default {
       if (url.pathname === "/api/syncRtdb" && request.method === "POST") {
         return await handleSyncRtdb(request, env);
       }
-        return await handleSyncRtdb(request, env);
-      }
       if (url.pathname === "/api/agoraToken" && (request.method === "GET" || request.method === "POST")) {
         return await handleAgoraToken(request, env, url);
       }
@@ -271,6 +324,9 @@ export default {
       if (url.pathname === "/api/e2ee/pepper" && request.method === "GET") {
         return await handleE2EEPepper(request, env);
       }
+      if (url.pathname === "/api/fetchOg" && (request.method === "GET" || request.method === "HEAD")) {
+        return await handleFetchOg(request, env, url, cors);
+      }
       if (url.pathname.startsWith("/api/d1/")) {
         return await handleD1Api(request, env, url);
       }
@@ -294,6 +350,193 @@ export default {
       }
       },
       };
+
+// -------------------------------------------------------------
+// 🌐 Discord準拠 高速・安全な OpenGraph (OGP) メタデータ取得処理 (SSRF保護付き)
+// -------------------------------------------------------------
+async function handleFetchOg(request, env, url, cors) {
+  const targetUrlStr = url.searchParams.get("url");
+  if (!targetUrlStr) {
+    return new Response(JSON.stringify({ error: "Missing url parameter" }), {
+      status: 400,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(targetUrlStr);
+  } catch (_) {
+    return new Response(JSON.stringify({ error: "Invalid URL" }), {
+      status: 400,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+
+  // プロトコル検証: HTTP / HTTPS のみ許可
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return new Response(JSON.stringify({ error: "Only http and https protocols are supported" }), {
+      status: 400,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+
+  // 🔒 SSRF ガード: ローカルホスト・プライベートIP・リンクローカル・内部ドメインを完全遮断
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const isPrivateHost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".arpa") ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+
+  if (isPrivateHost) {
+    return new Response(JSON.stringify({ error: "Access to private or local networks is forbidden" }), {
+      status: 403,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+    const resp = await fetch(parsedUrl.href, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; CovoBot/1.0; +https://covo.app; Discord-like embed crawler)",
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
+      },
+      redirect: "follow"
+    });
+    clearTimeout(timeoutId);
+
+    if (!resp.ok) {
+      return new Response(JSON.stringify({ error: `Upstream returned status ${resp.status}` }), {
+        status: 502,
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+
+    const contentType = resp.headers.get("content-type") || "";
+    if (contentType.startsWith("image/")) {
+      const fileName = parsedUrl.pathname.split("/").pop() || "image";
+      return new Response(JSON.stringify({
+        success: true,
+        url: parsedUrl.href,
+        title: fileName,
+        description: "",
+        image: parsedUrl.href,
+        siteName: parsedUrl.hostname,
+        favicon: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsedUrl.hostname)}&sz=64`,
+        themeColor: null
+      }), {
+        status: 200,
+        headers: {
+          ...cors,
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=3600"
+        }
+      });
+    }
+
+    const reader = resp.body ? resp.body.getReader() : null;
+    let htmlText = "";
+    if (reader) {
+      const decoder = new TextDecoder("utf-8", { fatal: false });
+      let totalBytes = 0;
+      const maxBytes = 131072; // 128 KB
+      while (totalBytes < maxBytes) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.length;
+        htmlText += decoder.decode(value, { stream: true });
+        if (htmlText.includes("</head>") || htmlText.includes("</HEAD>")) break;
+      }
+      try { reader.cancel(); } catch (_) {}
+    } else {
+      htmlText = await resp.text();
+      if (htmlText.length > 131072) htmlText = htmlText.slice(0, 131072);
+    }
+
+    const getMeta = (propName) => {
+      const escaped = propName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const pattern1 = new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i');
+      const match1 = htmlText.match(pattern1);
+      if (match1 && match1[1]) return match1[1].trim();
+
+      const pattern2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["']`, 'i');
+      const match2 = htmlText.match(pattern2);
+      if (match2 && match2[1]) return match2[1].trim();
+
+      return null;
+    };
+
+    let title = getMeta("og:title") || getMeta("twitter:title");
+    if (!title) {
+      const titleMatch = htmlText.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleMatch && titleMatch[1]) title = titleMatch[1].trim();
+    }
+
+    const description = getMeta("og:description") || getMeta("twitter:description") || getMeta("description") || "";
+
+    let image = getMeta("og:image") || getMeta("twitter:image") || getMeta("og:image:url");
+    if (image) {
+      try { image = new URL(image, parsedUrl.href).href; } catch (_) {}
+    }
+
+    const siteName = getMeta("og:site_name") || parsedUrl.hostname;
+    const themeColor = getMeta("theme-color");
+
+    let favicon = null;
+    const iconMatch = htmlText.match(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']*)["']/i);
+    if (iconMatch && iconMatch[1]) {
+      try { favicon = new URL(iconMatch[1], parsedUrl.href).href; } catch (_) {}
+    }
+    if (!favicon) {
+      favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsedUrl.hostname)}&sz=64`;
+    }
+
+    if (!title && !description && !image) {
+      return new Response(JSON.stringify({ success: false, reason: "No OGP metadata found" }), {
+        status: 200,
+        headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=1800" }
+      });
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      url: parsedUrl.href,
+      title: title || parsedUrl.hostname,
+      description: description.slice(0, 300),
+      image: image || null,
+      siteName: siteName || parsedUrl.hostname,
+      favicon: favicon,
+      themeColor: themeColor || null
+    }), {
+      status: 200,
+      headers: {
+        ...cors,
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=3600"
+      }
+    });
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Failed to fetch metadata", details: err?.message || String(err) }), {
+      status: 500,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
+}
 
 // -------------------------------------------------------------
 // E2EE KMS Pepper 配信処理 (SEC-2 多層防御)
@@ -615,9 +858,8 @@ async function handleSignup(request, env) {
     }
     
     const cleanEmail = email.trim().toLowerCase();
-
-    // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得
-    const workerToken = await getWorkerAuthToken(env);
+    // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得（サービスアカウント優先）
+    const workerToken = await getAdminTokenForFirestore(env);
     if (!workerToken) {
       return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -1833,7 +2075,18 @@ async function handleUploadFile(request, env) {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
     }
-    const meta = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, uploaderId, folder, serverId, uploadedAt: Date.now() };
+    // 🔒 IDOR防御: 通常のメッセージ添付ファイル等でserverIdが指定された場合、アップロード者がそのサーバーのメンバーまたは管理者であることを検証
+    if (serverId && !folder.includes('stamp') && !folder.includes('servericons')) {
+      const isMember = await isServerMemberCheck(env.FIREBASE_APP_ID, serverId, verifiedUser, env);
+      const isGlobal = await isAppAdmin(env.FIREBASE_APP_ID, verifiedUser, env);
+      if (!isMember && !isGlobal) {
+        return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+    const resolvedType = inferMimeType(file.name, file.type || 'application/octet-stream');
+    const meta = { name: file.name, type: resolvedType, size: file.size, uploaderId, folder, serverId, uploadedAt: Date.now() };
     await env.FILES.put(key, arrayBuffer, {
       metadata: meta,
       expirationTtl: undefined // 期限なし
@@ -2082,8 +2335,11 @@ async function handleServeFile(request, env, url) {
       }
     }
 
-    const contentType = (metadata && metadata.type) || 'application/octet-stream';
+    const rawType = (metadata && metadata.type) || 'application/octet-stream';
     const fileName = (metadata && metadata.name) ? metadata.name : key;
+    const contentType = (rawType === 'application/octet-stream' || !rawType)
+      ? inferMimeType(fileName, rawType)
+      : rawType;
     const isPreview = url.searchParams.get('preview') === '1';
 
     // 🔒 キャッシュ制御: パブリックアセット（アバター・スタンプ）は1日、それ以外は機密保護のため private キャッシュ
@@ -2095,11 +2351,12 @@ async function handleServeFile(request, env, url) {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': cacheControl,
+      'Accept-Ranges': 'bytes'
     };
 
     // 🔒 XSS対策: SVG / HTML / 実行可能コンテンツはブラウザでの直接実行を絶対に防ぐ（sandbox または attachment 強制）
     const isSafeInlineImage = /^(image\/(png|jpe?g|gif|webp|avif|bmp))$/i.test(contentType);
-    const isSafeMedia = /^(video\/(mp4|webm|ogg)|audio\/(mp3|mpeg|ogg|wav|webm|aac|flac))$/i.test(contentType);
+    const isSafeMedia = /^(video\/(mp4|webm|ogg|quicktime|x-matroska)|audio\/(mp3|mpeg|ogg|wav|x-wav|wave|webm|aac|flac|x-flac|mp4|m4a|x-m4a|opus|midi|x-midi|aiff|x-aiff|x-caf|x-ms-wma|amr))$/i.test(contentType);
     if (!isSafeInlineImage && !isSafeMedia) {
       headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
       headers['Content-Disposition'] = isPreview
@@ -2111,10 +2368,55 @@ async function handleServeFile(request, env, url) {
         : `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`;
     }
 
+    const totalLength = value ? value.byteLength : 0;
+
     if (request.method === "HEAD") {
+      headers['Content-Length'] = String(totalLength);
       return new Response(null, { status: 200, headers });
     }
 
+    // 🎵 HTTP Range リクエスト処理（音声・動画シークおよびスムーズなバッファリング対応）
+    const rangeHeader = request.headers.get("Range");
+    if (rangeHeader && rangeHeader.startsWith("bytes=") && totalLength > 0) {
+      const byteRange = rangeHeader.replace("bytes=", "").trim();
+      const parts = byteRange.split("-");
+      let start, end;
+      if (parts[0] === "") {
+        // Suffix byte range (例: bytes=-32768、末尾メタデータ取得)
+        const suffixLen = parseInt(parts[1], 10);
+        if (isNaN(suffixLen) || suffixLen <= 0) {
+          start = 0;
+          end = totalLength - 1;
+        } else {
+          start = Math.max(0, totalLength - suffixLen);
+          end = totalLength - 1;
+        }
+      } else {
+        start = parseInt(parts[0], 10) || 0;
+        end = parts[1] ? parseInt(parts[1], 10) : totalLength - 1;
+      }
+
+      if (isNaN(start) || isNaN(end) || start > end || start >= totalLength) {
+        return new Response(null, {
+          status: 416,
+          headers: {
+            ...headers,
+            "Content-Range": `bytes */${totalLength}`
+          }
+        });
+      }
+
+      end = Math.min(end, totalLength - 1);
+      const chunk = value.slice(start, end + 1);
+      const rangeHeaders = {
+        ...headers,
+        "Content-Range": `bytes ${start}-${end}/${totalLength}`,
+        "Content-Length": String(chunk.byteLength)
+      };
+      return new Response(chunk, { status: 206, headers: rangeHeaders });
+    }
+
+    headers['Content-Length'] = String(totalLength);
     return new Response(value, {
       status: 200,
       headers
@@ -2435,6 +2737,42 @@ async function handleBulkDeleteFiles(request, env) {
     const deleteType = new URL(request.url).searchParams.get("deleteType") || "all_safe";
 
     let kvDeleted = 0;
+    // 🔒 未使用アイコン削除: 「使用中URL一覧」はループ前に1回だけ全件取得し、取得に失敗したら何も削除せず中止する
+    let activeFileKeys = null;
+    if (deleteType === "unused_avatars") {
+      const adminToken = await getAdminTokenForFirestore(env);
+      if (!adminToken) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に必要な認証を取得できなかったため、安全のため削除を中止しました" }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+      const projectId = env.FIREBASE_PROJECT_ID;
+      activeFileKeys = new Set();
+      const collectActiveKeys = async (collectionName, fieldName) => {
+        let pageToken = "";
+        do {
+          const res = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/${collectionName}?pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`, {
+            headers: { "Authorization": `Bearer ${adminToken}` }
+          });
+          if (!res.ok) throw new Error(`${collectionName} の取得に失敗しました (HTTP ${res.status})`);
+          const pageData = await res.json();
+          (pageData.documents || []).forEach(d => {
+            const url = d.fields?.[fieldName]?.stringValue;
+            const m = url ? url.match(/\/api\/file\/([A-Za-z0-9_\-]+)/) : null;
+            if (m) activeFileKeys.add(m[1]);
+          });
+          pageToken = pageData.nextPageToken || "";
+        } while (pageToken);
+      };
+      try {
+        await collectActiveKeys("users", "avatarUrl");
+        await collectActiveKeys("servers", "iconUrl");
+      } catch (collectErr) {
+        return new Response(JSON.stringify({ error: "使用中アイコンの照合に失敗したため、安全のため削除を中止しました: " + String(collectErr && collectErr.message || collectErr) }), {
+          status: 200, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
+    }
     if (env.FILES) {
       let cursor;
       do {
@@ -2443,9 +2781,7 @@ async function handleBulkDeleteFiles(request, env) {
           const meta = key.metadata || {};
           const folder = (meta.folder || '').toLowerCase();
           const cat = categorizeKvFile(meta);
-
           let shouldDelete = false;
-
           if (deleteType === "messages_only" || deleteType === "all_safe") {
             // アイコンとスタンプは100%保護し、チャット添付ファイルのみ削除
             if (cat !== "avatars" && cat !== "stamps" && !folder.includes('avatar') && !folder.includes('icon') && !folder.includes('stamp')) {
@@ -2468,44 +2804,10 @@ async function handleBulkDeleteFiles(request, env) {
               shouldDelete = true;
             }
           } else if (deleteType === "unused_avatars") {
-            // 現在 Firestore で使われている全アバターURL & 全サーバーアイコンURLを収集
-            const adminToken = await getAdminTokenForFirestore(env);
-            const activeFileKeys = new Set();
-            if (adminToken) {
-              const projectId = env.FIREBASE_PROJECT_ID;
-              try {
-                const uRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const uData = await uRes.json();
-                if (uData.documents) {
-                  uData.documents.forEach(d => {
-                    const av = d.fields?.avatarUrl?.stringValue;
-                    if (av) {
-                      const m = av.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-              try {
-                const sRes = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers?pageSize=300`, {
-                  headers: { "Authorization": `Bearer ${adminToken}` }
-                });
-                const sData = await sRes.json();
-                if (sData.documents) {
-                  sData.documents.forEach(d => {
-                    const ic = d.fields?.iconUrl?.stringValue;
-                    if (ic) {
-                      const m = ic.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-                      if (m) activeFileKeys.add(m[1]);
-                    }
-                  });
-                }
-              } catch (_) {}
-            }
+            // 使用中URL一覧はループ前に取得済み。アップロード直後でFirestore反映前の画像を消さないよう24時間は保護する
             const isAvatarOrIcon = cat === 'avatars' || folder.includes('avatar') || folder.includes('icon') || folder.includes('servericons');
-            if (isAvatarOrIcon && !activeFileKeys.has(key.name)) {
+            const isRecentUpload = Number(meta.uploadedAt || 0) > Date.now() - 24 * 60 * 60 * 1000;
+            if (isAvatarOrIcon && activeFileKeys && !activeFileKeys.has(key.name) && !isRecentUpload) {
               shouldDelete = true;
             }
           } else if (deleteType === "all_danger") {

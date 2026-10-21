@@ -32,13 +32,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.266" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.274" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.266" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.274" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -272,9 +272,13 @@
         s.includes('could not find callback id') ||
         s.includes('tracking prevention') ||
         s.includes('trackingprevention') ||
+        s.includes('openwindowsdownloadmodal is not defined') ||
+        s.includes('openwindowsdownloadmodal') ||
         s.includes('openpastversionsmodal is not defined') ||
         s.includes('emergencycheckupdate is not defined') ||
         s.includes('pdfjslib is not defined') ||
+        s.includes('direct download failed') ||
+        s.includes('load failed') ||
         s.includes('到着を待機します') ||
         s.includes('dm鍵を生成済みです') ||
         s.includes('geostudy') ||
@@ -302,6 +306,38 @@
         return false;
       };
     }
+
+    // グローバル関数の未定義クラッシュ (ReferenceError: openWindowsDownloadModal is not defined) を防止する先行定義
+    window.openWindowsDownloadModal = window.openWindowsDownloadModal || function () {
+      const ua = navigator.userAgent || '';
+      const isIos = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+      const isAndroid = /android/i.test(ua);
+
+      if (isIos && isSafari) {
+        const iosModal = document.getElementById('iosPwaGuideModal');
+        if (iosModal) {
+          iosModal.classList.remove('hidden');
+          return;
+        }
+      }
+
+      if (isAndroid && (window.deferredPwaPrompt || window.__deferredPwaPrompt)) {
+        const promptEvent = window.deferredPwaPrompt || window.__deferredPwaPrompt;
+        promptEvent.prompt();
+        promptEvent.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted' && typeof alertMessage === 'function') {
+            alertMessage('ホーム画面に追加しました！', 'success');
+          }
+          window.deferredPwaPrompt = null;
+          window.__deferredPwaPrompt = null;
+        });
+        return;
+      }
+
+      const modal = document.getElementById('windowsDownloadModal');
+      if (modal) modal.classList.remove('hidden');
+    };
 
     window.showEmergencyRecoveryPanel = function(errMsg, errObj) {
       const panel = document.getElementById('emergencyRecoveryOverlay');
@@ -851,6 +887,21 @@
         setTimeout(function() { splash.remove(); }, 300);
       }
     }, 8000);
+    // フォールバック（Safari等でIndexedDBや通信待機が長引いた場合、12秒でログイン画面を先行表示し真っ白フリーズを解除）
+    setTimeout(function() {
+      const isAnyUiShown = document.body.classList.contains("auth-ready") ||
+                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
+                           document.getElementById("appContainer")?.classList.contains("hidden") === false ||
+                           document.getElementById("authContainer")?.classList.contains("hidden") === false ||
+                           document.getElementById("emergencyRecoveryOverlay")?.classList.contains("hidden") === false;
+      if (!isAnyUiShown) {
+        const authContainer = document.getElementById("authContainer");
+        if (authContainer) {
+          authContainer.classList.remove("hidden");
+          console.warn('[Watchdog] 起動待機が長時間に及んだため、ログイン画面を先行表示しました。');
+        }
+      }
+    }, 12000);
     setTimeout(function() {
       const isUiVisible = document.body.classList.contains("auth-ready") ||
                           document.getElementById("serverListScreen")?.classList.contains("hidden") === false ||
@@ -1071,7 +1122,7 @@
                 <div class="text-[10px] text-gray-400 truncate">管理者にフィードバック</div>
               </div>
             </button>
-            <button onclick="openWindowsDownloadModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
+            <button onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" class="p-3.5 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
               <div class="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm flex-shrink-0">
                 <i class="fab fa-windows"></i>
               </div>
@@ -1226,7 +1277,7 @@
           <i class="fas fa-circle-question"></i>
         </button>
         <!-- Web版専用: Windowsアプリ ダウンロードボタン (Tauri環境以外で表示) -->
-        <button id="titleBarDownloadAppBtn" onclick="openWindowsDownloadModal()" class="titlebar-action-btn text-emerald-500 hover:text-emerald-600" title="Windows版アプリを取得" style="display: none;">
+        <button id="titleBarDownloadAppBtn" onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" class="titlebar-action-btn text-emerald-500 hover:text-emerald-600" title="Windows版アプリを取得" style="display: none;">
           <i class="fas fa-download"></i>
         </button>
 
@@ -3471,7 +3522,7 @@
           </div>
 
           <!-- Web版専用: Windowsアプリ ダウンロードボタン (↓) -->
-          <div class="discord-server-item group mt-1" id="discordDownloadAppBtn" onclick="openWindowsDownloadModal()" title="Windowsアプリをダウンロード" style="display: none;">
+          <div class="discord-server-item group mt-1" id="discordDownloadAppBtn" onclick="window.openWindowsDownloadModal && window.openWindowsDownloadModal()" title="Windowsアプリをダウンロード" style="display: none;">
             <div class="discord-server-pill"></div>
             <div class="discord-server-icon discord-nav-action-icon text-emerald-500 hover:text-white hover:bg-emerald-500">
               <i class="fas fa-download text-lg"></i>
@@ -3928,9 +3979,17 @@
             <div id="messagesDisplay" class="flex-1 scrollable p-4 flex flex-col space-y-2 flipped" style="overscroll-behavior-x: none;">
               <!-- メッセージはここに動的に追加されます -->
             </div>
-            <button id="jumpModeExitBtn" class="absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-300 opacity-0 pointer-events-none translate-y-2" onclick="window.exitJumpMode()">
-              <i class="fas fa-arrow-down text-xl"></i>
-            </button>
+            <button id="jumpModeExitBtn"
+                class="absolute bottom-4 right-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200
+                       border border-gray-200 dark:border-gray-700 w-12 h-12 rounded-full shadow-xl z-50
+                       flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700
+                       transition-all duration-300 opacity-0 pointer-events-none translate-y-3"
+                onclick="window.exitJumpMode()">
+                <i class="fas fa-arrow-down text-xl"></i>
+                <span id="jumpModeUnreadBadge"
+                      class="hidden absolute -top-1 -right-1 bg-[#5865F2] text-white rounded-full text-[10px] font-bold leading-none flex items-center justify-center"
+                      style="min-width:18px;height:18px;padding:0 4px;">0</span>
+              </button>
           </div>
 
           <div id="typingIndicator" class="px-4 pb-1 text-xs text-gray-400 italic min-h-[1.25rem] hidden"></div>
@@ -3945,6 +4004,17 @@
               </div>
             </div>
             <!-- リプライUI -->
+            <!-- ボイスメッセージ録音オーバーレイ -->
+            <div id="voiceRecordOverlay" class="hidden flex-col items-center justify-center gap-3 py-3 px-4 w-full" style="display:none;">
+              <div class="flex items-center gap-3 w-full">
+                <div id="voiceRecordLiveWave" class="flex items-end gap-0.5 h-8 flex-1"></div>
+                <span id="voiceRecordTimer" class="text-sm font-mono text-red-500 font-semibold tabular-nums">0:00</span>
+              </div>
+              <div class="flex items-center gap-2 w-full justify-end">
+                <button id="voiceRecordCancelBtn" class="input-side-btn" title="キャンセル"><i class="fas fa-times"></i></button>
+                <button id="voiceRecordSendBtn" class="input-side-btn send-btn" title="送信"><i class="fas fa-paper-plane"></i></button>
+              </div>
+            </div>
             <div id="replyingToContainer"
               class="w-full px-3 py-2 mb-2 rounded-lg flex items-center justify-between hidden bg-gray-50 dark:bg-[#2b2d31] border-l-[3px] border-gray-300 dark:border-gray-500">
               <div class="flex-1 min-w-0 overflow-hidden">
@@ -3965,10 +4035,16 @@
                   <img id="filePreviewImage" class="hidden w-10 h-10 object-cover rounded shadow-sm border border-gray-200 dark:border-gray-700 flex-shrink-0" src="" />
                   <span id="filePreviewName" class="text-sm text-gray-800 dark:text-gray-200 truncate flex-1"></span>
                 </div>
-                <button id="clearFileButton"
-                  class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-xs flex-shrink-0">
-                  <i class="fas fa-times"></i>
-                </button>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <label class="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 cursor-pointer select-none px-2 py-1 rounded hover:bg-gray-200/50 dark:hover:bg-white/5 transition-colors">
+                    <input type="checkbox" id="spoilerCheckbox" class="rounded accent-[#5865F2] cursor-pointer" />
+                    <span>ネタバレ</span>
+                  </label>
+                  <button id="clearFileButton"
+                    class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-xs flex-shrink-0 cursor-pointer">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </div>
               </div>
               <div id="uploadProgressBar" class="hidden mt-1.5">
                 <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
@@ -3996,15 +4072,19 @@
               <button id="menuMentionBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#1e1f22] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-gray-300 transition-colors group">
                 <i class="fas fa-at text-slate-400 dark:text-gray-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">メンション</span>
               </button>
+              <div class="plus-menu-divider h-px bg-gray-100 dark:bg-gray-700 my-1.5 mx-2"></div>
+              <button id="menuVoiceRecordBtn" class="plus-menu-btn w-full text-left px-4 py-2.5 hover:bg-slate-100 dark:hover:bg-[#1e1f22] hover:text-slate-900 dark:hover:text-white rounded-xl flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-gray-300 transition-colors group">
+                <i class="fas fa-microphone text-slate-400 dark:text-gray-400 group-hover:text-slate-700 dark:group-hover:text-white w-5 text-center text-lg transition-colors"></i> <span class="tracking-wide">ボイスメッセージ</span>
+              </button>
             </div>
             <div id="mentionPopup" class="hidden absolute bottom-full left-0 bg-white dark:bg-[#2b2d31] rounded-none border border-b-0 border-gray-200 dark:border-[#1e1f22] w-full max-h-[40vh] sm:max-h-56 overflow-y-auto z-50"></div>
             
             <div class="flex items-end gap-1.5 relative">
               <button id="plusMenuButton" class="input-side-btn" title="拡張メニュー" disabled><i class="fas fa-plus"></i></button>
               <button id="fileAttachButton" class="input-side-btn hidden" title="ファイルを添付（画像はそのまま添付・その他はURLリンク化）" disabled><i
-
                   class="fas fa-paperclip"></i></button>
               <button id="stickerButton" class="input-side-btn" title="スタンプ" disabled><i class="far fa-smile"></i></button>
+              <button id="voiceRecordButton" class="input-side-btn voice-record-btn" title="ボイスメッセージ録音" disabled><i class="fas fa-microphone"></i></button>
               <input type="file" id="fileAttachInput" class="hidden" multiple />
               <div id="messageInputInner" style="flex:1;min-width:0;">
                 <textarea id="messageInput" placeholder="メッセージを入力" class="flex-1 w-full focus:outline-none"
@@ -4448,7 +4528,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.266"></script>
+  <script type="module" src="js/main.js?v=1.1.274"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5936,5 +6016,44 @@
   <link rel="stylesheet" href="css/geo_study.css" />
   <script src="js/geo_study.js" defer></script>
   <script src="js/geoguessr_locations.js" defer></script>
+  <!-- テキスト・コード用プレビューモーダル -->
+  <div id="textFilePreviewModal" class="hidden fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-3 sm:p-4 select-none" style="display:none;" onclick="if(event.target===this)window.closeTextFilePreview()">
+    <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-[#1e1f22]" onclick="event.stopPropagation()">
+      <div class="px-5 py-3.5 bg-gray-50 dark:bg-[#1e1f22] border-b border-gray-200 dark:border-white/5 flex items-center justify-between flex-shrink-0 select-none">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <i class="fas fa-file-code text-indigo-500 text-sm"></i>
+          <div class="min-w-0">
+            <span id="textPreviewTitle" class="text-sm font-bold text-gray-800 dark:text-[#dbdee1] truncate block">ファイルプレビュー</span>
+            <span id="textPreviewMeta" class="text-[10px] text-gray-400 font-mono">0 行</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button id="textPreviewCopyBtn" onclick="window.copyTextPreviewContent()" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-white/10 dark:hover:bg-white/15 text-gray-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer" title="テキストをコピー">
+            <i class="far fa-copy text-xs"></i> <span>コピー</span>
+          </button>
+          <button id="textPreviewDownloadBtn" class="px-3 py-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer" title="ダウンロード">
+            <i class="fas fa-download text-xs"></i> <span>ダウンロード</span>
+          </button>
+          <button onclick="window.closeTextFilePreview()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-white transition cursor-pointer" title="閉じる">
+            <i class="fas fa-times text-sm"></i>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 flex overflow-hidden bg-gray-950 font-mono text-xs select-text">
+        <div id="textPreviewLineNumbers" class="py-4 px-3 text-right text-gray-500 dark:text-gray-600 select-none border-r border-white/5 bg-black/20 leading-relaxed font-mono whitespace-pre flex-shrink-0">1</div>
+        <pre class="flex-1 p-4 overflow-auto text-gray-200 leading-relaxed m-0 whitespace-pre"><code id="textPreviewCode" class="font-mono"></code></pre>
+      </div>
+    </div>
+  </div>
+  <!-- 音声ファイルプレビューモーダル -->
+  <div id="audioPreviewModal" class="hidden fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4" style="display:none;" onclick="if(event.target===this)window.closeAudioPreviewModal()">
+    <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-md p-4 relative">
+      <div class="flex items-center justify-between mb-3">
+        <span id="modalAudioTitle" class="text-sm font-bold text-gray-800 dark:text-[#dbdee1] truncate flex-1 mr-2">音楽ファイル</span>
+        <button onclick="window.closeAudioPreviewModal()" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#383a40] text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors flex-shrink-0" title="閉じる"><i class="fas fa-times text-sm"></i></button>
+      </div>
+      <div id="modalAudioPlayerContainer"></div>
+    </div>
+  </div>
 </body>
 </html>

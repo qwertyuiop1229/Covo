@@ -357,30 +357,34 @@ export default {
 async function handleFetchOg(request, env, url, cors) {
   const targetUrlStr = url.searchParams.get("url");
   if (!targetUrlStr) {
-    return new Response(JSON.stringify({ error: "Missing url parameter" }), {
-      status: 400,
+    return new Response(JSON.stringify({ success: false, error: "Missing url parameter" }), {
+      status: 200,
       headers: { ...cors, "Content-Type": "application/json" }
     });
   }
-
   let parsedUrl;
   try {
     parsedUrl = new URL(targetUrlStr);
   } catch (_) {
-    return new Response(JSON.stringify({ error: "Invalid URL" }), {
-      status: 400,
+    return new Response(JSON.stringify({ success: false, error: "Invalid URL" }), {
+      status: 200,
       headers: { ...cors, "Content-Type": "application/json" }
     });
   }
-
   // プロトコル検証: HTTP / HTTPS のみ許可
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    return new Response(JSON.stringify({ error: "Only http and https protocols are supported" }), {
-      status: 400,
+    return new Response(JSON.stringify({ success: false, error: "Only http and https protocols are supported" }), {
+      status: 200,
       headers: { ...cors, "Content-Type": "application/json" }
     });
   }
-
+  // ポート検証: 非標準ポート（ポート1や内部ポート等）は即座に除外（SSRF & 502防止）
+  if (parsedUrl.port && parsedUrl.port !== "80" && parsedUrl.port !== "443" && parsedUrl.port !== "8080" && parsedUrl.port !== "8443") {
+    return new Response(JSON.stringify({ success: false, reason: "Unsupported port" }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" }
+    });
+  }
   // 🔒 SSRF ガード: ローカルホスト・プライベートIP・リンクローカル・内部ドメインを完全遮断
   const hostname = parsedUrl.hostname.toLowerCase();
   const isPrivateHost =
@@ -396,36 +400,64 @@ async function handleFetchOg(request, env, url, cors) {
     /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
     /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
     /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
-
   if (isPrivateHost) {
-    return new Response(JSON.stringify({ error: "Access to private or local networks is forbidden" }), {
-      status: 403,
-      headers: { ...cors, "Content-Type": "application/json" }
+    return new Response(JSON.stringify({ success: false, error: "Access to private or local networks is forbidden" }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" }
     });
   }
-
+  // 🎬 YouTube 公式 oEmbed API サポート (502エラー完全根絶 & 高速リッチプレビュー)
+  const isYouTube = hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be" || hostname.endsWith(".youtu.be");
+  if (isYouTube) {
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(parsedUrl.href)}&format=json`;
+      const oembedResp = await fetch(oembedUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json"
+        }
+      });
+      if (oembedResp.ok) {
+        const oembedData = await oembedResp.json();
+        return new Response(JSON.stringify({
+          success: true,
+          url: parsedUrl.href,
+          title: oembedData.title || "YouTube",
+          description: oembedData.author_name ? `動画投稿者: ${oembedData.author_name}` : "",
+          image: oembedData.thumbnail_url || null,
+          siteName: "YouTube",
+          favicon: "https://www.youtube.com/s/desktop/f1722e17/img/favicon.ico",
+          themeColor: "#FF0000"
+        }), {
+          status: 200,
+          headers: {
+            ...cors,
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=86400"
+          }
+        });
+      }
+    } catch (_) {}
+  }
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4500);
-
     const resp = await fetch(parsedUrl.href, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; CovoBot/1.0; +https://covo.app; Discord-like embed crawler)",
-        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; CovoBot/1.0)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
       },
       redirect: "follow"
     });
     clearTimeout(timeoutId);
-
     if (!resp.ok) {
-      return new Response(JSON.stringify({ error: `Upstream returned status ${resp.status}` }), {
-        status: 502,
-        headers: { ...cors, "Content-Type": "application/json" }
+      return new Response(JSON.stringify({ success: false, reason: `Upstream returned status ${resp.status}` }), {
+        status: 200,
+        headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=1800" }
       });
     }
-
     const contentType = resp.headers.get("content-type") || "";
     if (contentType.startsWith("image/")) {
       const fileName = parsedUrl.pathname.split("/").pop() || "image";
@@ -436,7 +468,7 @@ async function handleFetchOg(request, env, url, cors) {
         description: "",
         image: parsedUrl.href,
         siteName: parsedUrl.hostname,
-        favicon: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsedUrl.hostname)}&sz=64`,
+        favicon: null,
         themeColor: null
       }), {
         status: 200,
@@ -447,7 +479,6 @@ async function handleFetchOg(request, env, url, cors) {
         }
       });
     }
-
     const reader = resp.body ? resp.body.getReader() : null;
     let htmlText = "";
     if (reader) {
@@ -466,52 +497,39 @@ async function handleFetchOg(request, env, url, cors) {
       htmlText = await resp.text();
       if (htmlText.length > 131072) htmlText = htmlText.slice(0, 131072);
     }
-
     const getMeta = (propName) => {
       const escaped = propName.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
       const pattern1 = new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["']`, 'i');
       const match1 = htmlText.match(pattern1);
       if (match1 && match1[1]) return match1[1].trim();
-
       const pattern2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["']`, 'i');
       const match2 = htmlText.match(pattern2);
       if (match2 && match2[1]) return match2[1].trim();
-
       return null;
     };
-
     let title = getMeta("og:title") || getMeta("twitter:title");
     if (!title) {
       const titleMatch = htmlText.match(/<title[^>]*>([^<]+)<\/title>/i);
       if (titleMatch && titleMatch[1]) title = titleMatch[1].trim();
     }
-
     const description = getMeta("og:description") || getMeta("twitter:description") || getMeta("description") || "";
-
     let image = getMeta("og:image") || getMeta("twitter:image") || getMeta("og:image:url");
     if (image) {
       try { image = new URL(image, parsedUrl.href).href; } catch (_) {}
     }
-
     const siteName = getMeta("og:site_name") || parsedUrl.hostname;
     const themeColor = getMeta("theme-color");
-
     let favicon = null;
     const iconMatch = htmlText.match(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']*)["']/i);
     if (iconMatch && iconMatch[1]) {
       try { favicon = new URL(iconMatch[1], parsedUrl.href).href; } catch (_) {}
     }
-    if (!favicon) {
-      favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsedUrl.hostname)}&sz=64`;
-    }
-
     if (!title && !description && !image) {
       return new Response(JSON.stringify({ success: false, reason: "No OGP metadata found" }), {
         status: 200,
         headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=1800" }
       });
     }
-
     return new Response(JSON.stringify({
       success: true,
       url: parsedUrl.href,
@@ -529,11 +547,10 @@ async function handleFetchOg(request, env, url, cors) {
         "Cache-Control": "public, max-age=3600"
       }
     });
-
   } catch (err) {
-    return new Response(JSON.stringify({ error: "Failed to fetch metadata", details: err?.message || String(err) }), {
-      status: 500,
-      headers: { ...cors, "Content-Type": "application/json" }
+    return new Response(JSON.stringify({ success: false, error: "Failed to fetch metadata", details: err?.message || String(err) }), {
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "public, max-age=600" }
     });
   }
 }
@@ -858,9 +875,8 @@ async function handleSignup(request, env) {
     }
     
     const cleanEmail = email.trim().toLowerCase();
-
-    // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得
-    const workerToken = await getWorkerAuthToken(env);
+    // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得（サービスアカウント優先）
+    const workerToken = await getAdminTokenForFirestore(env);
     if (!workerToken) {
       return new Response(JSON.stringify({ error: "Internal Server Error: Worker Auth failed" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -2075,6 +2091,16 @@ async function handleUploadFile(request, env) {
       return new Response(JSON.stringify({ error: '不正なサーバー識別子です' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' }
       });
+    }
+    // 🔒 IDOR防御: 通常のメッセージ添付ファイル等でserverIdが指定された場合、アップロード者がそのサーバーのメンバーまたは管理者であることを検証
+    if (serverId && !folder.includes('stamp') && !folder.includes('servericons')) {
+      const isMember = await isServerMemberCheck(env.FIREBASE_APP_ID, serverId, verifiedUser, env);
+      const isGlobal = await isAppAdmin(env.FIREBASE_APP_ID, verifiedUser, env);
+      if (!isMember && !isGlobal) {
+        return new Response(JSON.stringify({ error: "Forbidden: Not a member of this server" }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
     }
     const resolvedType = inferMimeType(file.name, file.type || 'application/octet-stream');
     const meta = { name: file.name, type: resolvedType, size: file.size, uploaderId, folder, serverId, uploadedAt: Date.now() };

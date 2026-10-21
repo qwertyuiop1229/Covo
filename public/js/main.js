@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.274';
-import * as LocalStore from './local_store.js?v=1.1.274';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.274';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.274';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.274';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.274';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.274';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.275';
+import * as LocalStore from './local_store.js?v=1.1.275';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.275';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.275';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.275';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.275';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.275';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -216,6 +216,11 @@ function isTransientTelemetryError(args) {
       str.includes('resize-observer') ||
       str.includes('disconnected port') ||
       str.includes('attempting to use a disconnected port') ||
+      str.includes('called encrypt() without a session key') ||
+      str.includes('secretsession') ||
+      str.includes('getloginnames4url') ||
+      str.includes('the message port closed before a response was received') ||
+      str.includes('pejdijmoenmkgeppbflobdenhhabjlaj') ||
       str.includes('cross-origin-opener-policy') ||
       str.includes('syncrtdb') ||
       str.includes('not a member') ||
@@ -5367,7 +5372,8 @@ window.goToRoom = function (rid) {
   const pModal = document.getElementById('pcNotifModal');
   if (pModal) pModal.style.display = 'none';
   if (!rid) return;
-  if (typeof rid === 'string' && (rid.startsWith('dm_') || rid.includes('_'))) {
+  const isDmId = typeof rid === 'string' && (rid.startsWith('dm_') || (rid.includes('_') && rid.split('_').length === 2 && rid.split('_').includes(userId)));
+  if (isDmId) {
     const cleanDmId = rid.startsWith('dm_') ? rid.substring(3) : rid;
     const parts = cleanDmId.split('_');
     const otherUid = parts.find(id => id !== userId);
@@ -11067,6 +11073,9 @@ function renderDmConversationsList() {
       delete _e2ee._dmKeyPromises[dmId];
       const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
       if (freshKey && allLoadedMessages.length > 0) {
+        allLoadedMessages.forEach(m => {
+          if (m._decryptionFailed) m._decryptionFailed = false;
+        });
         await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
         renderMessagesWithReadReceipts();
       }
@@ -16436,6 +16445,9 @@ function selectRoom(roomId, roomName) {
             const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
             if (arrived) {
               if (allLoadedMessages && allLoadedMessages.length > 0) {
+                allLoadedMessages.forEach(m => {
+                  if (m._decryptionFailed) m._decryptionFailed = false;
+                });
                 await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
                 renderMessagesWithReadReceipts();
               }
@@ -17923,6 +17935,16 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
     });
   } catch (_) {}
 }
+function adjustTextareaHeight() {
+  try {
+    const mi = document.getElementById("messageInput");
+    if (!mi) return;
+    mi.style.height = "auto";
+    mi.style.height = mi.scrollHeight + "px";
+  } catch (_) {}
+}
+window.adjustTextareaHeight = adjustTextareaHeight;
+
 // 送信ボタンの活性状態を更新する（送信先があり・送信処理中でなく・入力テキストまたは添付ファイルがある時だけ有効）
 function toggleSendButtonState() {
   try {
@@ -19121,7 +19143,7 @@ window.createAudioPlayerCard = function({
         </div>
       </div>
       <button type="button" class="audio-card-download-btn w-8 h-8 rounded-xl bg-white/80 hover:bg-[#5865F2] hover:text-white dark:bg-[#1e1f22] dark:hover:bg-[#5865F2] dark:hover:text-white text-gray-600 dark:text-[#dbdee1] flex items-center justify-center transition-all flex-shrink-0 shadow-xs cursor-pointer" title="ダウンロード">
-        <i class="fas fa-arrow-down-to-line text-xs"></i>
+        <i class="fas fa-download text-xs"></i>
       </button>
     </div>
 
@@ -19411,7 +19433,7 @@ window.createDiscordAttachmentCard = function({
         </button>
       ` : ''}
       <button type="button" class="attachment-download-btn w-8 h-8 rounded-xl bg-white/80 hover:bg-[#5865F2] hover:text-white dark:bg-[#1e1f22] dark:hover:bg-[#5865F2] dark:hover:text-white text-gray-600 dark:text-[#dbdee1] flex items-center justify-center transition-all shadow-xs cursor-pointer" title="ダウンロード">
-        <i class="fas fa-arrow-down-to-line text-xs"></i>
+        <i class="fas fa-download text-xs"></i>
       </button>
     </div>
   `;
@@ -20130,69 +20152,95 @@ window.extractFirstOgUrl = function(text) {
   if (/\.(png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|ogg|m4a)$/i.test(rawUrl)) {
     return null;
   }
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host.endsWith('.local') || host.endsWith('.internal')) {
+      return null;
+    }
+    // 非標準ポート（ポート1や内部ポート等）はOGP対象外にして無駄なfetchを完全防止
+    if (u.port && u.port !== '80' && u.port !== '443' && u.port !== '8080' && u.port !== '8443') {
+      return null;
+    }
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) && u.port && u.port !== '80' && u.port !== '443') {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
   return rawUrl;
 };
-
+window._covoOgInFlight = window._covoOgInFlight || new Map();
 window.attachDiscordOgEmbed = async function(container, targetUrl) {
   if (!container || !targetUrl) return;
-  let ogData = window._covoOgCache.get(targetUrl);
-  if (!ogData) {
-    try {
-      const workerBase = typeof WORKER_BASE_URL !== 'undefined' ? WORKER_BASE_URL : 'https://simplechat-api.astro-fray-server.workers.dev';
-      const res = await fetch(`${workerBase}/api/fetchOg?url=${encodeURIComponent(targetUrl)}`);
-      if (res.ok) {
-        ogData = await res.json();
-        if (ogData && ogData.success) {
-          window._covoOgCache.set(targetUrl, ogData);
-        }
-      }
-    } catch (_) {
-      return;
-    }
-  }
-
-  if (!ogData || !ogData.success || (!ogData.title && !ogData.description && !ogData.image)) {
-    return;
-  }
-
-  if (!container.parentElement && !document.body.contains(container)) return;
-
+  // すでにカードが存在する場合は重複生成を即座に防止
   if (container.querySelector(`.covo-og-embed-card[data-og-url="${escapeHtml(targetUrl)}"]`)) {
     return;
   }
-
+  let ogData = window._covoOgCache.get(targetUrl);
+  if (!ogData) {
+    if (window._covoOgInFlight.has(targetUrl)) {
+      ogData = await window._covoOgInFlight.get(targetUrl);
+    } else {
+      const fetchTask = (async () => {
+        try {
+          const workerBase = typeof WORKER_BASE_URL !== 'undefined' ? WORKER_BASE_URL : 'https://simplechat-api.astro-fray-server.workers.dev';
+          const res = await fetch(`${workerBase}/api/fetchOg?url=${encodeURIComponent(targetUrl)}`);
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            if (data && data.success) {
+              window._covoOgCache.set(targetUrl, data);
+              return data;
+            }
+          }
+          const failEntry = { success: false, failedAt: Date.now() };
+          window._covoOgCache.set(targetUrl, failEntry);
+          return failEntry;
+        } catch (_) {
+          const failEntry = { success: false, failedAt: Date.now() };
+          window._covoOgCache.set(targetUrl, failEntry);
+          return failEntry;
+        } finally {
+          window._covoOgInFlight.delete(targetUrl);
+        }
+      })();
+      window._covoOgInFlight.set(targetUrl, fetchTask);
+      ogData = await fetchTask;
+    }
+  }
+  if (!ogData || !ogData.success || (!ogData.title && !ogData.description && !ogData.image)) {
+    return;
+  }
+  if (!container.parentElement && !document.body.contains(container)) return;
+  if (container.querySelector(`.covo-og-embed-card[data-og-url="${escapeHtml(targetUrl)}"]`)) {
+    return;
+  }
   const card = document.createElement('div');
   card.className = 'covo-og-embed-card mt-2.5 p-3 rounded-xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs max-w-sm sm:max-w-md w-full select-none transition-all flex flex-col gap-1.5 border-l-4 animate-fadeIn';
   card.dataset.ogUrl = targetUrl;
-
   const leftColor = ogData.themeColor && /^#[0-9a-fA-F]{6}$/.test(ogData.themeColor) ? ogData.themeColor : '#5865F2';
   card.style.borderLeftColor = leftColor;
-
   const siteNameHtml = ogData.siteName ? `
     <div class="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 dark:text-[#949ba4] truncate">
-      ${ogData.favicon ? `<img src="${escapeHtml(ogData.favicon)}" class="w-3.5 h-3.5 rounded object-contain flex-shrink-0" onerror="this.style.display='none'"/>` : ''}
+      ${ogData.favicon ? `<img src="${escapeHtml(ogData.favicon)}" class="w-3.5 h-3.5 rounded object-contain flex-shrink-0" onerror="this.remove()"/>` : '<i class="fas fa-globe text-[11px] opacity-70"></i>'}
       <span class="truncate">${escapeHtml(ogData.siteName)}</span>
     </div>
   ` : '';
-
   const titleHtml = ogData.title ? `
     <a href="${escapeHtml(ogData.url || targetUrl)}" target="_blank" rel="noopener noreferrer" class="text-xs sm:text-sm font-bold text-[#5865F2] hover:underline line-clamp-2 leading-snug cursor-pointer">
       ${escapeHtml(ogData.title)}
     </a>
   ` : '';
-
   const descHtml = ogData.description ? `
     <div class="text-[11px] text-gray-600 dark:text-[#dbdee1] line-clamp-3 leading-relaxed whitespace-pre-wrap">
       ${escapeHtml(ogData.description)}
     </div>
   ` : '';
-
   const imgHtml = ogData.image ? `
     <div class="mt-1.5 rounded-lg overflow-hidden max-h-48 bg-black/5 dark:bg-black/20 flex items-center justify-center">
       <img src="${escapeHtml(ogData.image)}" alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto max-h-48 object-cover rounded-lg" loading="lazy" onerror="this.parentElement.remove()" />
     </div>
   ` : '';
-
   card.innerHTML = `${siteNameHtml}${titleHtml}${descHtml}${imgHtml}`;
   container.appendChild(card);
 };
@@ -20486,9 +20534,15 @@ function createMessageElement(message, messageId, readByCount = 0) {
                 if (element.tagName === 'IMG') element.style.opacity = '1';
                 if (element.tagName === 'CANVAS') window.renderPdfCanvas(blobUrl, element);
               } catch (_) {
-                message._decryptionFailed = true;
-                const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-                try { element.replaceWith(errCard); } catch (_) {}
+                if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
+                  message._fileExpired = true;
+                  const expiredCard = createExpiredFileCard(message.fileName);
+                  try { element.replaceWith(expiredCard); } catch (_) {}
+                } else {
+                  message._decryptionFailed = true;
+                  const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                  try { element.replaceWith(errCard); } catch (_) {}
+                }
               }
             })();
           }
@@ -20689,8 +20743,14 @@ function createMessageElement(message, messageId, readByCount = 0) {
               const url = await resolveAttachmentBlobUrl();
               window.renderPdfCanvas(url, thumbCanvas, 128, 160);
             } catch (_) {
-              const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-              try { pdfWrapper.replaceWith(errCard); } catch (_) {}
+              if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
+                message._fileExpired = true;
+                const expiredCard = createExpiredFileCard(message.fileName);
+                try { pdfWrapper.replaceWith(expiredCard); } catch (_) {}
+              } else {
+                const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
+                try { pdfWrapper.replaceWith(errCard); } catch (_) {}
+              }
             }
           } else {
             window.renderPdfCanvas(targetAttachmentUrl, thumbCanvas, 128, 160);
@@ -22620,7 +22680,7 @@ async function notifyNewMessage({
     );
   } else {
     // アプリがバックグラウンド（他アプリの操作中・非フォーカス・最小化・非表示）の時は、OS通知を送信
-    showNotification(notifTitle, notifBody, channelId);
+    showNotification(notifTitle, notifBody, channelId, serverId);
   }
   // 🌟 新着通知を covo_global_items に確実に登録・更新
   try {
@@ -26053,7 +26113,7 @@ function handleCallDeclinedFromNotification(data) {
 }
 
 // --- 統合通知関数 ---
-async function showNotification(title, body, roomId, forceOs = false) {
+async function showNotification(title, body, roomId, serverId = null, forceOs = false) {
   const notifEnabled = (localStorage.getItem('simplechat_browser_notif') !== 'false') && (!isTauri || localStorage.getItem('simplechat_desktop_notif') !== 'false');
   if (!notifEnabled && !forceOs) return;
   // アプリが最前面でアクティブにフォーカスされている場合は、OS通知（Windows通知）は送らない（テスト実行時は強制発行）
@@ -26125,8 +26185,11 @@ async function showNotification(title, body, roomId, forceOs = false) {
             window.focus();
           }
           if (roomId) {
-            if (typeof goToRoom === 'function') goToRoom(roomId);
-            else {
+            if (serverId && serverId !== currentServerId && typeof goToServerRoom === 'function') {
+              goToServerRoom(serverId, roomId);
+            } else if (typeof goToRoom === 'function') {
+              goToRoom(roomId);
+            } else {
               const roomItem = document.getElementById(`room-item-${roomId}`);
               if (roomItem) roomItem.click();
             }
@@ -26160,8 +26223,11 @@ async function showNotification(title, body, roomId, forceOs = false) {
             window.focus();
             try { n.close(); } catch (_) {}
             if (roomId) {
-              if (typeof goToRoom === 'function') goToRoom(roomId);
-              else {
+              if (serverId && serverId !== currentServerId && typeof goToServerRoom === 'function') {
+                goToServerRoom(serverId, roomId);
+              } else if (typeof goToRoom === 'function') {
+                goToRoom(roomId);
+              } else {
                 const roomItem = document.getElementById(`room-item-${roomId}`);
                 if (roomItem) roomItem.click();
               }
@@ -26183,7 +26249,7 @@ async function showNotification(title, body, roomId, forceOs = false) {
                 icon: '/img/icon-192x192.png?v=6',
                 badge: '/img/icon-192x192.png?v=6',
                 tag: notifTag,
-                data: { roomId }
+                data: { roomId, serverId }
               }).then(() => {
                 setTimeout(() => {
                   reg.getNotifications({ tag: notifTag }).then(list => {

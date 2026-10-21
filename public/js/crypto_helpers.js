@@ -462,7 +462,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!privSnap || !privSnap.exists()) return null;
         const data = privSnap.data();
         let privJwk = null;
-        if (data.version === 2 && data.encryptedPrivateKey) {
+        if ((data.version === 2 || data.version === 3 || data.encryptedPrivateKey) && data.encryptedPrivateKey) {
           privJwk = await __decryptPrivKeyFromBackup(data, "escrow_priv");
         } else if (data.privateKeyJwk) {
           // レガシー平文を検出した場合、即座に暗号化移行
