@@ -1,3 +1,4 @@
+import { loadOptionalScript } from './dependency_loader.js';
 /**
  * ユーティリティ関数群 (utils.js)
  * 状態 (db, authなど) に依存しない、汎用的で純粋な便利関数群です。
@@ -185,11 +186,7 @@ export async function processHeicFile(file) {
   const ext = name.split('.').pop().toLowerCase();
   if (file.type === 'image/heic' || file.type === 'image/heif' || ext === 'heic' || ext === 'heif') {
     try {
-      if (typeof heic2any === 'undefined') {
-        console.warn("heic2any is not loaded");
-        return file;
-      }
-      console.log("HEIC file detected. Converting to JPEG...");
+      const heic2any = await loadOptionalScript('https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js', 'heic2any');
       const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
       const finalBlob = Array.isArray(blob) ? blob[0] : blob;
       const newName = name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');

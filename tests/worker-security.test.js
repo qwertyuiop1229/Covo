@@ -103,7 +103,7 @@ test('RTDB sync publishes authoritative membership atomically and removes stale 
 
 test('pruning uses stored RTDB keys even if a message embeds a forged id', async () => {
   const messages = Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m${i}`, { id: 'victim', senderId: 'alice', timestamp: i + 1 }]));
-  const fetchImpl = jest.fn(async (_, init) => new Response(JSON.stringify(init?.method === 'DELETE' ? {} : messages)));
+  const fetchImpl = jest.fn(async (url, init) => new Response(JSON.stringify(init?.method === 'DELETE' ? {} : url.includes('/m0.json') ? messages.m0 : messages), { headers: { ETag: '"v1"' } }));
   const ctx = loadWorker(fetchImpl);
   ctx.verifyFirebaseIdToken = async () => ({ uid: 'alice' });
   ctx.isAppAdmin = async () => false;
@@ -116,4 +116,32 @@ test('pruning uses stored RTDB keys even if a message embeds a forged id', async
   const deletions = fetchImpl.mock.calls.filter(([, init]) => init?.method === 'DELETE');
   expect(deletions.length).toBe(2);
   expect(deletions.every(([url]) => url.includes('/m0') && !url.includes('victim'))).toBe(true);
+});
+
+test.each(['pinned', 'conflict', 'rtdb-failure', 'firestore-failure'])('pruning protects attachments and reports failure accurately: %s', async scenario => {
+  const messages = Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m${i}`, { senderId: 'alice', timestamp: i + 1, fileData: 'https://api.test/api/file/asset' }]));
+  const fetchImpl = jest.fn(async (url, init = {}) => {
+    if (init.method === 'DELETE') {
+      const status = url.includes('firestore.googleapis.com') ? (scenario === 'firestore-failure' ? 503 : 200) : scenario === 'conflict' ? 412 : scenario === 'rtdb-failure' ? 503 : 200;
+      return new Response('{}', { status });
+    }
+    if (init.method === 'PUT') return new Response('{}');
+    if (url.includes('/m0.json')) return new Response(JSON.stringify({ ...messages.m0, isPinned: scenario === 'pinned' }), { headers: { ETag: '"latest"' } });
+    return new Response(JSON.stringify(messages));
+  });
+  const ctx = loadWorker(fetchImpl);
+  ctx.verifyFirebaseIdToken = async () => ({ uid: 'alice' });
+  ctx.isAppAdmin = async () => false;
+  ctx.isServerAdminCheck = async () => false;
+  ctx.isServerMemberCheck = async () => true;
+  ctx.getFirestoreAdminToken = async () => 'fs-token';
+  ctx.getRTDBToken = async () => 'rtdb-token';
+  const files = { getWithMetadata: jest.fn(), delete: jest.fn() };
+  const response = await ctx.worker.fetch(new Request('https://api.test/api/pruneChannelMessages', { method: 'POST', headers: { Authorization: 'Bearer test' }, body: JSON.stringify({ appId: 'testApp', serverId: 'server1', roomId: 'room1' }) }), { FIREBASE_APP_ID: 'testApp', FIREBASE_PROJECT_ID: 'test', SERVICE_ACCOUNT_JSON: '{}', FILES: files }, {});
+  const result = await response.json();
+  expect(result.prunedCount).toBe(0);
+  expect(files.delete).not.toHaveBeenCalled();
+  if (scenario === 'pinned') expect(fetchImpl.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  else expect(response.status).toBe(502);
+  if (scenario === 'firestore-failure') expect(fetchImpl.mock.calls.find(([, init]) => init?.method === 'PUT')[1].headers['if-match']).toBe('null_etag');
 });

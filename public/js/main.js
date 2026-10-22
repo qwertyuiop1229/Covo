@@ -1,3 +1,5 @@
+import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
+import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
  * Covo Integrated Main Script (main.js)
  * 100% Fully Resolved Scope & All Discord Modern UI Enhancements
@@ -89,13 +91,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.276';
-import * as LocalStore from './local_store.js?v=1.1.276';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.276';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.276';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.276';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.276';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.276';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.277';
+import * as LocalStore from './local_store.js?v=1.1.277';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.277';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.277';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.277';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.277';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.277';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -879,6 +881,7 @@ let activeMigrationUnsubs = [];
 let unreadBoundaryAt = 0;
 let unreadBoundaryMessageId = null;
 let searchQuery = "";
+let _searchHistoryResults = null;
 let selectedMessageForContext = null;
 
 let awayTimer = null;
@@ -961,8 +964,35 @@ function hasServerPermission(serverData, targetUid, permission = 'admin') {
   return false;
 }
 
+const _attachmentResources = new AttachmentResources();
+const _pendingMediaLoads = new Map();
+const _activePdfTasks = new Set();
+let _mediaLoadObserver = null;
+function scheduleMediaLoad(element, load) {
+  if (typeof IntersectionObserver === 'undefined') { queueMicrotask(() => { if (element.isConnected) load(); }); return; }
+  if (!_mediaLoadObserver) {
+    _mediaLoadObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting && entry.target.isConnected) continue;
+        const action = _pendingMediaLoads.get(entry.target);
+        _pendingMediaLoads.delete(entry.target);
+        _mediaLoadObserver.unobserve(entry.target);
+        if (entry.target.isConnected && action) action();
+      }
+    }, { root: messagesDisplay, rootMargin: '300px' });
+  }
+  _pendingMediaLoads.set(element, load);
+  _mediaLoadObserver.observe(element);
+}
+
 // DOM クリーンアップ関数
 function clearMessagesDOM() {
+  _searchHistoryResults = null;
+  if (_mediaLoadObserver) _mediaLoadObserver.disconnect();
+  _pendingMediaLoads.clear();
+  for (const task of _activePdfTasks) task.destroy().catch(() => {});
+  _activePdfTasks.clear();
+  _attachmentResources.clear();
   if (window._covoCurrentActiveAudio) {
     try { window._covoCurrentActiveAudio.pause(); } catch (_) {}
     window._covoCurrentActiveAudio = null;
@@ -4283,19 +4313,44 @@ window.copyCfApiLogs = function () {
 };
 
 // ストレージ統計
-async function loadStorageStats() {
+let _storageStatsPromise = null;
+function loadStorageStats() {
+  if (!auth.currentUser || !isAdmin) {
+    const label = document.getElementById('kvUsageText');
+    if (label) label.textContent = 'サーバー全体の使用量は全体管理者のみ確認できます';
+    const categories = document.getElementById('storageCategoryItemsList');
+    if (categories) categories.replaceChildren();
+    return Promise.resolve();
+  }
+  if (_storageStatsPromise) return _storageStatsPromise;
+  _storageStatsPromise = _loadStorageStatsImpl().finally(() => { _storageStatsPromise = null; });
+  return _storageStatsPromise;
+}
+async function _loadStorageStatsImpl() {
   const kvText = document.getElementById('kvUsageText');
   const catList = document.getElementById('storageCategoryItemsList');
   if (!kvText) return;
   kvText.textContent = '読み込み中...';
   try {
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
+    const requestingUser = auth.currentUser;
+    const idToken = requestingUser ? await requestingUser.getIdToken() : "";
+    if (auth.currentUser !== requestingUser) return;
     if (!idToken) { kvText.textContent = '認証エラー'; return; }
-    const res = await fetch(`${WORKER_BASE_URL}/api/admin/storageStats?appId=${appId}`, {
-      headers: { "Authorization": `Bearer ${idToken}` }
-    });
+    const endpoint = `${WORKER_BASE_URL}/api/admin/storageStats?appId=${appId}`;
+    let res = await fetch(endpoint, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (res.status === 401 && auth.currentUser === requestingUser) {
+      const freshToken = await requestingUser.getIdToken(true);
+      res = await fetch(endpoint, { headers: { Authorization: `Bearer ${freshToken}` } });
+    }
+    if (auth.currentUser !== requestingUser) return;
+    if (res.status === 403) {
+      kvText.textContent = '権限を確認できません。管理者設定を確認してください。';
+      if (catList) catList.replaceChildren();
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (auth.currentUser !== requestingUser) return;
     
     // KV（Cloudflare 1GB）
     const kvLimitBytes = 1 * 1024 * 1024 * 1024;
@@ -10531,6 +10586,7 @@ window.unblockUser = async function(targetUid) {
 };
 
 let _isDmChannelsFirst = true;
+const _dmMessageVersions = new Map();
 function subscribeToDmChannels() {
   if (unsubscribeDmChannels) { unsubscribeDmChannels(); unsubscribeDmChannels = null; }
   if (!userId) return;
@@ -10542,6 +10598,7 @@ function subscribeToDmChannels() {
       snap.forEach(d => {
         const dmData = d.data() || {};
         dmConversations[d.id] = { id: d.id, ...dmData };
+        if (_isDmChannelsFirst) _dmMessageVersions.set(d.id, parseTimestampToMs(dmData.lastMessageAt));
         // 相手からの救済リクエスト（rescueRequests）を検知した場合に自動バックフィル（オンデマンドで自端末キーを復号ロードして相手へ再配布）
         const otherUid = (dmData.participants || []).find(id => id !== userId);
         if (otherUid && dmData.rescueRequests && dmData.rescueRequests[otherUid]) {
@@ -10563,9 +10620,8 @@ function subscribeToDmChannels() {
               ? dmData.lastMessageAt
               : (dmData.lastMessageAt?.toMillis?.() || (dmData.lastMessageAt?.seconds ? dmData.lastMessageAt.seconds * 1000 : 0));
             // サーバータイムスタンプ未解決時のフォールバック
-            if (!lastAt || lastAt <= 0) {
-              lastAt = Date.now();
-            }
+            if (!lastAt || lastAt <= (_dmMessageVersions.get(dmId) || 0)) return;
+            _dmMessageVersions.set(dmId, lastAt);
 
             const rm = (() => { try { return JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { return {}; } })();
             const lastRead = rm[`dm_${dmId}`] || 0;
@@ -10861,6 +10917,7 @@ function renderDmConversationsList() {
   window.openDm = async function(targetUid, targetNickname, targetAvatarUrl) {
   if (typeof window.saveCurrentDraft === 'function') window.saveCurrentDraft();
   window._covoLastRenderedCount = null;
+  window._covoLastRenderedNewest = null;
   window._covoUnreadScrolledCount = 0;
   const _pill = document.getElementById("jumpModeExitBtn");
   if (_pill) {
@@ -15614,14 +15671,18 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
   };
 
   let isRoomsFirst = true;
+  const roomMessageVersions = new Map();
   function onRoomsChanged(snapshot) {
     if (currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
     renderRooms(snapshot);
+    if (isRoomsFirst) snapshot.forEach(d => roomMessageVersions.set(d.id, parseTimestampToMs(d.data().lastMessageAt)));
     if (!isRoomsFirst) {
       snapshot.docChanges().forEach(change => {
         if (change.type === "modified") {
           const room = change.doc.data();
-          const lastMsgAt = typeof room.lastMessageAt === 'number' ? room.lastMessageAt : (room.lastMessageAt?.toMillis?.() || (room.lastMessageAt?.seconds ? room.lastMessageAt.seconds * 1000 : 0));
+          const lastMsgAt = parseTimestampToMs(room.lastMessageAt);
+          if (!lastMsgAt || lastMsgAt <= (roomMessageVersions.get(change.doc.id) || 0)) return;
+          roomMessageVersions.set(change.doc.id, lastMsgAt);
           const rm = safeJsonParse(localStorage.getItem('covo_last_read'), {}) || {};
           const lastRead = rm[change.doc.id] || 0;
           // 現在開いているルームで新しいメッセージが更新された場合、リアルタイムメッセージの同期を即座にキック（受信漏れ防止）
@@ -15787,7 +15848,7 @@ async function loadOlderMessages() {
       seen.add(m.id);
       return true;
     });
-    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+    allLoadedMessages.sort(compareHistoryMessages);
     lastMessagesData = [...allLoadedMessages];
     messagesIndexMap = {};
     lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -15798,24 +15859,25 @@ async function loadOlderMessages() {
       const newScrollHeight = messagesDisplay.scrollHeight;
       const delta = newScrollHeight - prevScrollHeight;
       if (delta > 0) {
-        messagesDisplay.scrollTop = prevScrollTop + delta;
+        messagesDisplay.scrollTop = olderHistoryScrollTop(prevScrollTop);
       }
     }
     return true;
   };
 
   try {
-    const oldestMessage = allLoadedMessages[0];
+    const oldestMessage = [...allLoadedMessages].sort(compareHistoryMessages)[0];
     const oldestTime = getMsgTimestamp(oldestMessage);
 
     // すでに画面にロードされているメッセージの全IDを集合にして重複判定
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
 
     // 1. まず IndexedDB (ローカルDB) から過去ログを探索
-    const localOlder = await LocalStore.getMessages(chId, oldestTime, 30);
+    const localOlder = await LocalStore.getMessages(chId, oldestTime, 30, oldestMessage.id);
     const newLocalDocs = (localOlder || []).filter(d => !existingLoadedIds.has(d.id));
     if (newLocalDocs.length > 0) {
       await mergeAndRender(newLocalDocs);
+      if (!isStillActive()) return;
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
@@ -15825,11 +15887,11 @@ async function loadOlderMessages() {
     // 2. ローカルに無い場合、RTDB から過去ログを取得 (サーバー上にメッセージが存在する限り遡行)
     let fetchedFromRtdb = false;
     try {
-      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endAt } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const { ref, get, query: rtdbQuery, limitToLast, orderByChild, endBefore } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
-      const basePath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages` : `artifacts/${appId}/dm_messages/${currentDmId}`;
+      const basePath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages` : `artifacts/${appId}/dm_messages/${targetDmId}`;
       const messagesRef = ref(rtdb, basePath);
-      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime, oldestMessage.id), limitToLast(60));
+      const q = rtdbQuery(messagesRef, orderByChild('timestamp'), endBefore(oldestTime, oldestMessage.id), limitToLast(60));
       const snapshot = await get(q);
       let newDocs = [];
       if (snapshot.exists()) {
@@ -15837,25 +15899,16 @@ async function loadOlderMessages() {
         let docs = Object.keys(data).map(k => ({ ...data[k], id: k, channelId: chId }));
         newDocs = docs.filter(d => !existingLoadedIds.has(d.id));
       }
-      // タイブレークによる重複足踏み防止フォールバック (oldestTime - 1 で再探索)
-      if (newDocs.length === 0 && oldestTime > 0) {
-        const qPrev = rtdbQuery(messagesRef, orderByChild('timestamp'), endAt(oldestTime - 1), limitToLast(60));
-        const snapPrev = await get(qPrev);
-        if (snapPrev.exists()) {
-          const dPrev = snapPrev.val();
-          const docsPrev = Object.keys(dPrev).map(k => ({ ...dPrev[k], id: k, channelId: chId }));
-          newDocs = docsPrev.filter(d => !existingLoadedIds.has(d.id));
-        }
-      }
       if (newDocs.length > 0) {
         await mergeAndRender(newDocs);
-        rtdbMessagesLimit += newDocs.length;
+        // Keep the realtime window bounded; historical pages are separate.
         fetchedFromRtdb = true;
       }
     } catch (rtdbErr) {
-      console.warn('[loadOlderMessages] RTDB fetch warning:', rtdbErr);
+      throw rtdbErr;
     }
     if (fetchedFromRtdb) {
+      if (!isStillActive()) return;
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
@@ -15864,21 +15917,14 @@ async function loadOlderMessages() {
 
     // 3. RTDB にない場合、Firestore (サーバーメッセージの過去ログ) から型を両対応にして取得
     let fetchedFromFirestore = false;
-    if (currentServerId && currentRoomId) {
+    if (targetServerId && targetRoomId) {
       try {
         const { collection, query: fsQuery, where: fsWhere, orderBy: fsOrderBy, limit: fsLimit, getDocs, Timestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-        const msgsCol = collection(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`);
-        let fsSnap = null;
-        try {
-          const qFsTimestamp = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', Timestamp.fromMillis(oldestTime)), fsLimit(30));
-          fsSnap = await getDocs(qFsTimestamp);
-        } catch (_) {}
-        if (!fsSnap || fsSnap.empty) {
-          try {
-            const qFsNumber = fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), fsWhere('timestamp', '<', oldestTime), fsLimit(30));
-            fsSnap = await getDocs(qFsNumber);
-          } catch (_) {}
-        }
+        const msgsCol = collection(db, `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`);
+        const { startAfter, getDoc, doc: fsDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        const anchor = await getDoc(fsDoc(msgsCol, oldestMessage.id));
+        const cursor = anchor.exists() ? anchor : Timestamp.fromMillis(oldestTime);
+        const fsSnap = await getDocs(fsQuery(msgsCol, fsOrderBy('timestamp', 'desc'), startAfter(cursor), fsLimit(30)));
         if (fsSnap && !fsSnap.empty) {
           let fsDocs = fsSnap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
           let newFsDocs = fsDocs.filter(d => !existingLoadedIds.has(d.id));
@@ -15889,10 +15935,11 @@ async function loadOlderMessages() {
           }
         }
       } catch (fsErr) {
-        console.warn('[loadOlderMessages] Firestore fetch warning:', fsErr);
+        throw fsErr;
       }
     }
     if (fetchedFromFirestore) {
+      if (!isStillActive()) return;
       isLoadingOlderMessages = false;
       if (spinner) spinner.style.display = 'none';
       allowPagination = true;
@@ -15900,7 +15947,8 @@ async function loadOlderMessages() {
     }
 
     // 4. サーバー上にもない場合、オンラインの同室メンバーへ P2P 過去ログ補完を要求
-    requestP2PLogBackfill(currentServerId ? 'server' : 'dm', currentServerId ? currentRoomId : currentDmId, oldestTime);
+    if (!isStillActive()) return;
+    requestP2PLogBackfill(targetServerId ? 'server' : 'dm', targetServerId ? targetRoomId : targetDmId, oldestTime);
     // すべてのソースに過去ログが一切見つからなかった場合のみ終端バナーを表示
     hasMoreOlderMessages = false;
     showTerminalBanner();
@@ -15909,6 +15957,7 @@ async function loadOlderMessages() {
     console.error("Older messages load error", e);
   }
 
+  if (!isStillActive()) return;
   isLoadingOlderMessages = false;
   if (spinner) spinner.style.display = 'none';
   allowPagination = true;
@@ -15916,6 +15965,7 @@ async function loadOlderMessages() {
 
 let _activeChannelSessionId = 0;
 function subscribeToMessages() {
+  _historyLoadGate.reset();
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
   allLoadedMessages = [];
@@ -15940,7 +15990,10 @@ async function subscribeToMessagesRTDB(session) {
   const targetServerNickname = currentServerNickname;
   const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
   const basePath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages` : `artifacts/${appId}/dm_messages/${targetDmId}`;
+  let disposed = false;
+  let receiptFrame = null;
   const isStillActive = () => (
+    !disposed &&
     _activeChannelSessionId === targetSession &&
     currentServerId === targetServerId &&
     currentRoomId === targetRoomId &&
@@ -16079,9 +16132,7 @@ async function subscribeToMessagesRTDB(session) {
         setTimeout(() => {
           if (!isStillActive()) return;
           allowPagination = true;
-          if (messagesDisplay.scrollHeight <= messagesDisplay.clientHeight && hasMoreOlderMessages) {
-            loadOlderMessages();
-          }
+
         }, 500);
       }, 100);
       return;
@@ -16247,21 +16298,30 @@ async function subscribeToMessagesRTDB(session) {
   };
   typingUnsubscribe = window.typingUnsubscribe;
 
-  const rrPath = currentServerId ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/readReceipts` : `artifacts/${appId}/dm_readReceipts/${currentDmId}`;
+  if (!isStillActive()) return;
+  const rrPath = targetServerId ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/readReceipts` : `artifacts/${appId}/dm_readReceipts/${targetDmId}`;
   const rrRef = ref(rtdb, rrPath);
   if (window.readReceiptsUnsubscribe) { window.readReceiptsUnsubscribe(); }
   const onRR = onValue(rrRef, (snap) => {
+    if (!isStillActive()) return;
     roomReadReceipts = {};
     snap.forEach((child) => {
       roomReadReceipts[child.key] = child.val();
     });
-    renderMessagesWithReadReceipts();
+    if (receiptFrame == null) receiptFrame = requestAnimationFrame(() => {
+      receiptFrame = null;
+      if (isStillActive()) renderMessagesWithReadReceipts();
+    });
   });
   window.readReceiptsUnsubscribe = () => {
     try { if (typeof onRR === 'function') onRR(); } catch (_) {}
     try { off(rrRef, 'value', onRR); } catch (_) {}
   };
   window.rtdbMessagesUnsub = () => {
+    disposed = true;
+    clearTimeout(initialLoadTimeout);
+    if (receiptFrame != null) cancelAnimationFrame(receiptFrame);
+    buffer = [];
     try { if (typeof unsubAdded === 'function') unsubAdded(); } catch (_) {}
     try { if (typeof unsubChanged === 'function') unsubChanged(); } catch (_) {}
     try { if (typeof unsubRemoved === 'function') unsubRemoved(); } catch (_) {}
@@ -16283,6 +16343,7 @@ async function subscribeToMessagesRTDB(session) {
 function selectRoom(roomId, roomName) {
   if (typeof window.saveCurrentDraft === 'function') window.saveCurrentDraft();
   window._covoLastRenderedCount = null;
+  window._covoLastRenderedNewest = null;
   window._covoUnreadScrolledCount = 0;
   const _pill = document.getElementById("jumpModeExitBtn");
   if (_pill) {
@@ -16505,6 +16566,7 @@ function selectRoom(roomId, roomName) {
   } catch (e) { }
 }
 
+const _historyLoadGate = new HistoryLoadGate();
 let floatingDateTimer = null;
 messagesDisplay.addEventListener("scroll", async () => {
   if (!allowPagination) return;
@@ -16622,7 +16684,7 @@ messagesDisplay.addEventListener("scroll", async () => {
 
   // 過去への読み込み (scrollTop大 = 上スクロール)
   if (scrollDistanceToTop < 300) {
-    if (!isJumpView && !isLoadingOlderMessages && hasMoreOlderMessages) {
+    if (!isJumpView && hasMoreOlderMessages && _historyLoadGate.take(scrollDistanceToTop, isLoadingOlderMessages)) {
       await loadOlderMessages();
     } else if (isJumpView && !isLoadingJumpOlder && hasMoreJumpOlder) {
       await loadJumpOlderMessages();
@@ -16772,11 +16834,18 @@ window.exitJumpMode = function () {
 };
 
 // PCでのマウスホイールによるスクロール方向逆転の修正
+messagesDisplay.addEventListener('touchmove', () => _historyLoadGate.intent(isLoadingOlderMessages), { passive: true });
+messagesDisplay.addEventListener('pointerdown', () => _historyLoadGate.intent(isLoadingOlderMessages), { passive: true });
+messagesDisplay.addEventListener('keydown', e => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) _historyLoadGate.intent(isLoadingOlderMessages); });
 messagesDisplay.addEventListener("wheel", (e) => {
   // flipped (scaleY(-1)) されているため、デフォルトのスクロール方向が逆になる。
   // これをキャンセルし、自力で正しい方向にスクロール位置を加算・減算する。
   e.preventDefault();
+  _historyLoadGate.intent(isLoadingOlderMessages);
   messagesDisplay.scrollTop -= e.deltaY;
+  // A short timeline cannot emit a scroll event; an explicit upward wheel still loads one page.
+  const distance = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
+  if (e.deltaY < 0 && allowPagination && !isJumpView && hasMoreOlderMessages && _historyLoadGate.take(distance, isLoadingOlderMessages)) loadOlderMessages();
 }, { passive: false });
 
 // 旧ルーム作成ボタンは無効化（サーバー設定から管理）
@@ -16846,75 +16915,123 @@ const mobileBackButton = document.getElementById("mobileBackButton");
 
 // 🔒 検索時にローカル過去ログとRTDB最新差分を省通信で動員・復号して検索漏れを完全根絶 (BUG-5)
 // 入力のたびに呼ばれるため、同一チャンネルは60秒に1回・同時実行は1本までに制限する
-const _searchPreloadedAt = new Map();
-let _searchPreloadInFlight = false;
-async function ensureChannelHistoryForSearch() {
-  const chKey = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
-  if (_searchPreloadInFlight) return;
-  if (Date.now() - (_searchPreloadedAt.get(chKey) || 0) < 60000) return;
-  _searchPreloadInFlight = true;
-  try {
-    await _ensureChannelHistoryForSearchImpl();
-    _searchPreloadedAt.set(chKey, Date.now());
-  } finally {
-    _searchPreloadInFlight = false;
+function setSearchHistoryStatus(text) {
+  if (!searchContainer) return;
+  let status = document.getElementById('searchHistoryStatus');
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'searchHistoryStatus';
+    status.className = 'text-xs text-gray-500 px-2';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    searchContainer.appendChild(status);
   }
+  status.textContent = text;
+  status.hidden = !text;
+}
+const _searchPreloadedAt = new Map();
+const _searchPreloads = new Map();
+async function ensureChannelHistoryForSearch() {
+  const chKey = currentDmId ? `dm_${currentDmId}` : `${currentServerId}_${currentRoomId}`;
+  const key = `${_activeChannelSessionId}:${chKey}:${searchQuery}`;
+  if (_searchPreloads.has(key)) return _searchPreloads.get(key);
+  const pending = _ensureChannelHistoryForSearchImpl().finally(() => _searchPreloads.delete(key));
+  _searchPreloads.set(key, pending);
+  return pending;
 }
 async function _ensureChannelHistoryForSearchImpl() {
+  const session = _activeChannelSessionId;
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
   const targetDmId = currentDmId;
-  const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
-  const targetServerData = currentServerData;
-  const chId = targetServerId ? `${targetServerId}_${targetRoomId}` : `dm_${targetDmId}`;
-  if (!chId || (!targetServerId && !targetDmId)) return;
+  const participants = [...(currentDmParticipants || [])];
+  const members = [...(currentServerData?.joinedUsers || [])];
+  const requestedQuery = searchQuery;
+  if ((!targetDmId && (!targetServerId || !targetRoomId)) || !requestedQuery) return;
+  const chId = targetDmId ? `dm_${targetDmId}` : `${targetServerId}_${targetRoomId}`;
+  const active = () => session === _activeChannelSessionId && currentServerId === targetServerId && currentRoomId === targetRoomId && currentDmId === targetDmId && searchQuery === requestedQuery;
+  const matches = new Map();
+  let persisted = true;
+  const collectMatches = async page => {
+    if (targetDmId) await _decryptDmMessagesInPlace(page, targetDmId, participants);
+    else await decryptMessagesInPlace(page, targetServerId, targetRoomId, members);
+    if (!active()) return;
+    for (const message of page) {
+      const body = String(message.text || '').toLowerCase();
+      const sender = String(message.senderNickname || message.senderName || '').toLowerCase();
+      if (body.includes(requestedQuery) || sender.includes(requestedQuery)) matches.set(message.id, message);
+    }
+  };
   try {
-    // 1. ローカルIndexedDBから最大500件まで過去ログを一気に動員（通信量0）
-    const localMsgs = await LocalStore.getMessages(chId, null, 500);
-    const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
-    let newDocs = (localMsgs || []).filter(m => !existingLoadedIds.has(m.id));
-    // 2. ローカルDBが空の端末（初回・キャッシュ消去直後）に限り、RTDBから最小限(100件)取得して合流
-    if ((localMsgs || []).length === 0 && allLoadedMessages.length < 100) {
-      try {
-        const { ref, get, query: rtdbQuery, limitToLast, orderByChild } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-        const rtdb = await _getOrInitRTDB();
-        const basePath = targetServerId
-          ? `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`
-          : `artifacts/${appId}/dm_messages/${targetDmId}`;
-        const q = rtdbQuery(ref(rtdb, basePath), orderByChild('timestamp'), limitToLast(100));
-        const snap = await get(q);
-        if (snap.exists()) {
-          const val = snap.val();
-          const rtdbList = Object.keys(val).map(k => ({ ...val[k], id: k, channelId: chId }));
-          LocalStore.upsertMessagesBatch(rtdbList).catch(() => {});
-          const freshNew = rtdbList.filter(m => !existingLoadedIds.has(m.id));
-          newDocs = [...newDocs, ...freshNew];
+    setSearchHistoryStatus('履歴を確認中…');
+    let remoteError = null;
+    // Fetch each encrypted server page at most once per minute, independently of local cache size.
+    try {
+    if (Date.now() - (_searchPreloadedAt.get(chId) || 0) >= 60000) {
+      const { ref, get, query: rq, orderByChild, limitToLast, endBefore } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      const rtdb = await _getOrInitRTDB();
+      const base = targetDmId ? `artifacts/${appId}/dm_messages/${targetDmId}` : `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`;
+      let cursor = null;
+      while (active()) {
+        const constraints = [orderByChild('timestamp'), limitToLast(100)];
+        if (cursor) constraints.push(endBefore(getMsgTimestamp(cursor), cursor.id));
+        const snap = await get(rq(ref(rtdb, base), ...constraints));
+        if (!active()) return;
+        const page = Object.entries(snap.val() || {}).map(([id, data]) => ({ ...data, id, channelId: chId })).sort(compareHistoryMessages);
+        if (!page.length) break;
+        if (await LocalStore.upsertMessagesBatch(page) !== true) persisted = false;
+        await collectMatches(page);
+        cursor = page[0];
+        if (page.length < 100) break;
+      }
+      // Firestore may still contain history during RTDB migration or a failed secondary write.
+      if (targetServerId && active()) {
+        const { collection, query, orderBy, limit, startAfter, getDocs } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+        let cursor = null;
+        while (active()) {
+          const constraints = [orderBy('timestamp', 'desc'), limit(100)];
+          if (cursor) constraints.push(startAfter(cursor));
+          const snap = await getDocs(query(collection(db, `artifacts/${appId}/servers/${targetServerId}/rooms/${targetRoomId}/messages`), ...constraints));
+          if (!active()) return;
+          if (snap.empty) break;
+          const page = snap.docs.map(d => ({ ...d.data(), id: d.id, channelId: chId }));
+          if (await LocalStore.upsertMessagesBatch(page) !== true) persisted = false;
+          await collectMatches(page);
+          cursor = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < 100) break;
         }
-      } catch (_) {}
+      }
+      if (!active()) return;
+      if (persisted) _searchPreloadedAt.set(chId, Date.now());
     }
-    if (newDocs.length === 0) return;
-    if (targetServerId) {
-      const members = (targetServerData && targetServerData.joinedUsers) || [];
-      await decryptMessagesInPlace(newDocs, targetServerId, targetRoomId, members).catch(() => {});
-    } else if (targetDmId) {
-      await _decryptDmMessagesInPlace(newDocs, targetDmId, targetDmParticipants).catch(() => {});
+    } catch (err) {
+      remoteError = err;
+      console.warn('[Search] remote history unavailable; searching saved history:', err);
     }
-    // 準備中にチャンネルを切り替えた場合は、別チャンネルのメッセージを混入させない
-    if (currentServerId !== targetServerId || currentRoomId !== targetRoomId || currentDmId !== targetDmId) return;
-    allLoadedMessages = [...newDocs, ...allLoadedMessages];
-    const seen = new Set();
-    allLoadedMessages = allLoadedMessages.filter(m => {
-      if (seen.has(m.id)) return false;
-      seen.add(m.id);
-      return true;
-    });
-    allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-    lastMessagesData = [...allLoadedMessages];
-    messagesIndexMap = {};
-    lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
+    // Scan all local history in small batches, retaining only matching records.
+    let cursor = null;
+    while (active()) {
+      const page = await LocalStore.getMessages(chId, cursor ? getMsgTimestamp(cursor) : null, 100, cursor?.id || null);
+      if (!active() || !page.length) break;
+      await collectMatches(page);
+      if (!active()) return;
+      const next = [...page].sort(compareHistoryMessages)[0];
+      if (cursor && compareHistoryMessages(next, cursor) >= 0) break;
+      cursor = next;
+      if (page.length < 100) break;
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    if (!active()) return;
+    _searchHistoryResults = { channelId: chId, query: requestedQuery, messages: [...matches.values()].sort(compareHistoryMessages) };
+    setSearchHistoryStatus(matches.size ? `${matches.size}件の一致するメッセージ` : '保存済みの履歴に一致するメッセージはありません');
+    if (remoteError) setSearchHistoryStatus(`保存済みの履歴から${matches.size}件。未取得の履歴は接続の復帰後に再検索してください。`);
     renderMessagesWithReadReceipts();
   } catch (err) {
-    console.warn('[Search] Failed to preload local history for search:', err);
+    if (active()) {
+      setSearchHistoryStatus('一部の履歴を確認できませんでした。接続を確認して再検索してください。');
+      alertMessage('履歴をすべて確認できませんでした。接続を確認して再検索してください。', 'warning');
+    }
+    console.warn('[Search] history scan incomplete:', err);
   }
 }
 
@@ -16948,6 +17065,7 @@ if (closeSearchBtn && searchContainer) {
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
     searchQuery = (e.target.value || "").trim().toLowerCase();
+    if (!searchQuery) { _searchHistoryResults = null; setSearchHistoryStatus(''); }
     if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
     _searchDebounceTimer = setTimeout(async () => {
       if (searchQuery) {
@@ -17930,11 +18048,25 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 
 // === メッセージ自動プルーニング（最新100件超過分の自動削除 & KV添付ファイル完全消去） ===
 let _pruneThrottleMap = new Map();
+const _prunePendingTimers = new Map();
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
   if ((!serverId || !roomId) && !dmId) return;
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
   const now = Date.now();
-  if (now - (_pruneThrottleMap.get(channelKey) || 0) < 5000) return;
+  const elapsed = now - (_pruneThrottleMap.get(channelKey) || 0);
+  if (elapsed < 5000) {
+    if (!_prunePendingTimers.has(channelKey)) {
+      _prunePendingTimers.set(channelKey, setTimeout(() => {
+        _prunePendingTimers.delete(channelKey);
+        pruneExcessMessages(serverId, roomId, dmId);
+      }, 5020 - elapsed));
+    }
+    return;
+  }
+  if (_prunePendingTimers.has(channelKey)) {
+    clearTimeout(_prunePendingTimers.get(channelKey));
+    _prunePendingTimers.delete(channelKey);
+  }
   _pruneThrottleMap.set(channelKey, now);
 
   try {
@@ -19025,13 +19157,17 @@ window.showReactionUsers = function (reactionsObj) {
 };
 
 window.renderPdfCanvas = async function (url, canvas, hintW, hintH) {
-  if (!window.pdfjsLib || !canvas) return;
+  if (!canvas) return;
+  let loadingTask = null;
   try {
+    const pdfjsLib = await loadPdfLibrary();
+    if (!canvas.isConnected) return;
     const container = canvas.parentElement;
     const containerW = (container && container.clientWidth > 0) ? container.clientWidth : (hintW || 128);
     const containerH = (container && container.clientHeight > 0) ? container.clientHeight : (hintH || 160);
 
-    const loadingTask = window.pdfjsLib.getDocument({ url, withCredentials: false });
+    loadingTask = pdfjsLib.getDocument({ url, withCredentials: false });
+    _activePdfTasks.add(loadingTask);
     const pdf = await loadingTask.promise;
     const page = await pdf.getPage(1);
 
@@ -19062,9 +19198,14 @@ window.renderPdfCanvas = async function (url, canvas, hintW, hintH) {
     }
     canvas.style.opacity = '1';
   } catch (e) {
-    console.warn("PDF thumbnail render error:", e.message || e);
+    if (canvas.isConnected) console.warn("PDF thumbnail render error:", e.message || e);
     // エラー時はcanvasを非表示（デフォルトアイコンがそのまま見える）
     if (canvas) canvas.style.display = 'none';
+  } finally {
+    if (loadingTask) {
+      _activePdfTasks.delete(loadingTask);
+      await loadingTask.destroy().catch(() => {});
+    }
   }
 };
 
@@ -19855,9 +19996,14 @@ let _voiceRecordTimerInterval = null;
 let _voiceRecordSeconds = 0;
 let _voiceRecordChunks = [];
 let _isVoiceRecording = false;
+let _voiceRecordStarting = false;
+let _voiceRecordPermissionTimer = null;
+let _voiceRecordRequest = 0;
+let _voiceRecordDestination = null;
+let _voiceRecordSending = false;
 
 window.startVoiceRecording = async function() {
-  if (_isVoiceRecording) return;
+  if (_isVoiceRecording || _voiceRecordStarting || _voiceRecordSending) return;
   if (!currentRoomId && !currentDmId) {
     if (typeof alertMessage === 'function') alertMessage('チャンネルまたはDMを選択してください', 'warning');
     return;
@@ -19867,10 +20013,24 @@ window.startVoiceRecording = async function() {
     return;
   }
 
+  if (typeof MediaRecorder === 'undefined') { alertMessage('お使いの環境は音声録音に対応していません', 'warning'); return; }
+  _voiceRecordStarting = true;
+  const request = ++_voiceRecordRequest;
+  const destination = { serverId: currentServerId, roomId: currentRoomId, dmId: currentDmId };
+  _voiceRecordPermissionTimer = setTimeout(() => {
+    if (request !== _voiceRecordRequest || !_voiceRecordStarting) return;
+    _cleanupVoiceRecording();
+    alertMessage('マイクの許可を確認できませんでした。ブラウザーの設定を確認して再試行してください。', 'warning');
+  }, 30000);
   try {
     const savedMic = localStorage.getItem('covo_selected_mic') || '';
     const audioConstraint = savedMic ? { deviceId: { ideal: savedMic }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true };
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint, video: false });
+    if (request !== _voiceRecordRequest || destination.serverId !== currentServerId || destination.roomId !== currentRoomId || destination.dmId !== currentDmId) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    _voiceRecordDestination = destination;
     _voiceRecordStream = stream;
 
     let mimeType = 'audio/webm;codecs=opus';
@@ -19890,11 +20050,12 @@ window.startVoiceRecording = async function() {
 
     const options = mimeType ? { mimeType } : undefined;
     _voiceMediaRecorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
-    _voiceRecordChunks = [];
+    const chunks = [];
+    _voiceRecordChunks = chunks;
 
     _voiceMediaRecorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) {
-        _voiceRecordChunks.push(e.data);
+        chunks.push(e.data);
       }
     };
 
@@ -19974,21 +20135,33 @@ window.startVoiceRecording = async function() {
 
     _voiceMediaRecorder.start(250);
   } catch (err) {
-    console.error('Failed to start voice recording:', err);
+    const guidance = microphoneErrorMessage(err);
+    if (!guidance) console.error('Failed to start voice recording:', err);
     _cleanupVoiceRecording();
     if (typeof alertMessage === 'function') {
-      alertMessage('マイクの初期化に失敗しました: ' + (err.message || 'アクセスが拒否されました'), 'error');
+      alertMessage(guidance || 'マイクの初期化に失敗しました: ' + (err.message || ''), guidance ? 'warning' : 'error');
+    }
+  } finally {
+    if (request === _voiceRecordRequest) {
+      clearTimeout(_voiceRecordPermissionTimer);
+      _voiceRecordPermissionTimer = null;
+      _voiceRecordStarting = false;
     }
   }
 };
 
 window.cancelVoiceRecording = function() {
-  if (!_isVoiceRecording) return;
+  if (!_isVoiceRecording && !_voiceRecordStarting) return;
   _cleanupVoiceRecording();
   if (typeof alertMessage === 'function') alertMessage('ボイスメッセージを破棄しました', 'info');
 };
 
 function _cleanupVoiceRecording() {
+  clearTimeout(_voiceRecordPermissionTimer);
+  _voiceRecordPermissionTimer = null;
+  ++_voiceRecordRequest;
+  _voiceRecordStarting = false;
+  _voiceRecordDestination = null;
   _isVoiceRecording = false;
   { const _vrBtn = document.getElementById('voiceRecordButton'); if (_vrBtn) _vrBtn.classList.remove('recording'); }
   if (_voiceRecordTimerInterval) {
@@ -20035,13 +20208,21 @@ window.sendVoiceRecording = async function() {
     return;
   }
 
+  if (_voiceRecordSending) return;
+  _voiceRecordSending = true;
+  const destination = _voiceRecordDestination;
+  const chunks = _voiceRecordChunks;
   const recorder = _voiceMediaRecorder;
   const mimeType = recorder.mimeType || 'audio/webm';
   const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
 
   recorder.onstop = async () => {
     try {
-      const blob = new Blob(_voiceRecordChunks, { type: mimeType });
+      if (!destination || destination.serverId !== currentServerId || destination.roomId !== currentRoomId || destination.dmId !== currentDmId) {
+        alertMessage('送信先が変更されたため録音の送信を中断しました', 'warning');
+        return;
+      }
+      const blob = new Blob(chunks, { type: mimeType });
       if (blob.size === 0) {
         if (typeof alertMessage === 'function') alertMessage('音声データの取得に失敗しました', 'error');
         return;
@@ -20065,7 +20246,7 @@ window.sendVoiceRecording = async function() {
         await sendMessage();
       }
 
-      if (currentDraftBackup && typeof messageInput !== 'undefined' && messageInput && !messageInput.value) {
+      if (destination.serverId === currentServerId && destination.roomId === currentRoomId && destination.dmId === currentDmId && currentDraftBackup && typeof messageInput !== 'undefined' && messageInput && !messageInput.value) {
         messageInput.value = currentDraftBackup;
         if (typeof toggleSendButtonState === 'function') toggleSendButtonState();
         if (typeof adjustTextareaHeight === 'function') adjustTextareaHeight();
@@ -20073,12 +20254,18 @@ window.sendVoiceRecording = async function() {
     } catch (err) {
       console.error('Send voice recording error:', err);
       if (typeof alertMessage === 'function') alertMessage('ボイスメッセージの送信に失敗しました: ' + (err.message || ''), 'error');
+    } finally {
+      _voiceRecordSending = false;
     }
   };
 
   try {
     recorder.stop();
-  } catch (_) {}
+  } catch (err) {
+    _voiceRecordSending = false;
+    _cleanupVoiceRecording();
+    return;
+  }
 
   if (_voiceRecordTimerInterval) { clearInterval(_voiceRecordTimerInterval); _voiceRecordTimerInterval = null; }
   if (_voiceRecordAnimFrame) { cancelAnimationFrame(_voiceRecordAnimFrame); _voiceRecordAnimFrame = null; }
@@ -20527,97 +20714,66 @@ function createMessageElement(message, messageId, readByCount = 0) {
     } else {
       // 復号 URL リゾルバー（E2EE暗号化ファイル・キャッシュ対応）
       const resolveAttachmentBlobUrl = async () => {
-        if (message._decryptedFileUrl) return message._decryptedFileUrl;
         const rawUrl = message.fileData || message.kvFileUrl;
         if (!message.isFileEncrypted) return rawUrl;
-        let key;
-        if (snapDmId) {
-          key = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
-        } else {
-          key = await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
-        }
-        if (!key) throw new Error("暗号化鍵が見つかりません");
-        const res = await fetchWithMediaCache(rawUrl);
-        if (res.status === 404 || res.status === 410) {
-          markFileAsMissing(rawUrl);
-          message._fileExpired = true;
-          throw new Error("ファイルが見つかりません（期限切れまたは削除）");
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buf = await res.arrayBuffer();
-        if (!buf || buf.byteLength < 29) throw new Error("ファイルが破損しているか読み込めません");
-        const dec = await decryptFileE2EE(buf, key, snapServerId, snapRoomId);
-        const blob = new Blob([dec], { type: message.fileType || 'application/octet-stream' });
-        message._decryptedFileUrl = URL.createObjectURL(blob);
-        return message._decryptedFileUrl;
+        return _attachmentResources.resolve(message, async () => {
+          const key = snapDmId ? await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000) : await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
+          if (!key) throw new Error('暗号化鍵を待機しています');
+          const res = await fetchWithMediaCache(rawUrl);
+          if (res.status === 404 || res.status === 410) {
+            markFileAsMissing(rawUrl);
+            message._fileExpired = true;
+            throw new Error('ファイルが見つかりません');
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const dec = await decryptFileE2EE(await res.arrayBuffer(), key, snapServerId, snapRoomId);
+          return new Blob([dec], { type: message.fileType || 'application/octet-stream' });
+        });
       };
 
       const setMediaSrc = (element, propName, url) => {
-        if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
-          message._fileExpired = true;
-          const expiredCard = createExpiredFileCard(message.fileName);
-          element.replaceWith(expiredCard);
-          return;
-        }
-        if (message.isFileEncrypted) {
-          if (message._decryptedFileUrl) {
-            if (propName) element[propName] = message._decryptedFileUrl;
-            if (element.tagName === 'IMG') element.style.opacity = '1';
-            if (element.tagName === 'CANVAS') window.renderPdfCanvas(message._decryptedFileUrl, element);
-          } else {
-            if (element.tagName === 'IMG') element.style.opacity = '0.3';
-            (async () => {
-              try {
-                if (message._decryptionFailed) {
-                  const card = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-                  element.replaceWith(card);
-                  return;
-                }
-                const blobUrl = await resolveAttachmentBlobUrl();
-                if (propName) element[propName] = blobUrl;
-                if (element.tagName === 'IMG') element.style.opacity = '1';
-                if (element.tagName === 'CANVAS') window.renderPdfCanvas(blobUrl, element);
-              } catch (_) {
-                if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  try { element.replaceWith(expiredCard); } catch (_) {}
-                } else {
-                  message._decryptionFailed = true;
-                  const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-                  try { element.replaceWith(errCard); } catch (_) {}
-                }
-              }
-            })();
+        element.classList.add('covo-media-loading');
+        element.setAttribute('aria-busy', 'true');
+        const ready = () => {
+          element.classList.remove('covo-media-loading');
+          element.removeAttribute('aria-busy');
+          if (element.tagName === 'IMG') element.style.opacity = '1';
+        };
+        element.addEventListener('load', ready, { once: true });
+        element.addEventListener('loadeddata', ready, { once: true });
+        element.addEventListener('loadedmetadata', ready, { once: true });
+        if (element.tagName === 'IMG') element.decoding = 'async';
+        const retryCard = () => {
+          ready();
+          const expired = message._fileExpired || isFileMissing(targetAttachmentUrl);
+          const card = createExpiredFileCard(message.fileName, expired ? undefined : '読み込めませんでした。クリックして再試行');
+          if (!expired) {
+            card.tabIndex = 0;
+            card.setAttribute('role', 'button');
+            const retry = () => { card.replaceWith(element); setMediaSrc(element, propName, url); };
+            card.onclick = retry;
+            card.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); retry(); } };
           }
-        } else {
-          const directUrl = url || targetAttachmentUrl;
-          if (propName) element[propName] = directUrl;
-          if (element.tagName === 'IMG') {
-            element.onerror = () => {
-              fetch(directUrl, { method: 'HEAD' }).then(res => {
-                if (res.status === 404 || res.status === 410) {
-                  markFileAsMissing(directUrl);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName);
-                  element.replaceWith(expiredCard);
-                }
-              }).catch(() => {});
-            };
-          } else if (element.tagName === 'VIDEO') {
-            element.onerror = () => {
-              fetch(directUrl, { method: 'HEAD' }).then(res => {
-                if (res.status === 404 || res.status === 410) {
-                  markFileAsMissing(directUrl);
-                  message._fileExpired = true;
-                  const expiredCard = createExpiredFileCard(message.fileName, '保存期間が終了したため動画を再生できません');
-                  element.replaceWith(expiredCard);
-                }
-              }).catch(() => {});
-            };
+          element.replaceWith(card);
+        };
+        const load = async () => {
+          try {
+            if (message._fileExpired || isFileMissing(targetAttachmentUrl)) { retryCard(); return; }
+            const source = message.isFileEncrypted ? await resolveAttachmentBlobUrl() : (url || targetAttachmentUrl);
+            if (!element.isConnected) return;
+            if (element.tagName === 'CANVAS') {
+              await window.renderPdfCanvas(source, element);
+              ready();
+            } else {
+              element.addEventListener('error', retryCard, { once: true });
+              if (propName) element[propName] = source;
+              if (element.tagName === 'IMG' && element.complete && element.naturalWidth) ready();
+            }
+          } catch (err) {
+            if (err?.name !== 'AbortError' && element.isConnected) retryCard();
           }
-          if (element.tagName === 'CANVAS') window.renderPdfCanvas(directUrl, element);
-        }
+        };
+        scheduleMediaLoad(element, load);
       };
 
       // 👁️ スポイラー判定 (Discord互換: isSpoiler または ファイル名に SPOILER_ 含む)
@@ -20710,15 +20866,18 @@ function createMessageElement(message, messageId, readByCount = 0) {
         img.style.maxHeight = '250px';
         img.loading = 'eager';
         setMediaSrc(img, 'src');
-        img.addEventListener("click", () => {
-          const url = message._decryptedFileUrl || targetAttachmentUrl;
-          openPhotoSwipeModal(url, message.fileName);
+        img.addEventListener("click", async () => {
+          try {
+            const url = message.isFileEncrypted ? await resolveAttachmentBlobUrl() : targetAttachmentUrl;
+            if (img.isConnected) openPhotoSwipeModal(url, message.fileName);
+          } catch (_) { alertMessage('画像を読み込めませんでした。再試行してください。', 'warning'); }
         });
         appendWithSpoilerSupport(img);
       }
       // 🎬 3. 動画ファイル判定
       else if ((message.fileType && message.fileType.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|ogv)$/i.test(message.fileName)) {
         const video = document.createElement('video');
+        video.preload = 'metadata';
         video.controls = true;
         video.className = 'mt-2 rounded-lg max-w-full h-auto';
         video.style.maxHeight = '250px';
@@ -20764,44 +20923,21 @@ function createMessageElement(message, messageId, readByCount = 0) {
         pdfLabel.appendChild(safeName);
         pdfWrapper.appendChild(pdfLabel);
 
-        pdfWrapper.addEventListener('click', () => {
+        pdfWrapper.addEventListener('click', async () => {
           if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
             alertMessage("保存期間（100件制限）が終了したため、このファイルはサーバーから削除されました。", "info");
             return;
           }
-          const url = message._decryptedFileUrl || targetAttachmentUrl;
-          openPdfLightbox(url, message.fileName);
+          try {
+            const url = message.isFileEncrypted ? await resolveAttachmentBlobUrl() : targetAttachmentUrl;
+            if (pdfWrapper.isConnected) openPdfLightbox(url, message.fileName);
+          } catch (_) { alertMessage('PDFを読み込めませんでした。再試行してください。', 'warning'); }
         });
 
         appendWithSpoilerSupport(pdfWrapper);
 
-        const renderThumb = async () => {
-          if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
-            message._fileExpired = true;
-            const expiredCard = createExpiredFileCard(message.fileName);
-            pdfWrapper.replaceWith(expiredCard);
-            return;
-          }
-          if (message.isFileEncrypted) {
-            try {
-              const url = await resolveAttachmentBlobUrl();
-              window.renderPdfCanvas(url, thumbCanvas, 128, 160);
-            } catch (_) {
-              if (message._fileExpired || isFileMissing(targetAttachmentUrl)) {
-                message._fileExpired = true;
-                const expiredCard = createExpiredFileCard(message.fileName);
-                try { pdfWrapper.replaceWith(expiredCard); } catch (_) {}
-              } else {
-                const errCard = createExpiredFileCard(message.fileName, '🔒 暗号化キー不一致のため復号できません');
-                try { pdfWrapper.replaceWith(errCard); } catch (_) {}
-              }
-            }
-          } else {
-            window.renderPdfCanvas(targetAttachmentUrl, thumbCanvas, 128, 160);
-          }
-        };
+        setMediaSrc(thumbCanvas, null);
 
-        requestAnimationFrame(() => requestAnimationFrame(renderThumb));
       }
       // 📦 5. その他の添付ファイル (コード、ZIP、ドキュメントなど) -> Discord準拠 洗練カード (Dark/Light両対応)
       else {
@@ -21057,6 +21193,17 @@ async function jumpToUnloadedMessage(msgId) {
 }
 
 function renderMessagesWithReadReceipts() {
+  const channelId = currentDmId ? `dm_${currentDmId}` : `${currentServerId}_${currentRoomId}`;
+  const timeline = isJumpView ? lastMessagesData : allLoadedMessages;
+  if (searchQuery && _searchHistoryResults?.channelId === channelId && _searchHistoryResults.query === searchQuery) {
+    const combined = new Map(_searchHistoryResults.messages.map(message => [message.id, message]));
+    for (const message of timeline) combined.set(message.id, message);
+    lastMessagesData = [...combined.values()].sort(compareHistoryMessages);
+  } else {
+    lastMessagesData = [...timeline];
+  }
+  messagesIndexMap = {};
+  lastMessagesData.forEach((message, index) => { messagesIndexMap[message.id] = index; });
   const filteredMessages = lastMessagesData.filter(msg => {
     if (!searchQuery) return true;
     const body = String(msg.text || msg._decryptedText || '').toLowerCase();
@@ -21065,8 +21212,9 @@ function renderMessagesWithReadReceipts() {
   });
 
   // スクロール中に新しいメッセージを受信した場合の「最新へジャンプ」バッジ連動
-  if (typeof window._covoLastRenderedCount === 'number' && filteredMessages.length > window._covoLastRenderedCount) {
-    const diff = filteredMessages.length - window._covoLastRenderedCount;
+  const newMessageCount = countNewerMessages(filteredMessages, window._covoLastRenderedNewest);
+  if (!searchQuery && newMessageCount > 0) {
+    const diff = newMessageCount;
     if (messagesDisplay && messagesDisplay.scrollTop > 100) {
       window._covoUnreadScrolledCount = (window._covoUnreadScrolledCount || 0) + diff;
       const badge = document.getElementById("jumpModeUnreadBadge");
@@ -21082,6 +21230,7 @@ function renderMessagesWithReadReceipts() {
     }
   }
   window._covoLastRenderedCount = filteredMessages.length;
+  if (!searchQuery) window._covoLastRenderedNewest = filteredMessages[filteredMessages.length - 1]?.id || null;
 
   // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
   const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
@@ -22600,6 +22749,7 @@ function formatNotificationBody(text, sticker) {
 }
 
 const _notifiedMessageIds = new Set();
+const _notificationLedger = new NotificationLedger();
 
 // 統一通知ディスパッチャー（二重通知・不要なWindows通知・二重音を完全防止）
 async function notifyNewMessage({
@@ -22620,6 +22770,7 @@ async function notifyNewMessage({
   const notifKey = messageId ? `id_${messageId}` : `${channelKey}_${senderName}_${String(text || '').slice(0, 30)}`;
   const contentKey = `${channelKey}_${senderName}_${String(text || '').slice(0, 30)}`;
   if (isDm && targetUid && isUserBlocked(targetUid)) return;
+  if (!_notificationLedger.claim(`${userId}:${serverId || 'dm'}:${channelKey}:${notifKey}`)) return;
   if (_notifiedMessageIds.has(notifKey) || _notifiedMessageIds.has(contentKey)) return;
   _notifiedMessageIds.add(notifKey);
   _notifiedMessageIds.add(contentKey);
@@ -25383,6 +25534,7 @@ async function declineCall() {
 }
 
 async function joinAgoraChannel(channelName) {
+  await loadAgoraLibrary();
   if (typeof AgoraRTC === 'undefined') {
     throw new Error("Agora RTC SDK が読み込まれていません。ネットワーク環境をご確認ください。");
   }
@@ -31493,6 +31645,17 @@ class VoiceEngine {
   async _switchToAgora() {
     if (this._modeSwitching) return;
     this._modeSwitching = true;
+    const channelAtStart = this.channelId;
+    const streamAtStart = this._myStream;
+    try { await loadAgoraLibrary(); } catch (err) {
+      console.warn('[VoiceEngine] SFUライブラリ取得失敗、P2Pを継続:', err.message);
+      this._modeSwitching = false;
+      return;
+    }
+    if (!this.isActive || this.channelId !== channelAtStart || this._myStream !== streamAtStart) {
+      this._modeSwitching = false;
+      return;
+    }
     if (this.mode === 'p2p') {
       console.log('[VoiceEngine] 🔄 P2P → Agora SFU 切替中 (P2P接続とオーディオを完全解放)...');
       this._cleanupAllPeers();

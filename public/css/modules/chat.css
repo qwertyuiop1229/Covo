@@ -2494,3 +2494,15 @@
 
 
 
+
+/* Encrypted attachments remain obscured until download, decryption and media decoding finish. */
+.covo-media-loading {
+  filter: blur(8px);
+  opacity: .5;
+  background: linear-gradient(110deg, var(--bg-secondary, #e5e7eb), var(--bg-primary, #f3f4f6), var(--bg-secondary, #e5e7eb));
+  min-height: 96px;
+  transition: filter .18s ease, opacity .18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .covo-media-loading { transition: none; }
+}

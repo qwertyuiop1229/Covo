@@ -113,6 +113,8 @@ export async function putMessage(msg) {
       const tx = db.transaction("messages", "readwrite");
       const store = tx.objectStore("messages");
       const cleanMsg = { ...msg };
+      delete cleanMsg._decryptedFileUrl;
+      delete cleanMsg._decryptionFailed;
       // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持し、P2P同期での平文漏洩を防止
       if (cleanMsg._originalText) {
         cleanMsg.text = cleanMsg._originalText;
@@ -155,6 +157,8 @@ export async function upsertMessagesBatch(msgs) {
       for (const msg of msgs) {
         if (!msg || !msg.id || !msg.channelId) continue;
         const cleanMsg = { ...msg };
+        delete cleanMsg._decryptedFileUrl;
+        delete cleanMsg._decryptionFailed;
         // 🔒 E2EE保護: 復号済みメッセージであっても永続化時には元の暗号文を保持
         if (cleanMsg._originalText) {
           cleanMsg.text = cleanMsg._originalText;
@@ -189,7 +193,7 @@ export async function upsertMessagesBatch(msgs) {
  * @param {number} limit - 取得件数 (デフォルト: 50)
  * @returns {Promise<Array<Object>>} メッセージ配列 (timestamp昇順)
  */
-export async function getMessages(channelId, beforeTs = null, limit = 50) {
+export async function getMessages(channelId, beforeTs = null, limit = 50, beforeId = null) {
   if (!channelId) return [];
   const db = await initLocalDB();
   if (!db) return [];
@@ -199,13 +203,24 @@ export async function getMessages(channelId, beforeTs = null, limit = 50) {
       const store = tx.objectStore("messages");
       const index = store.index("channel_ts");
       const upper = beforeTs != null ? beforeTs : Number.MAX_SAFE_INTEGER;
-      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null);
+      const range = IDBKeyRange.bound([channelId, 0], [channelId, upper], false, beforeTs != null && beforeId == null);
       const req = index.openCursor(range, "prev"); // 新しい順に探索
       const results = [];
       req.onsuccess = (e) => {
         const cursor = e.target.result;
         if (cursor && results.length < limit) {
-          results.push(cursor.value);
+          if (beforeId != null && cursor.value.timestamp === beforeTs && String(cursor.primaryKey) >= String(beforeId)) {
+            if (String(cursor.primaryKey) > String(beforeId) && typeof cursor.continuePrimaryKey === 'function') {
+              cursor.continuePrimaryKey(cursor.key, beforeId);
+            } else {
+              cursor.continue();
+            }
+            return;
+          }
+          const record = { ...cursor.value };
+          delete record._decryptedFileUrl;
+          delete record._decryptionFailed;
+          results.push(record);
           cursor.continue();
         } else {
           // 画面表示用に timestamp 昇順 (古い順) に並び替えて返却

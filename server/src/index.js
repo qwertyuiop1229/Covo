@@ -4475,7 +4475,34 @@ async function handleSetOffline(request, env) {
             }
             let deletedFiles = 0;
             let prunedCount = 0;
+            let failedDeletes = 0;
             for (const msg of excessMsgs) {
+              const delMsgRtdbUrl = dmId
+                ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
+                : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
+              try {
+                const liveResponse = await fetch(delMsgRtdbUrl, { headers: { 'X-Firebase-ETag': 'true' } });
+                if (!liveResponse.ok) { failedDeletes++; continue; }
+                const live = await liveResponse.json();
+                if (!live || live.isPinned) continue;
+                if ((live.timestamp || live.createdAt || 0) !== (msg.timestamp || msg.createdAt || 0)) continue;
+                const storedId = msg.id;
+                Object.assign(msg, live, { id: storedId });
+                const etag = liveResponse.headers.get('ETag');
+                if (!etag) { failedDeletes++; continue; }
+                const deleted = await fetch(delMsgRtdbUrl, { method: 'DELETE', headers: { 'if-match': etag } });
+                if (!deleted.ok) { failedDeletes++; continue; }
+                if (!dmId && serverId && roomId && adminToken) {
+                  const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
+                  const fsDeleted = await fetch(fsUrl, { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } }).catch(() => null);
+                  if (!fsDeleted || (!fsDeleted.ok && fsDeleted.status !== 404)) {
+                    // Restore only if the message is still absent; never remove its attachment on failure.
+                    await fetch(delMsgRtdbUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'if-match': 'null_etag' }, body: JSON.stringify(live) });
+                    failedDeletes++;
+                    continue;
+                  }
+                }
+              } catch (_) { failedDeletes++; continue; }
               const fileUrls = [];
               if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
               if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
@@ -4500,14 +4527,6 @@ async function handleSetOffline(request, env) {
                   }
                 }
               }
-              const delMsgRtdbUrl = dmId
-                ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
-                : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
-              await fetch(delMsgRtdbUrl, { method: "DELETE" }).catch(() => {});
-              if (!dmId && serverId && roomId && adminToken) {
-                const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
-                await fetch(fsUrl, { method: "DELETE", headers: { "Authorization": `Bearer ${adminToken}` } }).catch(() => {});
-              }
               if (env.DB) {
                 try {
                   const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
@@ -4516,8 +4535,8 @@ async function handleSetOffline(request, env) {
               }
               prunedCount++;
             }
-            return new Response(JSON.stringify({ success: true, prunedCount, deletedFiles }), {
-              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+            return new Response(JSON.stringify({ success: failedDeletes === 0, prunedCount, deletedFiles, failedDeletes }), {
+              status: failedDeletes ? 502 : 200, headers: { ...cors, "Content-Type": "application/json" }
             });
           } catch (err) {
             console.error("handlePruneChannelMessages error:", err);

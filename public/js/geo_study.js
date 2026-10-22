@@ -92,6 +92,12 @@ function openGeoStudy() {
     buildGeoStudyUI(container);
     loadDependencies().then(() => {
       startNewLocation();
+    }).catch(err => {
+      isGeoStudyInitialized = false;
+      showLoading(false);
+      console.warn('Geo study dependencies failed:', err);
+      const hint = document.getElementById('gs-hint-text');
+      if (hint) hint.textContent = 'データの読み込みに失敗しました。画面を開き直して再試行してください。';
     });
     isGeoStudyInitialized = true;
   } else {
@@ -248,7 +254,12 @@ function toggleMapSwap() {
   }, 500);
 }
 
-function loadDependencies() {
+async function loadDependencies() {
+  const { loadOptionalScript } = await import('./dependency_loader.js');
+  await Promise.all([
+    loadOptionalScript(new URL('./geoguessr_locations.js', document.querySelector('script[src*="geo_study.js"]').src).href, 'EASY_LOCATIONS'),
+    loadOptionalScript('https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js', 'Panzoom')
+  ]);
   return new Promise((resolve) => {
     // 既に読み込み済みの場合はマップ初期化を確認してスキップ
     if (window.L) {

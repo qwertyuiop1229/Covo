@@ -31,14 +31,17 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.276" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.277" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
-  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.276" />
+  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" defer crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="css/main.css?v=1.1.277" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -54,12 +57,7 @@
       console.debug = filterAgora(_origDebug);
     })();
   </script>
-  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.22.2.js" defer onload="if(typeof AgoraRTC !== 'undefined' && AgoraRTC.setLogLevel) AgoraRTC.setLogLevel(4);"></script>
-  <!-- heic2any (遅延ロード) -->
-  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
-  <!-- Panzoom (画像拡大用・遅延ロード) -->
-  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" defer></script>
-
+  <!-- Optional media libraries load only when used (js/dependency_loader.js). -->
   <!-- Google tag (gtag.js) - Web版のみ読み込み（Tauriデスクトップ版でのTracking Prevention警告とストレージブロックを防止） -->
   <script>
     const isDesktopApp = typeof window !== 'undefined' && (
@@ -4527,13 +4525,12 @@
   </div>
 
   <!-- Firebase SDKのインポート -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer onload="if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}"></script>
   <script>
     if (typeof window.pdfjsLib !== 'undefined' && window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.276"></script>
+  <script type="module" src="js/main.js?v=1.1.277"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -6020,7 +6017,6 @@
   <div id="geoStudyContainer" class="hidden fixed inset-0 z-[9999999] bg-gray-900 flex-col overflow-hidden text-white"></div>
   <link rel="stylesheet" href="css/geo_study.css" />
   <script src="js/geo_study.js" defer></script>
-  <script src="js/geoguessr_locations.js" defer></script>
   <!-- テキスト・コード用プレビューモーダル -->
   <div id="textFilePreviewModal" class="hidden fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-3 sm:p-4 select-none" style="display:none;" onclick="if(event.target===this)window.closeTextFilePreview()">
     <div class="bg-white dark:bg-[#2b2d31] rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-[#1e1f22]" onclick="event.stopPropagation()">
