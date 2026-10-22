@@ -66,8 +66,8 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
   await page.evaluate(() => { messagesDisplay.style.width='350px';window.testRender(); });
   expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
   expect(errors).toEqual([]);
-  // Compare the same renderer fixture against HEAD before this change. No production Firebase calls.
-  const oldMain = cp.execFileSync('git', ['show', 'HEAD:public/js/main.js'], { encoding: 'utf8', maxBuffer: 5e6 });
+  // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
+  const oldMain = cp.execFileSync('git', ['show', '8c6e23c:public/js/main.js'], { encoding: 'utf8', maxBuffer: 5e6 });
   const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
   const client = await page.context().newCDPSession(page);
   await client.send('Performance.enable');
@@ -95,6 +95,73 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
   fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
 });
+
+for (const channel of ['server', 'dm']) {
+  test(`${channel}: cached ciphertext, textless arrivals and real decryption update existing rows`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://covo.test/**', route => route.fulfill({ contentType: 'text/html', body: '<div id="searchContainer"></div><div id="messagesDisplay" style="height:600px;overflow:auto"></div>' }));
+    await page.goto('https://covo.test/');
+    for (const file of ['loading_runtime.js', 'virtual_timeline.js', 'crypto_helpers.js']) {
+      await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '') });
+    }
+    await page.addScriptTag({ content: `
+      const channel = ${JSON.stringify(channel)};
+      const messagesDisplay=document.getElementById('messagesDisplay'),searchContainer=document.getElementById('searchContainer');
+      let currentDmId=channel==='dm'?'alice_bob':null,currentServerId=channel==='server'?'server':null,currentRoomId=channel==='server'?'room':null,currentDmParticipant=null;
+      let userId='alice',userNickname='Alice',cachedUsers=[],roomNames={room:'Room'},_outboxEntries=new Map(),messagesIndexMap={};
+      let searchQuery='',_searchHistoryResults=null,_searchVisibleCount=50,isJumpView=false,isLoadingOlderMessages=false,hasMoreOlderMessages=true;
+      let allLoadedMessages=[],lastMessagesData=[],jumpViewMessages=[];
+      const _virtualTimeline=new VirtualTimeline(),_virtualRowObserver=null,_attachmentResources={prune(){}};
+      const _abToB64=buffer=>btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const _b64ToAb=value=>Uint8Array.from(atob(value),character=>character.charCodeAt(0)).buffer;
+      const LocalStore={putMessage:async()=>{}},doc=(_,path)=>path;
+      const getDoc=async path=>({exists:()=>true,data:()=>path.includes('/roomKeys/')?window.wrappedKeys:{currentKeyVersion:2}});
+      const getMsgTimestamp=message=>message.timestamp,parseTimestampToMs=value=>Number(value||0),countNewerMessages=()=>0;
+      const isEncrypted=_isEncrypted,escapeHtml=text=>String(text||''),escapeHtmlAndLinkUrls=escapeHtml;
+      const computeReadByCount=()=>0,updateReactionsUI=()=>{},resolveUnreadBoundaryMessageId=()=>null,renderUnreadDivider=()=>{};
+      function createMessageElement(message){
+        const row=document.createElement('div');row.className='message-row';
+        const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
+        const text=document.createElement('span');text.className='message-content';
+        if(message.text?.startsWith('enc::')){const waiting=document.createElement('span');waiting.className='covo-msg-loading-shimmer';text.appendChild(waiting);}else text.textContent=message.text||'';
+        bubble.appendChild(text);row.appendChild(bubble);return row;
+      }
+      ${codeFor('virtualSpacer')}
+      ${codeFor('patchMessageHtml')}
+      ${codeFor('renderMessagesWithReadReceipts')}
+      initCryptoContext({getDb:()=>({}),getUserId:()=>userId,getAppId:()=>'testApp',getIsAdmin:()=>false});
+      window.exerciseEncryptedTimeline=async()=>{
+        const keys={};
+        for(const version of ['1','2'])keys[version]=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+        const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+        Object.assign(_e2ee,{ready:true,privateKey:pair.privateKey,publicKey:pair.publicKey});
+        const versions={};
+        for(const version of ['1','2'])versions[version]=_abToB64(await crypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,await crypto.subtle.exportKey('raw',keys[version])));
+        window.wrappedKeys={versions,latestVersion:'1'};
+        observeRoomKeyVersion('server','room',2);
+        if(channel==='dm')_e2ee.dmKeyCache.alice_bob={...keys,latest:keys['2'],latestVersion:'2'};
+        const old=await _encryptText('保存済みの本文',{latest:keys['1'],latestVersion:'1'});
+        const fresh=await _encryptText('新着の本文',{latest:keys['2'],latestVersion:'2'});
+        allLoadedMessages=[{id:'old',senderId:'alice',timestamp:1,text:old,_originalText:old,_decrypted:false}];
+        renderMessagesWithReadReceipts();
+        const incoming=[{id:'old',senderId:'alice',timestamp:1,text:old},{id:'file',senderId:'alice',timestamp:2,fileName:'file',fileData:'https://covo.test/file'},{id:'sticker',senderId:'alice',timestamp:3,sticker:'🙂'},{id:'fresh',senderId:'alice',timestamp:4,text:fresh}];
+        allLoadedMessages=mergeChannelRecords(allLoadedMessages,incoming);
+        renderMessagesWithReadReceipts();
+        if(channel==='dm')await _decryptDmMessagesInPlace(incoming,'alice_bob',['alice','bob']);
+        else await _decryptMessagesInPlace(incoming,'server','room',['alice']);
+        renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();
+        return allLoadedMessages.filter(message=>message.text).map(message=>({text:message.text,decrypted:message._decrypted}));
+      };
+    ` });
+    expect(await page.evaluate(() => window.exerciseEncryptedTimeline())).toEqual([{ text: '保存済みの本文', decrypted: true }, { text: '新着の本文', decrypted: true }]);
+    await expect(page.locator('.message-row')).toHaveCount(4);
+    await expect(page.locator('.covo-msg-loading-shimmer')).toHaveCount(0);
+    await expect(page.locator('[data-message-id="old"] .message-content')).toHaveText('保存済みの本文');
+    await expect(page.locator('[data-message-id="fresh"] .message-content')).toHaveText('新着の本文');
+    expect(errors).toEqual([]);
+  });
+}
 
 test('quick switcher ignores IME Enter and closes with focus restored', async ({ page }) => {
   await page.setContent('<button id="origin">Open</button>');

@@ -16,10 +16,49 @@ function loadCrypto() {
     LocalStore: { putMessage: async () => {} }
   });
   const source = fs.readFileSync('public/js/crypto_helpers.js', 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '');
-  vm.runInContext(source + '\nglobalThis.api = { migrateLegacyDmSharedKey, observeRoomKeyVersion, roomKeyVersionIsCurrent, roomKeyScope, _getOrCreateRoomKey, _backfillDmKeysForParticipant, setCryptoAccount, __lsGet, __lsSet, __ensureE2EEKeysImpl, _e2ee, initCryptoContext, _encryptText, _encryptFileE2EE, _decryptFileE2EE, __distributeRoomKeyVersion, __getOrCreateRoomKeyImpl };', ctx);
+  vm.runInContext(source + '\nglobalThis.api = { _decryptText, _decryptMessagesInPlace, _getRoomKeyWithWait, migrateLegacyDmSharedKey, observeRoomKeyVersion, roomKeyVersionIsCurrent, roomKeyScope, _getOrCreateRoomKey, _backfillDmKeysForParticipant, setCryptoAccount, __lsGet, __lsSet, __ensureE2EEKeysImpl, _e2ee, initCryptoContext, _encryptText, _encryptFileE2EE, _decryptFileE2EE, __distributeRoomKeyVersion, __getOrCreateRoomKeyImpl };', ctx);
   ctx.api.initCryptoContext({ getDb: () => ({}), getAppId: () => 'testApp', getUserId: () => 'alice', getIsAdmin: () => false });
   return { ctx, api: ctx.api, writes };
 }
+
+async function encryptedRoomFixture(versions = ['1', '2']) {
+  const loaded = loadCrypto(), { api, ctx } = loaded;
+  const pair = await webcrypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);
+  Object.assign(api._e2ee, { ready: true, privateKey: pair.privateKey, publicKey: pair.publicKey });
+  const keys = {}, wrapped = {};
+  for (const version of versions) {
+    keys[version] = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    wrapped[version] = Buffer.from(await webcrypto.subtle.encrypt({ name: 'RSA-OAEP' }, pair.publicKey, await webcrypto.subtle.exportKey('raw', keys[version]))).toString('base64');
+  }
+  ctx.getDoc = async path => ({ exists: () => true, data: () => path.includes('/roomKeys/') ? { versions: wrapped, latestVersion: '1' } : { currentKeyVersion: 2 } });
+  api.observeRoomKeyVersion('server', 'room', 2);
+  return { ...loaded, keys };
+}
+
+test('room metadata selects the current send key while preserving decryptability of old messages and replies', async () => {
+  const { api, keys } = await encryptedRoomFixture();
+  const oldCipher = await api._encryptText('以前の本文', { latest: keys['1'], latestVersion: '1' });
+  const newCipher = await api._encryptText('新しい本文', { latest: keys['2'], latestVersion: '2' });
+  const send = await api._getOrCreateRoomKey('server', 'room', ['alice']);
+  expect(send?.latestVersion).toBe('2');
+  const messages = [{ text: newCipher, replyTo: { text: oldCipher } }, { text: oldCipher }];
+  await api._decryptMessagesInPlace(messages, 'server', 'room', ['alice']);
+  expect(messages.map(message => message.text)).toEqual(['新しい本文', '以前の本文']);
+  expect(messages[0].replyTo.text).toBe('以前の本文');
+});
+
+test('missing current key does not block historical text or attachments and never permits sending with an old key', async () => {
+  const { api, keys } = await encryptedRoomFixture(['1']);
+  const cipher = await api._encryptText('履歴を復号', { latest: keys['1'], latestVersion: '1' });
+  const file = await api._encryptFileE2EE(new Blob(['保存済み添付']), { latest: keys['1'], latestVersion: '1' });
+  const history = await api._getOrCreateRoomKey('server', 'room', ['alice'], true);
+  expect(history?.['1']).toBeDefined();
+  expect(await api._getOrCreateRoomKey('server', 'room', ['alice'])).toBeNull();
+  expect(await api._decryptText(cipher, 'server', 'room', ['alice'])).toBe('履歴を復号');
+  expect(await (await api._decryptFileE2EE(await file.arrayBuffer(), history)).text()).toBe('保存済み添付');
+  expect(await api._encryptText('送信不可', history)).toBeNull();
+  await expect(api._encryptFileE2EE(new Blob(['送信不可']), history)).rejects.toThrow('Key');
+});
 
 test.each(['1', '254', '255', '1790000000000'])('file encryption preserves version %s, round-trips and rejects tampering', async version => {
   const { api, ctx } = loadCrypto();
@@ -36,7 +75,7 @@ test.each(['1', '254', '255', '1790000000000'])('file encryption preserves versi
 
 test('rooms with identical IDs in different servers cannot share cached keys or pending initialization', async () => {
   const { api } = loadCrypto();
-  const first = { latestVersion: '1' }, second = { latestVersion: '2' };
+  const first = { latestVersion: '1', latest: {} }, second = { latestVersion: '2', latest: {} };
   api._e2ee.roomKeyCache[api.roomKeyScope('first', 'same')] = first;
   api._e2ee._roomKeyPromises[api.roomKeyScope('second', 'same')] = Promise.resolve(second);
   expect(await api._getOrCreateRoomKey('first', 'same', [])).toBe(first);

@@ -3,7 +3,11 @@ export function startIndependentReads({ local, remote, apply, active = () => tru
   let closed = false;
   let unsubscribe = null;
   const live = () => !closed && active();
-  const publish = (records, source) => { if (live()) apply(records, source); };
+  const publish = (records, source) => {
+    if (!live()) return;
+    try { apply(records, source); }
+    catch (err) { error(err, 'apply'); }
+  };
   Promise.resolve().then(() => local()).then(records => publish(records, 'local')).catch(err => { if (live()) error(err, 'local'); });
   Promise.resolve().then(() => remote(records => publish(records, 'remote'))).then(cleanup => {
     if (!live()) cleanup?.(); else unsubscribe = cleanup;
@@ -16,8 +20,11 @@ export function mergeChannelRecords(current, incoming, protectedIds = new Set())
   for (const record of incoming || []) {
     if (!protectedIds.has(record.id)) {
       const old = merged.get(record.id);
-      // Keep already decrypted text when the authoritative ciphertext is unchanged.
-      merged.set(record.id, old?._originalText === record.text ? { ...old, ...record, text: old.text, _originalText: old._originalText, _decrypted: old._decrypted } : record);
+      // Pending decrypts mutate the incoming object. Copy only a completed plaintext result;
+      // copying an encrypted cache entry would detach the visible row from its async decrypt.
+      const completed = old?._decrypted === true && typeof old.text === 'string' && !old.text.startsWith('enc::') &&
+        typeof old._originalText === 'string' && old._originalText === record.text;
+      merged.set(record.id, completed ? { ...old, ...record, text: old.text, _originalText: old._originalText, _decrypted: true } : record);
     }
   }
   return [...merged.values()];

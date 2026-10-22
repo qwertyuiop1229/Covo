@@ -16,6 +16,28 @@ function assignment(name) {
   return main.slice(node.start, node.end);
 }
 const time = m => Number(m.timestamp || m.createdAt || 0);
+test('pending DM key initialization cannot register listeners or render after leaving and reopening the same DM', async () => {
+  const start = main.indexOf('  const dmKeyOwner = userId;');
+  const end = main.indexOf('  // 相手のプロファイル', start);
+  expect(start).toBeGreaterThan(-1); expect(end).toBeGreaterThan(start);
+  let finishKey, finishImport;
+  const listen = jest.fn(), render = jest.fn(), backfill = jest.fn();
+  const ctx = vm.createContext({ userId: 'alice', currentDmId: 'alice_bob', dmId: 'alice_bob',
+    currentDmParticipants: ['alice', 'bob'], currentSession: 1, _activeChannelSessionId: 1, targetUid: 'bob',
+    window: {}, console, allLoadedMessages: [{ id: 'message' }], db: {}, appId: 'test',
+    ensureE2EEKeys: async () => {}, _getDmKeyWithWait: () => new Promise(resolve => { finishKey = resolve; }),
+    firestore: () => new Promise(resolve => { finishImport = resolve; }),
+    _backfillDmKeysForParticipant: backfill, renderMessagesWithReadReceipts: render });
+  vm.runInContext('globalThis.initialize = async () => {' + main.slice(start, end).replace(/import\('[^']+'\)/g, 'firestore()') + '};', ctx);
+  const pending = ctx.initialize();
+  await new Promise(resolve => setImmediate(resolve));
+  ctx._activeChannelSessionId = 3;
+  finishKey({}); finishImport({ doc: jest.fn(), onSnapshot: listen });
+  await pending; await new Promise(resolve => setImmediate(resolve));
+  expect(listen).not.toHaveBeenCalled(); expect(render).not.toHaveBeenCalled(); expect(backfill).not.toHaveBeenCalled();
+  expect(ctx.window._activeDmKeyCheckTimer).toBeUndefined();
+});
+
 test('channel creation distributes its key to the original server after navigation', async () => {
   let finish;
   const distribute = jest.fn(async () => {}), reload = jest.fn(), cache = {};

@@ -50,3 +50,14 @@ test('normal startup does not request the geographic dataset, PDF, HEIC, Panzoom
   }
   expect(eagerScripts.some(src => src.includes('main.js'))).toBe(true);
 });
+
+test('critical loading helpers are release-versioned while account storage remains a single canonical module', () => {
+  const main = fs.readFileSync('public/js/main.js', 'utf8');
+  expect(main).toMatch(/from ['"]\.\/loading_runtime\.js\?v=\d+\.\d+\.\d+['"]/);
+  expect(main).toMatch(/import\(['"]\.\/backup_feature\.js\?v=\d+\.\d+\.\d+['"]\)/);
+  expect(main).toMatch(/from ['"]\.\/local_store\.js['"]/);
+  expect(fs.readFileSync('public/js/crypto_helpers.js', 'utf8')).toMatch(/from ['"]\.\/local_store\.js['"]/);
+  const config = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
+  const headers = config.hosting.headers.find(rule => rule.source === '/js/**');
+  expect(headers.headers).toContainEqual({ key: 'Cache-Control', value: 'no-cache' });
+});

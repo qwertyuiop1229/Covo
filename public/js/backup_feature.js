@@ -174,7 +174,7 @@ window.executeExportChatFormat = async function (format) {
           if (!response.ok) throw new Error('取得できません');
           let bytes = await response.arrayBuffer();
           if (message.isFileEncrypted) {
-            const key = source.dmId ? await context._getDmKeyWithWait(source.dmId, source.participants, 2000) : await context.getRoomKeyWithWait(source.serverId, source.roomId, source.members, 2000);
+            const key = source.dmId ? await context._getDmKeyWithWait(source.dmId, source.participants, 2000) : await context.getRoomKeyWithWait(source.serverId, source.roomId, source.members, 2000, true);
             bytes = await context.decryptFileE2EE(bytes, key, source.serverId, source.roomId);
           }
           attachmentBytes += bytes.byteLength;

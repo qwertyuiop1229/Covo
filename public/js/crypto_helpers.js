@@ -59,6 +59,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       const expected = _e2ee.roomKeyVersions[roomKeyScope(serverId, roomId)];
       return !expected || String(keys.latestVersion) === expected;
     }
+    function selectRoomKeyVersion(serverId, roomId, keys, fallbackVersion) {
+      const version = _e2ee.roomKeyVersions[roomKeyScope(serverId, roomId)] || String(fallbackVersion || '1');
+      keys.latestVersion = version;
+      keys.latest = keys[version] || null;
+      return keys;
+    }
     function privateStorageKey(key) {
       return [E2EE_LS_PRIV, E2EE_LS_PUB].includes(key) ? `${key}:${_getUserId() || 'signed_out'}` : key;
     }
@@ -488,14 +494,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     // ルーム共通鍵(AES-GCM)を取得。無ければ生成し、全メンバー＋エスクローへ配布。
-    // 取得・生成いずれも失敗したら null（呼び出し側は平文で送る）。
-    export async function _getOrCreateRoomKey(serverId, roomId, memberIds) {
+    // 取得・生成いずれも失敗したら null（送信側は暗号化できるまで送信を止める）。
+    export async function _getOrCreateRoomKey(serverId, roomId, memberIds, forDecryption = false) {
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
-      if (_e2ee.roomKeyCache[roomKeyScope(serverId, roomId)]) return _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
-      if (_e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)]) return _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
+      const scope = roomKeyScope(serverId, roomId);
+      const usable = keys => keys && (forDecryption || keys.latest && roomKeyVersionIsCurrent(serverId, roomId, keys)) ? keys : null;
+      const cached = usable(_e2ee.roomKeyCache[scope]);
+      if (cached) return cached;
+      if (_e2ee._roomKeyPromises[scope]) return usable(await _e2ee._roomKeyPromises[scope]);
       const promise = (async () => {
         const res = await __getOrCreateRoomKeyImpl(serverId, roomId, memberIds);
-        if (!res) {
+        if (!res?.latest) {
           // 未取得・待機時は2.5秒間ネガティブキャッシュを保持し、メッセージごとのFirestore乱打を防止
           setTimeout(() => {
             if (_e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)] === promise) {
@@ -506,7 +515,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         return res;
       })();
       _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)] = promise;
-      return promise;
+      try { return usable(await promise); }
+      catch (error) { if (_e2ee._roomKeyPromises[scope] === promise) delete _e2ee._roomKeyPromises[scope]; throw error; }
     }
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
       const keyEpoch = _cryptoEpoch;
@@ -541,7 +551,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               keysObj.latest = v1Key;
               keysObj.latestVersion = "1";
               if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
-              if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
               _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
               return keysObj;
             }
@@ -573,7 +583,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                 keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
               } catch (_) {}
             }
-            const activeVer = data.latestVersion ? String(data.latestVersion) : currentVer;
+            const activeVer = currentVer;
             if (keysObj[activeVer]) {
               keysObj.latest = keysObj[activeVer];
               keysObj.latestVersion = activeVer;
@@ -582,9 +592,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               keysObj.latest = keysObj[sortedVers[0]];
               keysObj.latestVersion = sortedVers[0];
             }
-            if (keysObj.latest) {
+            if (Object.keys(keysObj).some(version => /^\d+$/.test(version))) {
               if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
-              if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
               _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
               return keysObj;
             }
@@ -616,7 +626,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                     }
                   } catch (_) {}
                 }
-                const activeVer = eData.latestVersion ? String(eData.latestVersion) : currentVer;
+                const activeVer = currentVer;
                 if (keysObj[activeVer]) {
                   keysObj.latest = keysObj[activeVer];
                   keysObj.latestVersion = activeVer;
@@ -627,8 +637,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                 }
                 if (keysObj.latest) {
                   if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
-                  if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
-              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
+                  selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
+                  _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
                   console.log(`[E2EE] エスクロー合鍵からルーム鍵を自己修復・復号しました (room=${roomId})`);
                   return keysObj;
                 }
@@ -637,6 +647,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           } catch (escrowErr) {
             console.warn('[E2EE] エスクロー自己修復エラー:', escrowErr);
           }
+        }
+        // An old key remains useful for history, but must not authorize new sends or v1 regeneration.
+        if (Object.keys(keysObj).some(version => /^\d+$/.test(version))) {
+          if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
+          selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
+          _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
+          return keysObj;
         }
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
         const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
@@ -666,8 +683,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         keysObj.latest = key;
         keysObj.latestVersion = "1";
         if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
-        if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
-              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
+        selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
+        _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
         return keysObj;
 
       } catch (e) {
@@ -680,13 +697,14 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
     }
 
-    export async function _getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500) {
+    export async function _getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500, forDecryption = false) {
       if (!_subtleOK) return null;
-      if (_e2ee.roomKeyCache[roomKeyScope(serverId, roomId)]) return _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
+      const cached = _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
+      if (cached && (forDecryption || cached.latest && roomKeyVersionIsCurrent(serverId, roomId, cached))) return cached;
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
-        const keyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds);
+        const keyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds, forDecryption);
         if (keyObj) return keyObj;
         if (Date.now() >= deadline) return null; 
         const delay = Math.min(150 * Math.pow(2, attempt++), 500);
@@ -849,7 +867,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_isEncrypted(text)) return text; 
       if (!_subtleOK) return null;
       try {
-        const roomKeyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds || []);
+        const roomKeyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds || [], true);
         if (!roomKeyObj) return null; // 🔒 鍵待機中はnullを返し、メッセージをエラーで上書きしない
         
         const parts = text.split("::"); 
@@ -910,7 +928,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
       // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
-      const rKey = await _getOrCreateRoomKey(serverId, roomId, memberIds || []).catch(() => null);
+      const rKey = await _getOrCreateRoomKey(serverId, roomId, memberIds || [], true).catch(() => null);
       await Promise.all(messages.map(async (m) => {
         if (!m) return;
         // リプライ引用先テキストが暗号化されていた場合の安全な復号

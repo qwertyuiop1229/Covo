@@ -3,7 +3,7 @@ import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engin
 import { createOutbox } from './outbox.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.279';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -98,13 +98,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.278';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.279';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.278';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.278';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.278';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.278';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.278';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.279';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.279';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.279';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.279';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.279';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -11002,37 +11002,52 @@ function renderDmConversationsList() {
     subscribeToUserStatus();
   }
   // DM鍵の初期化と自動復号は非同期並行処理で実行
+  const dmKeyOwner = userId;
+  const activeParticipants = [...currentDmParticipants];
+  const dmKeySessionActive = () => userId === dmKeyOwner && currentDmId === dmId && _activeChannelSessionId === currentSession;
   (async () => {
     try {
       if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
+      if (!dmKeySessionActive()) return;
       const activeDmId = dmId;
-      const activeParticipants = currentDmParticipants;
       const key = await _getDmKeyWithWait(activeDmId, activeParticipants, 1500);
+      if (!dmKeySessionActive()) return;
       if (key) {
         _backfillDmKeysForParticipant(activeDmId, targetUid).catch(() => {});
         if (currentDmId === activeDmId && allLoadedMessages.length > 0) {
           await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
-          renderMessagesWithReadReceipts();
+          if (dmKeySessionActive()) renderMessagesWithReadReceipts();
         }
       } else {
         let retryCount = 0;
-        window._activeDmKeyCheckTimer = setInterval(async () => {
+        let checking = false;
+        const stopChecking = () => {
+          clearInterval(checkTimer);
+          if (window._activeDmKeyCheckTimer === checkTimer) window._activeDmKeyCheckTimer = null;
+        };
+        const checkTimer = setInterval(async () => {
+          if (checking) return;
           retryCount++;
-          if (retryCount > 15 || currentDmId !== activeDmId || _e2ee.dmKeyCache[activeDmId]) {
-            clearInterval(window._activeDmKeyCheckTimer);
-            window._activeDmKeyCheckTimer = null;
+          if (retryCount > 15 || !dmKeySessionActive()) {
+            stopChecking();
             return;
           }
-          const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 1500);
-          if (arrived) {
-            clearInterval(window._activeDmKeyCheckTimer);
-            window._activeDmKeyCheckTimer = null;
-            if (currentDmId === activeDmId && typeof renderMessagesWithReadReceipts === 'function') {
-              await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
-              renderMessagesWithReadReceipts();
+          checking = true;
+          try {
+            const arrived = await _getDmKeyWithWait(activeDmId, activeParticipants, 1500);
+            if (!dmKeySessionActive()) { stopChecking(); return; }
+            if (arrived) {
+              stopChecking();
+              if (typeof renderMessagesWithReadReceipts === 'function') {
+                await _decryptDmMessagesInPlace(allLoadedMessages, activeDmId, activeParticipants);
+                if (dmKeySessionActive()) renderMessagesWithReadReceipts();
+              }
             }
-          }
+          } catch (e) {
+            if (dmKeySessionActive()) console.warn('[E2EE] DM key retry warning:', e);
+          } finally { checking = false; }
         }, 1500);
+        window._activeDmKeyCheckTimer = checkTimer;
       }
     } catch (e) {
       console.warn('[E2EE] DM key background init warning:', e);
@@ -11041,18 +11056,24 @@ function renderDmConversationsList() {
   // DM鍵のリアルタイム監視リスナー（相手が新しい鍵をバックフィルした瞬間、即座に再復号・画面更新）
   try {
     const { doc: fsDoc, onSnapshot: fsOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-    const myDmKeyRef = fsDoc(db, `artifacts/${appId}/dm_channels/${dmId}/keys/${userId}`);
+    if (!dmKeySessionActive()) return;
+    const myDmKeyRef = fsDoc(db, `artifacts/${appId}/dm_channels/${dmId}/keys/${dmKeyOwner}`);
     window._activeDmKeyUnsub = fsOnSnapshot(myDmKeyRef, async (keySnap) => {
-      if (currentDmId !== dmId || !keySnap.exists()) return;
-      delete _e2ee.dmKeyCache[dmId];
-      delete _e2ee._dmKeyPromises[dmId];
-      const freshKey = await _getOrCreateDmKey(dmId, currentDmParticipants);
-      if (freshKey && allLoadedMessages.length > 0) {
-        allLoadedMessages.forEach(m => {
-          if (m._decryptionFailed) m._decryptionFailed = false;
-        });
-        await _decryptDmMessagesInPlace(allLoadedMessages, dmId, currentDmParticipants);
-        renderMessagesWithReadReceipts();
+      if (!dmKeySessionActive() || !keySnap.exists()) return;
+      try {
+        delete _e2ee.dmKeyCache[dmId];
+        delete _e2ee._dmKeyPromises[dmId];
+        const freshKey = await _getOrCreateDmKey(dmId, activeParticipants);
+        if (!dmKeySessionActive()) return;
+        if (freshKey && allLoadedMessages.length > 0) {
+          allLoadedMessages.forEach(m => {
+            if (m._decryptionFailed) m._decryptionFailed = false;
+          });
+          await _decryptDmMessagesInPlace(allLoadedMessages, dmId, activeParticipants);
+          if (dmKeySessionActive()) renderMessagesWithReadReceipts();
+        }
+      } catch (e) {
+        if (dmKeySessionActive()) console.warn('[E2EE] DM key refresh warning:', e);
       }
     }, (err) => {
       console.warn('[DM Key onSnapshot] notice:', err?.message || err);
@@ -11061,9 +11082,10 @@ function renderDmConversationsList() {
   // 相手のプロファイル（名前・アイコン・ステメ・AboutMe）リアルタイム監視リスナー（変更即時自動反映）
   try {
     const { doc: uDoc, onSnapshot: uOnSnapshot } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    if (!dmKeySessionActive()) return;
     const targetUserRef = uDoc(db, `artifacts/${appId}/users`, targetUid);
     window._activeDmUserDocUnsub = uOnSnapshot(targetUserRef, (snap) => {
-      if (currentDmId !== dmId || !snap.exists()) return;
+      if (!dmKeySessionActive() || !snap.exists()) return;
       const uData = snap.data();
       const updatedNick = uData.nickname || uData.displayName;
       // 相手の手動設定アバターを優先し、nullや空文字が設定されている場合は勝手にGoogle photoURLで上書きしない
@@ -11081,7 +11103,7 @@ function renderDmConversationsList() {
   // P2P 過去ログ補完（相手がオンラインならバックグラウンド同期）
   try {
     const oldestTs = await LocalStore.getOldestMessageTimestamp(`dm_${dmId}`);
-    requestP2PLogBackfill('dm', dmId, oldestTs);
+    if (dmKeySessionActive()) requestP2PLogBackfill('dm', dmId, oldestTs);
   } catch (e) { }
   };
 
@@ -16010,15 +16032,25 @@ async function subscribeToMessagesRTDB(session) {
       updateReadReceiptForCurrentUser();
     }
     // Neither key retrieval, persistence nor notification text can block message arrival.
-    decryptInPlace(records).then(() => {
+    const receivedIds = new Set(records.map(record => record.id));
+    const visibleRecords = allLoadedMessages.filter(record => receivedIds.has(record.id));
+    decryptInPlace(visibleRecords).then(() => {
       if (isStillActive()) renderMessagesWithReadReceipts();
-    }).catch(() => {});
+    }).catch(error => {
+      if (!isStillActive()) return;
+      console.error('[Messages] 復号処理を完了できませんでした:', error);
+      setChannelLoadStatus('復号処理を完了できませんでした。再試行してください。', true);
+    });
   };
   const cleanupReads = startIndependentReads({
     local: () => withReadDeadline(LocalStore.getMessages(chId, null, 50), 3000),
     active: isStillActive,
     apply,
     error: (err, source) => {
+      if (source === 'apply') {
+        console.error('[Messages] 表示処理を完了できませんでした:', err);
+        setChannelLoadStatus('メッセージの表示を完了できませんでした。再試行してください。', true);
+      }
       if (source === 'remote') setChannelLoadStatus(/permission|denied/i.test(String(err?.code || err)) ? 'この会話へのアクセス権限を確認できません。' : '接続を確認できません。保存済みの履歴を表示しています。', true);
     },
     remote: async publish => {
@@ -20497,7 +20529,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
         const rawUrl = message.fileData || message.kvFileUrl;
         if (!message.isFileEncrypted) return rawUrl;
         return _attachmentResources.resolve(message, async () => {
-          const key = snapDmId ? await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000) : await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers);
+          const key = snapDmId ? await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000) : await getOrCreateRoomKey(snapServerId, snapRoomId, snapMembers, true);
           if (!key) throw new Error('暗号化鍵を待機しています');
           const res = await fetchWithMediaCache(rawUrl);
           if (res.status === 404 || res.status === 410) {
@@ -22531,7 +22563,7 @@ async function notifyNewMessage({
           }
         } else if (serverId && channelId) {
           const memberIds = serverData?.joinedUsers || [];
-          const roomKey = await getRoomKeyWithWait(serverId, channelId, memberIds, 2500);
+          const roomKey = await getRoomKeyWithWait(serverId, channelId, memberIds, 2500, true);
           if (roomKey) {
             decrypted = await decryptText(bodyText, serverId, channelId, memberIds);
           }
@@ -29207,7 +29239,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.279').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));

@@ -11,6 +11,38 @@ function moduleApi(file, names, injected = {}) {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('a pending cached decrypt and realtime snapshot must not leave a detached ciphertext copy in the timeline', () => {
+  const { mergeChannelRecords } = moduleApi('loading_runtime.js', ['mergeChannelRecords']);
+  const cached = { id: 'message', text: 'enc::v1::iv::cipher', _originalText: 'enc::v1::iv::cipher', _decrypted: false };
+  const incoming = { id: 'message', text: cached.text };
+  const visible = mergeChannelRecords([cached], [incoming]);
+  incoming.text = '復号できた本文'; incoming._originalText = cached.text; incoming._decrypted = true;
+  expect(visible[0].text).toBe('復号できた本文');
+  expect(visible[0]._decrypted).toBe(true);
+});
+
+test('first snapshot accepts textless attachments and stickers without aborting the batch', () => {
+  const { mergeChannelRecords } = moduleApi('loading_runtime.js', ['mergeChannelRecords']);
+  const records = [{ id: 'file', fileData: 'https://app.test/encrypted' }, { id: 'sticker', sticker: '🙂' }, { id: 'message', text: 'enc::v1::iv::cipher' }];
+  const merged = mergeChannelRecords([], records);
+  expect(merged).toHaveLength(3);
+  expect(merged[0]).toBe(records[0]); expect(merged[1]).toBe(records[1]);
+  expect(merged[2]).toBe(records[2]);
+});
+
+test('a display exception is reported without escaping the realtime callback or stopping later snapshots', async () => {
+  const { startIndependentReads } = moduleApi('loading_runtime.js', ['startIndependentReads']);
+  let publish;
+  const failure = new Error('render failure'), error = jest.fn(), apply = jest.fn(records => { if (records[0]?.id === 'bad') throw failure; });
+  const stop = startIndependentReads({ local: async () => [], remote: callback => { publish = callback; return () => {}; }, apply, error });
+  await tick();
+  expect(() => publish([{ id: 'bad' }])).not.toThrow();
+  publish([{ id: 'good' }]);
+  expect(error).toHaveBeenCalledWith(failure, 'apply');
+  expect(apply).toHaveBeenLastCalledWith([{ id: 'good' }], 'remote');
+  stop();
+});
+
 function pushWorker(cacheEntries = new Map()) {
   const events = {}, showNotification = jest.fn(async () => {});
   let background;
