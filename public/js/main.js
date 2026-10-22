@@ -1,9 +1,10 @@
-import { installNavigationUI } from './navigation_ui.js';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.280';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.280';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.279';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.280';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -98,13 +99,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.279';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.280';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.279';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.279';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.279';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.279';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.279';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.280';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.280';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.280';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.280';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.280';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -525,7 +526,8 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       avatarUrl: userAvatarUrl || '',
       email: userAuthEmail || auth?.currentUser?.email || '',
       customStatus: window._currentUserCustomStatus || null,
-      bannerColor: window._currentUserBannerColor || null
+      bannerColor: window._currentUserBannerColor || null,
+      bannerAvatarUrl: window._currentUserBannerAvatarUrl
     };
   }
   if (!forceRefresh && window._userProfileCache.has(uid)) {
@@ -569,6 +571,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
         customStatus,
         aboutMe,
         bannerColor,
+        bannerAvatarUrl: data?.bannerAvatarUrl,
         status: cu?.computedState || cu?.state || statusData?.state || 'offline',
         last_changed: rawTimestamp,
         lastSeen: rawTimestamp
@@ -748,6 +751,7 @@ let messaging;
 let currentFcmToken = null;
 const roomNames = {};
 let userId = null;
+let _notificationSettingsUI = null;
 let userNickname = null;
 let userAboutMe = "";
 let isAdmin = false;
@@ -1146,6 +1150,8 @@ function initializeFirebase() {
           setCryptoAccount(user.uid);
           LocalStore.setAccountScope(user.uid);
           userId = user.uid;
+          window._currentUserBannerColor = null;
+          window._currentUserBannerAvatarUrl = undefined;
           navigator.serviceWorker?.ready.then(registration => {
             if (userId === user.uid) registration.active?.postMessage({ type: 'SET_USER_ID', userId: user.uid, appId });
           }).catch(() => {});
@@ -1393,10 +1399,12 @@ function initializeFirebase() {
           let initialNickname = null;
           let initialAvatarUrl = null;
           let initialAboutMe = "";
+          let initialBannerProfile = null;
           const isAvatarExplicitlyCleared = localStorage.getItem('covo_avatar_cleared_' + userId) === '1';
 
           if (userProfileSnap && userProfileSnap.exists()) {
             const pData = userProfileSnap.data();
+            initialBannerProfile = pData;
             if (pData.nickname) initialNickname = pData.nickname;
             if (pData.avatarUrl !== undefined) initialAvatarUrl = pData.avatarUrl;
             initialAboutMe = pData.aboutMe || "";
@@ -1406,11 +1414,11 @@ function initializeFirebase() {
             const rootUserSnap = await withTimeout(getDoc(doc(db, `artifacts/${appId}/users`, userId)).catch(() => null), 2000);
             if (rootUserSnap && rootUserSnap.exists()) {
               const rootData = rootUserSnap.data();
+              initialBannerProfile = { ...rootData, ...(initialBannerProfile || {}) };
               if (rootData.nickname && !initialNickname) initialNickname = rootData.nickname;
               if (rootData.avatarUrl !== undefined && initialAvatarUrl === null) initialAvatarUrl = rootData.avatarUrl;
               if (rootData.aboutMe && !initialAboutMe) initialAboutMe = rootData.aboutMe;
               if (rootData.customStatus) window._currentUserCustomStatus = rootData.customStatus;
-              if (rootData.bannerColor) window._currentUserBannerColor = rootData.bannerColor;
             }
           } catch (_) {}
           // キャッシュからも確認（明示的に削除された場合は復元しない・GoogleのphotoURLは除外）
@@ -1456,6 +1464,10 @@ function initializeFirebase() {
             userNickname = initialNickname;
             userAvatarUrl = initialAvatarUrl;
             userAboutMe = initialAboutMe;
+            if (profileBannerMatches(initialBannerProfile, userAvatarUrl)) {
+              cacheOwnProfileBanner(userId, userAvatarUrl, initialBannerProfile.bannerColor);
+            }
+            ensureOwnProfileBanner(userId, userAvatarUrl, initialBannerProfile).catch(error => console.warn('[Profile] 背景色の同期を保留しました:', error?.code || error?.message));
 
             // ルートの users/{uid} にも確実に保存
             const userRef = doc(db, `artifacts/${appId}/users`, userId);
@@ -1598,6 +1610,9 @@ function initializeFirebase() {
           _notificationPreferencesUnsub?.();
           _notificationPreferencesUnsub = null;
           _notificationPreferences = {};
+          _notificationSettingsUI?.close(false);
+          window._currentUserBannerColor = null;
+          window._currentUserBannerAvatarUrl = undefined;
           _afterMessageAck.clear();
           _outboxEntries.clear();
           window._subscribeVcSidebarStates?.(null);
@@ -1660,6 +1675,7 @@ function initializeFirebase() {
 }
 
 function updateUserPanelUI() {
+  updateAccountIdentityUI();
   if (userNickname) {
     userPanelName.textContent = userNickname;
     // Discord本家準拠: 左下ユーザーパネルはステメではなくオンライン/離席中/オフラインの状態を表示
@@ -5194,11 +5210,26 @@ window.switchDiscordSettingsTab = (...args) => {
 function switchSettingsTab(tab) { switchDiscordSettingsTab(tab === 'settings' ? 'settings' : 'profile'); }
 
 function updateSettingsSidebar() {
+  updateAccountIdentityUI();
   const sa = document.getElementById('sidebarAvatar');
   const sn = document.getElementById('sidebarName');
   if (!sa || !sn) return;
   sn.textContent = userNickname || '';
   __setAvatarImg(sa, userAvatarUrl, userNickname);
+}
+
+function updateAccountIdentityUI() {
+  const name = userNickname || auth?.currentUser?.displayName || 'ユーザー';
+  const nameEl = document.getElementById('accountSectionName');
+  const tag = document.getElementById('accountSectionTag');
+  const avatar = document.getElementById('accountSectionAvatarPreview');
+  if (nameEl) nameEl.textContent = name;
+  if (tag) tag.textContent = userAuthEmail || auth?.currentUser?.email || (userId ? `@${userId.slice(-4)}` : '');
+  const identity = JSON.stringify([userId, userAvatarUrl || '', name]);
+  if (avatar && avatar.dataset.identity !== identity) {
+    __setAvatarImg(avatar, userAvatarUrl, name, { className: 'w-full h-full rounded-full object-cover' });
+    avatar.dataset.identity = identity;
+  }
 }
 
 // ============ Mobile Profile & Modal Navigation ============
@@ -6286,6 +6317,7 @@ window.applyGoogleAvatar = function () {
 // Settings Modal Logic
 const resetAvatarButton = document.getElementById("resetAvatarButton");
 let _profileInitialState = { nickname: '', aboutMe: '', avatarUrl: null };
+let _profileMutationBusy = false;
 
 function initProfileState() {
   const nick = userNickname || "";
@@ -6554,6 +6586,9 @@ async function _deleteOwnedKvAvatar(avatarUrl, keepUrl = null) {
 }
 // アイコンリセットボタン
 const handleAvatarResetAction = async () => {
+  const owner = userId;
+  if (!owner || _profileMutationBusy) return;
+  _profileMutationBusy = true;
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
@@ -6565,12 +6600,17 @@ const handleAvatarResetAction = async () => {
     if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
       try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
     }
-    const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
-    await updateDoc(userProfileRef, { avatarUrl: null });
-    const userRef = doc(db, `artifacts/${appId}/users`, userId);
-    await setDoc(userRef, { avatarUrl: null }, { merge: true }).catch(console.error);
+    const userProfileRef = doc(db, `artifacts/${appId}/users/${owner}/profile`, "nicknameDoc");
+    const userRef = doc(db, `artifacts/${appId}/users`, owner);
+    const resetColor = getHashColor(owner);
+    const batch = writeBatch(db);
+    const reset = { avatarUrl: null, bannerColor: resetColor, bannerAvatarUrl: '' };
+    batch.set(userProfileRef, reset, { merge: true }); batch.set(userRef, reset, { merge: true });
+    await batch.commit();
+    if (userId !== owner) return;
     _deleteOwnedKvAvatar(prevKvAvatarUrl);
     userAvatarUrl = null;
+    cacheOwnProfileBanner(owner, null, resetColor);
     pendingAvatarUrl = null;
     _profileInitialState.avatarUrl = null;
     checkProfileDirty();
@@ -6622,6 +6662,7 @@ const handleAvatarResetAction = async () => {
       settingsMsgEl.className = "text-center mt-2 text-sm text-red-600";
     }
   } finally {
+    _profileMutationBusy = false;
     if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
   }
 };
@@ -6695,6 +6736,8 @@ if (mobAboutInpEl) {
 
 if (saveSettingsBtnEl) {
   saveSettingsBtnEl.addEventListener("click", async () => {
+    const owner = userId;
+    if (!owner || _profileMutationBusy) return;
     const pcNick = settingsNicknameInpEl ? settingsNicknameInpEl.value.trim() : "";
     const mobNick = document.getElementById("mobileNicknameInput")?.value.trim() ?? "";
     const newName = pcNick || mobNick;
@@ -6722,19 +6765,21 @@ if (saveSettingsBtnEl) {
     }
     const loadingOverlayEl = document.getElementById("loadingOverlay");
     if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
+    _profileMutationBusy = true;
     try {
-      const userProfileRef = doc(db, `artifacts/${appId}/users/${userId}/profile`, "nicknameDoc");
+      const userProfileRef = doc(db, `artifacts/${appId}/users/${owner}/profile`, "nicknameDoc");
       const effectiveAvatar = pendingAvatarUrl || userAvatarUrl || null;
       let determinedBannerColor = null;
       try {
-        if (effectiveAvatar) {
-          determinedBannerColor = await getAvatarAccentColor(effectiveAvatar, userId);
+        if (pendingAvatarUrl || !getSavedProfileBanner(owner, effectiveAvatar)) {
+          determinedBannerColor = await getAvatarAccentColor(effectiveAvatar, owner);
         } else {
-          determinedBannerColor = getHashColor(userId);
+          determinedBannerColor = getSavedProfileBanner(owner, effectiveAvatar);
         }
       } catch (_) {
-        determinedBannerColor = getHashColor(userId);
+        determinedBannerColor = getHashColor(owner);
       }
+      if (userId !== owner) return;
       // 旧アイコンの削除は、プロフィール保存（Firestore更新）に成功した後に実行する
       let prevKvAvatarUrlToDelete = null;
       if (window.pendingAvatarBlob) {
@@ -6745,6 +6790,7 @@ if (saveSettingsBtnEl) {
           'simplechat/avatars',
           ''
         );
+        if (userId !== owner) return;
         prevKvAvatarUrlToDelete = userAvatarUrl;
         if (pendingAvatarUrl && pendingAvatarUrl.startsWith('blob:')) {
           try { URL.revokeObjectURL(pendingAvatarUrl); } catch (_) {}
@@ -6755,32 +6801,32 @@ if (saveSettingsBtnEl) {
         // Googleアイコン等へ切り替えた場合でも以前のKVアイコンを削除（保存成功後）
         prevKvAvatarUrlToDelete = userAvatarUrl;
       }
-      const updateData = { nickname: newName, aboutMe: newAboutMe, createdAt: serverTimestamp() };
+      const savedAvatarUrl = pendingAvatarUrl || userAvatarUrl || null;
+      const updateData = { nickname: newName, aboutMe: newAboutMe, avatarUrl: savedAvatarUrl, updatedAt: serverTimestamp() };
       if (determinedBannerColor) {
         updateData.bannerColor = determinedBannerColor;
-        window._currentUserBannerColor = determinedBannerColor;
-        try { localStorage.setItem('covo_cached_banner_' + userId, determinedBannerColor); } catch (_) {}
+        updateData.bannerAvatarUrl = pendingAvatarUrl || userAvatarUrl || '';
       }
-      if (pendingAvatarUrl) {
-        updateData.avatarUrl = pendingAvatarUrl;
-        unmarkAvatarAsInvalid(pendingAvatarUrl);
-        try { localStorage.removeItem('covo_avatar_cleared_' + userId); } catch (_) {}
-      }
-      await setDoc(userProfileRef, updateData, { merge: true });
-      const userRef = doc(db, `artifacts/${appId}/users`, userId);
+      const userRef = doc(db, `artifacts/${appId}/users`, owner);
       const userDocData = {
         email: userAuthEmail,
         nickname: newName,
-        avatarUrl: pendingAvatarUrl || userAvatarUrl || null,
+        avatarUrl: savedAvatarUrl,
         aboutMe: newAboutMe
       };
       if (determinedBannerColor) {
         userDocData.bannerColor = determinedBannerColor;
+        userDocData.bannerAvatarUrl = updateData.bannerAvatarUrl;
       }
-      await setDoc(userRef, userDocData, { merge: true }).catch(console.error);
+      const batch = writeBatch(db);
+      batch.set(userProfileRef, updateData, { merge: true }); batch.set(userRef, userDocData, { merge: true });
+      await batch.commit();
+      if (userId !== owner) return;
       userNickname = newName;
       userAboutMe = newAboutMe;
       if (pendingAvatarUrl) { userAvatarUrl = pendingAvatarUrl; }
+      if (userAvatarUrl) unmarkAvatarAsInvalid(userAvatarUrl);
+      cacheOwnProfileBanner(owner, userAvatarUrl, determinedBannerColor);
       _deleteOwnedKvAvatar(prevKvAvatarUrlToDelete, userAvatarUrl);
       try {
         if (userAvatarUrl) {
@@ -6816,6 +6862,8 @@ if (saveSettingsBtnEl) {
         avatarUrl: userAvatarUrl || '',
         email: userAuthEmail,
         aboutMe: userAboutMe,
+        bannerColor: determinedBannerColor,
+        bannerAvatarUrl: userAvatarUrl || '',
         customStatus: window._currentUserCustomStatus || null,
         status: 'online'
       };
@@ -6844,6 +6892,7 @@ if (saveSettingsBtnEl) {
       if (typeof renderServerList === 'function') renderServerList();
       if (typeof renderDiscordServerNav === 'function') renderDiscordServerNav();
       await updateUserStatus(document.visibilityState === 'hidden' ? 'offline' : 'online', true);
+      if (userId !== owner) return;
 
       // 保存完了後に未保存状態を再チェックし、保存ボタンを確実に無効化・未保存バーを閉じる
       checkProfileDirty();
@@ -6861,6 +6910,7 @@ if (saveSettingsBtnEl) {
       closeCropModal();
       alertMessage("プロフィールを保存しました", "success");
       setTimeout(() => {
+        if (userId !== owner) return;
         if (settingsModalEl) settingsModalEl.classList.add("hidden");
         if (typeof closeMobileDetail === 'function') closeMobileDetail('mobileDetailProfile');
       }, 800);
@@ -6875,6 +6925,7 @@ if (saveSettingsBtnEl) {
         mobMsg.className = "mt-3 text-sm text-center font-medium text-red-600";
       }
     } finally {
+      _profileMutationBusy = false;
       if (loadingOverlayEl) loadingOverlayEl.classList.add("hidden");
     }
   });
@@ -7070,25 +7121,68 @@ function getHashColor(str) {
   return DISCORD_PRESET_COLORS[Math.abs(hash) % DISCORD_PRESET_COLORS.length];
 }
 function getInstantAccentColor(avatarUrl, seedId = '') {
+  const saved = getSavedProfileBanner(seedId, avatarUrl);
+  if (saved) return saved;
   if (avatarUrl && _avatarColorCache.has(avatarUrl)) {
     const cached = _avatarColorCache.get(avatarUrl);
-    if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
-  }
-  if (seedId && _avatarColorCache.has('uid_' + seedId)) {
-    const cached = _avatarColorCache.get('uid_' + seedId);
-    if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
-  }
-  if (seedId && window._userProfileCache?.has(seedId)) {
-    const prof = window._userProfileCache.get(seedId);
-    if (prof.avatarUrl && _avatarColorCache.has(prof.avatarUrl)) {
-      const cached = _avatarColorCache.get(prof.avatarUrl);
-      if (cached && !cached.startsWith('temp:') && !DISCORD_PRESET_COLORS.includes(cached)) return cached;
-    }
+    if (validBannerColor(cached)) return cached;
   }
   // 暫定色を返すのみとし、キャッシュをランダムプリセット色で汚染しない
   return getHashColor(seedId || avatarUrl);
 }
 window.getInstantAccentColor = getInstantAccentColor;
+function validBannerColor(color) {
+  return typeof color === 'string' && /^#[\da-f]{6}$/i.test(color);
+}
+function profileBannerMatches(profile, avatarUrl) {
+  return profile && validBannerColor(profile.bannerColor) &&
+    (profile.avatarUrl || '') === (avatarUrl || '') &&
+    (profile.bannerAvatarUrl === undefined || (profile.bannerAvatarUrl || '') === (avatarUrl || ''));
+}
+function getSavedProfileBanner(uid, avatarUrl) {
+  const candidates = [window._userProfileCache?.get(uid), cachedUsers?.find(user => user.id === uid)];
+  if (uid === userId) candidates.unshift({ avatarUrl: userAvatarUrl, bannerColor: window._currentUserBannerColor, bannerAvatarUrl: window._currentUserBannerAvatarUrl });
+  return candidates.find(profile => profileBannerMatches(profile, avatarUrl))?.bannerColor || null;
+}
+function applyProfileBanner(element, uid, avatarUrl, profile = null) {
+  if (!element) return;
+  // Read saved metadata; opening a profile never starts another image/color request.
+  const saved = profileBannerMatches(profile, avatarUrl) ? profile.bannerColor : getSavedProfileBanner(uid, avatarUrl);
+  const color = saved || (avatarUrl && _avatarColorCache.get(avatarUrl)) || (!avatarUrl || profile ? getHashColor(uid) : null);
+  element.style.backgroundColor = validBannerColor(color) ? color : 'var(--covo-surface-muted, #e5e7eb)';
+  element.style.setProperty('--user-banner-color', validBannerColor(color) ? color : 'var(--covo-surface-muted, #e5e7eb)');
+}
+function cacheOwnProfileBanner(owner, avatarUrl, color) {
+  if (userId !== owner || (userAvatarUrl || '') !== (avatarUrl || '') || !validBannerColor(color)) return;
+  window._currentUserBannerColor = color;
+  window._currentUserBannerAvatarUrl = avatarUrl || '';
+  try { localStorage.setItem('covo_cached_banner_' + owner, color); } catch (_) {}
+  for (const profile of [window._userProfileCache?.get(owner), cachedUsers?.find(user => user.id === owner)]) {
+    if (profile) Object.assign(profile, { bannerColor: color, bannerAvatarUrl: avatarUrl || '' });
+  }
+}
+async function ensureOwnProfileBanner(owner, avatarUrl, knownProfile) {
+  if (!owner || userId !== owner || (userAvatarUrl || '') !== (avatarUrl || '')) return;
+  if (profileBannerMatches(knownProfile, avatarUrl) && knownProfile.bannerAvatarUrl !== undefined) {
+    cacheOwnProfileBanner(owner, avatarUrl, knownProfile.bannerColor); return;
+  }
+  const color = profileBannerMatches(knownProfile, avatarUrl) ? knownProfile.bannerColor : await getAvatarAccentColor(avatarUrl, owner);
+  if (userId !== owner || (userAvatarUrl || '') !== (avatarUrl || '')) return;
+  const { runTransaction } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+  const root = doc(db, `artifacts/${appId}/users`, owner);
+  const detail = doc(db, `artifacts/${appId}/users/${owner}/profile`, 'nicknameDoc');
+  const result = await runTransaction(db, async transaction => {
+    const [rootSnap, detailSnap] = await Promise.all([transaction.get(root), transaction.get(detail)]);
+    if (userId !== owner || (userAvatarUrl || '') !== (avatarUrl || '')) return null;
+    const data = { ...(rootSnap.exists() ? rootSnap.data() : {}), ...(detailSnap.exists() ? detailSnap.data() : {}) };
+    if ((data.avatarUrl || '') !== (avatarUrl || '')) return null;
+    const selected = profileBannerMatches(data, avatarUrl) && data.bannerAvatarUrl !== undefined ? data.bannerColor : color;
+    const update = { bannerColor: selected, bannerAvatarUrl: avatarUrl || '' };
+    transaction.set(root, update, { merge: true }); transaction.set(detail, update, { merge: true });
+    return selected;
+  });
+  if (result) cacheOwnProfileBanner(owner, avatarUrl, result);
+}
 function hslToHex(h, s, l) {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs((h / 60) % 2 - 1));
@@ -7117,9 +7211,16 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
+    let finished = false;
+    const finish = color => {
+      if (finished) return;
+      finished = true; clearTimeout(timer); img.onload = null; img.onerror = null;
+      resolve(color);
+    };
+    const timer = setTimeout(() => { finish(getHashColor(seedId || avatarUrl)); img.src = ''; }, 4000);
     const fallback = () => {
       const col = getHashColor(seedId || avatarUrl);
-      resolve(col);
+      finish(col);
     };
     img.onload = () => {
       try {
@@ -7179,7 +7280,7 @@ async function getAvatarAccentColor(avatarUrl, seedId = '') {
         _avatarColorCache.set(avatarUrl, hex);
         if (seedId) _avatarColorCache.set('uid_' + seedId, hex);
         saveAvatarColorCache();
-        resolve(hex);
+        finish(hex);
       } catch (e) {
         fallback();
       }
@@ -7202,6 +7303,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   if (!modal) return;
   const isSelf = targetUid === userId;
   _currentProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  const profileRequest = _currentProfileTargetUser, profileOwner = userId;
 
   // PC表示時: Discord本家完全準拠のスマートポップアウトポジショニング
   const cardEl = modal.querySelector('.user-profile-card');
@@ -7295,24 +7397,7 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
-  // 保存済みバナー色（Firestore/キャッシュ）がある場合はそれを最優先即時適用、なければ getInstantAccentColor
-  const userProfileCached = window._userProfileCache?.get(targetUid);
-  const localSavedBanner = (targetUid === userId) ? (window._currentUserBannerColor || localStorage.getItem('covo_cached_banner_' + userId)) : null;
-  const directBanner = cachedUser?.bannerColor || userProfileCached?.bannerColor || localSavedBanner || null;
-  const instantColor = directBanner || getInstantAccentColor(targetAvatarUrl, targetUid);
-  if (bannerEl) {
-    bannerEl.style.backgroundColor = instantColor;
-    bannerEl.style.setProperty('--user-banner-color', instantColor);
-  }
-  // 保存済みバナー色がない場合のみ、アバター画像からアクセントカラーを非同期抽出して適用
-  if (!directBanner) {
-    getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-      if (bannerEl && bannerColor) {
-        bannerEl.style.backgroundColor = bannerColor;
-        bannerEl.style.setProperty('--user-banner-color', bannerColor);
-      }
-    });
-  }
+  applyProfileBanner(bannerEl, targetUid, targetAvatarUrl);
   // 右上フレンドボタン状態同期
   if (upBannerFriendBtn) {
     if (isSelf) {
@@ -7454,13 +7539,15 @@ window.openUserProfileModal = async function (targetUid, targetNickname, targetA
     try {
       const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
       const snap = await getDoc(userDocRef);
-      if (snap.exists() && _currentProfileTargetUser?.uid === targetUid) {
+      if (snap.exists() && _currentProfileTargetUser === profileRequest && userId === profileOwner) {
         const uData = snap.data();
+        window._userProfileCache.set(targetUid, { ...window._userProfileCache.get(targetUid), ...uData });
+        applyProfileBanner(bannerEl, targetUid, uData.avatarUrl || '', uData);
         if (uData.nickname && nameEl) {
           nameEl.textContent = uData.nickname;
           if (quickInput) quickInput.placeholder = `@${uData.nickname} へのメッセージ`;
         }
-        if (uData.avatarUrl && avatarEl && isUsableAvatarUrl(uData.avatarUrl)) {
+        if (uData.avatarUrl !== undefined && avatarEl) {
           __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname);
         }
         if (uData.email && tagEl) {
@@ -7714,6 +7801,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const modal = document.getElementById("userFullProfileModal");
   if (!modal) return;
   _fullProfileTargetUser = { uid: targetUid, nickname: targetNickname, avatarUrl: targetAvatarUrl };
+  const profileRequest = _fullProfileTargetUser, profileOwner = userId;
   const isSelf = targetUid === userId;
   const bannerEl = document.getElementById("fullProfileBanner");
   const avatarEl = document.getElementById("fullProfileAvatar");
@@ -7767,7 +7855,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const tabFriendsBtn = document.getElementById('fpTabFriendsBtn');
   if (tabFriendsBtn) tabFriendsBtn.textContent = '共通の友だち';
   getMutualFriends(targetUid).then(mFriends => {
-    if (_fullProfileTargetUser?.uid !== targetUid) return;
+    if (_fullProfileTargetUser !== profileRequest || userId !== profileOwner) return;
     if (tabFriendsBtn) tabFriendsBtn.textContent = `${mFriends.length}人の共通の友だち`;
   }).catch(() => {});
 
@@ -7783,19 +7871,7 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   const cachedUser = cachedUsers.find(u => u.id === targetUid);
   const state = cachedUser?.computedState || cachedUser?.state || (isSelf ? 'online' : 'offline');
   if (statusDot) statusDot.className = `status-indicator status-${state}`;
-  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
-  const instantColor = getInstantAccentColor(targetAvatarUrl, targetUid);
-  if (bannerEl) {
-    bannerEl.style.backgroundColor = instantColor;
-    bannerEl.style.setProperty('--user-banner-color', instantColor);
-  }
-  // アバターに応じたアクセントカラーを抽出しバナーに適用
-  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-    if (bannerEl && bannerColor) {
-      bannerEl.style.backgroundColor = bannerColor;
-      bannerEl.style.setProperty('--user-banner-color', bannerColor);
-    }
-  });
+  applyProfileBanner(bannerEl, targetUid, targetAvatarUrl);
   // アクションボタン
   if (msgBtn) {
     msgBtn.onclick = () => {
@@ -7856,8 +7932,12 @@ window.openUserFullProfileModal = async function (targetUid, targetNickname, tar
   try {
     const userDocRef = doc(db, `artifacts/${appId}/users`, targetUid);
     const snap = await getDoc(userDocRef);
+    if (_fullProfileTargetUser !== profileRequest || userId !== profileOwner) return;
     if (snap.exists()) {
       const uData = snap.data();
+      window._userProfileCache.set(targetUid, { ...window._userProfileCache.get(targetUid), ...uData });
+      applyProfileBanner(bannerEl, targetUid, uData.avatarUrl || '', uData);
+      if (uData.avatarUrl !== undefined) __setAvatarImg(avatarEl, uData.avatarUrl, uData.nickname || safeName);
       if (uData.nickname && nameEl) nameEl.textContent = uData.nickname;
       if (uData.email && handleEl) {
         handleEl.textContent = `${uData.email.split('@')[0]}${uData.customStatus?.text ? ` • ${uData.customStatus.text}` : ''}`;
@@ -10759,16 +10839,19 @@ function renderDmConversationsList() {
   const dmPanelStatusDot = document.getElementById('dmPanelStatusDot');
   if (dmPanelStatusDot && currentDmParticipant && currentDmParticipant.uid === targetUid) {
     dmPanelStatusDot.className = `status-indicator status-${computedState}`;
+    applyProfileBanner(document.querySelector('#dmProfilePanel .dm-profile-banner'), targetUid, newAvatarUrl, merged);
   }
   // 🌟 ポップアウト (#userProfileModal) が開いていればステータスドットを即時更新！
   if (_currentProfileTargetUser && _currentProfileTargetUser.uid === targetUid) {
     const upStatusDot = document.getElementById('userProfileStatusDot');
     if (upStatusDot) upStatusDot.className = `status-indicator status-${computedState}`;
+    applyProfileBanner(document.getElementById('userProfileBanner'), targetUid, newAvatarUrl, merged);
   }
   // 🌟 フルプロフィール (#userFullProfileModal) が開いていればステータスドットを即時更新！
   if (_fullProfileTargetUser && _fullProfileTargetUser.uid === targetUid) {
     const fpStatusDot = document.getElementById('fullProfileStatusDot');
     if (fpStatusDot) fpStatusDot.className = `status-indicator status-${computedState}`;
+    applyProfileBanner(document.getElementById('fullProfileBanner'), targetUid, newAvatarUrl, merged);
   }
   // 🌟 左サイドバーの該当DM行 (#dmConversationsList) のステータスドットを即時更新！
   const dmSidebarItems = document.querySelectorAll('#dmConversationsList .dm-sidebar-item');
@@ -11093,6 +11176,8 @@ function renderDmConversationsList() {
       window.refreshCurrentDmParticipantUI(targetUid, {
         nickname: updatedNick,
         avatarUrl: updatedAvatar,
+        bannerColor: uData.bannerColor,
+        bannerAvatarUrl: uData.bannerAvatarUrl,
         aboutMe: uData.aboutMe,
         customStatus: uData.customStatus
       });
@@ -11117,6 +11202,8 @@ function renderDmConversationsList() {
   const toggleBtn = document.getElementById('toggleMembersSidebarBtn');
   const toggleIcon = document.getElementById('toggleMembersSidebarIcon');
   if (!panel) return;
+  const renderToken = {};
+  panel._profileRenderToken = renderToken;
   if (membersList) membersList.classList.add('hidden');
   if (activeNowPanel) activeNowPanel.classList.add('hidden');
   panel.classList.remove('hidden');
@@ -11234,23 +11321,12 @@ function renderDmConversationsList() {
       </button>
     </div>
   `;
-  // 最初からその人の背景色になるよう即座に同期適用（チラつき防止）
-  const instantBannerColor = getInstantAccentColor(targetAvatarUrl, targetUid);
   const bannerElInitial = panel.querySelector('.dm-profile-banner');
-  if (bannerElInitial) {
-    bannerElInitial.style.backgroundColor = instantBannerColor;
-    bannerElInitial.style.setProperty('--user-banner-color', instantBannerColor);
-  }
-  // バナーのドミナントカラー動的適用
-  getAvatarAccentColor(targetAvatarUrl, targetUid).then(bannerColor => {
-    const bannerEl = panel.querySelector('.dm-profile-banner');
-    if (bannerEl && bannerColor) {
-      bannerEl.style.backgroundColor = bannerColor;
-      bannerEl.style.setProperty('--user-banner-color', bannerColor);
-    }
-  });
+  applyProfileBanner(bannerElInitial, targetUid, targetAvatarUrl);
   try {
     const prof = await window.getUserProfile(targetUid, { nickname: targetNickname, avatarUrl: targetAvatarUrl });
+    if (panel._profileRenderToken !== renderToken || currentDmParticipant?.uid !== targetUid) return;
+    applyProfileBanner(bannerElInitial, targetUid, prof?.avatarUrl || '', prof);
     const nameEl = document.getElementById('dmPanelName');
     const avEl = document.getElementById('dmPanelAvatar');
     const statusDot = document.getElementById('dmPanelStatusDot');
@@ -15950,6 +16026,7 @@ let _channelPermissionDenied = false;
 let _rtdbConnected = false;
 let _activeChannelSessionId = 0;
 function subscribeToMessages({ preserve = false } = {}) {
+  _notificationSettingsUI?.refresh();
   _historyLoadGate.reset();
   if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
   if (window.rtdbMessagesUnsub) { window.rtdbMessagesUnsub(); window.rtdbMessagesUnsub = null; }
@@ -29239,7 +29316,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.279').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.280').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -29743,12 +29820,14 @@ let _notificationPreferencesUnsub = null;
 function setupNotificationPreferences(owner) {
   _notificationPreferencesUnsub?.();
   _notificationPreferences = {};
+  _notificationSettingsUI?.refresh();
   let networkObserved = false;
-  LocalStore.getSetting('notificationPreferences').then(value => { if (userId === owner && !networkObserved && value) _notificationPreferences = value; }).catch(() => {});
+  LocalStore.getSetting('notificationPreferences').then(value => { if (userId === owner && !networkObserved && value) { _notificationPreferences = value; _notificationSettingsUI?.refresh(); } }).catch(() => {});
   _notificationPreferencesUnsub = onSnapshot(doc(db, `artifacts/${appId}/users/${owner}/notificationSettings/preferences`), snapshot => {
     if (userId !== owner) return;
     networkObserved = true;
     _notificationPreferences = snapshot.exists() ? snapshot.data() : {};
+    _notificationSettingsUI?.refresh();
     LocalStore.putSetting('notificationPreferences', _notificationPreferences).catch(() => {});
     navigator.serviceWorker?.controller?.postMessage({ type: 'NOTIFICATION_PREFERENCES', value: _notificationPreferences });
   }, () => {});
@@ -29756,36 +29835,23 @@ function setupNotificationPreferences(owner) {
 function installNotificationSettingsButton() {
   const header = document.getElementById('currentRoomHeader');
   if (!header || document.getElementById('conversationNotificationButton')) return;
-  const button = document.createElement('button');
-  button.id = 'conversationNotificationButton'; button.className = 'conversation-notification-button'; button.textContent = '通知'; button.title = 'この会話の通知設定';
-  header.appendChild(button);
-  button.onclick = () => {
-    document.getElementById('conversationNotificationSettings')?.remove();
-    const owner = userId, server = currentServerId, room = currentRoomId || currentDmId;
-    if (!owner || !room) return;
-    const panel = document.createElement('div'); panel.id = 'conversationNotificationSettings'; panel.className = 'covo-settings-popover'; panel.tabIndex = -1;
-    const title = document.createElement('strong'); title.textContent = '通知設定'; panel.appendChild(title);
-    const choices = [['all', 'すべて'], ...(server ? [['mentions', 'メンションのみ']] : []), ['none', '通知しない']];
-    const addSelect = (labelText, group, key, inherit) => {
-      const label = document.createElement('label'); label.textContent = labelText;
-      const select = document.createElement('select');
-      for (const [value, text] of [...(inherit ? [['inherit', 'サーバー設定を引き継ぐ']] : []), ...choices]) {
-        const option = document.createElement('option'); option.value = value; option.textContent = text; select.appendChild(option);
-      }
-      select.value = _notificationPreferences[group]?.[key] || (inherit ? 'inherit' : 'all');
-      select.onchange = () => {
-        if (userId !== owner) return;
-        const value = select.value;
-        setDoc(doc(db, `artifacts/${appId}/users/${owner}/notificationSettings/preferences`), { [group]: { [key]: value === 'inherit' ? deleteField() : value } }, { merge: true }).catch(() => alertMessage('通知設定を保存できませんでした', 'warning'));
-      };
-      label.appendChild(select); panel.appendChild(label);
-    };
-    if (server) addSelect('サーバー全体', 'servers', server, false);
-    addSelect('この会話', 'channels', server ? `${server}:${room}` : `dm:${room}`, Boolean(server));
-    const close = document.createElement('button'); close.textContent = '閉じる'; close.onclick = () => { panel.remove(); button.focus(); }; panel.appendChild(close);
-    panel.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); close.click(); } };
-    document.body.appendChild(panel); panel.focus();
-  };
+  _notificationSettingsUI = installConversationNotificationUI({
+    header,
+    target: () => {
+      const server = currentDmId ? null : currentServerId, room = currentDmId || currentRoomId;
+      return { owner: userId, server, room, key: server ? `${server}:${room}` : `dm:${room}`, session: _activeChannelSessionId };
+    },
+    preferences: () => _notificationPreferences,
+    save: async (owner, group, key, mode) => {
+      if (!owner || userId !== owner) throw new Error('account-changed');
+      await setDoc(doc(db, `artifacts/${appId}/users/${owner}/notificationSettings/preferences`), { [group]: { [key]: mode === 'inherit' ? deleteField() : mode } }, { merge: true });
+      if (userId !== owner) return;
+      const entries = { ..._notificationPreferences[group] };
+      if (mode === 'inherit') delete entries[key]; else entries[key] = mode;
+      _notificationPreferences = { ..._notificationPreferences, [group]: entries };
+      _notificationSettingsUI?.refresh();
+    }
+  });
 }
 installNotificationSettingsButton();
 
@@ -29857,7 +29923,7 @@ installNavigationUI({
   cancelRecording: () => { if (_isVoiceRecording || _voiceRecordStarting) { window.cancelVoiceRecording(); return true; } return false; },
   closeOverlay: () => {
     const ids = ['conversationNotificationSettings', 'localArchivesPanel', 'covoUserVolumePopover'];
-    for (const id of ids) { const element = document.getElementById(id); if (element) { element.remove(); document.getElementById('conversationNotificationButton')?.focus(); return true; } }
+    for (const id of ids) { const element = document.getElementById(id); if (element) { if (typeof element.close === 'function') element.close(); else element.remove(); return true; } }
     return false;
   }
 });

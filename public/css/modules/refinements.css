@@ -1,0 +1,117 @@
+/* Shared tokens for the newer controls, matching Covo's light, navy and Discord themes. */
+:root {
+  --covo-surface: #ffffff;
+  --covo-surface-muted: #f2f3f5;
+  --covo-hover: #e9ebf0;
+  --covo-text: #23272f;
+  --covo-text-muted: #5c6473;
+  --covo-border: #d9dde5;
+  --covo-accent: #4752c4;
+  --covo-selected: #eef0ff;
+  --covo-success: #18733b;
+  --covo-error: #b42336;
+  --covo-shadow: 0 12px 36px #17203324, 0 2px 8px #17203312;
+}
+body.dark, body.dark-server-theme {
+  --covo-surface: #1e293b;
+  --covo-surface-muted: #162033;
+  --covo-hover: #2c3a50;
+  --covo-text: #f1f5f9;
+  --covo-text-muted: #b0bdd0;
+  --covo-border: #3b4960;
+  --covo-accent: #a5b4fc;
+  --covo-selected: #303859;
+  --covo-success: #86dfaa;
+  --covo-error: #ff9caa;
+  --covo-shadow: 0 12px 36px #0006, 0 2px 8px #0003;
+  color-scheme: dark;
+}
+body.discord-dark-theme {
+  --covo-surface: #2b2d31;
+  --covo-surface-muted: #1e1f22;
+  --covo-hover: #383a40;
+  --covo-text: #f2f3f5;
+  --covo-text-muted: #b5bac1;
+  --covo-border: #484b54;
+  --covo-accent: #a5b4fc;
+  --covo-selected: #353958;
+  --covo-success: #86dfaa;
+  --covo-error: #ff9caa;
+  --covo-shadow: 0 12px 36px #0006, 0 2px 8px #0003;
+  color-scheme: dark;
+}
+.conversation-notification-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 36px; min-width: 36px; margin-left: 8px; padding: 7px 11px;
+  flex-shrink: 0; border: 1px solid transparent; border-radius: 8px;
+  font-size: 12px; font-weight: 650; color: var(--covo-text-muted); background: transparent;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.conversation-notification-button[hidden] { display: none; }
+#currentRoomActions .conversation-notification-button { margin-left: 0; }
+.conversation-notification-button:hover { background: var(--covo-hover); color: var(--covo-text); }
+.conversation-notification-button[aria-expanded="true"], .conversation-notification-button[data-mode="none"] {
+  background: var(--covo-selected); color: var(--covo-accent); border-color: var(--covo-border);
+}
+.covo-settings-popover, .covo-quick-switcher {
+  background: var(--covo-surface); color: var(--covo-text); border: 1px solid var(--covo-border);
+  box-shadow: var(--covo-shadow); border-radius: 12px; padding: 16px;
+  color-scheme: light;
+}
+:is(body.dark, body.dark-server-theme, body.discord-dark-theme) :is(.covo-settings-popover, .covo-quick-switcher) { color-scheme: dark; }
+.covo-notification-settings { width: 320px; max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
+.covo-popover-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.covo-popover-heading strong { font-size: 16px; }
+.covo-icon-button {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  flex-shrink: 0; border-radius: 8px; color: var(--covo-text-muted); background: transparent;
+}
+.covo-icon-button:hover { background: var(--covo-hover); color: var(--covo-text); }
+.covo-popover-description { margin: 8px 0 16px; font-size: 12px; line-height: 1.6; color: var(--covo-text-muted); }
+.covo-notification-settings fieldset { margin: 0; padding: 12px 0; border: 0; border-top: 1px solid var(--covo-border); min-width: 0; }
+.covo-notification-settings legend { padding: 0 6px 0 0; font-size: 11px; font-weight: 750; color: var(--covo-text-muted); }
+.covo-settings-popover .covo-notification-choice {
+  display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 2px 0;
+  min-height: 40px; padding: 9px 10px; border-radius: 7px; font-size: 13px; cursor: pointer;
+}
+.covo-notification-choice:hover { background: var(--covo-hover); }
+.covo-notification-choice:has(input:checked) { background: var(--covo-selected); color: var(--covo-accent); }
+.covo-notification-choice:has(input:disabled) { cursor: wait; opacity: .7; }
+.covo-notification-choice input { accent-color: var(--covo-accent); flex-shrink: 0; width: 16px; height: 16px; margin: 0; }
+.covo-preference-status { min-height: 20px; margin-top: 8px; font-size: 12px; color: var(--covo-text-muted); line-height: 1.5; }
+.covo-preference-status[data-state="success"] { color: var(--covo-success); }
+.covo-preference-status[data-state="error"] { color: var(--covo-error); }
+.channel-load-status { background: var(--covo-surface-muted); color: var(--covo-text); border-bottom: 1px solid var(--covo-border); flex-wrap: wrap; }
+.channel-load-status button, .delivery-status button { color: var(--covo-accent); text-underline-offset: 3px; padding: 4px; }
+.covo-settings-popover select, .covo-quick-switcher input { background: var(--covo-surface-muted); color: var(--covo-text); border: 1px solid var(--covo-border); border-radius: 8px; }
+.covo-quick-switcher { box-shadow: 0 0 0 100vmax #0008, var(--covo-shadow); }
+.covo-quick-switcher input { font-size: 16px; margin-bottom: 12px; }
+.covo-quick-switcher input::placeholder { color: var(--covo-text-muted); }
+.covo-quick-switcher button { border-radius: 7px; color: var(--covo-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.covo-quick-switcher button:hover, .covo-quick-switcher .selected { background: var(--covo-selected); color: var(--covo-accent); }
+.covo-quick-switcher .covo-icon-button { display: inline-flex; width: 32px; padding: 0; text-align: center; }
+.covo-quick-switcher [role="listbox"] { max-height: 42dvh; overflow-y: auto; overscroll-behavior: contain; }
+.covo-switcher-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px; font-weight: 700; }
+.covo-switcher-heading kbd, .covo-switcher-hint { font-size: 11px; color: var(--covo-text-muted); font-weight: 400; }
+.covo-switcher-hint { margin-top: 12px; border-top: 1px solid var(--covo-border); padding-top: 12px; }
+.covo-switcher-empty { padding: 24px 8px; text-align: center; font-size: 13px; color: var(--covo-text-muted); }
+:is(.conversation-notification-button, .covo-icon-button, .covo-settings-popover button, .covo-settings-popover input, .covo-quick-switcher input, .settings-close-btn):focus-visible {
+  outline: 2px solid var(--covo-accent); outline-offset: 3px;
+}
+/* The relatively positioned profile section previously covered half of this button. */
+#settingsModal .settings-close-btn {
+  z-index: 60; isolation: isolate; width: 36px; height: 36px;
+  color: var(--covo-text-muted); background: var(--covo-surface-muted);
+  border: 1px solid var(--covo-border);
+}
+#settingsModal .settings-close-btn:hover { color: var(--covo-text); background: var(--covo-hover); }
+#settingsModal .settings-close-btn > * { pointer-events: none; }
+#settingsModal .settings-section-title { padding-right: 48px; }
+@media (max-width: 600px) {
+  .conversation-notification-button { padding: 8px; min-height: 40px; min-width: 40px; }
+  .conversation-notification-button > span { display: none; }
+  .covo-quick-switcher { top: 10dvh; max-height: 70dvh; padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-notification-button, .covo-quick-switcher, .covo-notification-choice { transition: none; }
+}

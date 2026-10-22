@@ -40,6 +40,18 @@ test('notification preferences are private to their owner and reject unrelated f
   await assertFails(updateDoc(doc(alice, path), { admin: true }));
 });
 
+test('avatar and banner metadata can be committed together only by the profile owner', async () => {
+  const alice = getDb({ uid: 'alice' }), bob = getDb({ uid: 'bob' });
+  const root = `artifacts/${APP_ID}/users/alice`, detail = `${root}/profile/nicknameDoc`;
+  const profile = { avatarUrl: 'https://example.test/avatar.png', bannerColor: '#123456', bannerAvatarUrl: 'https://example.test/avatar.png' };
+  const own = writeBatch(alice); own.set(doc(alice, root), profile, { merge: true }); own.set(doc(alice, detail), profile, { merge: true });
+  await assertSucceeds(own.commit());
+  const other = writeBatch(bob); other.set(doc(bob, root), { ...profile, bannerColor: '#ffffff' }, { merge: true }); other.set(doc(bob, detail), { ...profile, bannerColor: '#ffffff' }, { merge: true });
+  await assertFails(other.commit());
+  expect((await getDoc(doc(alice, root))).data()).toEqual(profile);
+  expect((await getDoc(doc(alice, detail))).data()).toEqual(profile);
+});
+
 test('nonmembers cannot read or inject room activity or request room keys', async () => {
   const base = `artifacts/${APP_ID}/servers/activity`;
   await testEnv.withSecurityRulesDisabled(async context => {

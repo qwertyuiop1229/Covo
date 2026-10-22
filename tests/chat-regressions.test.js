@@ -120,6 +120,7 @@ test('a late token from the previous account cannot replace the current token ca
 test('late notification preference cache cannot overwrite a fresh snapshot', async () => {
   let finishLocal;
   const ctx = vm.createContext({ userId: 'alice', _notificationPreferences: {}, _notificationPreferencesUnsub: null,
+    _notificationSettingsUI: null,
     db: {}, appId: 'test', doc: () => ({}), navigator: {},
     LocalStore: { getSetting: () => new Promise(resolve => { finishLocal = resolve; }), putSetting: async () => {} },
     onSnapshot: (_, publish) => { publish({ exists: () => true, data: () => ({ channels: { room: 'none' } }) }); return () => {}; },
@@ -127,6 +128,77 @@ test('late notification preference cache cannot overwrite a fresh snapshot', asy
   vm.runInContext(declaration('setupNotificationPreferences') + '\nsetupNotificationPreferences("alice");', ctx);
   finishLocal({ channels: { room: 'all' } }); await Promise.resolve();
   expect(ctx._notificationPreferences.channels.room).toBe('none');
+});
+
+function profileContext(extra = {}) {
+  const ctx = vm.createContext({ userId: 'alice', userAvatarUrl: 'alice.png', cachedUsers: [],
+    window: { _userProfileCache: new Map() }, localStorage: { setItem: jest.fn() },
+    _avatarColorCache: new Map(), getHashColor: () => '#322c3b', ...extra });
+  for (const name of ['validBannerColor', 'profileBannerMatches', 'getSavedProfileBanner', 'applyProfileBanner', 'cacheOwnProfileBanner']) vm.runInContext(declaration(name), ctx);
+  vm.runInContext(declaration('ensureOwnProfileBanner').replace(/import\('[^']+'\)/g, 'firestore()'), ctx);
+  return ctx;
+}
+
+test('profile banners use saved colors immediately and reject CSS or a color from a previous avatar', () => {
+  const ctx = profileContext();
+  ctx.window._userProfileCache.set('bob', { avatarUrl: 'new.png', bannerColor: '#123456', bannerAvatarUrl: 'new.png' });
+  const element = { style: { setProperty: jest.fn() } };
+  ctx.applyProfileBanner(element, 'bob', 'new.png');
+  expect(element.style.backgroundColor).toBe('#123456');
+  ctx.applyProfileBanner(element, 'bob', 'other.png');
+  expect(element.style.backgroundColor).toContain('--covo-surface-muted');
+  ctx.applyProfileBanner(element, 'bob', 'new.png', { avatarUrl: 'new.png', bannerColor: 'url(https://evil.test)' });
+  expect(element.style.backgroundColor).toBe('#123456');
+  ctx.window._userProfileCache.clear();
+  ctx.applyProfileBanner(element, 'bob', '', { avatarUrl: '', bannerColor: '#322c3b', bannerAvatarUrl: '' });
+  expect(element.style.backgroundColor).toBe('#322c3b');
+});
+
+test('own banner migration writes both documents atomically and never writes another account or a changed avatar', async () => {
+  const writes = [], calculate = jest.fn(async () => '#112233');
+  let remoteAvatar = 'alice.png';
+  const transaction = { get: async () => ({ exists: () => true, data: () => ({ avatarUrl: remoteAvatar }) }), set: (path, data) => writes.push({ path, data }) };
+  const ctx = profileContext({ getAvatarAccentColor: calculate, db: {}, appId: 'test', doc: (_, ...parts) => parts.join('/'),
+    firestore: async () => ({ runTransaction: async (_, action) => action(transaction) }) });
+  await ctx.ensureOwnProfileBanner('bob', 'bob.png'); expect(calculate).not.toHaveBeenCalled();
+  await ctx.ensureOwnProfileBanner('alice', 'alice.png');
+  expect(writes.map(write => write.path)).toEqual(['artifacts/test/users/alice', 'artifacts/test/users/alice/profile/nicknameDoc']);
+  expect(writes.every(write => write.data.bannerColor === '#112233' && write.data.bannerAvatarUrl === 'alice.png')).toBe(true);
+  writes.length = 0; remoteAvatar = 'changed-on-other-device.png';
+  await ctx.ensureOwnProfileBanner('alice', 'alice.png'); expect(writes).toHaveLength(0);
+});
+
+test('banner extraction finishing after an account switch cannot write profile data', async () => {
+  let finish;
+  const firestore = jest.fn();
+  const ctx = profileContext({ getAvatarAccentColor: () => new Promise(resolve => { finish = resolve; }), firestore });
+  const pending = ctx.ensureOwnProfileBanner('alice', 'alice.png');
+  ctx.userId = 'bob'; finish('#112233'); await pending;
+  expect(firestore).not.toHaveBeenCalled(); expect(ctx.window._currentUserBannerColor).toBeUndefined();
+});
+
+test('saving an avatar commits color and identity together and leaves local identity unchanged if the write fails', async () => {
+  const block = ast.program.body.find(node => node.type === 'IfStatement' && node.test.name === 'saveSettingsBtnEl');
+  const callback = block.consequent.body[0].expression.arguments[1];
+  const writes = [], cache = jest.fn(), removeItem = jest.fn();
+  const ctx = vm.createContext({ userId: 'alice', userNickname: 'Original', userAvatarUrl: 'https://app.test/old.png', userAuthEmail: 'alice@test',
+    pendingAvatarUrl: 'https://app.test/new.png', _profileMutationBusy: false,
+    settingsNicknameInpEl: { value: 'New name' }, settingsMsgEl: null,
+    document: { getElementById: () => null }, window: {}, db: {}, appId: 'test',
+    doc: (_, ...parts) => parts.join('/'), serverTimestamp: () => 1, getAvatarAccentColor: async () => '#123456',
+    cacheOwnProfileBanner: cache, localStorage: { removeItem },
+    writeBatch: () => ({ set: (path, data) => writes.push({ path, data }), commit: async () => { throw Error('offline'); } }),
+  });
+  vm.runInContext('globalThis.saveProfile=' + main.slice(callback.start, callback.end), ctx);
+  await ctx.saveProfile();
+  expect(writes).toHaveLength(2);
+  for (const write of writes) {
+    expect(write.path).toContain('/users/alice');
+    expect(write.data).toMatchObject({ nickname: 'New name', avatarUrl: 'https://app.test/new.png', bannerColor: '#123456', bannerAvatarUrl: 'https://app.test/new.png' });
+    expect(write.data.createdAt).toBeUndefined();
+  }
+  expect(ctx.userNickname).toBe('Original'); expect(ctx.userAvatarUrl).toBe('https://app.test/old.png');
+  expect(cache).not.toHaveBeenCalled(); expect(removeItem).not.toHaveBeenCalled(); expect(ctx._profileMutationBusy).toBe(false);
 });
 test('notification batches respect the API recipient limit and preserve mentions', async () => {
   const fetch = jest.fn(async () => ({ ok: true }));
