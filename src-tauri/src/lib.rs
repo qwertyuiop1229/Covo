@@ -972,15 +972,8 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
     }
 }
 
-use tauri_plugin_notification::NotificationExt;
-
-#[tauri::command]
-fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) {
-    let _ = app.notification().builder()
-        .title(title)
-        .body(body)
-        .show();
-}
+mod desktop_notification;
+use desktop_notification::send_desktop_notification;
 
 fn is_official_installer_url(input: &str, tag: &str) -> bool {
     let Ok(parsed) = url::Url::parse(input) else { return false; };
@@ -1346,6 +1339,7 @@ fn safe_open_browser_url(url: &str) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(NotificationState::default())
         .invoke_handler(tauri::generate_handler![
             restart_app,

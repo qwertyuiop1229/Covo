@@ -2506,3 +2506,21 @@
 @media (prefers-reduced-motion: reduce) {
   .covo-media-loading { transition: none; }
 }
+
+.channel-load-status { display:flex; gap:12px; align-items:center; padding:6px 12px; font-size:12px; background:var(--bg-secondary,#e5e7eb); color:var(--text-primary,#111827); flex-shrink:0; }
+.channel-load-status[hidden] { display:none; }
+.channel-load-status button,.delivery-status button { text-decoration:underline; cursor:pointer; }
+.delivery-status { font-size:11px; opacity:.8; display:flex; gap:8px; justify-content:flex-end; }
+.conversation-notification-button { margin-left:8px; font-size:12px; padding:4px 8px; border-radius:6px; }
+.covo-settings-popover { position:fixed; top:80px; right:16px; z-index:10000; background:var(--bg-primary,#fff); color:var(--text-primary,#111827); padding:16px; border:1px solid #8885; border-radius:10px; box-shadow:0 8px 30px #0004; max-width:calc(100vw - 32px); }
+.covo-settings-popover label { display:flex; flex-direction:column; gap:6px; margin:12px 0; }
+.covo-settings-popover select { background:var(--bg-secondary,#e5e7eb); color:inherit; padding:8px; }
+body.covo-background .animate-pulse,body.covo-background .covo-msg-loading-shimmer { animation-play-state:paused !important; }
+
+.covo-quick-switcher { position:fixed; z-index:100001; top:15vh; left:50%; transform:translateX(-50%); width:min(540px,calc(100vw - 24px)); max-height:70dvh; overflow:auto; padding:16px; border-radius:12px; background:var(--bg-primary,#fff); color:var(--text-primary,#111827); box-shadow:0 0 0 100vmax #0007,0 12px 40px #0005; }
+.covo-quick-switcher input { width:100%; padding:12px; background:var(--bg-secondary,#e5e7eb); color:inherit; border-radius:8px; }
+.covo-quick-switcher button { display:block; padding:10px; text-align:left; width:100%; }
+.covo-quick-switcher .selected { background:#5865f233; }
+
+.server-search-results { max-height:35dvh; overflow:auto; width:100%; }
+.server-search-results button { display:block; padding:8px; width:100%; text-align:left; border-bottom:1px solid #8883; }

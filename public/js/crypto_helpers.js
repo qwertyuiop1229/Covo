@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { withReadDeadline } from './loading_runtime.js';
+import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
 import * as LocalStore from './local_store.js';
 
@@ -28,7 +29,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       publicKey: null,    // CryptoKey (RSA-OAEP encrypt)
       publicKeyJwk: null, // JWK (Firestore保存・他者配布用)
       mem: {},            // localStorage不可時のメモリ退避
-      roomKeyCache: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
+      roomKeyCache: {}, roomKeyVersions: {},   // roomId -> CryptoKey(AES-GCM) 復号済みキャッシュ
       dmKeyCache: {},     // dmId -> CryptoKey(AES-GCM) 復号済みキャッシュ
       pubKeyCache: {},    // _getUserId() -> CryptoKey(public) インポート済みキャッシュ
       _initPromise: null,
@@ -36,6 +37,31 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       _dmKeyPromises: {},
       _rescueRequestFlags: {}, // roomId -> timestamp 救済リクエストのデバウンス用
     };
+
+    let _cryptoEpoch = 0;
+    export function setCryptoAccount(ownerId) {
+      if (_e2ee.ownerId === ownerId) return;
+      _cryptoEpoch++;
+      Object.assign(_e2ee, { ownerId, ready: false, privateKey: null, publicKey: null, publicKeyJwk: null, _initPromise: null, mem: {}, roomKeyCache: {}, roomKeyVersions: {}, dmKeyCache: {}, pubKeyCache: {}, _roomKeyPromises: {}, _dmKeyPromises: {}, _rescueRequestFlags: {} });
+    }
+    export function roomKeyScope(serverId, roomId) {
+      return JSON.stringify([_getAppId(), serverId, roomId]);
+    }
+    export function observeRoomKeyVersion(serverId, roomId, version) {
+      const scope = roomKeyScope(serverId, roomId), expected = String(version || 1);
+      const previous = _e2ee.roomKeyVersions[scope];
+      _e2ee.roomKeyVersions[scope] = expected;
+      if ((previous && previous !== expected) || (_e2ee.roomKeyCache[scope] && String(_e2ee.roomKeyCache[scope].latestVersion) !== expected)) {
+        delete _e2ee.roomKeyCache[scope]; delete _e2ee._roomKeyPromises[scope];
+      }
+    }
+    function roomKeyVersionIsCurrent(serverId, roomId, keys) {
+      const expected = _e2ee.roomKeyVersions[roomKeyScope(serverId, roomId)];
+      return !expected || String(keys.latestVersion) === expected;
+    }
+    function privateStorageKey(key) {
+      return [E2EE_LS_PRIV, E2EE_LS_PUB].includes(key) ? `${key}:${_getUserId() || 'signed_out'}` : key;
+    }
 
     export const _subtleOK = !!(window.crypto && window.crypto.subtle);
     // Tauriデスクトップ(http://tauri.localhost等)で意図せずhttpsへ強制転送されERR_CONNECTION_REFUSEDで全ユーザーが詰む致命的バグを完全解消
@@ -47,10 +73,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     // localStorage 安全アクセス（プライベートブラウズ等で例外でも落ちない）
     export function __lsGet(key) {
+      key = privateStorageKey(key);
       try { const v = localStorage.getItem(key); if (v != null) return v; } catch (e) {}
       return (key in _e2ee.mem) ? _e2ee.mem[key] : null;
     }
     export function __lsSet(key, val) {
+      key = privateStorageKey(key);
       _e2ee.mem[key] = val; // 常にメモリにも保持
       try { localStorage.setItem(key, val); } catch (e) {}
     }
@@ -73,90 +101,62 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !_getUserId()) return false;
       if (_e2ee.ready) return true;
       if (_e2ee._initPromise) return _e2ee._initPromise;
+      const epoch = _cryptoEpoch;
       _e2ee._initPromise = (async () => {
         const res = await __ensureE2EEKeysImpl();
-        if (!res) _e2ee._initPromise = null;
+        if (!res && epoch === _cryptoEpoch) _e2ee._initPromise = null;
         return res;
       })();
       return _e2ee._initPromise;
     }
     export async function __ensureE2EEKeysImpl() {
-      if (!_getUserId() || !_getDb() || !_getAppId()) return false;
-      try {
-        // 1) ローカル(JWK)から復元
-        const privStr = __lsGet(E2EE_LS_PRIV);
-        const pubStr = __lsGet(E2EE_LS_PUB);
-        if (privStr && pubStr) {
-          const privJwk = JSON.parse(privStr), pubJwk = JSON.parse(pubStr);
-          _e2ee.privateKey = await __importPriv(privJwk);
-          _e2ee.publicKey = await __importPub(pubJwk);
-          _e2ee.publicKeyJwk = pubJwk;
-          _e2ee.ready = true;
-          // Firestoreに公開鍵が無ければバックアップ（端末間共有のため）
-          __backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
-          return true;
-        }
-
-        // 2) Firestore/D1の本人専用ドキュメントから復元
-        try {
-          
-            const privRef = doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`);
-            const privSnap = await getDoc(privRef);
-            if (privSnap.exists()) {
-              const snapData = privSnap.data();
-              let privJwk = null;
-              if ((snapData.version === 2 || snapData.version === 3 || snapData.encryptedPrivateKey) && snapData.encryptedPrivateKey) {
-                // 🔒 新形式: AES-GCM暗号化済み (v2 / v3) → 復号
-                privJwk = await __decryptPrivKeyFromBackup(snapData);
-                if (!privJwk) {
-                  console.error("[E2EE] 暗号化秘密鍵の復号に失敗しました。既存データの保護のためキーの上書きを阻止します。");
-                  return false;
-                }
-              } else if (snapData.privateKeyJwk) {
-                // 旧形式: 平文保存 → 使用後に暗号化して移行 (テレメトリノイズ防止のためlogへ変更)
-                console.log("[E2EE] 旧形式（平文）の秘密鍵を検出。暗号化形式に移行します。");
-                privJwk = snapData.privateKeyJwk;
-                // バックグラウンドで暗号化移行
-                const pubJwk = snapData.publicKeyJwk;
-                if (pubJwk) {
-                  __backupKeysToFirestore(privJwk, pubJwk).catch(() => {});
-                }
-              } else {
-                console.error("[E2EE] 秘密鍵ドキュメントの形式が不正です。上書きを阻止します。");
-                return false;
-              }
-
-              if (privJwk) {
-                const pubJwk = snapData.publicKeyJwk;
-                _e2ee.privateKey = await __importPriv(privJwk);
-                _e2ee.publicKey = await __importPub(pubJwk);
-                _e2ee.publicKeyJwk = pubJwk;
-                __lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
-                __lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
-                _e2ee.ready = true;
-                return true;
-              }
-            }
-          
-        } catch (e) {
-          console.warn("[E2EE] 鍵の復元チェック中に通信エラーが発生しました。個人鍵の上書き自爆を防止するため処理を中断します:", e);
-          return false;
-        }
-
-        // 3) 新規生成して保存（ローカル＋Firestoreバックアップ）
-        const pair = await __genUserKeyPair();
-        const privJwk = await window.crypto.subtle.exportKey("jwk", pair.privateKey);
-        const pubJwk = await window.crypto.subtle.exportKey("jwk", pair.publicKey);
-        _e2ee.privateKey = pair.privateKey;
-        _e2ee.publicKey = pair.publicKey;
-        _e2ee.publicKeyJwk = pubJwk;
-        __lsSet(E2EE_LS_PRIV, JSON.stringify(privJwk));
-        __lsSet(E2EE_LS_PUB, JSON.stringify(pubJwk));
-        _e2ee.ready = true;
-        await __backupKeysToFirestore(privJwk, pubJwk);
+      const owner = _getUserId(), epoch = _cryptoEpoch;
+      if (!owner || !_getDb() || !_getAppId()) return false;
+      const active = () => owner === _getUserId() && epoch === _cryptoEpoch;
+      const install = async (privateJwk, publicJwk) => {
+        const [privateKey, publicKey] = await Promise.all([__importPriv(privateJwk), __importPub(publicJwk)]);
+        if (!active()) return false;
+        Object.assign(_e2ee, { privateKey, publicKey, publicKeyJwk: publicJwk, ready: true });
+        __lsSet(E2EE_LS_PRIV, JSON.stringify(privateJwk));
+        __lsSet(E2EE_LS_PUB, JSON.stringify(publicJwk));
         return true;
-      } catch (e) {
-        console.warn("[E2EE] 鍵初期化に失敗（平文モードで継続）:", e);
+      };
+      try {
+        let priv = __lsGet(E2EE_LS_PRIV), pub = __lsGet(E2EE_LS_PUB);
+        // Legacy keys are adopted only after matching this account's authoritative public key.
+        if (!priv || !pub) {
+          let oldPrivate = null, oldPublic = null;
+          try { oldPrivate = localStorage.getItem(E2EE_LS_PRIV); oldPublic = localStorage.getItem(E2EE_LS_PUB); } catch (_) {}
+          if (oldPrivate && oldPublic) {
+            const profile = await withReadDeadline(getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${owner}`)));
+            if (!active()) return false;
+            const candidate = JSON.parse(oldPublic), expected = profile.exists() ? profile.data().publicKeyJwk : null;
+            if (expected?.n === candidate.n && expected?.e === candidate.e) { priv = oldPrivate; pub = oldPublic; }
+          }
+        }
+        if (priv && pub) {
+          const privateJwk = JSON.parse(priv), publicJwk = JSON.parse(pub);
+          const installed = await install(privateJwk, publicJwk);
+          if (installed) __backupKeysToFirestore(privateJwk, publicJwk).catch(() => {});
+          return installed;
+        }
+        const snapshot = await withReadDeadline(getDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${owner}/private/keys`)));
+        if (!active()) return false;
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          const privateJwk = data.encryptedPrivateKey ? await __decryptPrivKeyFromBackup(data, 'user_priv') : data.privateKeyJwk;
+          if (!active() || !privateJwk || !data.publicKeyJwk) return false;
+          return install(privateJwk, data.publicKeyJwk);
+        }
+        if (snapshot.metadata?.fromCache) return false;
+        const pair = await __genUserKeyPair();
+        const [privateJwk, publicJwk] = await Promise.all([window.crypto.subtle.exportKey('jwk', pair.privateKey), window.crypto.subtle.exportKey('jwk', pair.publicKey)]);
+        if (!active()) return false;
+        if (!await install(privateJwk, publicJwk)) return false;
+        await __backupKeysToFirestore(privateJwk, publicJwk);
+        return active();
+      } catch (error) {
+        console.warn('[E2EE] 鍵を確認できません。既存の鍵を保持して再接続を待ちます:', error);
         return false;
       }
     }
@@ -327,18 +327,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function __backupKeysToFirestore(privJwk, pubJwk) {
-      if (!_getUserId()) return;
+      const owner = _getUserId(), epoch = _cryptoEpoch;
+      if (!owner) return;
 
       // 公開鍵を users/{uid} に（全員が読めてOK）
       try {
-        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}`),
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${owner}`),
           { publicKeyJwk: pubJwk }, { merge: true });
       } catch (e) {}
 
       // 🔒 秘密鍵はPBKDF2+AES-GCM暗号化（Version 3）で安全に保管
       try {
+        if (owner !== _getUserId() || epoch !== _cryptoEpoch) return;
         const encData = await __encryptPrivKeyForBackup(privJwk, "user_priv");
-        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${_getUserId()}/private/keys`), {
+        if (owner !== _getUserId() || epoch !== _cryptoEpoch) return;
+        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/users/${owner}/private/keys`), {
           ...encData,
           publicKeyJwk: pubJwk,
           updatedAt: serverTimestamp()
@@ -388,17 +391,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_getUserId() || !serverId || !roomId) return;
       if (!_e2ee._rescueRequestFlags) _e2ee._rescueRequestFlags = {};
       const now = Date.now();
-      if (_e2ee._rescueRequestFlags[roomId] && (now - _e2ee._rescueRequestFlags[roomId] < 60000)) {
+      if (_e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] && (now - _e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] < 60000)) {
         return; // 1分以内の連続リクエストはスキップ
       }
-      _e2ee._rescueRequestFlags[roomId] = now;
+      _e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] = now;
       try {
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
           userId: _getUserId(), requestedAt: serverTimestamp()
         }, { merge: true });
         console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
-        delete _e2ee.roomKeyCache[roomId];
-        delete _e2ee._roomKeyPromises[roomId];
+        delete _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
+        delete _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
       } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
     }
     // 【DM E2EE 自動治癒】DM鍵未到着・不一致時の救済リクエスト（デバウンス付き）
@@ -488,24 +491,26 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     // 取得・生成いずれも失敗したら null（呼び出し側は平文で送る）。
     export async function _getOrCreateRoomKey(serverId, roomId, memberIds) {
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
-      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
-      if (_e2ee._roomKeyPromises[roomId]) return _e2ee._roomKeyPromises[roomId];
+      if (_e2ee.roomKeyCache[roomKeyScope(serverId, roomId)]) return _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
+      if (_e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)]) return _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
       const promise = (async () => {
         const res = await __getOrCreateRoomKeyImpl(serverId, roomId, memberIds);
         if (!res) {
           // 未取得・待機時は2.5秒間ネガティブキャッシュを保持し、メッセージごとのFirestore乱打を防止
           setTimeout(() => {
-            if (_e2ee._roomKeyPromises[roomId] === promise) {
-              delete _e2ee._roomKeyPromises[roomId];
+            if (_e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)] === promise) {
+              delete _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
             }
           }, 2500);
         }
         return res;
       })();
-      _e2ee._roomKeyPromises[roomId] = promise;
+      _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)] = promise;
       return promise;
     }
     export async function __getOrCreateRoomKeyImpl(serverId, roomId, memberIds) {
+      const keyEpoch = _cryptoEpoch;
+      const keyOwner = _getUserId();
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       try {
         const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`)).catch(() => null);
@@ -521,7 +526,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             keysObj["1"] = v1Key;
             // 🔒 平文sharedKeyの漏洩防止: メンバーへラップ配布し、親ドキュメントの平文sharedKeyを削除
             if (memberIds && memberIds.length > 0) {
-              __distributeRoomKeyVersion(serverId, roomId, raw, memberIds, "1").then(async () => {
+              __distributeRoomKeyVersion(serverId, roomId, raw, memberIds, "1", true).then(async () => {
+                if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return;
                 try {
                   await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), {
                     sharedKey: null,
@@ -534,7 +540,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (currentVer === "1") {
               keysObj.latest = v1Key;
               keysObj.latestVersion = "1";
-              _e2ee.roomKeyCache[roomId] = keysObj;
+              if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
+              if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
               return keysObj;
             }
           } catch (e) {
@@ -575,7 +583,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               keysObj.latestVersion = sortedVers[0];
             }
             if (keysObj.latest) {
-              _e2ee.roomKeyCache[roomId] = keysObj;
+              if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
+              if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
               return keysObj;
             }
           }
@@ -616,7 +626,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                   keysObj.latestVersion = sortedVers[0];
                 }
                 if (keysObj.latest) {
-                  _e2ee.roomKeyCache[roomId] = keysObj;
+                  if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
+                  if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
                   console.log(`[E2EE] エスクロー合鍵からルーム鍵を自己修復・復号しました (room=${roomId})`);
                   return keysObj;
                 }
@@ -653,7 +665,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         keysObj["1"] = key;
         keysObj.latest = key;
         keysObj.latestVersion = "1";
-        _e2ee.roomKeyCache[roomId] = keysObj;
+        if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
+        if (!roomKeyVersionIsCurrent(serverId, roomId, keysObj)) return null;
+              _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
         return keysObj;
 
       } catch (e) {
@@ -668,7 +682,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     export async function _getRoomKeyWithWait(serverId, roomId, memberIds, maxWaitMs = 1500) {
       if (!_subtleOK) return null;
-      if (_e2ee.roomKeyCache[roomId]) return _e2ee.roomKeyCache[roomId];
+      if (_e2ee.roomKeyCache[roomKeyScope(serverId, roomId)]) return _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
@@ -697,8 +711,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                const raw = await window.crypto.subtle.exportKey("raw", key);
                await __distributeRoomKeyVersion(serverId, roomId, raw, remainingMembers, nextVer);
                await updateDoc(roomRef, { currentKeyVersion: nextVer });
-               delete _e2ee.roomKeyCache[roomId];
-               delete _e2ee._roomKeyPromises[roomId];
+               delete _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
+               delete _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
             })());
          });
          await Promise.all(promises);
@@ -708,17 +722,21 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
        }
     }
 
-    export async function __distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version) {
+    export async function __distributeRoomKeyVersion(serverId, roomId, rawKey, memberIds, version, requireAll = false) {
+  const owner = _getUserId(), epoch = _cryptoEpoch;
+  const active = () => owner === _getUserId() && epoch === _cryptoEpoch;
   // 🔒 有効な文字種のみのUIDを厳格フィルタリング
   const ids = Array.from(new Set([...(memberIds || []), _getUserId()].filter(id => id && typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id))));
   const writes = [];
   for (const uid of ids) {
+    if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
     if (!uid) continue;
     const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
     if (!pub) continue; 
     try {
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
       const b64Wrapped = _abToB64(wrapped);
+      if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
       // ドット表記で更新し、過去のバージョンマップ全体を上書き破壊しない
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
@@ -732,6 +750,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     } catch (e) {}
   }
   const escrowPub = await __getEscrowPublicKey();
+  if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
   if (escrowPub) {
     try {
       const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, escrowPub, rawKey);
@@ -748,6 +767,22 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     } catch (e) {}
   }
   await Promise.all(writes);
+  if (requireAll) {
+    for (const uid of ids) {
+      if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
+      const snapshot = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`));
+      if (!active() || !snapshot.exists() || snapshot.metadata?.fromCache) throw new Error('鍵の保存を確認できません');
+      const data = snapshot.data();
+      const wrapped = data.versions?.[String(version)] || (String(data.latestVersion || '1') === String(version) ? data.wrappedKey : null);
+      if (!wrapped) throw new Error('未配布の鍵があるため平文鍵の移行を保留します');
+      if (uid === owner) {
+        const restored = new Uint8Array(await window.crypto.subtle.decrypt({ name: 'RSA-OAEP' }, _e2ee.privateKey, _b64ToAb(wrapped)));
+        const expected = new Uint8Array(rawKey);
+        if (restored.length !== expected.length || restored.some((byte, index) => byte !== expected[index])) throw new Error('移行元と保存済みの鍵が一致しません');
+      }
+    }
+    if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
+  }
 }
 
 
@@ -755,7 +790,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       if (!_subtleOK || !_getUserId()) return;
       try {
         const isD1 = false;
-        const roomKeyObj = _e2ee.roomKeyCache[roomId];
+        const roomKeyObj = _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
         if (!roomKeyObj) return; 
         for (const ver in roomKeyObj) {
           if (ver === 'latest' || ver === 'latestVersion') continue;
@@ -1096,40 +1131,40 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // cached 内の正規バージョンのみを暗号化（エイリアスキーの生成を完全撤廃）
         const validCachedVersions = Object.keys(cached).filter(ver => {
           if (ver === 'latest' || ver === 'latestVersion' || ver === '_dmId') return false;
-          return !ver.includes('_from_');
+          return /^\d+$/.test(ver);
         });
         for (const ver of validCachedVersions) {
           try {
             const rawKey = await window.crypto.subtle.exportKey("raw", cached[ver]);
             const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, targetPub, rawKey);
             const b64 = _abToB64(wrapped);
-            if (!cleanExistingVersions[ver] || forceUpdate) {
+            if (!cleanExistingVersions[ver]) {
               versionsMap[ver] = b64;
               hasNewKeys = true;
             }
           } catch (_) {}
         }
-        // 最新の正規バージョンのみ最大5個に厳格剪定（ドキュメントサイズが数KBを超えないようにする）
+        // 相手の既存バージョンは保持する。第三者による剪定や再ラップは認めない。
         const sortedVers = Object.keys(versionsMap).sort((a, b) => {
           const numA = Number(a), numB = Number(b);
           if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
           return b.localeCompare(a);
         });
         const prunedVersions = {};
-        sortedVers.slice(0, 5).forEach(v => {
+        sortedVers.forEach(v => {
           prunedVersions[v] = versionsMap[v];
         });
         const hadJunkKeys = existingData.versions && Object.keys(existingData.versions).length > sortedVers.length;
         if ((hasNewKeys || hadJunkKeys || !targetWrapSnap || !targetWrapSnap.exists()) && Object.keys(prunedVersions).length > 0) {
           const latestVer = cached.latestVersion || existingData.latestVersion || sortedVers[0] || "1";
           const wrappedLatest = prunedVersions[latestVer] || Object.values(prunedVersions)[0];
-          // 1MB超過した既存ドキュメントを完全修復・軽量化するため、余計なフィールドを排して上書き保存
+          // 既存の暗号文と並行して追加されたバージョンを保持したまま追記する
           await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}/keys/${targetUid}`), {
             versions: prunedVersions,
             latestVersion: latestVer,
             wrappedKey: wrappedLatest,
             updatedAt: serverTimestamp()
-          }, { merge: false });
+          }, { merge: true });
           // バックフィル完了後、相手からの救済リクエストフラグを消去して完了
           updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
             [`rescueRequests.${targetUid}`]: deleteField()
@@ -1163,7 +1198,47 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       }
       return promise;
     }
+    export async function migrateLegacyDmSharedKey(dmId, legacyValue, participants, owner = _getUserId(), epoch = _cryptoEpoch) {
+      const active = () => owner === _getUserId() && epoch === _cryptoEpoch;
+      const ids = [...new Set(participants || [])];
+      if (!active() || ids.length !== 2 || !ids.includes(owner) || ids.slice().sort().join('_') !== dmId) return false;
+      const raw = _b64ToAb(legacyValue), deliveries = [];
+      for (const uid of ids) {
+        const publicKey = uid === owner ? _e2ee.publicKey : await __getUserPublicKey(uid);
+        if (!publicKey || !active()) return false;
+        const wrapped = _abToB64(await window.crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, raw));
+        deliveries.push({ uid, wrapped, reference: doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}/keys/${uid}`) });
+      }
+      if (!active()) return false;
+      const parent = doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${dmId}`);
+      return runTransaction(_getDb(), async transaction => {
+        const parentSnapshot = await transaction.get(parent);
+        if (!active() || !parentSnapshot.exists() || parentSnapshot.data().sharedKey !== legacyValue) return false;
+        const snapshots = await Promise.all(deliveries.map(delivery => transaction.get(delivery.reference)));
+        if (!active()) return false;
+        // Verify our existing v1 before removing the only plaintext recovery source.
+        const own = snapshots[ids.indexOf(owner)];
+        const ownData = own.exists() ? own.data() : {};
+        const ownV1 = ownData.versions?.['1'] || (!ownData.versions && String(ownData.latestVersion || '1') === '1' ? ownData.wrappedKey : null);
+        if (ownV1) {
+          const decoded = new Uint8Array(await window.crypto.subtle.decrypt({ name: 'RSA-OAEP' }, _e2ee.privateKey, _b64ToAb(ownV1)));
+          const expected = new Uint8Array(raw);
+          if (decoded.length !== expected.length || decoded.some((byte, index) => byte !== expected[index])) return false;
+        }
+        if (!active()) return false;
+        deliveries.forEach((delivery, index) => {
+          const existing = snapshots[index].exists() ? snapshots[index].data() : {};
+          if (existing.versions?.['1']) return;
+          const v1 = !existing.versions && String(existing.latestVersion || '1') === '1' && existing.wrappedKey ? existing.wrappedKey : delivery.wrapped;
+          transaction.set(delivery.reference, { versions: { '1': v1 }, latestVersion: existing.latestVersion || '1', wrappedKey: existing.wrappedKey || v1, updatedAt: serverTimestamp() }, { merge: true });
+        });
+        transaction.update(parent, { sharedKey: deleteField() });
+        return true;
+      });
+    }
     export async function __getOrCreateDmKeyImpl(dmId, participants, forceGenerateNew = false) {
+      const keyEpoch = _cryptoEpoch;
+      const keyOwner = _getUserId();
       if (!_subtleOK || !dmId) return null;
       const rawDmId = typeof dmId === 'string' && dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
       const cleanDmId = typeof rawDmId === 'string' ? rawDmId.split('_').sort().join('_') : rawDmId;
@@ -1186,6 +1261,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               const legKey = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
               keysObj["1"] = legKey;
               keysObj["legacy_shared"] = legKey;
+              await migrateLegacyDmSharedKey(cleanDmId, dmData.sharedKey, memberUids, keyOwner, keyEpoch).catch(() => false);
             } catch (_) {}
           }
         } catch (_) {}
@@ -1218,16 +1294,17 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
             } catch (_) {}
           }
-          const validVers = Object.keys(keysObj).filter(k => k !== '_dmId');
+          const validVers = Object.keys(keysObj).filter(k => /^\d+$/.test(k));
           if (validVers.length > 0) {
             const sortedVers = validVers.sort((a, b) => {
               const numA = Number(a), numB = Number(b);
               if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
               return b.localeCompare(a);
             });
-            const activeVer = (data.latestVersion && keysObj[data.latestVersion]) ? String(data.latestVersion) : sortedVers[0];
+            const activeVer = /^\d+$/.test(String(data.latestVersion)) && keysObj[data.latestVersion] ? String(data.latestVersion) : sortedVers[0];
             keysObj.latest = keysObj[activeVer];
             keysObj.latestVersion = activeVer;
+            if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
             _e2ee.dmKeyCache[cleanDmId] = keysObj;
             // 自分が鍵を持っている場合、相手にも確実に鍵をバックフィル（配布・相互同期）
             if (otherUid) {
@@ -1248,11 +1325,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                 keysObj[ver] = await window.crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
               } catch (_) {}
             }
-            const validP = Object.keys(keysObj).filter(k => k !== '_dmId');
+            const validP = Object.keys(keysObj).filter(k => /^\d+$/.test(k));
             if (validP.length > 0) {
-              const activeVer = pData.latestVersion || validP[0];
+              const activeVer = validP.includes(String(pData.latestVersion)) ? String(pData.latestVersion) : validP.sort((a, b) => Number(b) - Number(a))[0];
               keysObj.latest = keysObj[activeVer] || keysObj[validP[0]];
               keysObj.latestVersion = activeVer;
+              if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
               _e2ee.dmKeyCache[cleanDmId] = keysObj;
               if (otherUid) {
                 _backfillDmKeysForParticipant(cleanDmId, otherUid).catch(() => {});
@@ -1279,6 +1357,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (keysObj["legacy_shared"]) {
               keysObj.latest = keysObj["legacy_shared"];
               keysObj.latestVersion = "1";
+              if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
               _e2ee.dmKeyCache[cleanDmId] = keysObj;
               return keysObj;
             }
@@ -1343,6 +1422,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         keysObj[newVerStr] = newKey;
         keysObj.latest = newKey;
         keysObj.latestVersion = newVerStr;
+        if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
         _e2ee.dmKeyCache[cleanDmId] = keysObj;
         return keysObj;
       } catch (e) {

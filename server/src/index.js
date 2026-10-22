@@ -1628,6 +1628,7 @@ async function handleSendCallNotification(request, env) {
             token: tokenStr,
             data: {
               type: "incoming_call",
+              ownerId: calleeId,
               callId,
               callerNickname: callerNickname || '',
               callerAvatarUrl: callerAvatarUrl || '',
@@ -1712,7 +1713,7 @@ async function handleSendCallNotification(request, env) {
 async function handleSendNotification(request, env) {
   const dynamicCors = getCorsHeaders(request);
   try {
-    const { receiverIds, title, body, roomId, serverId, appId, senderId, idToken, messageId } = await request.json();
+    const { receiverIds, title, body, roomId, serverId, appId, senderId, idToken, messageId, mentionedUserIds = [] } = await request.json();
     if (!receiverIds || !Array.isArray(receiverIds) || !title || !appId || !senderId || !idToken) {
       return new Response(JSON.stringify({ success: false, error: "Missing or invalid fields" }), { status: 400, headers: dynamicCors });
     }
@@ -1784,6 +1785,21 @@ async function handleSendNotification(request, env) {
     for (const rid of receiverIds) {
         if (!rid || typeof rid !== 'string' || !/^[a-zA-Z0-9_\-]+$/.test(rid) || rid === senderId) continue; // 自分や空ID、不正文字はスキップ
         let shouldSend = true;
+        // Preferences are private; the privileged worker reads only after recipient authorization.
+        const preferenceUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${rid}/notificationSettings/preferences`;
+        const preferenceResponse = await fetch(preferenceUrl, { headers: { Authorization: `Bearer ${workerToken}` } });
+        if (preferenceResponse.ok) {
+          const fields = (await preferenceResponse.json()).fields || {};
+          const channelKey = serverId ? `${serverId}:${roomId}` : `dm:${String(roomId || '').replace(/^dm_/, '')}`;
+          const channelMode = fields.channels?.mapValue?.fields?.[channelKey]?.stringValue;
+          const serverMode = fields.servers?.mapValue?.fields?.[serverId]?.stringValue;
+          const mode = channelMode || serverMode || 'all';
+          if (mode === 'none' || (mode === 'mentions' && !(Array.isArray(mentionedUserIds) && mentionedUserIds.includes(rid)))) continue;
+        } else if (preferenceResponse.status !== 404) {
+          // Do not bypass a possible notification opt-out when its settings cannot be read.
+          results.push({ receiverId: rid, error: 'preferences-unavailable' });
+          continue;
+        }
         try {
             // 1. 相手のステータスをRTDBから取得
             if (rtdbToken) {
@@ -1892,7 +1908,8 @@ async function handleSendNotification(request, env) {
                                     serverId: serverId || "",
                                     senderId: senderId || "",
                                     messageId: messageId || "",
-                                    type: "chat_message"
+                                    type: "chat_message",
+                                    ownerId: rid
                                 },
                                 // Android: ネイティブ高優先度通知チャンネル
                                 android: {
@@ -4348,7 +4365,7 @@ async function handleSetOffline(request, env) {
         }
 
         // -------------------------------------------------------------
-        // 100件超過メッセージ自動プルーニング & Cloudflare KV ファイル自動完全消去
+        // 1,000件超過メッセージ自動プルーニング & Cloudflare KV ファイル自動完全消去
         // -------------------------------------------------------------
         async function handlePruneChannelMessages(request, env) {
           const cors = getCorsHeaders(request);
@@ -4459,13 +4476,13 @@ async function handleSetOffline(request, env) {
               const tB = b.timestamp || b.createdAt || 0;
               return tA - tB;
             });
-            // サーバー・個チャ問わず、常に最新100件超過分を自動消去（ピン留めメッセージは保護）
-            const maxAllowed = 100;
+            // サーバー・個チャ問わず、常に最新1,000件超過分を自動消去（ピン留めメッセージは保護）
+            const maxAllowed = 1000;
             const unpinnedMsgs = msgsList.filter(m => !m.isPinned);
             let excessMsgs = [];
             if (unpinnedMsgs.length > maxAllowed) {
               const excessCount = unpinnedMsgs.length - maxAllowed;
-              excessMsgs = unpinnedMsgs.slice(0, excessCount);
+              excessMsgs = unpinnedMsgs.slice(0, Math.min(excessCount, 100));
             }
 
             if (excessMsgs.length === 0) {
@@ -4535,7 +4552,7 @@ async function handleSetOffline(request, env) {
               }
               prunedCount++;
             }
-            return new Response(JSON.stringify({ success: failedDeletes === 0, prunedCount, deletedFiles, failedDeletes }), {
+            return new Response(JSON.stringify({ success: failedDeletes === 0, prunedCount, deletedFiles, failedDeletes, retentionLimit: maxAllowed, remainingExcess: Math.max(0, unpinnedMsgs.length - maxAllowed - prunedCount) }), {
               status: failedDeletes ? 502 : 200, headers: { ...cors, "Content-Type": "application/json" }
             });
           } catch (err) {

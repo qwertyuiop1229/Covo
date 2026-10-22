@@ -11,7 +11,7 @@
     "build:css:regen": "node scripts/build_tailwind.mjs --regen",
     "test:web": "firebase serve --only hosting",
     "test:win": "tauri dev",
-    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/dependency-loader.test.js",
+    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/dependency-loader.test.js tests/runtime-stability.test.js",
     "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore,database \"jest --runInBand --silent\""
   },
   "repository": {
@@ -29,6 +29,7 @@
   "devDependencies": {
     "@babel/parser": "^7.29.7",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.10.1",
     "fake-indexeddb": "^6.2.6",
     "firebase": "^12.14.0",

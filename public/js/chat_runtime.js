@@ -49,13 +49,15 @@ export function microphoneErrorMessage(error) {
 }
 
 export class AttachmentResources {
-  constructor(createUrl = blob => URL.createObjectURL(blob), revokeUrl = url => URL.revokeObjectURL(url)) {
+  constructor(createUrl = blob => URL.createObjectURL(blob), revokeUrl = url => URL.revokeObjectURL(url), maxBytes = 64 * 1024 * 1024) {
     this.createUrl = createUrl;
     this.revokeUrl = revokeUrl;
     this.generation = 0;
     this.pending = new Map();
     this.urls = new Set();
     this.messages = new Set();
+    this.entries = new Map();
+    this.maxBytes = maxBytes;
   }
   async resolve(message, loadBlob) {
     const key = message.fileData || message.kvFileUrl;
@@ -65,6 +67,7 @@ export class AttachmentResources {
         if (generation !== this.generation) throw new DOMException('Channel changed', 'AbortError');
         const url = this.createUrl(blob);
         this.urls.add(url);
+        this.entries.set(key, { url, size: blob.size, used: Date.now() });
         return url;
       });
       this.pending.set(key, task);
@@ -73,8 +76,23 @@ export class AttachmentResources {
     const url = await this.pending.get(key);
     if (generation !== this.generation) throw new DOMException('Channel changed', 'AbortError');
     message._decryptedFileUrl = url;
+    const entry = this.entries.get(key);
+    if (entry) entry.used = Date.now();
     this.messages.add(message);
     return url;
+  }
+  prune(activeUrls = new Set()) {
+    let bytes = [...this.entries.values()].reduce((sum, entry) => sum + entry.size, 0);
+    for (const [key, entry] of [...this.entries].sort((a, b) => a[1].used - b[1].used)) {
+      if (bytes <= this.maxBytes) break;
+      if (activeUrls.has(entry.url)) continue;
+      this.revokeUrl(entry.url);
+      this.urls.delete(entry.url);
+      this.pending.delete(key);
+      this.entries.delete(key);
+      bytes -= entry.size;
+      for (const message of this.messages) if (message._decryptedFileUrl === entry.url) { delete message._decryptedFileUrl; this.messages.delete(message); }
+    }
   }
   clear() {
     this.generation++;
@@ -83,5 +101,6 @@ export class AttachmentResources {
     this.pending.clear();
     this.urls.clear();
     this.messages.clear();
+    this.entries.clear();
   }
 }

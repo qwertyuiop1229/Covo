@@ -1,5 +1,5 @@
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, runTransaction, writeBatch } = require('firebase/firestore');
 const fs = require('fs');
 
 const PROJECT_ID = "demo-covo-security-test";
@@ -17,7 +17,7 @@ beforeAll(async () => {
       rules: fs.readFileSync('firestore.rules', 'utf8'),
     },
   });
-});
+}, 30000);
 
 beforeEach(async () => {
   await testEnv.clearFirestore();
@@ -30,6 +30,85 @@ afterAll(async () => {
 const getDb = (auth) => {
   return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
 };
+
+test('notification preferences are private to their owner and reject unrelated fields', async () => {
+  const path = `artifacts/${APP_ID}/users/alice/notificationSettings/preferences`;
+  const alice = getDb({ uid: 'alice' }), bob = getDb({ uid: 'bob' });
+  await assertSucceeds(setDoc(doc(alice, path), { servers: { server: 'mentions' }, channels: {} }));
+  await assertFails(getDoc(doc(bob, path)));
+  await assertFails(setDoc(doc(bob, path), { channels: {} }));
+  await assertFails(updateDoc(doc(alice, path), { admin: true }));
+});
+
+test('nonmembers cannot read or inject room activity or request room keys', async () => {
+  const base = `artifacts/${APP_ID}/servers/activity`;
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), base), { createdBy: 'alice', joinedUsers: ['alice'], serverAdmins: [] });
+    await setDoc(doc(context.firestore(), `${base}/rooms/general/readReceipts/alice`), { lastRead: 1 });
+    await setDoc(doc(context.firestore(), `${base}/rooms/general/typing/alice`), { typing: true });
+  });
+  const outsider = getDb({ uid: 'mallory' }), alice = getDb({ uid: 'alice' });
+  for (const path of ['readReceipts', 'typing']) {
+    await assertFails(getDoc(doc(outsider, `${base}/rooms/general/${path}/alice`)));
+    await assertFails(setDoc(doc(outsider, `${base}/rooms/general/${path}/mallory`), { value: 1 }));
+    await assertSucceeds(setDoc(doc(alice, `${base}/rooms/general/${path}/alice`), { value: 1 }));
+  }
+  await assertFails(setDoc(doc(outsider, `${base}/rooms/general/rescueRequests/mallory`), { requestedAt: 1 }));
+});
+
+test('DM key delivery appends versions without granting peers destructive access to existing keys', async () => {
+  const base = `artifacts/${APP_ID}/dm_channels/alice_bob`;
+  const alice = getDb({ uid: 'alice' }), bob = getDb({ uid: 'bob' });
+  await assertSucceeds(setDoc(doc(alice, base), { participants: ['alice', 'bob'] }));
+  await assertFails(updateDoc(doc(alice, base), { sharedKey: 'plaintext' }));
+  await assertFails(setDoc(doc(alice, `artifacts/${APP_ID}/dm_channels/alice_eve`), { participants: ['alice', 'eve'], sharedKey: 'plaintext' }));
+  await assertFails(setDoc(doc(alice, `${base}/keys/mallory`), { wrappedKey: 'misdirected' }));
+  await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), `${base}/keys/mallory`), { wrappedKey: 'legacy-misdirected' }));
+  await assertFails(getDoc(doc(getDb({ uid: 'mallory' }), `${base}/keys/mallory`)));
+  const key = doc(alice, `${base}/keys/bob`);
+  await assertSucceeds(setDoc(key, { versions: { '1': 'original' }, wrappedKey: 'original' }));
+  await assertFails(updateDoc(key, { 'versions.1': 'tampered' }));
+  await assertFails(deleteDoc(key));
+  await assertSucceeds(setDoc(key, { versions: { '2': 'new' }, latestVersion: '2', wrappedKey: 'new' }, { merge: true }));
+  await assertFails(setDoc(key, { versions: { '3': 'new' } }));
+  await assertSucceeds(updateDoc(doc(bob, key.path), { 'versions.1': 'recipient-recovery' }));
+  const legacy = doc(alice, `${base}/keys/alice`);
+  await assertSucceeds(setDoc(legacy, { wrappedKey: 'legacy' }));
+  await assertFails(setDoc(doc(bob, legacy.path), { versions: { '2': 'drop-legacy' } }, { merge: true }));
+  await assertSucceeds(setDoc(doc(bob, legacy.path), { versions: { '1': 'legacy', '2': 'next' } }, { merge: true }));
+});
+
+test.each(['artifacts/testApp/vc_signaling/session', 'vc_signaling/session'])('VC endpoints are immutable at %s', async path => {
+  const alice = getDb({ uid: 'alice' }), bob = getDb({ uid: 'bob' });
+  await assertSucceeds(setDoc(doc(alice, path), { fromUid: 'alice', toUid: 'bob', offer: 'original' }));
+  await assertSucceeds(updateDoc(doc(bob, path), { answer: 'accepted' }));
+  await assertFails(updateDoc(doc(bob, path), { fromUid: 'mallory' }));
+  await assertFails(updateDoc(doc(alice, path), { toUid: 'mallory' }));
+  await assertFails(getDoc(doc(getDb({ uid: 'mallory' }), path)));
+});
+
+test('legacy DM migration atomically wraps both recipients and removes the plaintext, with rollback on rejected key changes', async () => {
+  const path = `artifacts/${APP_ID}/dm_channels/alice_bob`;
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), path), { participants: ['alice', 'bob'], sharedKey: 'legacy' });
+    await setDoc(doc(context.firestore(), `${path}/keys/bob`), { versions: { '2': 'keep' }, latestVersion: '2' });
+  });
+  const alice = getDb({ uid: 'alice' });
+  await assertSucceeds(runTransaction(alice, async tx => {
+    await tx.get(doc(alice, path));
+    tx.set(doc(alice, `${path}/keys/alice`), { versions: { '1': 'wrapped-alice' } });
+    tx.set(doc(alice, `${path}/keys/bob`), { versions: { '1': 'wrapped-bob' } }, { merge: true });
+    tx.update(doc(alice, path), { sharedKey: deleteField() });
+  }));
+  expect((await getDoc(doc(alice, path))).data().sharedKey).toBeUndefined();
+  expect((await getDoc(doc(alice, `${path}/keys/bob`))).data().versions['2']).toBe('keep');
+  await testEnv.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), path), { sharedKey: 'legacy' }));
+  const batch = writeBatch(alice);
+  batch.update(doc(alice, `${path}/keys/bob`), { 'versions.2': 'tampered' });
+  batch.update(doc(alice, path), { sharedKey: deleteField() });
+  await assertFails(batch.commit());
+  expect((await getDoc(doc(alice, path))).data().sharedKey).toBe('legacy');
+});
 
 // ============================================================================
 // テストスイート

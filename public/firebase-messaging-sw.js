@@ -21,6 +21,25 @@ self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
 self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
 self._notifEnabled  = true; // 通知トグル状態
 
+// Persist only the account binding, never its auth token. SW globals disappear on suspension.
+let _bindingRevision = 0;
+let _bindingWrites = Promise.resolve();
+const _bindingReady = caches.open('covo_push_binding_v1').then(cache => cache.match('/__covo_push_binding__')).then(response => response ? response.json() : null).then(binding => {
+  if (_bindingRevision === 0) self._cachedUserId = binding?.userId || null;
+}).catch(() => {});
+function savePushBinding(userId) {
+  _bindingRevision++;
+  _bindingWrites = _bindingWrites.catch(() => {}).then(async () => {
+    const cache = await caches.open('covo_push_binding_v1');
+    await cache.put('/__covo_push_binding__', new Response(JSON.stringify({ userId: userId || null }), { headers: { 'Content-Type': 'application/json' } }));
+  });
+  return _bindingWrites.catch(() => {});
+}
+async function notificationBelongsToCurrentAccount(data) {
+  await _bindingReady; await _bindingWrites.catch(() => {});
+  return Boolean(self._cachedUserId && data.ownerId === self._cachedUserId);
+}
+
 // 重複通知防止キャッシュ (iOS PWA多重受信防止・30秒ウィンドウ)
 const _recentNotifs = new Map();
 function _isDuplicate(key) {
@@ -46,7 +65,8 @@ self.addEventListener('message', (event) => {
     case 'SET_USER_ID':
       self._cachedUserId  = event.data.userId  || null;
       self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || self._cachedIdToken;
+      self._cachedIdToken = event.data.idToken || null;
+      event.waitUntil(savePushBinding(self._cachedUserId));
       if (typeof event.data.notifEnabled === 'boolean') {
         self._notifEnabled = event.data.notifEnabled;
       }
@@ -58,10 +78,12 @@ self.addEventListener('message', (event) => {
       self._cachedAppId   = null;
       self._cachedIdToken = null;
       self._badgeCount    = 0;
+      event.waitUntil(savePushBinding(null));
       console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
       break;
 
     case 'CACHE_AUTH_TOKEN':
+      if (!self._cachedUserId || event.data.userId !== self._cachedUserId) break;
       // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
       // クライアントが死んでもSW側からofflineビーコンを送れる
       self._cachedIdToken = event.data.idToken || null;
@@ -130,7 +152,8 @@ async function _sendOfflineIfNoClients() {
 
 // ─── バックグラウンドメッセージ処理 ────────────────────────────
 messaging.onBackgroundMessage(async (payload) => {
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました', payload);
+  if (!await notificationBelongsToCurrentAccount(payload.data || {})) return;
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました');
 
   let title = 'Covo';
   let body  = '新しいメッセージがあります';
@@ -278,6 +301,7 @@ messaging.onBackgroundMessage(async (payload) => {
       ]
     };
   }
+  if (data.ownerId !== self._cachedUserId) return;
   const showPromise = self.registration.showNotification(title, notificationOptions);
   // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に確実に自動消去
   if (data.type !== 'incoming_call') {
@@ -311,7 +335,8 @@ self.addEventListener('notificationclick', (event) => {
   // 着信「拒否」アクション
   if (data.type === 'incoming_call' && action === 'decline') {
     event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : []).then((clientList) => {
+        if (data.ownerId !== self._cachedUserId) return;
         for (const client of clientList) {
           if (client.url.startsWith(self.location.origin) && 'focus' in client) {
             client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
@@ -324,7 +349,8 @@ self.addEventListener('notificationclick', (event) => {
   }
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : null).then((clientList) => {
+      if (!clientList || data.ownerId !== self._cachedUserId) return;
       // 既存のウィンドウがあればフォーカス
       for (const client of clientList) {
         if (client.url.startsWith(self.location.origin) && 'focus' in client) {

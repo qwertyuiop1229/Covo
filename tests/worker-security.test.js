@@ -102,7 +102,7 @@ test('RTDB sync publishes authoritative membership atomically and removes stale 
 });
 
 test('pruning uses stored RTDB keys even if a message embeds a forged id', async () => {
-  const messages = Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m${i}`, { id: 'victim', senderId: 'alice', timestamp: i + 1 }]));
+  const messages = Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`m${i}`, { id: 'victim', senderId: 'alice', timestamp: i + 1 }]));
   const fetchImpl = jest.fn(async (url, init) => new Response(JSON.stringify(init?.method === 'DELETE' ? {} : url.includes('/m0.json') ? messages.m0 : messages), { headers: { ETag: '"v1"' } }));
   const ctx = loadWorker(fetchImpl);
   ctx.verifyFirebaseIdToken = async () => ({ uid: 'alice' });
@@ -118,8 +118,25 @@ test('pruning uses stored RTDB keys even if a message embeds a forged id', async
   expect(deletions.every(([url]) => url.includes('/m0') && !url.includes('victim'))).toBe(true);
 });
 
+test('push notification opt-out is checked before presence or FCM delivery', async () => {
+  const fetchImpl = jest.fn(async url => {
+    if (url.includes('/notificationSettings/preferences')) return new Response(JSON.stringify({ fields: { channels: { mapValue: { fields: { 'server1:room1': { stringValue: 'none' } } } } } }));
+    return new Response(JSON.stringify({ fields: { joinedUsers: { arrayValue: { values: [{ stringValue: 'alice' }, { stringValue: 'bob' }] } } } }));
+  });
+  const ctx = loadWorker(fetchImpl);
+  ctx.verifyFirebaseIdToken = async () => ({ uid: 'alice' });
+  ctx.isAppAdmin = async () => false;
+  ctx.isServerMemberCheck = async () => true;
+  ctx.getWorkerAuthToken = async () => 'worker';
+  ctx.getFCMToken = async () => 'fcm';
+  ctx.getRTDBToken = async () => 'rtdb';
+  const response = await ctx.worker.fetch(new Request('https://api.test/api/sendNotification', { method: 'POST', body: JSON.stringify({ appId: 'testApp', senderId: 'alice', receiverIds: ['bob'], title: 'message', body: 'new message', idToken: 'token', serverId: 'server1', roomId: 'room1' }) }), { FIREBASE_APP_ID: 'testApp', FIREBASE_PROJECT_ID: 'test', SERVICE_ACCOUNT_JSON: '{}' }, {});
+  expect(response.status).toBe(200);
+  expect(fetchImpl.mock.calls.some(([url]) => url.includes('/status/') || url.includes('fcm.googleapis.com'))).toBe(false);
+});
+
 test.each(['pinned', 'conflict', 'rtdb-failure', 'firestore-failure'])('pruning protects attachments and reports failure accurately: %s', async scenario => {
-  const messages = Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m${i}`, { senderId: 'alice', timestamp: i + 1, fileData: 'https://api.test/api/file/asset' }]));
+  const messages = Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [`m${i}`, { senderId: 'alice', timestamp: i + 1, fileData: 'https://api.test/api/file/asset' }]));
   const fetchImpl = jest.fn(async (url, init = {}) => {
     if (init.method === 'DELETE') {
       const status = url.includes('firestore.googleapis.com') ? (scenario === 'firestore-failure' ? 503 : 200) : scenario === 'conflict' ? 412 : scenario === 'rtdb-failure' ? 503 : 200;

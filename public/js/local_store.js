@@ -3,8 +3,119 @@
  * IndexedDB (covo_local_db) を用いたローカル永続化 & 通信量極小化モジュール
  */
 
-const DB_NAME = "covo_local_db";
+let DB_NAME = "covo_local_db";
+let _accountGeneration = 0;
+let _accountUid = null;
+export function setAccountScope(uid) {
+  const next = uid ? `covo_local_db_user_${encodeURIComponent(uid)}` : 'covo_local_db_signed_out';
+  if (next === DB_NAME) return;
+  _accountGeneration++;
+  _accountUid = uid || null;
+  _dbInstance?.close();
+  _dbInstance = null;
+  _dbInitPromise = null;
+  DB_NAME = next;
+}
 const DB_VERSION = 1;
+
+export async function getSettingsByPrefix(prefix) {
+  const db = await initLocalDB();
+  if (!db) return [];
+  return new Promise(resolve => {
+    const tx = db.transaction('settings', 'readonly');
+    const request = tx.objectStore('settings').getAll(IDBKeyRange.bound(prefix, prefix + '\uffff'));
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+}
+
+export async function deleteSetting(key) {
+  const db = await initLocalDB();
+  if (!db) return false;
+  return new Promise(resolve => {
+    const tx = db.transaction('settings', 'readwrite');
+    tx.objectStore('settings').delete(key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => resolve(false);
+  });
+}
+
+export async function getMessage(channelId, messageId) {
+  const db = await initLocalDB();
+  if (!db || !channelId || !messageId) return null;
+  return new Promise(resolve => {
+    const request = db.transaction('messages', 'readonly').objectStore('messages').get(messageId);
+    request.onsuccess = () => {
+      const message = request.result;
+      if (!message || message.channelId !== channelId) { resolve(null); return; }
+      delete message._decryptedFileUrl;
+      delete message._decryptionFailed;
+      resolve(message);
+    };
+    request.onerror = () => resolve(null);
+  });
+}
+
+export async function getMessagesAfter(channelId, afterTs, afterId, limit = 30) {
+  const db = await initLocalDB();
+  if (!db || !channelId) return [];
+  return new Promise(resolve => {
+    const range = IDBKeyRange.bound([channelId, afterTs], [channelId, Number.MAX_SAFE_INTEGER]);
+    const request = db.transaction('messages', 'readonly').objectStore('messages').index('channel_ts').openCursor(range, 'next');
+    const result = [];
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor || result.length >= limit) { resolve(result); return; }
+      if (cursor.value.timestamp > afterTs || String(cursor.primaryKey) > String(afterId)) {
+        const record = { ...cursor.value };
+        delete record._decryptedFileUrl;
+        delete record._decryptionFailed;
+        result.push(record);
+      }
+      cursor.continue();
+    };
+    request.onerror = () => resolve([]);
+  });
+}
+
+export async function hasLegacyHistory() {
+  if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return false;
+  const databases = await indexedDB.databases();
+  return databases.some(database => database.name === 'covo_local_db');
+}
+
+// The caller must verify current server/DM membership against the server before invoking this.
+// Only the approved channel's history is copied; legacy settings and private keys stay untouched.
+export async function importLegacyChannel(channelId, ownerId) {
+  if (!ownerId || _accountUid !== ownerId || !await hasLegacyHistory()) return 0;
+  const generation = _accountGeneration;
+  const legacy = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('covo_local_db');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    if (!legacy.objectStoreNames.contains('messages')) return 0;
+    const records = await new Promise(resolve => {
+      const store = legacy.transaction('messages', 'readonly').objectStore('messages');
+      const request = store.index('channelId').getAll(IDBKeyRange.only(channelId));
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+    let copied = 0;
+    for (let i = 0; i < records.length; i += 100) {
+      if (generation !== _accountGeneration || ownerId !== _accountUid) return copied;
+      const batch = records.slice(i, i + 100);
+      // A recently synced/edited record always wins over an old cache entry.
+      const existing = await Promise.all(batch.map(record => getMessage(channelId, record.id)));
+      if (generation !== _accountGeneration) return copied;
+      const missing = batch.filter((_, index) => !existing[index]);
+      if (missing.length && !await upsertMessagesBatch(missing)) throw new Error('旧履歴をコピーできませんでした');
+      copied += missing.length;
+    }
+    return copied;
+  } finally { legacy.close(); }
+}
 
 let _dbInstance = null;
 let _dbInitPromise = null;
@@ -31,6 +142,7 @@ export async function initLocalDB() {
       console.warn("[LocalStore] IndexedDB is not supported in this environment");
       return resolve(null);
     }
+    const generation = _accountGeneration;
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = req.result;
@@ -56,25 +168,31 @@ export async function initLocalDB() {
       }
     };
     req.onsuccess = () => {
+      if (generation !== _accountGeneration) { req.result.close(); resolve(null); return; }
       _dbInstance = req.result;
+      const opened = _dbInstance;
       _dbInstance.onversionchange = () => {
-        try { _dbInstance.close(); } catch (_) {}
+        try { opened.close(); } catch (_) {}
+        if (generation !== _accountGeneration) return;
         _dbInstance = null;
         _dbInitPromise = null;
       };
       _dbInstance.onclose = () => {
+        if (generation !== _accountGeneration) return;
         _dbInstance = null;
         _dbInitPromise = null;
       };
       resolve(_dbInstance);
     };
     req.onerror = () => {
+      if (generation !== _accountGeneration) { resolve(null); return; }
       console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
       _dbInstance = null;
       _dbInitPromise = null;
       resolve(null);
     };
     req.onblocked = () => {
+      if (generation !== _accountGeneration) { resolve(null); return; }
       console.warn("[LocalStore] IndexedDB open blocked by another tab");
       _dbInstance = null;
       _dbInitPromise = null;
@@ -532,6 +650,8 @@ export async function getSetting(key) {
  * @returns {Promise<Object>}
  */
 export async function getAllLocalData() {
+  const owner = _accountUid, generation = _accountGeneration;
+  if (!owner) throw new Error('移行にはログインが必要です');
   const db = await initLocalDB();
   if (!db) return { messages: [], channels: [], friends: [], settings: [], e2eeKeys: null };
 
@@ -553,11 +673,12 @@ export async function getAllLocalData() {
     fetchStore("settings")
   ]);
 
+  if (owner !== _accountUid || generation !== _accountGeneration) throw new Error('集約中にアカウントが変更されました');
   // localStorage 内の E2EE 秘密鍵・公開鍵も移行パッケージに同梱
   let e2eeKeys = null;
   try {
-    const priv = localStorage.getItem("covo_e2ee_priv");
-    const pub = localStorage.getItem("covo_e2ee_pub");
+    const priv = localStorage.getItem(`covo_e2ee_priv:${_accountUid || 'signed_out'}`);
+    const pub = localStorage.getItem(`covo_e2ee_pub:${_accountUid || 'signed_out'}`);
     if (priv && pub) {
       e2eeKeys = { priv, pub };
     }
@@ -565,6 +686,7 @@ export async function getAllLocalData() {
 
   return {
     version: 1,
+    accountId: owner,
     exportedAt: Date.now(),
     messages,
     channels,
@@ -580,52 +702,47 @@ export async function getAllLocalData() {
  * @returns {Promise<boolean>}
  */
 export async function restoreAllLocalData(bundle) {
-  if (!bundle || typeof bundle !== 'object') return false;
+  const owner = _accountUid, generation = _accountGeneration;
+  if (!owner || !bundle || typeof bundle !== 'object' || bundle.accountId !== owner) return false;
+  const active = () => owner === _accountUid && generation === _accountGeneration;
   const db = await initLocalDB();
-  if (!db) return false;
-
+  if (!db || !active()) return false;
   try {
-    // 1. messages 復元
-    if (Array.isArray(bundle.messages) && bundle.messages.length > 0) {
-      await upsertMessagesBatch(bundle.messages);
-    }
-
-    // 2. channels 復元
-    if (Array.isArray(bundle.channels) && bundle.channels.length > 0) {
-      const tx = db.transaction("channels", "readwrite");
-      const store = tx.objectStore("channels");
-      for (const ch of bundle.channels) {
-        if (ch && ch.id) store.put(ch);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-
-    // 3. friends 復元
-    if (Array.isArray(bundle.friends) && bundle.friends.length > 0) {
-      await putFriendsBatch(bundle.friends);
-    }
-
-    // 4. settings 復元
-    if (Array.isArray(bundle.settings) && bundle.settings.length > 0) {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      for (const st of bundle.settings) {
-        if (st && st.key) store.put(st);
-      }
-      await new Promise(r => { tx.oncomplete = r; tx.onerror = r; });
-    }
-
-    // 5. E2EE 鍵の復元
-    if (bundle.e2eeKeys && bundle.e2eeKeys.priv && bundle.e2eeKeys.pub) {
+    const restored = await new Promise((resolve, reject) => {
+      const tx = db.transaction(['messages', 'channels', 'friends', 'settings'], 'readwrite');
+      tx.oncomplete = () => resolve(true);
+      tx.onabort = () => resolve(false);
+      tx.onerror = () => resolve(false);
       try {
-        localStorage.setItem("covo_e2ee_priv", bundle.e2eeKeys.priv);
-        localStorage.setItem("covo_e2ee_pub", bundle.e2eeKeys.pub);
-      } catch (e) {}
+        for (const message of bundle.messages || []) {
+          if (!message?.id || !message.channelId) continue;
+          const clean = { ...message, timestamp: _extractMsgTimestamp(message) };
+          delete clean._decryptedFileUrl; delete clean._decryptionFailed;
+          if (clean._originalText) clean.text = clean._originalText;
+          if (clean.replyTo?._originalText) clean.replyTo = { ...clean.replyTo, text: clean.replyTo._originalText };
+          if (typeof clean.text === 'string' && clean.text.startsWith('enc::')) clean._decrypted = false;
+          tx.objectStore('messages').put(clean);
+        }
+        for (const channel of bundle.channels || []) if (channel?.id) tx.objectStore('channels').put(channel);
+        for (const friend of bundle.friends || []) {
+          const uid = friend?.uid || friend?.targetUid || friend?.id;
+          if (uid) tx.objectStore('friends').put({ ...friend, uid });
+        }
+        for (const setting of bundle.settings || []) {
+          if (!setting?.key) continue;
+          if (setting.key.startsWith('outbox:') && setting.value?.ownerId !== owner) continue;
+          tx.objectStore('settings').put(setting);
+        }
+      } catch (error) { tx.abort(); reject(error); }
+    });
+    if (!restored || !active()) return false;
+    if (bundle.e2eeKeys?.priv && bundle.e2eeKeys?.pub) {
+      localStorage.setItem('covo_e2ee_priv:' + owner, bundle.e2eeKeys.priv);
+      localStorage.setItem('covo_e2ee_pub:' + owner, bundle.e2eeKeys.pub);
     }
-
-    return true;
-  } catch (e) {
-    console.error("[LocalStore] restoreAllLocalData failed:", e);
+    return active();
+  } catch (error) {
+    console.error('[LocalStore] restoreAllLocalData failed:', error);
     return false;
   }
 }
@@ -665,6 +782,11 @@ export async function clearAllLocalData() {
 if (typeof window !== 'undefined') {
   window.LocalStore = {
     initLocalDB,
+    setAccountScope,
+    getMessage,
+    getMessagesAfter,
+    getSettingsByPrefix,
+    deleteSetting,
     putMessage,
     upsertMessagesBatch,
     getMessages,
