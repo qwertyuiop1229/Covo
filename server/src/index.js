@@ -43,10 +43,8 @@ function getCorsHeaders(request) {
   } else if (!origin) {
     // Origin ヘッダーのないリクエスト（curl、ネイティブアプリ、サーバー間通信など）
     headers["Access-Control-Allow-Origin"] = "*";
-  } else {
-    // 拡張機能や別オリジン等からのリクエストでもプリフライトエラーを防止
-    headers["Access-Control-Allow-Origin"] = origin;
   }
+  headers["Vary"] = "Origin";
   return headers;
 }
 
@@ -354,6 +352,27 @@ export default {
 // -------------------------------------------------------------
 // 🌐 Discord準拠 高速・安全な OpenGraph (OGP) メタデータ取得処理 (SSRF保護付き)
 // -------------------------------------------------------------
+function isUnsafePreviewUrl(parsedUrl) {
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/\.$/, '');
+  return !['http:', 'https:'].includes(parsedUrl.protocol) || Boolean(parsedUrl.username || parsedUrl.password) || (parsedUrl.port && !['80', '443', '8080', '8443'].includes(parsedUrl.port)) || (hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname.includes(':') ||
+    /^127\./.test(hostname) ||
+    /^0\./.test(hostname) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(hostname) ||
+    /^198\.(18|19)\./.test(hostname) ||
+    /^(22[4-9]|23\d|24\d|25[0-5])\./.test(hostname) ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".arpa") ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname));
+}
+
 async function handleFetchOg(request, env, url, cors) {
   const targetUrlStr = url.searchParams.get("url");
   if (!targetUrlStr) {
@@ -387,19 +406,7 @@ async function handleFetchOg(request, env, url, cors) {
   }
   // 🔒 SSRF ガード: ローカルホスト・プライベートIP・リンクローカル・内部ドメインを完全遮断
   const hostname = parsedUrl.hostname.toLowerCase();
-  const isPrivateHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::1" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname.endsWith(".internal") ||
-    hostname.endsWith(".arpa") ||
-    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  const isPrivateHost = isUnsafePreviewUrl(parsedUrl);
   if (isPrivateHost) {
     return new Response(JSON.stringify({ success: false, error: "Access to private or local networks is forbidden" }), {
       status: 200,
@@ -440,18 +447,22 @@ async function handleFetchOg(request, env, url, cors) {
     } catch (_) {}
   }
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(parsedUrl.href, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; CovoBot/1.0)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
-      },
-      redirect: "follow"
-    });
-    clearTimeout(timeoutId);
+    let resp;
+    let fetchUrl = parsedUrl;
+    // Validate each redirect before contacting its destination.
+    for (let redirects = 0; redirects <= 4; redirects++) {
+      if (isUnsafePreviewUrl(fetchUrl)) throw new Error("Unsafe preview destination");
+      resp = await fetch(fetchUrl.href, {
+        signal: AbortSignal.timeout(4500),
+        headers: { "User-Agent": "CovoBot/1.0", "Accept": "text/html,image/*;q=0.8", "Accept-Language": "ja,en;q=0.8" },
+        redirect: "manual"
+      });
+      if (![301, 302, 303, 307, 308].includes(resp.status)) break;
+      const nextUrl = resp.headers.get("Location");
+      if (resp.body) await resp.body.cancel();
+      if (!nextUrl || redirects === 4) throw new Error("Invalid preview redirect");
+      fetchUrl = new URL(nextUrl, fetchUrl);
+    }
     if (!resp.ok) {
       return new Response(JSON.stringify({ success: false, reason: `Upstream returned status ${resp.status}` }), {
         status: 200,
@@ -873,7 +884,7 @@ async function handleSignup(request, env) {
     if (!email || !password) {
       return new Response(JSON.stringify({ error: "Email and password are required" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
-    
+
     const cleanEmail = email.trim().toLowerCase();
     // 1. 特権ワーカーとしてFirebase Authにログインし、IDトークンを取得（サービスアカウント優先）
     const workerToken = await getAdminTokenForFirestore(env);
@@ -886,7 +897,7 @@ async function handleSignup(request, env) {
     if (result.error) {
        return new Response(JSON.stringify({ error: `Firestore Error: ${result.error}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
-    
+
     if (result.isRestricted) {
       const allowedEmails = result.emails.map(e => e.trim().toLowerCase());
       if (!allowedEmails.includes(cleanEmail)) {
@@ -932,13 +943,13 @@ async function getWorkerAuthToken(env) {
 async function getAllowedEmails(idToken, env) {
   const projectId = env.FIREBASE_PROJECT_ID;
   const appId = env.FIREBASE_APP_ID;
-  
+
   try {
     // 1. allowedEmailsConfig を取得して制限が有効か確認
     const configUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/settings/allowedEmailsConfig`;
     const configRes = await fetch(configUrl, { headers: { "Authorization": `Bearer ${idToken}` } });
     const configData = await configRes.json();
-    
+
     // config がない、または active でない場合は誰でも登録可能
     if (configData.error || !configData.fields || !configData.fields.active || !configData.fields.active.booleanValue) {
       return { emails: [], isRestricted: false, error: null };
@@ -1008,7 +1019,7 @@ function getRtdbBaseUrl(env, clientRtdbUrl) {
         (host.startsWith(projectId) || host.includes(projectId))
       ) {
         // 🔒 クライアント指定URLは既定RTDBと同一オリジンの場合のみ採用（管理者トークンを別インスタンスへ送らない）
-        if (u.origin === new URL(defaultRtdb).origin) return clientRtdbUrl.replace(/\/+$/, '');
+        if (u.origin === new URL(defaultRtdb).origin) return new URL(defaultRtdb).origin;
       }
     } catch (_) {}
   }
@@ -1138,7 +1149,7 @@ async function handleJoinServer(request, env) {
     if (!srvData.error && srvData.fields && srvData.fields.joinedUsers && srvData.fields.joinedUsers.arrayValue && srvData.fields.joinedUsers.arrayValue.values) {
       alreadyJoined = srvData.fields.joinedUsers.arrayValue.values.some(v => v.stringValue === userId);
     }
-    
+
     if (alreadyJoined) {
       // 既にサーバーに参加済みなので、RTDBのみ同期して終了
       if (rtdbUrl) {
@@ -1167,7 +1178,7 @@ async function handleJoinServer(request, env) {
         headers: { "Authorization": `Bearer ${adminToken}` }
       });
       let pwdData = await pwdRes.json();
-      
+
       if (!pwdData.error && pwdData.fields && pwdData.fields.passwordHash) {
          hash = pwdData.fields.passwordHash.stringValue;
       } else {
@@ -1216,21 +1227,21 @@ async function handleJoinServer(request, env) {
       }
       let success = false;
       const docPath = `projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/inviteCodes/${encodeURIComponent(inviteCode)}`;
-      
+
       for (let attempt = 0; attempt < 3; attempt++) {
         let invRes = await fetch(`https://firestore.googleapis.com/v1/${docPath}`, {
           headers: { "Authorization": `Bearer ${adminToken}` }
         });
         let invData = await invRes.json();
-        
+
         if (invData.error || !invData.fields) {
           return new Response(JSON.stringify({ success: false, error: "Invalid invite code" }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
         }
-        
+
         if (invData.fields.disabled && invData.fields.disabled.booleanValue) {
           return new Response(JSON.stringify({ success: false, error: "Invite code is disabled" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
-        
+
         let expiresAt = invData.fields.expiresAt?.timestampValue;
         if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
           return new Response(JSON.stringify({ success: false, error: "Invite code expired" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
@@ -1241,7 +1252,7 @@ async function handleJoinServer(request, env) {
         if (maxUses && parseInt(maxUses) > 0 && parseInt(uses) >= parseInt(maxUses)) {
           return new Response(JSON.stringify({ success: false, error: "Invite code use limit reached" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
-        
+
         // 招待コードの uses をアトミックにインクリメント (競合・不一致エラーを完全防止)
         const invTransformUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`;
         const commitRes = await fetch(invTransformUrl, {
@@ -1397,9 +1408,6 @@ async function handleSyncRtdb(request, env) {
       if (isGlobal) isMember = true;
     }
     if (!isMember) {
-      isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
-    }
-    if (!isMember) {
       // 未参加の場合はRTDB書き込みを行わず安全に終了（ブラウザコンソールでの赤文字403ネットワークエラーを完全防止）
       return new Response(JSON.stringify({ success: false, notMember: true, error: "Not a member" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
@@ -1407,34 +1415,24 @@ async function handleSyncRtdb(request, env) {
     // RTDB に同期
     try {
       const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
-      const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
-      await fetch(rtdbTargetUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(true)
-      });
-
-      // サーバー作成者(createdBy)および管理者リスト(serverAdmins)もRTDBへ同期
-      if (srvData && srvData.fields) {
-        if (srvData.fields.createdBy?.stringValue) {
-          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/createdBy.json?access_token=${adminToken}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(srvData.fields.createdBy.stringValue)
-          }).catch(() => {});
-        }
-        if (srvData.fields.serverAdmins?.arrayValue?.values) {
-          const adminObj = {};
-          srvData.fields.serverAdmins.arrayValue.values.forEach(v => {
-            if (v.stringValue) adminObj[v.stringValue] = true;
-          });
-          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/serverAdmins.json?access_token=${adminToken}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(adminObj)
-          }).catch(() => {});
-        }
+      const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+      const fields = srvData.fields;
+      const members = Object.create(null);
+      const serverAdmins = Object.create(null);
+      for (const value of fields.joinedUsers?.arrayValue?.values || []) {
+        if (value.stringValue) members[value.stringValue] = true;
       }
+      for (const value of fields.serverAdmins?.arrayValue?.values || []) {
+        if (value.stringValue) serverAdmins[value.stringValue] = true;
+      }
+      const createdBy = fields.createdBy?.stringValue;
+      if (createdBy) members[createdBy] = true;
+      const syncResponse = await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}.json?access_token=${rtdbToken}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: fields.name?.stringValue || '', createdBy: createdBy || null, members, serverAdmins })
+      });
+      if (!syncResponse.ok) throw new Error(`RTDB sync failed: HTTP ${syncResponse.status}`);
+
     } catch (e) {
       console.error("RTDB Sync Error:", e);
       return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
@@ -1740,15 +1738,27 @@ async function handleSendNotification(request, env) {
         if (!isMember) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a member of this server" }), { status: 403, headers: dynamicCors });
         }
-      } else if (roomId && roomId.includes('_') && !roomId.startsWith('p2p_')) {
+      } else if (typeof roomId === 'string' && roomId.includes('_') && !roomId.startsWith('p2p_')) {
         // DMメッセージ通知: roomId (uid1_uid2) に自分が含まれ、受信者がDM相手であることを検証
         const dmUids = (roomId.startsWith('dm_') ? roomId.slice(3) : roomId).split('_');
-        if (!dmUids.includes(verifiedUser.uid)) {
+        if (dmUids.length !== 2 || !dmUids.every(uid => /^[A-Za-z0-9-]+$/.test(uid)) || !dmUids.includes(verifiedUser.uid)) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: dynamicCors });
         }
         const notAllowedReceiver = receiverIds.some(rid => !dmUids.includes(rid) || rid === verifiedUser.uid);
         if (notAllowedReceiver) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid DM recipient" }), { status: 403, headers: dynamicCors });
+        }
+      } else {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: Missing notification scope" }), { status: 403, headers: dynamicCors });
+      }
+      if (serverId) {
+        const serverRes = await fetch(`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, { headers: { Authorization: `Bearer ${idToken}` } });
+        const serverDoc = serverRes.ok ? await serverRes.json() : null;
+        const fields = serverDoc?.fields;
+        const recipients = new Set((fields?.joinedUsers?.arrayValue?.values || []).map(v => v.stringValue));
+        if (fields?.createdBy?.stringValue) recipients.add(fields.createdBy.stringValue);
+        if (!fields || receiverIds.some(uid => !recipients.has(uid))) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid server recipient" }), { status: 403, headers: dynamicCors });
         }
       }
     }
@@ -1780,7 +1790,7 @@ async function handleSendNotification(request, env) {
               const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
               const statusRes = await fetch(statusUrl);
               const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
-            
+
               if (statusData && !statusData.error) {
                 const state = statusData.state || 'offline'; // RTDB形式
 
@@ -1818,7 +1828,7 @@ async function handleSendNotification(request, env) {
             const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${rid}`;
             const userRes = await fetch(userUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
             const userData = await userRes.json();
-            
+
             if (!userData.error && userData.fields && userData.fields.fcmTokens) {
                 const tokens = userData.fields.fcmTokens.arrayValue?.values || [];
                 const invalidTokens = [];
@@ -1909,13 +1919,13 @@ async function handleSendNotification(request, env) {
                             }
                         })
                     });
-                    
+
                     const fcmResult = await fcmRes.json();
                     if (fcmResult.error) {
                         console.error("FCM Send Error:", fcmResult.error);
                         // 無効なトークン（UNREGISTERED / NOT_FOUND）は削除対象に追加
                         const errorCode = fcmResult.error.details?.[0]?.errorCode || fcmResult.error.code;
-                        if (errorCode === 'UNREGISTERED' || errorCode === 404 || 
+                        if (errorCode === 'UNREGISTERED' || errorCode === 404 ||
                             fcmResult.error.status === 'NOT_FOUND' ||
                             (fcmResult.error.message && fcmResult.error.message.includes('not a valid FCM'))) {
                             invalidTokens.push(tokenStr);
@@ -2023,7 +2033,7 @@ async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
   });
-  
+
   const data = await response.json();
   return data.access_token;
 }
@@ -2093,7 +2103,7 @@ async function handleUploadFile(request, env) {
       });
     }
     // 🔒 IDOR防御: 通常のメッセージ添付ファイル等でserverIdが指定された場合、アップロード者がそのサーバーのメンバーまたは管理者であることを検証
-    if (serverId && !folder.includes('stamp') && !folder.includes('servericons')) {
+    if (serverId) {
       const isMember = await isServerMemberCheck(env.FIREBASE_APP_ID, serverId, verifiedUser, env);
       const isGlobal = await isAppAdmin(env.FIREBASE_APP_ID, verifiedUser, env);
       if (!isMember && !isGlobal) {
@@ -2172,6 +2182,8 @@ async function handleDownloadProxy(request, env, url) {
     }
 
     const response = await fetch(targetUrlStr, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
       headers: {
         'User-Agent': 'Covo-Proxy/1.0',
         'Accept': '*/*'
@@ -2612,7 +2624,7 @@ async function handleStorageStats(request, env) {
     }
     const appId = new URL(request.url).searchParams.get("appId") || env.FIREBASE_APP_ID;
     if (!isValidAppId(appId, env)) return new Response(JSON.stringify({ error: "Invalid appId" }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
-    
+
     const isAdmin = await isAppAdmin(appId, verifiedUser, env);
     if (!isAdmin) {
        return new Response(JSON.stringify({ error: "Forbidden: Not an Admin" }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
@@ -2925,20 +2937,7 @@ async function getAdminTokenForFirestore(env) {
 
 async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
   if (!appId || !serverId || !verifiedUser) return false;
-  if (env.DB) {
-    try {
-      const row = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
-      if (row) {
-        if (row.created_by === verifiedUser.uid) return true;
-        if (row.server_data) {
-          const sData = JSON.parse(row.server_data);
-          if (sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid)) return true;
-        }
-      }
-    } catch (e) {
-      console.error("isServerAdminCheck D1 error:", e);
-    }
-  }
+
   try {
     const adminToken = await getAdminTokenForFirestore(env);
     if (adminToken) {
@@ -2961,10 +2960,6 @@ async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
 
 async function isAppAdmin(appId, verifiedUser, env) {
   if (!appId || !verifiedUser) return false;
-  if (env.DB) {
-    const d1Result = await isD1Admin(appId, verifiedUser, env);
-    if (d1Result) return true;
-  }
   // 1. Firestore から判定
   try {
     const adminToken = await getAdminTokenForFirestore(env);
@@ -2985,29 +2980,6 @@ async function isAppAdmin(appId, verifiedUser, env) {
     }
   } catch (e) {
     console.error("isAppAdmin Firestore error:", e);
-  }
-  // 2. RTDB からの管理者判定フォールバック (多重冗長化)
-  try {
-    const rtdbToken = env.SERVICE_ACCOUNT_JSON ? await getRTDBToken(env.SERVICE_ACCOUNT_JSON).catch(() => null) : null;
-    const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : '';
-    const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/settings/adminList.json${authQuery}`;
-    const rtdbRes = await fetch(rtdbUrl);
-    if (rtdbRes.ok) {
-      const rtdbData = await rtdbRes.json();
-      if (rtdbData) {
-        if (rtdbData.admins && verifiedUser.uid && (rtdbData.admins[verifiedUser.uid] === true || (Array.isArray(rtdbData.admins) && rtdbData.admins.includes(verifiedUser.uid)))) {
-          return true;
-        }
-        if (rtdbData.emails && verifiedUser.email) {
-          const em = verifiedUser.email.toLowerCase().trim();
-          if (Array.isArray(rtdbData.emails) && rtdbData.emails.some(e => String(e).toLowerCase().trim() === em)) {
-            return true;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error("isAppAdmin RTDB error:", e);
   }
   return false;
 }
@@ -3421,7 +3393,7 @@ async function handleSetOffline(request, env) {
   }
   try {
     const subpath = url.pathname.replace("/api/d1/", "");
-    
+
     // 1. 設定管理 (settings)
     if (subpath.startsWith("settings")) {
       if (request.method === "GET") {
@@ -3471,7 +3443,7 @@ async function handleSetOffline(request, env) {
         if (!appId || !userId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
         // ユーザー情報読み取りには認証が必要
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
-        
+
         if (type === "keys") {
           // 秘密鍵は本人のみ（Firestoreルールと同等）
           if (verifiedUser.uid !== userId) {
@@ -3496,7 +3468,7 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, userId, type, keyType, keyData, nickname, avatarUrl, publicKeyJwk, fcmToken, removeFcmToken } = body;
-        
+
         // ユーザー自身のデータ以外は書き込み禁止 (IDOR対策)
         if (verifiedUser.uid !== userId) {
           return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user profile" }), { status: 403, headers: d1Cors });
@@ -3507,13 +3479,13 @@ async function handleSetOffline(request, env) {
             .bind(userId, appId, keyType || 'keys', JSON.stringify(keyData), Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        
+
         // ユーザー情報の upsert
         const userRow = await env.DB.prepare("SELECT * FROM users WHERE user_id = ? AND app_id = ?").bind(userId, appId).first();
         let curTokens = userRow && userRow.fcm_tokens ? JSON.parse(userRow.fcm_tokens) : [];
         if (fcmToken && !curTokens.includes(fcmToken)) curTokens.push(fcmToken);
         if (removeFcmToken) curTokens = curTokens.filter(t => t !== removeFcmToken);
-        
+
         const nextNickname = nickname !== undefined ? nickname : (userRow ? userRow.nickname : null);
         const nextAvatar = avatarUrl !== undefined ? avatarUrl : (userRow ? userRow.avatar_url : null);
         const nextJwk = publicKeyJwk !== undefined ? JSON.stringify(publicKeyJwk) : (userRow ? userRow.public_key_jwk : null);
@@ -3531,9 +3503,9 @@ async function handleSetOffline(request, env) {
         const serverId = url.searchParams.get("serverId");
         const userId = url.searchParams.get("userId");
         const type = url.searchParams.get("type"); // 'all' or 'joined' or 'list' or 'single' or 'stamps' or 'stampGroups' or 'profiles' or 'inviteCodes'
-        
+
         if (!appId) return new Response(JSON.stringify({ error: "Missing appId" }), { status: 400, headers: d1Cors });
-        
+
         if (type === "stamps") {
           const rows = (await env.DB.prepare("SELECT * FROM server_stamps WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
           return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows }), { status: 200, headers: d1Cors });
@@ -3561,7 +3533,7 @@ async function handleSetOffline(request, env) {
           const rows = (await env.DB.prepare("SELECT user_id, profile_data FROM server_profiles WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
           return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.user_id, data: JSON.parse(r.profile_data) })) }), { status: 200, headers: d1Cors });
         }
-        
+
         if (serverId) {
           // 単一サーバー取得
           const row = await env.DB.prepare("SELECT * FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
@@ -3576,7 +3548,7 @@ async function handleSetOffline(request, env) {
           data.joinedUsers = joinedRows.map(r => r.user_id);
           return new Response(JSON.stringify({ empty: false, id: row.server_id, data }), { status: 200, headers: d1Cors });
         }
-        
+
         // サーバー一覧取得
         let rows = [];
         if (userId) {
@@ -3584,7 +3556,7 @@ async function handleSetOffline(request, env) {
         } else {
           rows = (await env.DB.prepare("SELECT * FROM servers WHERE app_id = ?").bind(appId).all()).results;
         }
-        
+
         const docs = [];
         for (const r of rows) {
           const d = r.server_data ? JSON.parse(r.server_data) : {};
@@ -3603,10 +3575,10 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, serverId, type, name, description, isPublic, data, passwordHash, userId, profileData, stampId, stampName, stampUrl, groupId, groupData, code, inviteData, deleteFieldVal } = body;
-        
+
         if (type === "create" || type === "update") {
           const cur = await env.DB.prepare("SELECT created_by, server_data, member_count FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
-          
+
           if (type === "update" && cur) {
             let sData = cur.server_data ? JSON.parse(cur.server_data) : {};
             const isOwner = cur.created_by === verifiedUser.uid;
@@ -3627,7 +3599,7 @@ async function handleSetOffline(request, env) {
           }
           if (data) mergedData = { ...mergedData, ...data };
           if (deleteFieldVal && mergedData[deleteFieldVal] !== undefined) delete mergedData[deleteFieldVal];
-          
+
           const nextName = name !== undefined ? name : (mergedData.name || "Untitled");
           const nextDesc = description !== undefined ? description : (mergedData.description || "");
           const nextPub = isPublic !== undefined ? (isPublic ? 1 : 0) : (mergedData.isPublic ? 1 : 0);
@@ -3636,7 +3608,7 @@ async function handleSetOffline(request, env) {
 
           await env.DB.prepare("INSERT INTO servers (server_id, app_id, name, description, is_public, created_by, created_at, member_count, server_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(server_id) DO UPDATE SET name = excluded.name, description = excluded.description, is_public = excluded.is_public, server_data = excluded.server_data")
             .bind(serverId, appId, nextName, nextDesc, nextPub, createdBy, Date.now(), memberCount, JSON.stringify(mergedData)).run();
-          
+
           if (type === "create") {
             await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, verifiedUser.uid, appId, Date.now()).run();
           }
@@ -3646,7 +3618,7 @@ async function handleSetOffline(request, env) {
           }
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        
+
         if (type === "join") {
           const { password, inviteCode } = body;
           if (password) {
@@ -3669,7 +3641,7 @@ async function handleSetOffline(request, env) {
           } else {
             return new Response(JSON.stringify({ success: false, error: "Auth required" }), { status: 400, headers: d1Cors });
           }
-          
+
           await env.DB.prepare("INSERT OR IGNORE INTO server_joined_users (server_id, user_id, app_id, joined_at) VALUES (?, ?, ?, ?)").bind(serverId, verifiedUser.uid, appId, Date.now()).run();
           await env.DB.prepare("UPDATE servers SET member_count = (SELECT COUNT(*) FROM server_joined_users WHERE server_id = ? AND app_id = ?) WHERE server_id = ? AND app_id = ?").bind(serverId, appId, serverId, appId).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
@@ -3732,11 +3704,11 @@ async function handleSetOffline(request, env) {
         const appId = url.searchParams.get("appId");
         const serverId = url.searchParams.get("serverId");
         const type = url.searchParams.get("type"); // 'server' or 'inviteCode' or 'stamp'
-        
+
         // サーバー権限の確認
         const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
         if (!curServer) return new Response(JSON.stringify({ error: "Server not found" }), { status: 404, headers: d1Cors });
-        
+
         let sData = curServer.server_data ? JSON.parse(curServer.server_data) : {};
         const isOwner = curServer.created_by === verifiedUser.uid;
         const isSvAdmin = sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid);
@@ -3778,7 +3750,7 @@ async function handleSetOffline(request, env) {
         const roomId = url.searchParams.get("roomId");
         const type = url.searchParams.get("type"); // 'list' or 'single' or 'keys'
         if (!appId || !serverId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
-        
+
         if (type === "keys") {
           const rows = (await env.DB.prepare("SELECT user_id, key_data FROM room_keys WHERE room_id = ? AND app_id = ?").bind(roomId, appId).all()).results;
           return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.user_id, data: JSON.parse(r.key_data) })) }), { status: 200, headers: d1Cors });
@@ -3792,7 +3764,7 @@ async function handleSetOffline(request, env) {
           data.currentKeyVersion = row.current_key_version;
           return new Response(JSON.stringify({ empty: false, id: row.room_id, data }), { status: 200, headers: d1Cors });
         }
-        
+
         const rows = (await env.DB.prepare("SELECT * FROM rooms WHERE server_id = ? AND app_id = ?").bind(serverId, appId).all()).results;
         const docs = rows.map(r => {
           const d = r.room_data ? JSON.parse(r.room_data) : {};
@@ -3808,7 +3780,7 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, serverId, roomId, type, name, roomType, data, keys, currentKeyVersion } = body;
-        
+
         if (serverId) {
           const curServer = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
           if (curServer) {
@@ -3881,10 +3853,10 @@ async function handleSetOffline(request, env) {
         const limitParam = url.searchParams.get("limit");
         const beforeParam = url.searchParams.get("before");
         if (!appId || !roomId) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
-        
+
         // 認証チェック: メッセージ読み取りには Firebase ID トークンが必要
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
-        
+
         // サーバーメンバーシップチェック: 指定されたserverId に参加しているユーザーまたは管理者のみ許可
         if (serverId) {
           const memberRow = await env.DB.prepare(
@@ -3897,7 +3869,7 @@ async function handleSetOffline(request, env) {
             }
           }
         }
-        
+
         if (messageId) {
           const row = await env.DB.prepare("SELECT * FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
           if (!row) return new Response(JSON.stringify({ empty: true }), { status: 200, headers: d1Cors });
@@ -3909,7 +3881,7 @@ async function handleSetOffline(request, env) {
           data.reactions = row.reactions ? JSON.parse(row.reactions) : {};
           return new Response(JSON.stringify({ empty: false, id: row.message_id, data }), { status: 200, headers: d1Cors });
         }
-        
+
         let rows = [];
         if (beforeParam) {
           const limitCount = parseInt(limitParam, 10) || 20;
@@ -3952,10 +3924,10 @@ async function handleSetOffline(request, env) {
           const senderId = verifiedUser.uid; // 強制的に認証済みUIDに設定（なりすまし防止）
           const additionalData = { ...data };
           delete additionalData.text; delete additionalData.createdAt; delete additionalData.senderId;
-          
+
           await env.DB.prepare("INSERT INTO messages (message_id, room_id, server_id, app_id, sender_id, text, created_at, is_pinned, reactions, additional_data) VALUES (?, ?, ?, ?, ?, ?, ?, 0, '{}', ?)")
             .bind(messageId, roomId, serverId, appId, senderId, text, created_at, JSON.stringify(additionalData)).run();
-          
+
           // ルーム一覧プレビュー時刻・文言の更新
           try {
             const roomRow = await env.DB.prepare("SELECT room_data FROM rooms WHERE room_id = ? AND app_id = ?").bind(roomId, appId).first();
@@ -3967,7 +3939,7 @@ async function handleSetOffline(request, env) {
               await env.DB.prepare("UPDATE rooms SET room_data = ? WHERE room_id = ? AND app_id = ?").bind(JSON.stringify(rData), roomId, appId).run();
             }
           } catch (roomUpdateErr) { console.error("Room update error:", roomUpdateErr); }
-          
+
           // ★★★ RTDB へ通知をPUT (リアルタイムプッシュ) ★★★
           if (env.SERVICE_ACCOUNT_JSON) {
             try {
@@ -3989,7 +3961,7 @@ async function handleSetOffline(request, env) {
               });
             } catch (rtdbErr) { console.error("RTDB Notify Error:", rtdbErr); }
           }
-          
+
           return new Response(JSON.stringify({ success: true, id: messageId }), { status: 200, headers: d1Cors });
         }
 
@@ -4022,7 +3994,7 @@ async function handleSetOffline(request, env) {
           const targetReactUid = verifiedUser.uid; // 🔒 IDOR防止: 認証済み本人のUIDのみを強制適用
           if (!reactionEmoji) { delete rx[targetReactUid]; } else { rx[targetReactUid] = reactionEmoji; }
           await env.DB.prepare("UPDATE messages SET reactions = ? WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(JSON.stringify(rx), messageId, roomId, appId).run();
-          
+
           // リアクション変更もRTDBへ通知
           if (env.SERVICE_ACCOUNT_JSON) {
             try {
@@ -4042,7 +4014,7 @@ async function handleSetOffline(request, env) {
         const appId = url.searchParams.get("appId");
         const roomId = url.searchParams.get("roomId");
         const messageId = url.searchParams.get("messageId");
-        
+
         const msgRow = await env.DB.prepare("SELECT sender_id FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).first();
         if (msgRow && msgRow.sender_id !== verifiedUser.uid) {
           const isAdmin = await isD1Admin(appId, verifiedUser, env);
@@ -4072,7 +4044,7 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, serverId, roomId, userId, nickname, type, lastReadMessageId } = body;
-        
+
         if (verifiedUser.uid !== userId) {
           return new Response(JSON.stringify({ error: "Forbidden: Cannot modify other user activity" }), { status: 403, headers: d1Cors });
         }
@@ -4084,7 +4056,7 @@ async function handleSetOffline(request, env) {
             .bind(userId, appId, roomId, Date.now()).run();
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        
+
         if (type === "typing") {
           // タイピング状態は RTDB に直接 PUT
           if (env.SERVICE_ACCOUNT_JSON) {
@@ -4124,14 +4096,14 @@ async function handleSetOffline(request, env) {
         const type = url.searchParams.get("type"); // 'call' or 'fs' or 'candidates'
         const candType = url.searchParams.get("candType");
         if (!appId || !id) return new Response(JSON.stringify({ error: "Missing param" }), { status: 400, headers: d1Cors });
-        
+
         if (type === "candidates") {
           const table = url.searchParams.get("for") === "fs" ? "webrtc_fileshare_candidates" : "webrtc_call_candidates";
           const idCol = url.searchParams.get("for") === "fs" ? "fs_id" : "call_id";
           const rows = (await env.DB.prepare(`SELECT candidate_id, candidate_data FROM ${table} WHERE ${idCol} = ? AND app_id = ? AND candidate_type = ?`).bind(id, appId, candType).all()).results;
           return new Response(JSON.stringify({ empty: rows.length === 0, docs: rows.map(r => ({ id: r.candidate_id, data: JSON.parse(r.candidate_data) })) }), { status: 200, headers: d1Cors });
         }
-        
+
         const table = type === "fs" ? "webrtc_fileshares" : "webrtc_calls";
         const idCol = type === "fs" ? "fs_id" : "call_id";
         const dataCol = type === "fs" ? "fs_data" : "call_data";
@@ -4144,14 +4116,14 @@ async function handleSetOffline(request, env) {
         if (!verifiedUser) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: d1Cors });
         const body = await request.json();
         const { appId, id, type, candType, data, candidate } = body;
-        
+
         if (type === "candidate") {
           const table = body.for === "fs" ? "webrtc_fileshare_candidates" : "webrtc_call_candidates";
           const idCol = body.for === "fs" ? "fs_id" : "call_id";
           const candId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           await env.DB.prepare(`INSERT INTO ${table} (candidate_id, ${idCol}, app_id, candidate_type, candidate_data, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
             .bind(candId, id, appId, candType, JSON.stringify(candidate), Date.now()).run();
-          
+
           // RTDBへ候補通知
           if (env.SERVICE_ACCOUNT_JSON) {
             try {
@@ -4164,18 +4136,18 @@ async function handleSetOffline(request, env) {
           }
           return new Response(JSON.stringify({ success: true }), { status: 200, headers: d1Cors });
         }
-        
+
         const table = type === "fs" ? "webrtc_fileshares" : "webrtc_calls";
         const idCol = type === "fs" ? "fs_id" : "call_id";
         const dataCol = type === "fs" ? "fs_data" : "call_data";
-        
+
         const cur = await env.DB.prepare(`SELECT ${dataCol} FROM ${table} WHERE ${idCol} = ? AND app_id = ?`).bind(id, appId).first();
         let mergedData = cur && cur[dataCol] ? JSON.parse(cur[dataCol]) : {};
         if (data) mergedData = { ...mergedData, ...data };
-        
+
         await env.DB.prepare(`INSERT INTO ${table} (${idCol}, app_id, ${dataCol}, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(${idCol}) DO UPDATE SET ${dataCol} = excluded.${dataCol}, updated_at = excluded.updated_at`)
           .bind(id, appId, JSON.stringify(mergedData), Date.now(), Date.now()).run();
-        
+
         // RTDBへシグナリング状態通知
         if (env.SERVICE_ACCOUNT_JSON) {
           try {
@@ -4203,7 +4175,7 @@ async function handleSetOffline(request, env) {
             return new Response(JSON.stringify({ error: "Forbidden: Only admins can run migration" }), { status: 403, headers: d1Cors });
           }
         }
-        
+
         if (migrateType === "users" && Array.isArray(data)) {
           const stmts = [];
           for (const u of data) {
@@ -4354,14 +4326,7 @@ async function handleSetOffline(request, env) {
         // -------------------------------------------------------------
         async function isServerMemberCheck(appId, serverId, verifiedUser, env) {
         if (!appId || !serverId || !verifiedUser) return false;
-        if (env.DB) {
-        try {
-        const row = await env.DB.prepare("SELECT 1 FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, verifiedUser.uid, appId).first();
-        if (row) return true;
-        } catch (e) {
-        console.error("isServerMemberCheck D1 error:", e);
-        }
-        }
+
         try {
         const adminToken = await getAdminTokenForFirestore(env);
         if (adminToken) {
@@ -4488,7 +4453,7 @@ async function handleSetOffline(request, env) {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
               });
             }
-            const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
+            const msgsList = Object.keys(rtdbData).filter(k => /^[A-Za-z0-9_-]+$/.test(k)).map(k => ({ ...rtdbData[k], id: k }));
             msgsList.sort((a, b) => {
               const tA = a.timestamp || a.createdAt || 0;
               const tB = b.timestamp || b.createdAt || 0;

@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
+import * as LocalStore from './local_store.js';
 
 let _getDb = () => null;
 let _getUserId = () => null;
@@ -628,7 +629,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
         const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
         const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => null);
-        const isExistingRoom = (roomData && (roomData.lastMessageAt || roomData.currentKeyVersion || roomData.sharedKey)) ||
+        const isExistingRoom = (roomData && (roomData.lastMessageAt || Number(roomData.currentKeyVersion) > 1 || roomData.sharedKey)) ||
                                (msgsSnap === null || !msgsSnap.empty) || (anyKeysSnap === null || !anyKeysSnap.empty);
         if (isExistingRoom && Object.keys(keysObj).length === 0) {
           _e2ee._roomKeyWarnDebounce = _e2ee._roomKeyWarnDebounce || {};
@@ -722,7 +723,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          [`versions.${version}`]: b64Wrapped,
+          versions: { [version]: b64Wrapped },
           latestVersion: String(version),
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
@@ -774,7 +775,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                     doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
                     { 
                       versions: { [ver]: _abToB64(wrapped) },
-                      [`versions.${ver}`]: _abToB64(wrapped),
                       latestVersion: ver,
                       wrappedKey: _abToB64(wrapped),
                       updatedAt: serverTimestamp() 

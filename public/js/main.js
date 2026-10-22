@@ -89,13 +89,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.275';
-import * as LocalStore from './local_store.js?v=1.1.275';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.275';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.275';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.275';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.275';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.275';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.276';
+import * as LocalStore from './local_store.js?v=1.1.276';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.276';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.276';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.276';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.276';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.276';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -873,6 +873,7 @@ let activeMigrationSession = null;
 let activeMigrationCountdown = null;
 let activeMigrationPeer = null;
 let activeMigrationChannel = null;
+let activeMigrationUnsubs = [];
 
 // 検索・未読・コンテキスト状態
 let unreadBoundaryAt = 0;
@@ -11534,6 +11535,7 @@ window.hideDmConversation = async function(dmId) {
 
 window.initiateMigrationReceive = async function() {
   if (!userId) return;
+  window.cancelMigrationReceive();
   const _codeChars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const _codeBytes = new Uint8Array(8);
   crypto.getRandomValues(_codeBytes);
@@ -11597,10 +11599,12 @@ window.initiateMigrationReceive = async function() {
         try {
           const packet = JSON.parse(event.data);
           if (packet.type === 'START') {
+            if (!Number.isInteger(packet.totalChunks) || packet.totalChunks < 1 || packet.totalChunks > 65536) throw new Error('Invalid migration chunk count');
             expectedChunks = packet.totalChunks;
             receivedChunks = [];
             if (progressBar) progressBar.style.width = '5%';
           } else if (packet.type === 'CHUNK') {
+            if (!expectedChunks || packet.index !== receivedChunks.length || typeof packet.data !== 'string' || packet.data.length > 16384 || receivedChunks.length >= expectedChunks) throw new Error('Invalid migration chunk');
             receivedChunks.push(packet.data);
             const pct = Math.min(95, Math.round((receivedChunks.length / expectedChunks) * 90) + 5);
             if (progressBar) progressBar.style.width = `${pct}%`;
@@ -11610,7 +11614,9 @@ window.initiateMigrationReceive = async function() {
             if (statusEl) statusEl.textContent = 'データをローカルデータベースへ復元中...';
             const fullJson = receivedChunks.join('');
             const bundle = JSON.parse(fullJson);
-            await LocalStore.restoreAllLocalData(bundle);
+            if (receivedChunks.length !== expectedChunks || !await LocalStore.restoreAllLocalData(bundle)) {
+              throw new Error('移行データが不完全、または保存に失敗しました');
+            }
             if (statusEl) statusEl.textContent = '復元完了！';
             alertMessage("端末データ移行が完了しました！過去ログと設定がすべて復元されました。", "success");
             setTimeout(() => {
@@ -11633,7 +11639,7 @@ window.initiateMigrationReceive = async function() {
     };
 
     const pendingCandidates = [];
-    onSnapshot(transferRef, async (snap) => {
+    activeMigrationUnsubs.push(onSnapshot(transferRef, async (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
       if (data.offer && !pc.currentRemoteDescription && pc.signalingState === 'stable') {
@@ -11654,8 +11660,8 @@ window.initiateMigrationReceive = async function() {
       }
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
-    });
-    onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
+    }));
+    activeMigrationUnsubs.push(onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
           const cand = new RTCIceCandidate(change.doc.data());
@@ -11670,15 +11676,17 @@ window.initiateMigrationReceive = async function() {
       });
     }, (err) => {
       console.warn('[Migration sender_candidates onSnapshot] notice:', err?.message || err);
-    });
+    }));
 
   } catch (err) {
     console.error('Failed to initiate migration receive:', err);
+    window.cancelMigrationReceive();
     alertMessage("受信セッションの開始に失敗しました", "error");
   }
 };
 
 window.cancelMigrationReceive = function() {
+  activeMigrationUnsubs.splice(0).forEach(unsubscribe => unsubscribe());
   if (activeMigrationCountdown) { clearInterval(activeMigrationCountdown); activeMigrationCountdown = null; }
   if (activeMigrationPeer) { activeMigrationPeer.close(); activeMigrationPeer = null; }
   activeMigrationChannel = null;
@@ -11715,6 +11723,15 @@ window.initiateMigrationSend = async function() {
   if (statusEl) statusEl.textContent = '新端末に接続中...';
   let unsubTransfer = null;
   let unsubReceiverCands = null;
+  let pc = null;
+  let migrationSendTimer = null;
+  const cleanupSend = () => {
+    clearTimeout(migrationSendTimer);
+    if (unsubTransfer) { unsubTransfer(); unsubTransfer = null; }
+    if (unsubReceiverCands) { unsubReceiverCands(); unsubReceiverCands = null; }
+    if (pc) { try { pc.close(); } catch (_) {} }
+    btn.disabled = false;
+  };
   try {
     const transferRef = doc(db, `artifacts/${appId}/device_transfers/${code}`);
     const snap = await getDoc(transferRef);
@@ -11729,15 +11746,19 @@ window.initiateMigrationSend = async function() {
       btn.disabled = false;
       return;
     }
-    const pc = new RTCPeerConnection({
+    pc = new RTCPeerConnection({
       iceServers: VC_ICE_SERVERS
     });
     const pendingCandidates = [];
     const channel = pc.createDataChannel('migrationData', { ordered: true });
     channel.onopen = async () => {
+      clearTimeout(migrationSendTimer);
+      migrationSendTimer = setTimeout(cleanupSend, 5 * 60 * 1000);
+      try {
       if (statusEl) statusEl.textContent = 'ローカルデータを集約・送信準備中...';
       if (progressBar) progressBar.style.width = '10%';
       const bundle = await LocalStore.getAllLocalData();
+      const transferDeadline = Date.now() + 5 * 60 * 1000;
       const jsonStr = JSON.stringify(bundle);
       const CHUNK_SIZE = 16384;
       const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
@@ -11745,6 +11766,7 @@ window.initiateMigrationSend = async function() {
       for (let i = 0; i < totalChunks; i++) {
         const chunk = jsonStr.substr(i * CHUNK_SIZE, CHUNK_SIZE);
         while (channel.bufferedAmount > 1024 * 1024) {
+          if (channel.readyState !== 'open' || Date.now() > transferDeadline) throw new Error('移行接続が切断、またはタイムアウトしました');
           await new Promise(r => setTimeout(r, 25));
         }
         channel.send(JSON.stringify({ type: 'CHUNK', index: i, data: chunk }));
@@ -11758,12 +11780,18 @@ window.initiateMigrationSend = async function() {
       if (statusEl) statusEl.textContent = 'データ送信完了！';
       alertMessage("端末データ移行の送信が完了しました！", "success");
       btn.disabled = false;
-      setTimeout(() => {
-        if (unsubTransfer) unsubTransfer();
-        if (unsubReceiverCands) unsubReceiverCands();
-        try { pc.close(); } catch (_) {}
-      }, 3000);
+      setTimeout(cleanupSend, 3000);
+      } catch (err) {
+        cleanupSend();
+        console.error('Migration transfer error:', err);
+        if (statusEl) statusEl.textContent = 'データ移行に失敗しました。再試行してください。';
+        alertMessage('データ移行に失敗しました', 'error');
+      }
     };
+    migrationSendTimer = setTimeout(() => {
+      cleanupSend();
+      if (statusEl) statusEl.textContent = '接続がタイムアウトしました。再試行してください。';
+    }, 30000);
     pc.onicecandidate = async (ev) => {
       if (ev.candidate) {
         await addDoc(collection(db, `artifacts/${appId}/device_transfers/${code}/sender_candidates`), ev.candidate.toJSON()).catch(() => {});
@@ -11801,8 +11829,7 @@ window.initiateMigrationSend = async function() {
     });
   } catch (err) {
     console.error('Migration send error:', err);
-    if (unsubTransfer) unsubTransfer();
-    if (unsubReceiverCands) unsubReceiverCands();
+    cleanupSend();
     alertMessage("送信処理中にエラーが発生しました", "error");
     btn.disabled = false;
   }
@@ -11911,16 +11938,14 @@ async function createServer(name, customId, password) {
   };
   await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
 
-  // RTDB にもサーバーメタデータとメンバーシップを直接同期
+  // Publish the authoritative Firestore ownership through the authenticated Worker.
   try {
-    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    await set(ref(rtdb, `artifacts/${appId}/servers/${customId}`), {
-      name: name,
-      createdBy: userId,
-      members: { [userId]: true },
-      serverAdmins: { [userId]: true }
-    }).catch(() => {});
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverId: customId, userId, appId, idToken, rtdbUrl: firebaseConfig.databaseURL })
+    });
+    if (!response.ok) console.warn("RTDB server init failed:", response.status);
   } catch (rtdbErr) { console.warn("RTDB server init warning:", rtdbErr); }
 
   // 新しい形式：パスワードハッシュを secrets/auth に保存
@@ -13647,12 +13672,15 @@ async function loadServerSettingsMembers() {
   _isLoadingSsMembers = true;
   const listEl = document.getElementById("serverMembersManageList");
   if (!listEl) { _isLoadingSsMembers = false; return; }
+  try {
   listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+  if (!serverSnap.exists()) return;
   const serverData = serverSnap.data();
   const rawMembers = serverData.joinedUsers || [];
   const members = [...new Set(rawMembers)];
   const admins = serverData.serverAdmins || [];
+  const canManageRoles = isAdmin || serverData.createdBy === userId;
 
   listEl.innerHTML = "";
 
@@ -13677,8 +13705,8 @@ async function loadServerSettingsMembers() {
               </div>
             </div>
             <div class="flex gap-2">
-              ${uid !== userId ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
-              ${uid !== userId ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
+              ${uid !== userId && canManageRoles ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
+              ${uid !== userId && uid !== serverData.createdBy && (canManageRoles || !isAdmin_) ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
             </div>`;
     // data-uid はサニタイズ不要な UID だが innerHTML の外で設定して安全に
     if (uid !== userId) {
@@ -13728,6 +13756,7 @@ async function loadServerSettingsMembers() {
           const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
           await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/members/${targetUid}`));
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/serverAdmins/${targetUid}`));
         } catch (rtdbErr) { console.warn("RTDB kick sync failed:", rtdbErr); }
         await loadServerSettingsMembers();
         // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
@@ -13740,8 +13769,14 @@ async function loadServerSettingsMembers() {
           } catch (e) { alertMessage("キックに失敗しました", "error"); }
           });
           });
-          _isLoadingSsMembers = false;
-          }
+  } catch (err) {
+    console.warn('Member settings load failed:', err);
+    listEl.textContent = 'メンバーを読み込めませんでした。再試行してください。';
+  } finally {
+    _isLoadingSsMembers = false;
+  }
+}
+
           // 招待コードタブ (二重登録リスナーを削除し switchSsTab に一本化)
           let _isLoadingInviteCodes = false;
           async function loadInviteCodes() {
@@ -14661,6 +14696,7 @@ document.getElementById("serverCtxLeave")?.addEventListener("click", async () =>
     try {
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/serverAdmins/${userId}`));
       await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
     } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
     alertMessage("サーバーを退出しました", "success");
@@ -17961,7 +17997,7 @@ async function sendMessage() {
   const currentAttachedFile = attachedFile;
   const currentAttachedKvFile = attachedKvFile;
   const currentAttachedFiles = (Array.isArray(attachedFiles) && attachedFiles.length > 0) ? [...attachedFiles] : (currentAttachedFile ? [currentAttachedFile] : []);
-  if (isSendingMessage && (currentAttachedFile || currentAttachedKvFile)) return;
+  if (isSendingMessage) return;
   const text = messageInput.value.trim();
   if ((!text && !currentAttachedFile && !currentAttachedKvFile) || (!currentRoomId && !currentDmId)) return;
   // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
@@ -17981,8 +18017,8 @@ async function sendMessage() {
     }
   }
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
-  if (text && text.length > 10000) {
-    alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
+  if (text && (text.length > 10000 || new TextEncoder().encode(text).length > 23900)) {
+    alertMessage("メッセージが長すぎます（最大10,000文字・UTF-8で約23KB）", "warning");
     return;
   }
   const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
@@ -18009,8 +18045,12 @@ async function sendMessage() {
     return;
   }
 
+  isSendingMessage = true;
+  sendMessageButton.disabled = true;
   // Optimistic input clearing (LINE style)
   const previousInputText = text;
+  const isSameDestination = () => currentDmId === snapDmId && currentServerId === snapServerId && currentRoomId === snapRoomId;
+  const restoreDraft = () => { if (isSameDestination() && !messageInput.value) messageInput.value = previousInputText; };
   messageInput.value = "";
   messageInput.style.height = "auto";
   if (typeof window.clearCurrentDraft === 'function') window.clearCurrentDraft();
@@ -18041,11 +18081,9 @@ async function sendMessage() {
     let wasEncrypted = false;
     if (text) {
       if (!_subtleOK) {
-        console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
-        if (!await showCustomConfirm("現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？", "平文で送信", "キャンセル", "セキュリティ警告")) {
-          messageInput.value = previousInputText;
-          return;
-        }
+        restoreDraft();
+        alertMessage("暗号化を利用できないため送信を中断しました。HTTPS接続とブラウザの対応状況を確認してください。", "error");
+        return;
       } else {
         try {
           if (snapDmId) {
@@ -18055,7 +18093,7 @@ async function sendMessage() {
               dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
             }
             if (!dmKey) {
-              messageInput.value = previousInputText;
+              restoreDraft();
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
               return;
             }
@@ -18064,7 +18102,7 @@ async function sendMessage() {
               textToStore = enc;
               wasEncrypted = true;
             } else {
-              messageInput.value = previousInputText;
+              restoreDraft();
               alertMessage("🔒 暗号化保護エラー: DMメッセージの暗号化に失敗したため、平文送信を強制遮断しました", "error");
               return;
             }
@@ -18076,7 +18114,7 @@ async function sendMessage() {
             }
             const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (!roomKey) {
-              messageInput.value = previousInputText;
+              restoreDraft();
               console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${snapServerId}, room=${snapRoomId})`);
               loadingOverlay.classList.add("hidden");
               alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
@@ -18088,7 +18126,7 @@ async function sendMessage() {
                 textToStore = enc;
                 wasEncrypted = true;
               } else {
-                messageInput.value = previousInputText;
+                restoreDraft();
                 alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗しました", "error");
                 await requestEscrowRescue(snapServerId, snapRoomId);
                 return;
@@ -18096,7 +18134,7 @@ async function sendMessage() {
             }
           }
         } catch (e) {
-          messageInput.value = previousInputText;
+          restoreDraft();
           console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
           loadingOverlay.classList.add("hidden");
           alertMessage("🔒 暗号化保護エラー: 例外が発生したため送信を遮断しました", "error");
@@ -18143,6 +18181,7 @@ async function sendMessage() {
             }
           }
         }
+        if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
         const fileUrl = await uploadToExternalService(
           fileToUpload,
           (pct) => {
@@ -18150,7 +18189,7 @@ async function sendMessage() {
             if (progressText) progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
           },
           "simplechat/messages",
-          snapServerId
+          snapDmId ? null : snapServerId
         );
         const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || currentFileName.startsWith('SPOILER_'));
         const finalFileName = (isSpoiler && !currentFileName.startsWith('SPOILER_')) ? `SPOILER_${currentFileName}` : currentFileName;
@@ -18336,8 +18375,11 @@ async function sendMessage() {
       }
     }
 
-    const remainingFiles = (attachedFiles && attachedFiles.length > 1) ? attachedFiles.slice(1) : [];
-    clearAttachedFile(); cancelReply();
+    const remainingFiles = currentAttachedFiles.slice(1);
+    if (isSameDestination()) {
+      if (attachedFile === currentAttachedFile && attachedKvFile === currentAttachedKvFile) clearAttachedFile();
+      if (replyingToMessage === snapReplyTo) cancelReply();
+    }
     resetAwayTimer();
     pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
 
@@ -18366,7 +18408,7 @@ async function sendMessage() {
     console.error(e);
     if (typeof text !== 'undefined' && text) {
       const mi = document.getElementById("messageInput");
-      if (mi && !mi.value) mi.value = text;
+      if (mi && !mi.value && isSameDestination()) mi.value = text;
     }
     alertMessage("送信に失敗しました", "error");
     } finally {
@@ -18376,7 +18418,8 @@ async function sendMessage() {
     messageInput.disabled = false;
     sendMessageButton.disabled = false;
     isSendingMessage = false;
-    setTimeout(() => messageInput.focus(), 10);
+    toggleSendButtonState();
+    if (isSameDestination()) setTimeout(() => messageInput.focus(), 10);
     }
     }
     const clearFileBtn = document.getElementById("clearFileButton");
@@ -18392,9 +18435,9 @@ async function sendMessage() {
       updateFilePreview();
     }
     async function sendSingleAttachmentMessage(fileObj, destSnapshot = null) {
-    const snapDmId = destSnapshot?.snapDmId ?? currentDmId;
-    const snapRoomId = destSnapshot?.snapRoomId ?? currentRoomId;
-    const snapServerId = destSnapshot?.snapServerId ?? currentServerId;
+    const snapDmId = destSnapshot ? destSnapshot.snapDmId : currentDmId;
+    const snapRoomId = destSnapshot ? destSnapshot.snapRoomId : currentRoomId;
+    const snapServerId = destSnapshot ? destSnapshot.snapServerId : currentServerId;
     if (!fileObj || (!snapRoomId && !snapDmId)) return;
     // Snapshot room-state before any await — prevents race condition where the
     // user navigates to another room while a background upload is in progress.
@@ -18431,7 +18474,8 @@ async function sendMessage() {
       }
     }
     }
-    const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+    if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
+    const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapDmId ? null : snapServerId);
     cacheLocalMediaFile(fileUrl, fileToUpload);
     const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || fileObj.isSpoiler || fileObj.name.startsWith('SPOILER_'));
     const finalFileName = (isSpoiler && !fileObj.name.startsWith('SPOILER_')) ? `SPOILER_${fileObj.name}` : fileObj.name;
@@ -24399,8 +24443,9 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
 
   // 3. WebRTC DataChannel 経由で暗号化メッセージを送信 (TURN対応で100%貫通)
   let unsubRequesterCands = null;
+  let pc = null;
   try {
-    const pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
+    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     let dc = null;
     const pendingCandidates = [];
     pc.ondatachannel = (ev) => {
@@ -24414,8 +24459,8 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
         } catch (sendErr) {
           console.warn('[P2P LogSync] Large payload batching fallback:', sendErr);
           // 64KB超過時の小分けフォールバック
-          for (let i = 0; i < validMsgs.length; i += 25) {
-            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 25) }));
+          for (let i = 0; i < validMsgs.length; i++) {
+            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 1) }));
           }
         }
         setTimeout(() => {
@@ -24480,6 +24525,7 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
       console.warn('[P2P LogSync] Responder error:', err);
     }
     if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
+    if (pc) { try { pc.close(); } catch (_) {} }
     deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }
 }
@@ -24537,7 +24583,8 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         const res = JSON.parse(ev.data);
         if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
           // 届いたメッセージが安全なデータか検証（要求した過去日時より古い、または新規追加分のみ安全に合流）
-          const filteredIncoming = res.messages.filter(m => m && m.id && typeof m.channelId === 'string');
+          if (res.channelId !== channelKey) return;
+          const filteredIncoming = res.messages.filter(m => m && typeof m.id === 'string' && m.channelId === channelKey && (oldestLocalTs == null || getMsgTimestamp(m) <= oldestLocalTs));
           console.log(`[P2P LogSync] Received ${filteredIncoming.length} backfilled messages for ${res.channelId}`);
           await LocalStore.upsertMessagesBatch(filteredIncoming);
           // 現在開いているチャンネルと一致していれば復号して即時画面反映
@@ -24566,8 +24613,6 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         }
       } catch (e) {
         console.warn('[P2P LogSync] Parse error:', e);
-      } finally {
-        cleanupP2P();
       }
     };
     pc.onicecandidate = (e) => {

@@ -1,5 +1,5 @@
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc } = require('firebase/firestore');
 const fs = require('fs');
 
 const PROJECT_ID = "demo-covo-security-test";
@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await testEnv.cleanup();
+  if (testEnv) await testEnv.cleanup();
 });
 
 const getDb = (auth) => {
@@ -39,6 +39,73 @@ describe('Firestore Security Rules Testing', () => {
   // ★これでJestが「テストがある」と必ず認識します
   it('【環境確認】Jestが正しく動いているか (Must Pass)', () => {
     expect(true).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  describe('認可境界の回帰検証', () => {
+    it('メンバーの反応と鍵の追加を許可し、他人の反応・鍵・本文の破壊を拒否すること', async () => {
+      const base = `artifacts/${APP_ID}/servers/safe`;
+      await testEnv.withSecurityRulesDisabled(async c => {
+        await setDoc(doc(c.firestore(), base), { createdBy: 'owner', joinedUsers: ['alice', 'bob', 'mod'], serverAdmins: ['mod'] });
+        await setDoc(doc(c.firestore(), `${base}/rooms/room1`), { currentKeyVersion: 1 });
+        await setDoc(doc(c.firestore(), `${base}/rooms/room1/messages/msg1`), { senderId: 'alice', text: 'cipher', reactions: { alice: 'A' } });
+        await setDoc(doc(c.firestore(), `${base}/rooms/room1/roomKeys/alice`), { versions: { '1': 'original' }, latestVersion: '1' });
+      });
+      const bob = getDb({ uid: 'bob' });
+      const mod = getDb({ uid: 'mod' });
+      const msg = doc(bob, `${base}/rooms/room1/messages/msg1`);
+      await assertSucceeds(updateDoc(msg, { 'reactions.bob': 'B' }));
+      await assertFails(updateDoc(msg, { 'reactions.alice': 'B' }));
+      await assertFails(updateDoc(doc(mod, msg.path), { isPinned: true, reactions: {} }));
+      await assertFails(getDoc(doc(getDb({ uid: 'mallory' }), msg.path)));
+      await assertFails(setDoc(doc(mod, `${base}/rooms/room1/messages/spoof`), { senderId: 'alice', text: 'spoof' }));
+      const key = doc(bob, `${base}/rooms/room1/roomKeys/alice`);
+      await assertSucceeds(setDoc(key, { versions: { '2': 'new' }, latestVersion: '2' }, { merge: true }));
+      await assertFails(updateDoc(key, { 'versions.1': 'tampered' }));
+      await assertFails(deleteDoc(key));
+      await assertFails(updateDoc(doc(bob, `${base}/rooms/room1`), { sharedKey: 'plaintext' }));
+      await assertFails(updateDoc(doc(bob, `${base}/rooms/room1`), { currentKeyVersion: 999 }));
+      await assertFails(updateDoc(doc(mod, base), { serverAdmins: ['owner', 'mod', 'bob'] }));
+      await assertSucceeds(updateDoc(doc(mod, base), { name: 'Renamed' }));
+    });
+
+    it('DM参加者をすり替えずメタ情報と相手用の鍵を更新できること', async () => {
+      const alice = getDb({ uid: 'alice' });
+      const bob = getDb({ uid: 'bob' });
+      const path = `artifacts/${APP_ID}/dm_channels/alice_bob`;
+      await assertSucceeds(setDoc(doc(alice, path), { participants: ['alice', 'bob'] }));
+      await assertSucceeds(updateDoc(doc(bob, path), { lastMessageAt: 123 }));
+      await assertSucceeds(setDoc(doc(alice, `${path}/keys/bob`), { wrappedKey: 'cipher' }));
+      await assertFails(updateDoc(doc(alice, path), { participants: ['alice', 'mallory'] }));
+      await assertFails(setDoc(doc(alice, `artifacts/${APP_ID}/dm_channels/bob_mallory`), { participants: ['alice', 'bob'] }));
+      await assertFails(getDoc(doc(getDb({ uid: 'mallory' }), `${path}/keys/bob`)));
+    });
+
+    it.each([
+      ['device_transfers/code1', { uid: 'alice' }],
+      ['p2p_log_sync/sync1', { requesterUid: 'alice', targetUid: 'bob' }],
+      ['calls/call1', { caller: { uid: 'alice' }, calleeUid: 'bob' }],
+      ['fileshares/share1', { sender: { uid: 'alice' }, receiverUid: 'bob' }]
+    ])('%s の子コレクションを無関係なユーザーへ公開しないこと', async (relative, data) => {
+      const path = `artifacts/${APP_ID}/${relative}`;
+      const alice = getDb({ uid: 'alice' });
+      const mallory = getDb({ uid: 'mallory' });
+      await assertSucceeds(setDoc(doc(alice, path), data));
+      await assertSucceeds(setDoc(doc(alice, `${path}/candidates/c1`), { candidate: 'ice' }));
+      await assertFails(getDoc(doc(mallory, `${path}/candidates/c1`)));
+      await assertFails(setDoc(doc(mallory, `${path}/candidates/c2`), { candidate: 'injected' }));
+    });
+
+    it('移行セッションとリカバリー索引の所有者を奪取できないこと', async () => {
+      const alice = getDb({ uid: 'alice' });
+      const bob = getDb({ uid: 'bob' });
+      const path = `artifacts/${APP_ID}/device_transfers/code1`;
+      await assertSucceeds(setDoc(doc(alice, path), { uid: 'alice' }));
+      await assertFails(updateDoc(doc(bob, path), { uid: 'bob' }));
+      const recovery = `artifacts/${APP_ID}/recovery_index/hash1`;
+      await assertSucceeds(setDoc(doc(alice, recovery), { userId: 'alice' }));
+      await assertFails(setDoc(doc(bob, recovery), { userId: 'bob' }));
+    });
   });
 
   // -----------------------------------------------------------------------

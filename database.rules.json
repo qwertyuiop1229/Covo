@@ -41,7 +41,7 @@
     "webrtc": {
       "$id": {
         ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
-        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
+        ".write": "auth != null && ((!data.exists() && newData.child('caller/uid').val() === auth.uid) || (data.exists() && (data.child('caller/uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid) && (!newData.exists() || (newData.child('caller/uid').val() === data.child('caller/uid').val() && newData.child('calleeUid').val() === data.child('calleeUid').val()))))"
       }
     },
     "voiceStates": {
@@ -191,11 +191,32 @@
               "timestamp"
             ],
             "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || newData.child('reactions').exists() || newData.child('isPinned').exists())))))",
+              ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid && (!newData.child('userId').exists() || newData.child('userId').val() === auth.uid)) || (!newData.exists() && ((data.child('senderId').val() === auth.uid || (!data.child('senderId').exists() && data.child('userId').val() === auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true))))",
+              ".validate": "newData.hasChild('senderId') || newData.hasChild('userId')",
+              "senderId": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "userId": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "timestamp": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "createdAt": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "isPinned": {
+                ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && data.parent().exists() && ((data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)))",
+                ".validate": "newData.isBoolean()"
+              },
               "reactions": {
                 "$reactUid": {
-                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && auth.uid === $reactUid && data.parent().parent().exists()",
+                  ".validate": "newData.isString() && newData.val().length <= 128"
                 }
+              },
+              "$field": {
+                ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && (data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) && $field !== 'senderId' && $field !== 'userId' && $field !== 'timestamp' && $field !== 'createdAt' && $field !== 'reactions' && $field !== 'isPinned'"
               }
             }
           }
@@ -219,7 +240,7 @@
         "device_transfers": {
           "$sessionCode": {
             ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && (data.child('uid').val() === auth.uid) && (!newData.exists() || (newData.child('uid').val() === data.child('uid').val())))))",
             "sender_candidates": {
               ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
@@ -233,7 +254,7 @@
         "p2p_log_sync": {
           "$syncId": {
             ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('requesterUid').val() === auth.uid) || (data.exists() && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid) && (!newData.exists() || (newData.child('requesterUid').val() === data.child('requesterUid').val() && newData.child('targetUid').val() === data.child('targetUid').val())))))",
             "requesterCandidates": {
               ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
@@ -241,13 +262,14 @@
             "targetCandidates": {
               ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
-            }
+            },
+            ".validate": "!data.exists() || (newData.child('channelType').val() === data.child('channelType').val() && newData.child('serverId').val() === data.child('serverId').val() && newData.child('roomId').val() === data.child('roomId').val() && newData.child('dmId').val() === data.child('dmId').val())"
           }
         },
         "calls": {
           "$callId": {
             ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('caller/uid').val() === auth.uid) || (data.exists() && (data.child('caller/uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid) && (!newData.exists() || (newData.child('caller/uid').val() === data.child('caller/uid').val() && newData.child('calleeUid').val() === data.child('calleeUid').val())))))",
             "callerCandidates": {
               ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
@@ -261,7 +283,7 @@
         "fileshares": {
           "$shareId": {
             ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('sender/uid').val() === auth.uid) || (data.exists() && (data.child('sender/uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid) && (!newData.exists() || (newData.child('sender/uid').val() === data.child('sender/uid').val() && newData.child('receiverUid').val() === data.child('receiverUid').val())))))",
             "senderCandidates": {
               ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
@@ -274,15 +296,21 @@
         },
         "servers": {
           "$serverId": {
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            ".write": "auth != null && !newData.exists() && (data.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)",
             "name": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true)"
             },
             "createdBy": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || (root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid && 'createdBy' !== 'createdBy'))"
             },
             "serverAdmins": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || (root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid && 'serverAdmins' !== 'createdBy'))",
+              "$adminUid": {
+                ".write": "auth != null && auth.uid === $adminUid && !newData.exists()"
+              }
             },
             "members": {
               "$uid": {
@@ -314,7 +342,7 @@
             },
             "rooms": {
               "$roomId": {
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) && (!data.exists() || !newData.exists())",
                 "roomKeys": {
                   ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
                   "$keyId": {
@@ -333,11 +361,32 @@
                     "timestamp"
                   ],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
+                    ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid && (!newData.child('userId').exists() || newData.child('userId').val() === auth.uid)) || (!newData.exists() && ((data.child('senderId').val() === auth.uid || (!data.child('senderId').exists() && data.child('userId').val() === auth.uid)) || ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true))))",
+                    ".validate": "newData.hasChild('senderId') || newData.hasChild('userId')",
+                    "senderId": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "userId": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "timestamp": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "createdAt": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "isPinned": {
+                      ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && data.parent().exists() && ((data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) || ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true))",
+                      ".validate": "newData.isBoolean()"
+                    },
                     "reactions": {
                       "$reactUid": {
-                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                        ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && auth.uid === $reactUid && data.parent().parent().exists()",
+                        ".validate": "newData.isString() && newData.val().length <= 128"
                       }
+                    },
+                    "$field": {
+                      ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && (data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) && $field !== 'senderId' && $field !== 'userId' && $field !== 'timestamp' && $field !== 'createdAt' && $field !== 'reactions' && $field !== 'isPinned'"
                     }
                   }
                 },
@@ -352,6 +401,9 @@
                   "$uid": {
                     ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
+                },
+                "$field": {
+                  ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) && $field !== 'messages' && $field !== 'roomKeys' && $field !== 'rescueRequests' && $field !== 'typing' && $field !== 'readReceipts'"
                 }
               }
             }

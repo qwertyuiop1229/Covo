@@ -79,6 +79,7 @@ scripts/
   ai-context.mjs
   build_tailwind.mjs
   bump-version.js
+  check-static.cjs
   generate-icons.js
   print-deployed-version.js
 server/
@@ -167,10 +168,13 @@ src-tauri/
 .firebaserc
 .gitignore
 .jshintrc
+AUDIT_REPORT.md
 database.rules.json
+firebase.emulators.json
 firebase.json
 firestore.indexes.json
 firestore.rules
+jest.config.cjs
 package.json
 README.md
 tailwind.config.js
@@ -746,16 +750,16 @@ export function checkFileAllowed(file) {
  * Cloudflare Worker (KV) へファイルをアップロードします。
  * (main.jsのグローバル変数を引数として受け取る内部用関数)
  */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
+export async function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
     let idToken = "";
     try {
       if (auth && auth.currentUser) {
         idToken = await auth.currentUser.getIdToken();
       }
     } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+      throw new Error("認証トークンの取得に失敗しました: " + tokenErr.message);
     }
+  return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('uploaderId', userId || '');
@@ -768,6 +772,8 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.timeout = 120000;
+    xhr.addEventListener('timeout', () => reject(new Error('アップロードがタイムアウトしました。接続を確認して再試行してください')));
     xhr.upload.addEventListener('progress', e => {
       if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
     });
@@ -838,6 +844,33 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
  */
 console.log('[version] skip bump (use "npm run deploy" to bump)');
 process.exit(0);
+</file>
+
+<file path="scripts/check-static.cjs">
+const fs = require('fs');
+const path = require('path');
+const parser = require('@babel/parser');
+const files = fs.readdirSync('public/js').filter(f => f.endsWith('.js')).map(f => `public/js/${f}`)
+  .concat(['server/src/index.js', 'public/firebase-messaging-sw.js']);
+const errors = [];
+for (const file of files) {
+  const tree = parser.parse(fs.readFileSync(file, 'utf8'), { sourceType: 'unambiguous' });
+  for (const imp of tree.program.body.filter(n => n.type === 'ImportDeclaration' && n.source.value.startsWith('.'))) {
+    const target = path.resolve(path.dirname(file), imp.source.value.split('?')[0]);
+    const targetTree = parser.parse(fs.readFileSync(target, 'utf8'), { sourceType: 'module' });
+    const names = new Set(targetTree.program.body.filter(n => n.type === 'ExportNamedDeclaration').flatMap(n =>
+      n.declaration ? (n.declaration.id ? [n.declaration.id.name] : n.declaration.declarations.map(d => d.id.name)) : n.specifiers.map(s => s.exported.name)));
+    for (const spec of imp.specifiers.filter(s => s.type === 'ImportSpecifier')) {
+      if (!names.has(spec.imported.name)) errors.push(`${file}: missing export ${spec.imported.name} in ${target}`);
+    }
+  }
+}
+if (errors.length) {
+  console.error(errors.join('\n'));
+  process.exitCode = 1;
+} else {
+  console.log(`Parsed ${files.length} JavaScript files; all local named imports resolve.`);
+}
 </file>
 
 <file path="scripts/generate-icons.js">
@@ -1110,6 +1143,102 @@ tokio = { version = "1", features = ["time"] }
 }
 </file>
 
+<file path="AUDIT_REPORT.md">
+# 静的監査・修正報告（2026-10-22）
+
+対象は公開クライアント、Cloudflare Worker、Firestore/RTDBルール、IndexedDB、WebRTC関連、Tauri設定・ネイティブ更新処理です。生成済みCSSの既存変更は保持しています。ソースの修正とローカル検証を実施し、本番データの変更・デプロイは実施していません。
+
+## 1. 認可・セキュリティ
+
+| 問題 | 修正 | 主な検証 |
+|---|---|---|
+| RTDBでリアクションやピンの存在だけで他人の本文を書き換え可能 | 作成・削除・本文・ピン・本人のリアクションを別々の書き込み境界へ分離 | 本人編集、通常リアクション、ピン、偽装更新、他人削除 |
+| サーバー／ルームの祖先の許可が子メッセージの認可を迂回 | 祖先の広範な更新許可を削除し、対象フィールドへ委譲 | 祖先からの本文改ざんを拒否、モデレーション削除は許可 |
+| RTDBの通話・共有・移行・ログ同期セッションを新しい送信者IDで乗っ取り可能 | 既存所有者・受信者で認可し、識別子変更を禁止 | 各セッションの乗っ取り、本人による識別子変更、正常な状態更新 |
+| FirestoreのP2P子コレクションを全認証ユーザーが読み書き可能 | 親セッションの実際の参加者に限定 | 移行・通話・共有・ログ同期それぞれの第三者読み書きを拒否 |
+| DM参加者を既存参加者が変更できる | 参加者の固定、新規DMのIDと2参加者の整合を検証 | 正常なメタ情報更新・鍵共有と、参加者すり替えの拒否 |
+| 復旧索引・移行セッションの所有者を上書き可能 | 更新前後の所有者を照合 | 他人の索引・移行セッション奪取を拒否 |
+| 一般メンバーが他人のルーム鍵を削除・上書き可能 | 他者への配布は新バージョンの追記に限定。本人・管理者の復旧経路を保持 | バージョン追加成功、既存バージョン上書き／削除失敗 |
+| 非参加者のFirestoreルーム・メッセージ読み取り | サーバー参加権を要求 | 非参加者読み取りの拒否 |
+| モデレーターによる送信者偽装・他人の反応一括改変 | 作成時の本人UIDを強制、ピンと反応の複合更新による迂回を除去 | 送信者偽装、ピンと他者反応の同時更新を拒否 |
+| 一般メンバーによる平文共有鍵・鍵バージョンの破壊 | レガシー平文鍵の消去と初期バージョン設定のみ許容 | 平文鍵追加・バージョン999への更新を拒否 |
+| D1・RTDBの古い管理権限で、Firestoreの降格・退出が無効化される | Workerのアプリ管理者・サーバー管理者・メンバー判定をFirestoreへ統一 | 古いD1データが権限を復活させないこと |
+| RTDBで独自の所有権メタデータを作成可能 | クライアントの直接作成を停止。作成時は認証済みWorkerがFirestoreを照合して同期 | Workerの同期先・メンバー・管理者マップを検証 |
+| RTDB権限ミラーの部分更新・HTTPエラー見落とし | 正本のメンバー・管理者・所有者を一括PATCH。適切なRTDB OAuthスコープとHTTP成功を確認 | 原子的PATCHの内容と外部同期先の排除 |
+| 同一RTDBオリジンのURLにパス・クエリを混入可能 | クライアントURLのパス・クエリを採用せず、構成済みオリジンだけを利用 | 特権書き込み先へのパス・クエリ混入を排除 |
+| 通知APIのスコープ省略で認可を迂回、サーバー外ユーザーへの通知 | スコープ不明を拒否、DM受信者とサーバー所属受信者を照合 | スコープなしの通知を拒否 |
+| 特定フォルダ名を指定するとアップロードのサーバー所属照合を迂回 | フォルダに関係なく所属を照合 | `servericons`指定でも未所属者を拒否 |
+| 自動削除でメッセージ内の`id`がRTDBキーを上書き | 削除対象IDは実際のストレージキーから確定 | 埋め込まれた偽IDが削除先にならないこと |
+| OGPのIPv4別表記・IPv6とリダイレクト先で内部宛先ガードを迂回 | 内部リテラル宛先を拒否し、各リダイレクト前に再検査 | 127.1、数値IPv4、IPv6、共有アドレス、内部リダイレクト |
+| ダウンロードプロキシが許可ドメイン外へ自動リダイレクト | 自動追跡を停止し通信タイムアウトを設定 | ソース確認 |
+| APIが任意のOriginを許可として返していた | 許可Originだけを返し`Vary: Origin`を付与 | 許可・非許可Originを検証 |
+| Tauriの手動インストールが任意の`objects.githubusercontent.com`実行ファイルを受け付ける | 公式リポジトリ・指定リリース・EXEのURLを解析して照合。HTTP成功と通信期限を要求 | Rustの回帰テスト追加。Rust実行は未検証 |
+
+既存のKV削除における所有者・実際の`metadata.serverId`照合は維持し、攻撃者のサーバーIDを渡しても他サーバーのファイルを削除できない回帰テストを追加しました。D1 API全体のアプリ管理者限定ガードも維持しています。
+
+## 2. 暗号化・状態・通信
+
+- Web Crypto非対応時の平文メッセージ送信を停止しました。通常添付・複数添付とも、暗号化鍵がなければアップロード前に中断します。
+- `setDoc`の`versions.1`等がドットを含む独立フィールドになる不具合を、ネストした`versions`マップへ修正しました。読み取り側の旧形式互換は維持しています。
+- 新規ルームに設定される`currentKeyVersion: 1`だけで既存鍵ありと誤判定していた生成停止を修正しました。既存履歴・既存鍵・取得失敗時の上書き防止は保持しています。
+- 暗号化によるサイズ増加を考慮し、日本語などUTF-8バイト数の大きい本文が送信後にFirestoreのサイズ制限で拒否される条件を送信前に検出します。
+- アップロードに120秒のタイムアウトを設け、非同期Promise executorによる未解決状態を解消しました。
+- 端末移行の受信リスナーを解除し、チャンク順序・個数・サイズ・復元結果を確認します。送信側には接続と転送の期限を設け、例外時に接続と画面の状態を解放します。
+- P2Pログ応答の例外時にPeerConnectionを閉じます。受信データのチャンネルと要求日時を照合し、最初の分割応答で接続を閉じて残りを落とす処理を除去しました。
+
+## 3. サーバーとDM・UI状態
+
+- 複数添付の宛先スナップショットで、意図した`null`を現在のDMへ置換していた`??`を修正しました。
+- DM添付で残存サーバーIDを送らないようにしました。
+- 暗号化待機を含む送信中の二重送信を抑止し、送信終了後は現在の入力・宛先からボタン状態を再計算します。
+- 送信中の部屋変更後に、別の部屋の下書き・添付・返信先を消去したりフォーカスを奪ったりする処理を抑止しました。
+- 管理者ロール変更をオーナー／全体管理者に限定し、UIにも同じ条件を適用しました。キック・退出時のRTDB管理者フラグ消去も追加しました。
+- メンバー設定の取得失敗時にもローディングフラグを解除して、再試行できるようにしました。
+- 診断UIのバージョン取得を明示的な`window._appVersion`参照へ修正しました。
+- IMEのEnterガード、HTMLのID重複、JS参照を確認しました。既存の`window`公開関数を単純な未定義関数として扱わない検査を行いました。
+
+## 4. 検証方法
+
+```text
+npm run test:unit
+npm run test:security
+node scripts/check-static.cjs
+git diff --check
+```
+
+`test:security`はFirebase CLIと対応Javaを使い、`demo-covo-security-test`のFirestore/RTDBエミュレーターだけで実行します。`jest.config.cjs`により、バックアップ内の古いテストは混入しません。
+
+最終実行結果: 5スイート・67テストがすべて成功。静的チェックと`git diff --check`も成功しました。
+
+JavaScript 14ファイルの構文とローカルの名前付きインポートを確認しました。公開HTML 4ファイルに重複IDはありません。暗号化テストでは実際のWeb Cryptoを用い、ファイル鍵バージョン1・254・255・時刻ベースの値の往復復号と、改ざん時の失敗を確認しました。
+
+WindowsのJava一時ディレクトリの短縮パスでエミュレーター起動が失敗したため、今回の実行時だけ通常の短い一時ディレクトリとJavaランタイムを指定しました。アプリの設定・本番接続先は変更していません。
+
+## 5. 検証の限界
+
+- 本番Firebase／Cloudflareの実データ、デプロイ済みルール、IAM、秘密設定、インデックスとの一致は確認していません。変更を有効にするにはWorker・クライアント・ルールを整合してリリースする必要があります。
+- Rust/Cargoが環境にないため、TauriのURL検証変更と追加Rustテストはコンパイル・実行していません。
+- 実機のiOS/Android/PWA、IME操作、画面レイアウト、実際のICE/TURN・通話・ファイル移行の端末間試験は未実施です。静的確認とモックによる検証を、実機検証の代替とは扱っていません。
+- 既存の管理者エスクローと旧平文データ移行との互換を保持しています。この暗号化モデルは管理者を排除するE2EEではありません。既存の平文保存データを今回一括移行したものでもありません。
+- FirestoreとRTDBの間に分散トランザクションはありません。Worker内のRTDB権限マップは一括更新しますが、異なるストアへの更新の完全な同時性や、通信失敗中の即時権限失効までは保証しません。
+- 正当なルーム参加者が共有AES鍵を持つモデルでは、参加者によるP2P履歴の偽造を送信者署名で検証する機構はありません。また外部ドメインのDNS再束縛を含め、全てのSSRF攻撃の排除を証明したものではありません。
+
+これらの制約があるため、「コードベース全体に潜在的な不具合や脆弱性が残っていない」という保証はしていません。
+</file>
+
+<file path="firebase.emulators.json">
+{
+  "database": { "rules": "database.rules.json" },
+  "firestore": { "rules": "firestore.rules" },
+  "emulators": {
+    "firestore": { "port": 8088 },
+    "database": { "port": 9008 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}
+</file>
+
 <file path="firebase.json">
 {
   "database": {
@@ -1200,6 +1329,13 @@ tokio = { version = "1", features = ["time"] }
   ],
   "fieldOverrides": []
 }
+</file>
+
+<file path="jest.config.cjs">
+module.exports = {
+  testEnvironment: 'node',
+  testMatch: ['<rootDir>/tests/**/*.test.js'],
+};
 </file>
 
 <file path="README.md">
@@ -1588,7 +1724,7 @@ export function getSystemDiagnosticInfo() {
     timestamp: new Date().toLocaleString('ja-JP'),
     appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
     platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    appVersion: window.__covo_version || (window._appVersion || '最新版'),
     userAgent: navigator.userAgent,
     language: navigator.language || 'ja',
     online: navigator.onLine,
@@ -1805,13 +1941,15 @@ ai-context/
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest --runInBand",
     "tauri": "tauri",
     "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
     "build:css": "node scripts/build_tailwind.mjs",
     "build:css:regen": "node scripts/build_tailwind.mjs --regen",
     "test:web": "firebase serve --only hosting",
-    "test:win": "tauri dev"
+    "test:win": "tauri dev",
+    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js",
+    "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore,database \"jest --runInBand --silent\""
   },
   "repository": {
     "type": "git",
@@ -1830,7 +1968,8 @@ ai-context/
     "@tauri-apps/cli": "^2.10.1",
     "firebase": "^12.14.0",
     "jest": "^30.4.2",
-    "tailwindcss": "^3.4.19"
+    "tailwindcss": "^3.4.19",
+    "@babel/parser": "^7.29.7"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0",
@@ -7353,23 +7492,59 @@ fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String)
         .body(body)
         .show();
 }
+fn is_official_installer_url(input: &str, tag: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(input) else { return false; };
+    let segments: Vec<_> = parsed.path_segments().map(|s| s.collect()).unwrap_or_default();
+    parsed.scheme() == "https"
+        && parsed.host_str() == Some("github.com")
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.port().is_none()
+        && parsed.query().is_none()
+        && parsed.fragment().is_none()
+        && segments.len() == 6
+        && segments[0].eq_ignore_ascii_case("qwertyuiop1229")
+        && segments[1].eq_ignore_ascii_case("covo")
+        && segments[2] == "releases"
+        && segments[3] == "download"
+        && segments[4].trim_start_matches('v') == tag.trim_start_matches('v')
+        && segments[5].to_ascii_lowercase().ends_with(".exe")
+}
+#[cfg(test)]
+mod installer_url_tests {
+    use super::is_official_installer_url;
+    #[test]
+    fn restrict_installer_to_the_selected_official_release() {
+        assert!(is_official_installer_url("https://github.com/qwertyuiop1229/covo/releases/download/v1.2.3/Covo.exe", "1.2.3"));
+        for input in [
+            "https://objects.githubusercontent.com/untrusted.exe",
+            "https://github.com/other/project/releases/download/v1.2.3/Covo.exe",
+            "https://github.com/qwertyuiop1229/covo/releases/download/v1.2.4/Covo.exe",
+            "https://github.com/qwertyuiop1229/covo/releases/download/../../other.exe",
+            "https://github.com@evil.example/qwertyuiop1229/covo/releases/download/v1.2.3/Covo.exe",
+        ] {
+            assert!(!is_official_installer_url(input, "1.2.3"));
+        }
+    }
+}
 #[tauri::command]
 async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
     log::info!("silent_install_past_version called: {} -> {}", tag, url);
-    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+    if tag.is_empty() || tag.len() > 80 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
         return Err("Invalid tag format".to_string());
     }
-    let url_lower = url.to_lowercase();
-    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
-        || url.starts_with("https://objects.githubusercontent.com/");
-    if !is_valid_url {
+    if !is_official_installer_url(&url, &tag) {
         return Err("Invalid download URL: must be from official repository".to_string());
     }
     let temp_dir = std::env::temp_dir();
     let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
     let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
     // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
-    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build().map_err(|e| format!("Client failed: {}", e))?
+        .get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?
+        .error_for_status().map_err(|e| format!("Download failed: {}", e))?;
     let total = response.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
     let mut file = std::fs::File::create(&exe_path)
@@ -7926,7 +8101,7 @@ pub fn run() {
     "webrtc": {
       "$id": {
         ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists())",
-        ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid)"
+        ".write": "auth != null && ((!data.exists() && newData.child('caller/uid').val() === auth.uid) || (data.exists() && (data.child('caller/uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid) && (!newData.exists() || (newData.child('caller/uid').val() === data.child('caller/uid').val() && newData.child('calleeUid').val() === data.child('calleeUid').val()))))"
       }
     },
     "voiceStates": {
@@ -8076,11 +8251,32 @@ pub fn run() {
               "timestamp"
             ],
             "$messageId": {
-              ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) && ((!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists()) || (data.exists() && newData.exists() && (data.child('senderId').val() === newData.child('senderId').val() || data.child('userId').val() === newData.child('userId').val()) && (((data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid)) || newData.child('reactions').exists() || newData.child('isPinned').exists())))))",
+              ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid && (!newData.child('userId').exists() || newData.child('userId').val() === auth.uid)) || (!newData.exists() && ((data.child('senderId').val() === auth.uid || (!data.child('senderId').exists() && data.child('userId').val() === auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true))))",
+              ".validate": "newData.hasChild('senderId') || newData.hasChild('userId')",
+              "senderId": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "userId": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "timestamp": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "createdAt": {
+                ".validate": "!data.parent().exists() || newData.val() === data.val()"
+              },
+              "isPinned": {
+                ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && data.parent().exists() && ((data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) || (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)))",
+                ".validate": "newData.isBoolean()"
+              },
               "reactions": {
                 "$reactUid": {
-                  ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid))) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || ($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                  ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && auth.uid === $reactUid && data.parent().parent().exists()",
+                  ".validate": "newData.isString() && newData.val().length <= 128"
                 }
+              },
+              "$field": {
+                ".write": "auth != null && (($dmId.beginsWith(auth.uid + '_') || $dmId.endsWith('_' + auth.uid)) || (root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)) && (data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) && $field !== 'senderId' && $field !== 'userId' && $field !== 'timestamp' && $field !== 'createdAt' && $field !== 'reactions' && $field !== 'isPinned'"
               }
             }
           }
@@ -8104,7 +8300,7 @@ pub fn run() {
         "device_transfers": {
           "$sessionCode": {
             ".read": "auth != null && (data.child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('uid').val() === auth.uid || data.child('uid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && (data.child('uid').val() === auth.uid) && (!newData.exists() || (newData.child('uid').val() === data.child('uid').val())))))",
             "sender_candidates": {
               ".read": "auth != null && (data.parent().child('uid').val() === auth.uid || data.parent().child('receiverUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
@@ -8118,7 +8314,7 @@ pub fn run() {
         "p2p_log_sync": {
           "$syncId": {
             ".read": "auth != null && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('requesterUid').val() === auth.uid || data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('requesterUid').val() === auth.uid) || (data.exists() && (data.child('requesterUid').val() === auth.uid || data.child('targetUid').val() === auth.uid) && (!newData.exists() || (newData.child('requesterUid').val() === data.child('requesterUid').val() && newData.child('targetUid').val() === data.child('targetUid').val())))))",
             "requesterCandidates": {
               ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('requesterUid').val() === auth.uid"
@@ -8126,13 +8322,14 @@ pub fn run() {
             "targetCandidates": {
               ".read": "auth != null && (data.parent().child('requesterUid').val() === auth.uid || data.parent().child('targetUid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('targetUid').val() === auth.uid"
-            }
+            },
+            ".validate": "!data.exists() || (newData.child('channelType').val() === data.child('channelType').val() && newData.child('serverId').val() === data.child('serverId').val() && newData.child('roomId').val() === data.child('roomId').val() && newData.child('dmId').val() === data.child('dmId').val())"
           }
         },
         "calls": {
           "$callId": {
             ".read": "auth != null && (data.child('calleeUid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('caller').child('uid').val() === auth.uid || data.child('caller').child('uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('caller/uid').val() === auth.uid) || (data.exists() && (data.child('caller/uid').val() === auth.uid || data.child('calleeUid').val() === auth.uid) && (!newData.exists() || (newData.child('caller/uid').val() === data.child('caller/uid').val() && newData.child('calleeUid').val() === data.child('calleeUid').val())))))",
             "callerCandidates": {
               ".read": "auth != null && (data.parent().child('calleeUid').val() === auth.uid || data.parent().child('caller').child('uid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('caller').child('uid').val() === auth.uid"
@@ -8146,7 +8343,7 @@ pub fn run() {
         "fileshares": {
           "$shareId": {
             ".read": "auth != null && (data.child('receiverUid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || !data.exists() || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
-            ".write": "auth != null && (newData.child('sender').child('uid').val() === auth.uid || data.child('sender').child('uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+            ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || ((!data.exists() && newData.child('sender/uid').val() === auth.uid) || (data.exists() && (data.child('sender/uid').val() === auth.uid || data.child('receiverUid').val() === auth.uid) && (!newData.exists() || (newData.child('sender/uid').val() === data.child('sender/uid').val() && newData.child('receiverUid').val() === data.child('receiverUid').val())))))",
             "senderCandidates": {
               ".read": "auth != null && (data.parent().child('receiverUid').val() === auth.uid || data.parent().child('sender').child('uid').val() === auth.uid)",
               ".write": "auth != null && data.parent().child('sender').child('uid').val() === auth.uid"
@@ -8159,15 +8356,21 @@ pub fn run() {
         },
         "servers": {
           "$serverId": {
-            ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && newData.child('createdBy').val() === auth.uid))",
+            ".write": "auth != null && !newData.exists() && (data.child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true)",
             "name": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true)"
             },
             "createdBy": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || (root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid && 'createdBy' !== 'createdBy'))"
             },
             "serverAdmins": {
-              ".read": "auth != null"
+              ".read": "auth != null",
+              ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || (root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid && 'serverAdmins' !== 'createdBy'))",
+              "$adminUid": {
+                ".write": "auth != null && auth.uid === $adminUid && !newData.exists()"
+              }
             },
             "members": {
               "$uid": {
@@ -8199,7 +8402,7 @@ pub fn run() {
             },
             "rooms": {
               "$roomId": {
-                ".write": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
+                ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) && (!data.exists() || !newData.exists())",
                 "roomKeys": {
                   ".read": "auth != null && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())",
                   "$keyId": {
@@ -8218,11 +8421,32 @@ pub fn run() {
                     "timestamp"
                   ],
                   "$messageId": {
-                    ".write": "auth != null && (root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists() || (!data.exists() && newData.exists() && (newData.child('senderId').val() === auth.uid || newData.child('userId').val() === auth.uid) && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)) || (data.exists() && !newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!data.exists() && !newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (data.exists() && newData.exists() && (data.child('senderId').val() === auth.uid || data.child('userId').val() === auth.uid || newData.child('reactions').exists() || newData.child('isPinned').exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid)))",
+                    ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && ((!data.exists() && newData.exists() && newData.child('senderId').val() === auth.uid && (!newData.child('userId').exists() || newData.child('userId').val() === auth.uid)) || (!newData.exists() && ((data.child('senderId').val() === auth.uid || (!data.child('senderId').exists() && data.child('userId').val() === auth.uid)) || ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true))))",
+                    ".validate": "newData.hasChild('senderId') || newData.hasChild('userId')",
+                    "senderId": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "userId": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "timestamp": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "createdAt": {
+                      ".validate": "!data.parent().exists() || newData.val() === data.val()"
+                    },
+                    "isPinned": {
+                      ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && data.parent().exists() && ((data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) || ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true))",
+                      ".validate": "newData.isBoolean()"
+                    },
                     "reactions": {
                       "$reactUid": {
-                        ".write": "auth != null && ((newData.exists() && auth.uid === $reactUid && data.parent().parent().exists()) || (!newData.exists() && (auth.uid === $reactUid || data.parent().parent().child('senderId').val() === auth.uid || data.parent().parent().child('userId').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())"
+                        ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && auth.uid === $reactUid && data.parent().parent().exists()",
+                        ".validate": "newData.isString() && newData.val().length <= 128"
                       }
+                    },
+                    "$field": {
+                      ".write": "auth != null && (((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).val() === true) && (data.parent().child('senderId').val() === auth.uid || (!data.parent().child('senderId').exists() && data.parent().child('userId').val() === auth.uid)) && $field !== 'senderId' && $field !== 'userId' && $field !== 'timestamp' && $field !== 'createdAt' && $field !== 'reactions' && $field !== 'isPinned'"
                     }
                   }
                 },
@@ -8237,6 +8461,9 @@ pub fn run() {
                   "$uid": {
                     ".write": "auth != null && ((auth.uid === $uid && (root.child('artifacts').child($appId).child('servers').child($serverId).child('members').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())) || (!newData.exists() && (root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('settings').child('adminList').child('admins').child(auth.uid).exists() || root.child('artifacts').child('simplechat-65a0d').child('settings').child('adminList').child('admins').child(auth.uid).exists())))"
                   }
+                },
+                "$field": {
+                  ".write": "auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) && $field !== 'messages' && $field !== 'roomKeys' && $field !== 'rescueRequests' && $field !== 'typing' && $field !== 'readReceipts'"
                 }
               }
             }
@@ -10151,7 +10378,7 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
       }
-      
+
       // ログイン許可リスト (Allowed Emails)
       match /allowedEmails/{emailId} {
         allow get: if isAuthenticated();
@@ -10204,7 +10431,7 @@ service cloud.firestore {
       match /recovery_index/{emailHash} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update: if isGlobalAdmin(appId) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId);
         allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
       }
 
@@ -10284,27 +10511,23 @@ service cloud.firestore {
         allow read: if isAuthenticated() && (
           isGlobalAdmin(appId) ||
           (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
-          dmId.matches('^' + request.auth.uid + '_.*') ||
-          dmId.matches('^.*_' + request.auth.uid + '$')
+          (resource == null && (dmId.matches('^' + request.auth.uid + '_.*') || dmId.matches('^.*_' + request.auth.uid + '$')))
         );
-        allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.participants || isGlobalAdmin(appId));
-        allow update, delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && request.resource.data.participants is list && request.resource.data.participants.size() == 2 && request.resource.data.participants[0] != request.resource.data.participants[1] && request.auth.uid in request.resource.data.participants && (dmId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1] || dmId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
+        allow update: if isAuthenticated() && (isGlobalAdmin(appId) || (request.auth.uid in resource.data.participants && request.resource.data.participants == resource.data.participants));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
         match /keys/{keyUserId} {
           allow read: if isAuthenticated() && (
             isGlobalAdmin(appId) ||
             request.auth.uid == keyUserId ||
             (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-            dmId.matches('^' + request.auth.uid + '_.*') ||
-            dmId.matches('^.*_' + request.auth.uid + '$')
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants)
           );
           allow write: if isAuthenticated() &&
             (isGlobalAdmin(appId) ||
              (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants) ||
-             dmId.matches('^' + request.auth.uid + '_.*') ||
-             dmId.matches('^.*_' + request.auth.uid + '$'));
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants));
         }
       }
 
@@ -10314,9 +10537,14 @@ service cloud.firestore {
           isGlobalAdmin(appId) ||
           (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
         );
-        allow create, update: if isAuthenticated() && (request.resource.data.uid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+        allow update: if isAuthenticated() && (isGlobalAdmin(appId) || (resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid));
         match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('uid' in session && session.uid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
         }
       }
 
@@ -10335,13 +10563,17 @@ service cloud.firestore {
              request.resource.data.dmId == null ||
              request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
              request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if isAuthenticated() && (
+        allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId', 'beforeTs']) && isAuthenticated() && (
           isGlobalAdmin(appId) ||
           (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
           (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
         );
         match /{subcollection}/{docId} {
-          allow read, write: if isAuthenticated();
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('requesterUid' in session && session.requesterUid == request.auth.uid) || ('targetUid' in session && session.targetUid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
         }
       }
 
@@ -10375,7 +10607,11 @@ service cloud.firestore {
             request.resource.data.caller.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('caller' in session && 'uid' in session.caller && session.caller.uid == request.auth.uid) || ('calleeUid' in session && session.calleeUid == request.auth.uid) || ('callee' in session && 'uid' in session.callee && session.callee.uid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
         }
       }
 
@@ -10401,7 +10637,11 @@ service cloud.firestore {
             request.resource.data.sender.uid == request.auth.uid));
 
         match /{subcollection}/{candId} {
-          allow read, write: if isAuthenticated();
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('sender' in session && 'uid' in session.sender && session.sender.uid == request.auth.uid) || ('receiverUid' in session && session.receiverUid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
         }
       }
 
@@ -10424,8 +10664,7 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
 
         allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']) &&
-          (!('serverAdmins' in request.resource.data) || ('createdBy' in resource.data && resource.data.createdBy in request.resource.data.serverAdmins));
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'serverAdmins']);
 
         allow update: if isAuthenticated() &&
           request.resource.data.diff(resource.data).affectedKeys()
@@ -10446,19 +10685,21 @@ service cloud.firestore {
 
         // ルーム一覧 (Channels / Rooms)
         match /rooms/{roomId} {
-          allow read: if isAuthenticated();
+          allow read: if isServerMember(appId, serverId);
           allow create, delete: if isServerAdmin(appId, serverId);
           allow update: if isServerAdmin(appId, serverId) || (
             isAuthenticated() &&
             exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion'])
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion']) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentKeyVersion']) || (resource.data.get('currentKeyVersion', 1) == 1 && request.resource.data.currentKeyVersion == 1))
           );
 
           // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
           match /messages/{messageId} {
-            allow read: if isAuthenticated();
-            allow create: if isAuthenticated() &&
+            allow read: if isServerMember(appId, serverId);
+            allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid &&
               (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
                (request.resource.data.senderId == request.auth.uid &&
                 exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
@@ -10466,13 +10707,13 @@ service cloud.firestore {
               (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
               (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
 
-            allow update: if isAuthenticated() && (
+            allow update: if isServerMember(appId, serverId) && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
                request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned', 'reactions']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+
               || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'createdAt', 'timestamp', 'isPinned'])
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'userId', 'createdAt', 'timestamp', 'isPinned', 'reactions'])
                   && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
                   && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
               || isGlobalAdmin(appId)
@@ -10480,7 +10721,7 @@ service cloud.firestore {
 
             allow delete: if isAuthenticated() && (
               resource.data.senderId == request.auth.uid ||
-              (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+              (!('senderId' in resource.data) && resource.data.get('userId', null) == request.auth.uid) ||
               isServerAdmin(appId, serverId) ||
               isServerOwner(appId, serverId) ||
               isGlobalAdmin(appId)
@@ -10498,12 +10739,15 @@ service cloud.firestore {
 
           // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
           match /roomKeys/{keyId} {
-            allow read, write: if isAuthenticated() && (
-              isGlobalAdmin(appId) ||
-              isServerAdmin(appId, serverId) ||
-              (exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-               request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
-            );
+            allow read, create: if isServerMember(appId, serverId);
+            allow delete: if isServerAdmin(appId, serverId);
+            allow update: if isServerAdmin(appId, serverId) ||
+              (isServerMember(appId, serverId) && (request.auth.uid == keyId ||
+                (request.resource.data.versions is map && resource.data.get('versions', {}) is map &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
+                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
           }
 
           // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
@@ -13026,6 +13270,7 @@ service cloud.firestore {
 <file path="public/js/crypto_helpers.js">
 import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
+import * as LocalStore from './local_store.js';
 let _getDb = () => null;
 let _getUserId = () => null;
 let _getAppId = () => null;
@@ -13619,7 +13864,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
         const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
         const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => null);
-        const isExistingRoom = (roomData && (roomData.lastMessageAt || roomData.currentKeyVersion || roomData.sharedKey)) ||
+        const isExistingRoom = (roomData && (roomData.lastMessageAt || Number(roomData.currentKeyVersion) > 1 || roomData.sharedKey)) ||
                                (msgsSnap === null || !msgsSnap.empty) || (anyKeysSnap === null || !anyKeysSnap.empty);
         if (isExistingRoom && Object.keys(keysObj).length === 0) {
           _e2ee._roomKeyWarnDebounce = _e2ee._roomKeyWarnDebounce || {};
@@ -13705,7 +13950,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       writes.push(setDoc(
         doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
         { 
-          [`versions.${version}`]: b64Wrapped,
+          versions: { [version]: b64Wrapped },
           latestVersion: String(version),
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
@@ -13755,7 +14000,6 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
                     doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${uid}`),
                     { 
                       versions: { [ver]: _abToB64(wrapped) },
-                      [`versions.${ver}`]: _abToB64(wrapped),
                       latestVersion: ver,
                       wrappedKey: _abToB64(wrapped),
                       updatedAt: serverTimestamp() 
@@ -17170,10 +17414,8 @@ function getCorsHeaders(request) {
   } else if (!origin) {
     // Origin ヘッダーのないリクエスト（curl、ネイティブアプリ、サーバー間通信など）
     headers["Access-Control-Allow-Origin"] = "*";
-  } else {
-    // 拡張機能や別オリジン等からのリクエストでもプリフライトエラーを防止
-    headers["Access-Control-Allow-Origin"] = origin;
   }
+  headers["Vary"] = "Origin";
   return headers;
 }
 // 静的ファイル配信・ダウンロード・削除用CORS（画像タグ、拡張機能スキャン、暗号化バイナリのfetch復号、ファイル削除に対応）
@@ -17474,6 +17716,26 @@ export default {
 // -------------------------------------------------------------
 // 🌐 Discord準拠 高速・安全な OpenGraph (OGP) メタデータ取得処理 (SSRF保護付き)
 // -------------------------------------------------------------
+function isUnsafePreviewUrl(parsedUrl) {
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/\.$/, '');
+  return !['http:', 'https:'].includes(parsedUrl.protocol) || Boolean(parsedUrl.username || parsedUrl.password) || (parsedUrl.port && !['80', '443', '8080', '8443'].includes(parsedUrl.port)) || (hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname.includes(':') ||
+    /^127\./.test(hostname) ||
+    /^0\./.test(hostname) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(hostname) ||
+    /^198\.(18|19)\./.test(hostname) ||
+    /^(22[4-9]|23\d|24\d|25[0-5])\./.test(hostname) ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".arpa") ||
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname));
+}
 async function handleFetchOg(request, env, url, cors) {
   const targetUrlStr = url.searchParams.get("url");
   if (!targetUrlStr) {
@@ -17507,19 +17769,7 @@ async function handleFetchOg(request, env, url, cors) {
   }
   // 🔒 SSRF ガード: ローカルホスト・プライベートIP・リンクローカル・内部ドメインを完全遮断
   const hostname = parsedUrl.hostname.toLowerCase();
-  const isPrivateHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::1" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    hostname.endsWith(".internal") ||
-    hostname.endsWith(".arpa") ||
-    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^169\.254\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  const isPrivateHost = isUnsafePreviewUrl(parsedUrl);
   if (isPrivateHost) {
     return new Response(JSON.stringify({ success: false, error: "Access to private or local networks is forbidden" }), {
       status: 200,
@@ -17560,18 +17810,22 @@ async function handleFetchOg(request, env, url, cors) {
     } catch (_) {}
   }
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(parsedUrl.href, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; CovoBot/1.0)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
-      },
-      redirect: "follow"
-    });
-    clearTimeout(timeoutId);
+    let resp;
+    let fetchUrl = parsedUrl;
+    // Validate each redirect before contacting its destination.
+    for (let redirects = 0; redirects <= 4; redirects++) {
+      if (isUnsafePreviewUrl(fetchUrl)) throw new Error("Unsafe preview destination");
+      resp = await fetch(fetchUrl.href, {
+        signal: AbortSignal.timeout(4500),
+        headers: { "User-Agent": "CovoBot/1.0", "Accept": "text/html,image/*;q=0.8", "Accept-Language": "ja,en;q=0.8" },
+        redirect: "manual"
+      });
+      if (![301, 302, 303, 307, 308].includes(resp.status)) break;
+      const nextUrl = resp.headers.get("Location");
+      if (resp.body) await resp.body.cancel();
+      if (!nextUrl || redirects === 4) throw new Error("Invalid preview redirect");
+      fetchUrl = new URL(nextUrl, fetchUrl);
+    }
     if (!resp.ok) {
       return new Response(JSON.stringify({ success: false, reason: `Upstream returned status ${resp.status}` }), {
         status: 200,
@@ -18101,7 +18355,7 @@ function getRtdbBaseUrl(env, clientRtdbUrl) {
         (host.startsWith(projectId) || host.includes(projectId))
       ) {
         // 🔒 クライアント指定URLは既定RTDBと同一オリジンの場合のみ採用（管理者トークンを別インスタンスへ送らない）
-        if (u.origin === new URL(defaultRtdb).origin) return clientRtdbUrl.replace(/\/+$/, '');
+        if (u.origin === new URL(defaultRtdb).origin) return new URL(defaultRtdb).origin;
       }
     } catch (_) {}
   }
@@ -18466,42 +18720,29 @@ async function handleSyncRtdb(request, env) {
       if (isGlobal) isMember = true;
     }
     if (!isMember) {
-      isMember = await isServerMemberCheck(appId, serverId, verifiedUser, env);
-    }
-    if (!isMember) {
       // 未参加の場合はRTDB書き込みを行わず安全に終了（ブラウザコンソールでの赤文字403ネットワークエラーを完全防止）
       return new Response(JSON.stringify({ success: false, notMember: true, error: "Not a member" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
     // RTDB に同期
     try {
       const rtdbBase = getRtdbBaseUrl(env, rtdbUrl);
-      const rtdbTargetUrl = `${rtdbBase}/artifacts/${appId}/servers/${serverId}/members/${userId}.json?access_token=${adminToken}`;
-      await fetch(rtdbTargetUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(true)
-      });
-      // サーバー作成者(createdBy)および管理者リスト(serverAdmins)もRTDBへ同期
-      if (srvData && srvData.fields) {
-        if (srvData.fields.createdBy?.stringValue) {
-          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/createdBy.json?access_token=${adminToken}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(srvData.fields.createdBy.stringValue)
-          }).catch(() => {});
-        }
-        if (srvData.fields.serverAdmins?.arrayValue?.values) {
-          const adminObj = {};
-          srvData.fields.serverAdmins.arrayValue.values.forEach(v => {
-            if (v.stringValue) adminObj[v.stringValue] = true;
-          });
-          await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}/serverAdmins.json?access_token=${adminToken}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(adminObj)
-          }).catch(() => {});
-        }
+      const rtdbToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+      const fields = srvData.fields;
+      const members = Object.create(null);
+      const serverAdmins = Object.create(null);
+      for (const value of fields.joinedUsers?.arrayValue?.values || []) {
+        if (value.stringValue) members[value.stringValue] = true;
       }
+      for (const value of fields.serverAdmins?.arrayValue?.values || []) {
+        if (value.stringValue) serverAdmins[value.stringValue] = true;
+      }
+      const createdBy = fields.createdBy?.stringValue;
+      if (createdBy) members[createdBy] = true;
+      const syncResponse = await fetch(`${rtdbBase}/artifacts/${appId}/servers/${serverId}.json?access_token=${rtdbToken}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: fields.name?.stringValue || '', createdBy: createdBy || null, members, serverAdmins })
+      });
+      if (!syncResponse.ok) throw new Error(`RTDB sync failed: HTTP ${syncResponse.status}`);
     } catch (e) {
       console.error("RTDB Sync Error:", e);
       return new Response(JSON.stringify({ success: false, error: "RTDB Sync Error" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
@@ -18780,15 +19021,27 @@ async function handleSendNotification(request, env) {
         if (!isMember) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a member of this server" }), { status: 403, headers: dynamicCors });
         }
-      } else if (roomId && roomId.includes('_') && !roomId.startsWith('p2p_')) {
+      } else if (typeof roomId === 'string' && roomId.includes('_') && !roomId.startsWith('p2p_')) {
         // DMメッセージ通知: roomId (uid1_uid2) に自分が含まれ、受信者がDM相手であることを検証
         const dmUids = (roomId.startsWith('dm_') ? roomId.slice(3) : roomId).split('_');
-        if (!dmUids.includes(verifiedUser.uid)) {
+        if (dmUids.length !== 2 || !dmUids.every(uid => /^[A-Za-z0-9-]+$/.test(uid)) || !dmUids.includes(verifiedUser.uid)) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Not a participant of this DM" }), { status: 403, headers: dynamicCors });
         }
         const notAllowedReceiver = receiverIds.some(rid => !dmUids.includes(rid) || rid === verifiedUser.uid);
         if (notAllowedReceiver) {
           return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid DM recipient" }), { status: 403, headers: dynamicCors });
+        }
+      } else {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: Missing notification scope" }), { status: 403, headers: dynamicCors });
+      }
+      if (serverId) {
+        const serverRes = await fetch(`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}`, { headers: { Authorization: `Bearer ${idToken}` } });
+        const serverDoc = serverRes.ok ? await serverRes.json() : null;
+        const fields = serverDoc?.fields;
+        const recipients = new Set((fields?.joinedUsers?.arrayValue?.values || []).map(v => v.stringValue));
+        if (fields?.createdBy?.stringValue) recipients.add(fields.createdBy.stringValue);
+        if (!fields || receiverIds.some(uid => !recipients.has(uid))) {
+          return new Response(JSON.stringify({ success: false, error: "Forbidden: Invalid server recipient" }), { status: 403, headers: dynamicCors });
         }
       }
     }
@@ -18941,7 +19194,7 @@ async function handleSendNotification(request, env) {
                         console.error("FCM Send Error:", fcmResult.error);
                         // 無効なトークン（UNREGISTERED / NOT_FOUND）は削除対象に追加
                         const errorCode = fcmResult.error.details?.[0]?.errorCode || fcmResult.error.code;
-                        if (errorCode === 'UNREGISTERED' || errorCode === 404 || 
+                        if (errorCode === 'UNREGISTERED' || errorCode === 404 ||
                             fcmResult.error.status === 'NOT_FOUND' ||
                             (fcmResult.error.message && fcmResult.error.message.includes('not a valid FCM'))) {
                             invalidTokens.push(tokenStr);
@@ -19101,7 +19354,7 @@ async function handleUploadFile(request, env) {
       });
     }
     // 🔒 IDOR防御: 通常のメッセージ添付ファイル等でserverIdが指定された場合、アップロード者がそのサーバーのメンバーまたは管理者であることを検証
-    if (serverId && !folder.includes('stamp') && !folder.includes('servericons')) {
+    if (serverId) {
       const isMember = await isServerMemberCheck(env.FIREBASE_APP_ID, serverId, verifiedUser, env);
       const isGlobal = await isAppAdmin(env.FIREBASE_APP_ID, verifiedUser, env);
       if (!isMember && !isGlobal) {
@@ -19173,6 +19426,8 @@ async function handleDownloadProxy(request, env, url) {
       });
     }
     const response = await fetch(targetUrlStr, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
       headers: {
         'User-Agent': 'Covo-Proxy/1.0',
         'Accept': '*/*'
@@ -19868,20 +20123,6 @@ async function getAdminTokenForFirestore(env) {
 }
 async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
   if (!appId || !serverId || !verifiedUser) return false;
-  if (env.DB) {
-    try {
-      const row = await env.DB.prepare("SELECT created_by, server_data FROM servers WHERE server_id = ? AND app_id = ?").bind(serverId, appId).first();
-      if (row) {
-        if (row.created_by === verifiedUser.uid) return true;
-        if (row.server_data) {
-          const sData = JSON.parse(row.server_data);
-          if (sData.serverAdmins && Array.isArray(sData.serverAdmins) && sData.serverAdmins.includes(verifiedUser.uid)) return true;
-        }
-      }
-    } catch (e) {
-      console.error("isServerAdminCheck D1 error:", e);
-    }
-  }
   try {
     const adminToken = await getAdminTokenForFirestore(env);
     if (adminToken) {
@@ -19903,10 +20144,6 @@ async function isServerAdminCheck(appId, serverId, verifiedUser, env) {
 }
 async function isAppAdmin(appId, verifiedUser, env) {
   if (!appId || !verifiedUser) return false;
-  if (env.DB) {
-    const d1Result = await isD1Admin(appId, verifiedUser, env);
-    if (d1Result) return true;
-  }
   // 1. Firestore から判定
   try {
     const adminToken = await getAdminTokenForFirestore(env);
@@ -19927,29 +20164,6 @@ async function isAppAdmin(appId, verifiedUser, env) {
     }
   } catch (e) {
     console.error("isAppAdmin Firestore error:", e);
-  }
-  // 2. RTDB からの管理者判定フォールバック (多重冗長化)
-  try {
-    const rtdbToken = env.SERVICE_ACCOUNT_JSON ? await getRTDBToken(env.SERVICE_ACCOUNT_JSON).catch(() => null) : null;
-    const authQuery = rtdbToken ? `?access_token=${rtdbToken}` : '';
-    const rtdbUrl = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${appId}/settings/adminList.json${authQuery}`;
-    const rtdbRes = await fetch(rtdbUrl);
-    if (rtdbRes.ok) {
-      const rtdbData = await rtdbRes.json();
-      if (rtdbData) {
-        if (rtdbData.admins && verifiedUser.uid && (rtdbData.admins[verifiedUser.uid] === true || (Array.isArray(rtdbData.admins) && rtdbData.admins.includes(verifiedUser.uid)))) {
-          return true;
-        }
-        if (rtdbData.emails && verifiedUser.email) {
-          const em = verifiedUser.email.toLowerCase().trim();
-          if (Array.isArray(rtdbData.emails) && rtdbData.emails.some(e => String(e).toLowerCase().trim() === em)) {
-            return true;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error("isAppAdmin RTDB error:", e);
   }
   return false;
 }
@@ -21200,14 +21414,6 @@ async function handleSetOffline(request, env) {
         // -------------------------------------------------------------
         async function isServerMemberCheck(appId, serverId, verifiedUser, env) {
         if (!appId || !serverId || !verifiedUser) return false;
-        if (env.DB) {
-        try {
-        const row = await env.DB.prepare("SELECT 1 FROM server_joined_users WHERE server_id = ? AND user_id = ? AND app_id = ?").bind(serverId, verifiedUser.uid, appId).first();
-        if (row) return true;
-        } catch (e) {
-        console.error("isServerMemberCheck D1 error:", e);
-        }
-        }
         try {
         const adminToken = await getAdminTokenForFirestore(env);
         if (adminToken) {
@@ -21331,7 +21537,7 @@ async function handleSetOffline(request, env) {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
               });
             }
-            const msgsList = Object.keys(rtdbData).map(k => ({ id: k, ...rtdbData[k] }));
+            const msgsList = Object.keys(rtdbData).filter(k => /^[A-Za-z0-9_-]+$/.test(k)).map(k => ({ ...rtdbData[k], id: k }));
             msgsList.sort((a, b) => {
               const tA = a.timestamp || a.createdAt || 0;
               const tB = b.timestamp || b.createdAt || 0;
@@ -21496,13 +21702,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.275';
-import * as LocalStore from './local_store.js?v=1.1.275';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.275';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.275';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.275';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.275';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.275';
+import { E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.276';
+import * as LocalStore from './local_store.js?v=1.1.276';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.276';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.276';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.276';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.276';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.276';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -22262,6 +22468,7 @@ let activeMigrationSession = null;
 let activeMigrationCountdown = null;
 let activeMigrationPeer = null;
 let activeMigrationChannel = null;
+let activeMigrationUnsubs = [];
 // 検索・未読・コンテキスト状態
 let unreadBoundaryAt = 0;
 let unreadBoundaryMessageId = null;
@@ -32257,6 +32464,7 @@ window.hideDmConversation = async function(dmId) {
 // ============ P2P 端末間データ完全移行 コントローラー ============
 window.initiateMigrationReceive = async function() {
   if (!userId) return;
+  window.cancelMigrationReceive();
   const _codeChars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const _codeBytes = new Uint8Array(8);
   crypto.getRandomValues(_codeBytes);
@@ -32312,10 +32520,12 @@ window.initiateMigrationReceive = async function() {
         try {
           const packet = JSON.parse(event.data);
           if (packet.type === 'START') {
+            if (!Number.isInteger(packet.totalChunks) || packet.totalChunks < 1 || packet.totalChunks > 65536) throw new Error('Invalid migration chunk count');
             expectedChunks = packet.totalChunks;
             receivedChunks = [];
             if (progressBar) progressBar.style.width = '5%';
           } else if (packet.type === 'CHUNK') {
+            if (!expectedChunks || packet.index !== receivedChunks.length || typeof packet.data !== 'string' || packet.data.length > 16384 || receivedChunks.length >= expectedChunks) throw new Error('Invalid migration chunk');
             receivedChunks.push(packet.data);
             const pct = Math.min(95, Math.round((receivedChunks.length / expectedChunks) * 90) + 5);
             if (progressBar) progressBar.style.width = `${pct}%`;
@@ -32325,7 +32535,9 @@ window.initiateMigrationReceive = async function() {
             if (statusEl) statusEl.textContent = 'データをローカルデータベースへ復元中...';
             const fullJson = receivedChunks.join('');
             const bundle = JSON.parse(fullJson);
-            await LocalStore.restoreAllLocalData(bundle);
+            if (receivedChunks.length !== expectedChunks || !await LocalStore.restoreAllLocalData(bundle)) {
+              throw new Error('移行データが不完全、または保存に失敗しました');
+            }
             if (statusEl) statusEl.textContent = '復元完了！';
             alertMessage("端末データ移行が完了しました！過去ログと設定がすべて復元されました。", "success");
             setTimeout(() => {
@@ -32346,7 +32558,7 @@ window.initiateMigrationReceive = async function() {
       }
     };
     const pendingCandidates = [];
-    onSnapshot(transferRef, async (snap) => {
+    activeMigrationUnsubs.push(onSnapshot(transferRef, async (snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
       if (data.offer && !pc.currentRemoteDescription && pc.signalingState === 'stable') {
@@ -32367,8 +32579,8 @@ window.initiateMigrationReceive = async function() {
       }
     }, (err) => {
       console.warn('[Migration transferRef onSnapshot] notice:', err?.message || err);
-    });
-    onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
+    }));
+    activeMigrationUnsubs.push(onSnapshot(collection(db, `artifacts/${appId}/device_transfers/${sessionCode}/sender_candidates`), (snap) => {
       snap.docChanges().forEach(async (change) => {
         if (change.type === 'added') {
           const cand = new RTCIceCandidate(change.doc.data());
@@ -32383,13 +32595,15 @@ window.initiateMigrationReceive = async function() {
       });
     }, (err) => {
       console.warn('[Migration sender_candidates onSnapshot] notice:', err?.message || err);
-    });
+    }));
   } catch (err) {
     console.error('Failed to initiate migration receive:', err);
+    window.cancelMigrationReceive();
     alertMessage("受信セッションの開始に失敗しました", "error");
   }
 };
 window.cancelMigrationReceive = function() {
+  activeMigrationUnsubs.splice(0).forEach(unsubscribe => unsubscribe());
   if (activeMigrationCountdown) { clearInterval(activeMigrationCountdown); activeMigrationCountdown = null; }
   if (activeMigrationPeer) { activeMigrationPeer.close(); activeMigrationPeer = null; }
   activeMigrationChannel = null;
@@ -32423,6 +32637,15 @@ window.initiateMigrationSend = async function() {
   if (statusEl) statusEl.textContent = '新端末に接続中...';
   let unsubTransfer = null;
   let unsubReceiverCands = null;
+  let pc = null;
+  let migrationSendTimer = null;
+  const cleanupSend = () => {
+    clearTimeout(migrationSendTimer);
+    if (unsubTransfer) { unsubTransfer(); unsubTransfer = null; }
+    if (unsubReceiverCands) { unsubReceiverCands(); unsubReceiverCands = null; }
+    if (pc) { try { pc.close(); } catch (_) {} }
+    btn.disabled = false;
+  };
   try {
     const transferRef = doc(db, `artifacts/${appId}/device_transfers/${code}`);
     const snap = await getDoc(transferRef);
@@ -32437,15 +32660,19 @@ window.initiateMigrationSend = async function() {
       btn.disabled = false;
       return;
     }
-    const pc = new RTCPeerConnection({
+    pc = new RTCPeerConnection({
       iceServers: VC_ICE_SERVERS
     });
     const pendingCandidates = [];
     const channel = pc.createDataChannel('migrationData', { ordered: true });
     channel.onopen = async () => {
+      clearTimeout(migrationSendTimer);
+      migrationSendTimer = setTimeout(cleanupSend, 5 * 60 * 1000);
+      try {
       if (statusEl) statusEl.textContent = 'ローカルデータを集約・送信準備中...';
       if (progressBar) progressBar.style.width = '10%';
       const bundle = await LocalStore.getAllLocalData();
+      const transferDeadline = Date.now() + 5 * 60 * 1000;
       const jsonStr = JSON.stringify(bundle);
       const CHUNK_SIZE = 16384;
       const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
@@ -32453,6 +32680,7 @@ window.initiateMigrationSend = async function() {
       for (let i = 0; i < totalChunks; i++) {
         const chunk = jsonStr.substr(i * CHUNK_SIZE, CHUNK_SIZE);
         while (channel.bufferedAmount > 1024 * 1024) {
+          if (channel.readyState !== 'open' || Date.now() > transferDeadline) throw new Error('移行接続が切断、またはタイムアウトしました');
           await new Promise(r => setTimeout(r, 25));
         }
         channel.send(JSON.stringify({ type: 'CHUNK', index: i, data: chunk }));
@@ -32466,12 +32694,18 @@ window.initiateMigrationSend = async function() {
       if (statusEl) statusEl.textContent = 'データ送信完了！';
       alertMessage("端末データ移行の送信が完了しました！", "success");
       btn.disabled = false;
-      setTimeout(() => {
-        if (unsubTransfer) unsubTransfer();
-        if (unsubReceiverCands) unsubReceiverCands();
-        try { pc.close(); } catch (_) {}
-      }, 3000);
+      setTimeout(cleanupSend, 3000);
+      } catch (err) {
+        cleanupSend();
+        console.error('Migration transfer error:', err);
+        if (statusEl) statusEl.textContent = 'データ移行に失敗しました。再試行してください。';
+        alertMessage('データ移行に失敗しました', 'error');
+      }
     };
+    migrationSendTimer = setTimeout(() => {
+      cleanupSend();
+      if (statusEl) statusEl.textContent = '接続がタイムアウトしました。再試行してください。';
+    }, 30000);
     pc.onicecandidate = async (ev) => {
       if (ev.candidate) {
         await addDoc(collection(db, `artifacts/${appId}/device_transfers/${code}/sender_candidates`), ev.candidate.toJSON()).catch(() => {});
@@ -32509,8 +32743,7 @@ window.initiateMigrationSend = async function() {
     });
   } catch (err) {
     console.error('Migration send error:', err);
-    if (unsubTransfer) unsubTransfer();
-    if (unsubReceiverCands) unsubReceiverCands();
+    cleanupSend();
     alertMessage("送信処理中にエラーが発生しました", "error");
     btn.disabled = false;
   }
@@ -32607,16 +32840,14 @@ async function createServer(name, customId, password) {
     memberCount: 1
   };
   await setDoc(doc(db, `artifacts/${appId}/servers`, customId), serverData);
-  // RTDB にもサーバーメタデータとメンバーシップを直接同期
+  // Publish the authoritative Firestore ownership through the authenticated Worker.
   try {
-    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    await set(ref(rtdb, `artifacts/${appId}/servers/${customId}`), {
-      name: name,
-      createdBy: userId,
-      members: { [userId]: true },
-      serverAdmins: { [userId]: true }
-    }).catch(() => {});
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch(`${WORKER_BASE_URL}/api/syncRtdb`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverId: customId, userId, appId, idToken, rtdbUrl: firebaseConfig.databaseURL })
+    });
+    if (!response.ok) console.warn("RTDB server init failed:", response.status);
   } catch (rtdbErr) { console.warn("RTDB server init warning:", rtdbErr); }
   // 新しい形式：パスワードハッシュを secrets/auth に保存
   await setDoc(doc(db, `artifacts/${appId}/servers/${customId}/secrets`, 'auth'), {
@@ -34179,12 +34410,15 @@ async function loadServerSettingsMembers() {
   _isLoadingSsMembers = true;
   const listEl = document.getElementById("serverMembersManageList");
   if (!listEl) { _isLoadingSsMembers = false; return; }
+  try {
   listEl.innerHTML = "<p class='text-xs text-gray-400'>読み込み中...</p>";
   const serverSnap = await getDoc(doc(db, `artifacts/${appId}/servers`, currentServerId));
+  if (!serverSnap.exists()) return;
   const serverData = serverSnap.data();
   const rawMembers = serverData.joinedUsers || [];
   const members = [...new Set(rawMembers)];
   const admins = serverData.serverAdmins || [];
+  const canManageRoles = isAdmin || serverData.createdBy === userId;
   listEl.innerHTML = "";
   const profileSnaps = await Promise.all(
     members.map(uid => getDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/profiles`, uid)).catch(() => null))
@@ -34206,8 +34440,8 @@ async function loadServerSettingsMembers() {
               </div>
             </div>
             <div class="flex gap-2">
-              ${uid !== userId ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
-              ${uid !== userId ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
+              ${uid !== userId && canManageRoles ? `<button class="toggle-admin-btn text-xs px-2 py-1 rounded-lg border transition-all ${isAdmin_ ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}">${isAdmin_ ? '管理者解除' : '管理者に設定'}</button>` : ''}
+              ${uid !== userId && uid !== serverData.createdBy && (canManageRoles || !isAdmin_) ? `<button class="kick-btn text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg text-xs transition-all"><i class="fas fa-times"></i></button>` : ''}
             </div>`;
     // data-uid はサニタイズ不要な UID だが innerHTML の外で設定して安全に
     if (uid !== userId) {
@@ -34256,6 +34490,7 @@ async function loadServerSettingsMembers() {
           const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
           const rtdb = await _getOrInitRTDB();
           await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/members/${targetUid}`));
+          await remove(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/serverAdmins/${targetUid}`));
         } catch (rtdbErr) { console.warn("RTDB kick sync failed:", rtdbErr); }
         await loadServerSettingsMembers();
         // Forward Secrecy: メンバーキック時に全ルームの鍵をローテーション
@@ -34268,8 +34503,13 @@ async function loadServerSettingsMembers() {
           } catch (e) { alertMessage("キックに失敗しました", "error"); }
           });
           });
-          _isLoadingSsMembers = false;
-          }
+  } catch (err) {
+    console.warn('Member settings load failed:', err);
+    listEl.textContent = 'メンバーを読み込めませんでした。再試行してください。';
+  } finally {
+    _isLoadingSsMembers = false;
+  }
+}
           // 招待コードタブ (二重登録リスナーを削除し switchSsTab に一本化)
           let _isLoadingInviteCodes = false;
           async function loadInviteCodes() {
@@ -35129,6 +35369,7 @@ document.getElementById("serverCtxLeave")?.addEventListener("click", async () =>
     try {
       const { ref, remove } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
       const rtdb = await _getOrInitRTDB();
+      await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/serverAdmins/${userId}`));
       await remove(ref(rtdb, `artifacts/${appId}/servers/${sv.id}/members/${userId}`));
     } catch (rtdbErr) { console.warn("RTDB leave sync failed:", rtdbErr); }
     alertMessage("サーバーを退出しました", "success");
@@ -38205,7 +38446,7 @@ async function sendMessage() {
   const currentAttachedFile = attachedFile;
   const currentAttachedKvFile = attachedKvFile;
   const currentAttachedFiles = (Array.isArray(attachedFiles) && attachedFiles.length > 0) ? [...attachedFiles] : (currentAttachedFile ? [currentAttachedFile] : []);
-  if (isSendingMessage && (currentAttachedFile || currentAttachedKvFile)) return;
+  if (isSendingMessage) return;
   const text = messageInput.value.trim();
   if ((!text && !currentAttachedFile && !currentAttachedKvFile) || (!currentRoomId && !currentDmId)) return;
   // 宛先状態のスナップショット（ファイルアップロード中の別部屋遷移による誤爆投稿を100%防止）
@@ -38225,8 +38466,8 @@ async function sendMessage() {
     }
   }
   // 巨大テキスト検証（32KB / 約10,000文字の送信前ガード）
-  if (text && text.length > 10000) {
-    alertMessage("メッセージが長すぎます（最大10,000文字）", "warning");
+  if (text && (text.length > 10000 || new TextEncoder().encode(text).length > 23900)) {
+    alertMessage("メッセージが長すぎます（最大10,000文字・UTF-8で約23KB）", "warning");
     return;
   }
   const isSvAdmin = Boolean(snapServerData?.serverAdmins && snapServerData.serverAdmins.includes(userId));
@@ -38251,8 +38492,12 @@ async function sendMessage() {
     alertMessage(rateCheck.reason || "少し待ってから送信してください", "warning");
     return;
   }
+  isSendingMessage = true;
+  sendMessageButton.disabled = true;
   // Optimistic input clearing (LINE style)
   const previousInputText = text;
+  const isSameDestination = () => currentDmId === snapDmId && currentServerId === snapServerId && currentRoomId === snapRoomId;
+  const restoreDraft = () => { if (isSameDestination() && !messageInput.value) messageInput.value = previousInputText; };
   messageInput.value = "";
   messageInput.style.height = "auto";
   if (typeof window.clearCurrentDraft === 'function') window.clearCurrentDraft();
@@ -38279,11 +38524,9 @@ async function sendMessage() {
     let wasEncrypted = false;
     if (text) {
       if (!_subtleOK) {
-        console.warn("[E2EE] この環境は Web Crypto 非対応のため平文で送信します");
-        if (!await showCustomConfirm("現在のブラウザ環境はエンドツーエンド暗号化(WebCrypto API)に非対応です。平文で送信してもよろしいですか？", "平文で送信", "キャンセル", "セキュリティ警告")) {
-          messageInput.value = previousInputText;
-          return;
-        }
+        restoreDraft();
+        alertMessage("暗号化を利用できないため送信を中断しました。HTTPS接続とブラウザの対応状況を確認してください。", "error");
+        return;
       } else {
         try {
           if (snapDmId) {
@@ -38293,7 +38536,7 @@ async function sendMessage() {
               dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
             }
             if (!dmKey) {
-              messageInput.value = previousInputText;
+              restoreDraft();
               alertMessage("🔒 暗号化保護エラー: DMセキュリティ鍵の取得に失敗しました", "error");
               return;
             }
@@ -38302,7 +38545,7 @@ async function sendMessage() {
               textToStore = enc;
               wasEncrypted = true;
             } else {
-              messageInput.value = previousInputText;
+              restoreDraft();
               alertMessage("🔒 暗号化保護エラー: DMメッセージの暗号化に失敗したため、平文送信を強制遮断しました", "error");
               return;
             }
@@ -38314,7 +38557,7 @@ async function sendMessage() {
             }
             const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
             if (!roomKey) {
-              messageInput.value = previousInputText;
+              restoreDraft();
               console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${snapServerId}, room=${snapRoomId})`);
               loadingOverlay.classList.add("hidden");
               alertMessage("🔒 暗号化保護エラー: セキュリティ鍵の取得に失敗したため、平文での送信を強制遮断しました。自動で鍵の修復を実行します。", "error");
@@ -38326,7 +38569,7 @@ async function sendMessage() {
                 textToStore = enc;
                 wasEncrypted = true;
               } else {
-                messageInput.value = previousInputText;
+                restoreDraft();
                 alertMessage("🔒 暗号化保護エラー: メッセージの暗号化処理に失敗しました", "error");
                 await requestEscrowRescue(snapServerId, snapRoomId);
                 return;
@@ -38334,7 +38577,7 @@ async function sendMessage() {
             }
           }
         } catch (e) {
-          messageInput.value = previousInputText;
+          restoreDraft();
           console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
           loadingOverlay.classList.add("hidden");
           alertMessage("🔒 暗号化保護エラー: 例外が発生したため送信を遮断しました", "error");
@@ -38381,6 +38624,7 @@ async function sendMessage() {
             }
           }
         }
+        if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
         const fileUrl = await uploadToExternalService(
           fileToUpload,
           (pct) => {
@@ -38388,7 +38632,7 @@ async function sendMessage() {
             if (progressText) progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
           },
           "simplechat/messages",
-          snapServerId
+          snapDmId ? null : snapServerId
         );
         const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || currentFileName.startsWith('SPOILER_'));
         const finalFileName = (isSpoiler && !currentFileName.startsWith('SPOILER_')) ? `SPOILER_${currentFileName}` : currentFileName;
@@ -38572,8 +38816,11 @@ async function sendMessage() {
         console.error("Failed to trigger notification:", notifyErr);
       }
     }
-    const remainingFiles = (attachedFiles && attachedFiles.length > 1) ? attachedFiles.slice(1) : [];
-    clearAttachedFile(); cancelReply();
+    const remainingFiles = currentAttachedFiles.slice(1);
+    if (isSameDestination()) {
+      if (attachedFile === currentAttachedFile && attachedKvFile === currentAttachedKvFile) clearAttachedFile();
+      if (replyingToMessage === snapReplyTo) cancelReply();
+    }
     resetAwayTimer();
     pruneExcessMessages(snapServerId, snapRoomId, snapDmId);
     // 複数ファイル添付時の順次バックグラウンドアップロード＆送信 (#70)
@@ -38601,7 +38848,7 @@ async function sendMessage() {
     console.error(e);
     if (typeof text !== 'undefined' && text) {
       const mi = document.getElementById("messageInput");
-      if (mi && !mi.value) mi.value = text;
+      if (mi && !mi.value && isSameDestination()) mi.value = text;
     }
     alertMessage("送信に失敗しました", "error");
     } finally {
@@ -38611,7 +38858,8 @@ async function sendMessage() {
     messageInput.disabled = false;
     sendMessageButton.disabled = false;
     isSendingMessage = false;
-    setTimeout(() => messageInput.focus(), 10);
+    toggleSendButtonState();
+    if (isSameDestination()) setTimeout(() => messageInput.focus(), 10);
     }
     }
     const clearFileBtn = document.getElementById("clearFileButton");
@@ -38627,9 +38875,9 @@ async function sendMessage() {
       updateFilePreview();
     }
     async function sendSingleAttachmentMessage(fileObj, destSnapshot = null) {
-    const snapDmId = destSnapshot?.snapDmId ?? currentDmId;
-    const snapRoomId = destSnapshot?.snapRoomId ?? currentRoomId;
-    const snapServerId = destSnapshot?.snapServerId ?? currentServerId;
+    const snapDmId = destSnapshot ? destSnapshot.snapDmId : currentDmId;
+    const snapRoomId = destSnapshot ? destSnapshot.snapRoomId : currentRoomId;
+    const snapServerId = destSnapshot ? destSnapshot.snapServerId : currentServerId;
     if (!fileObj || (!snapRoomId && !snapDmId)) return;
     // Snapshot room-state before any await — prevents race condition where the
     // user navigates to another room while a background upload is in progress.
@@ -38666,7 +38914,8 @@ async function sendMessage() {
       }
     }
     }
-    const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapServerId);
+    if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
+    const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapDmId ? null : snapServerId);
     cacheLocalMediaFile(fileUrl, fileToUpload);
     const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || fileObj.isSpoiler || fileObj.name.startsWith('SPOILER_'));
     const finalFileName = (isSpoiler && !fileObj.name.startsWith('SPOILER_')) ? `SPOILER_${fileObj.name}` : fileObj.name;
@@ -44145,8 +44394,9 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
   }
   // 3. WebRTC DataChannel 経由で暗号化メッセージを送信 (TURN対応で100%貫通)
   let unsubRequesterCands = null;
+  let pc = null;
   try {
-    const pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
+    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
     let dc = null;
     const pendingCandidates = [];
     pc.ondatachannel = (ev) => {
@@ -44160,8 +44410,8 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
         } catch (sendErr) {
           console.warn('[P2P LogSync] Large payload batching fallback:', sendErr);
           // 64KB超過時の小分けフォールバック
-          for (let i = 0; i < validMsgs.length; i += 25) {
-            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 25) }));
+          for (let i = 0; i < validMsgs.length; i++) {
+            dc.send(JSON.stringify({ type: 'LOG_RESP', channelId, messages: validMsgs.slice(i, i + 1) }));
           }
         }
         setTimeout(() => {
@@ -44222,6 +44472,7 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
       console.warn('[P2P LogSync] Responder error:', err);
     }
     if (unsubRequesterCands) { unsubRequesterCands(); unsubRequesterCands = null; }
+    if (pc) { try { pc.close(); } catch (_) {} }
     deleteDoc(doc(db, `artifacts/${appId}/p2p_log_sync/${syncId}`)).catch(() => {});
     }
 }
@@ -44271,7 +44522,8 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         const res = JSON.parse(ev.data);
         if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
           // 届いたメッセージが安全なデータか検証（要求した過去日時より古い、または新規追加分のみ安全に合流）
-          const filteredIncoming = res.messages.filter(m => m && m.id && typeof m.channelId === 'string');
+          if (res.channelId !== channelKey) return;
+          const filteredIncoming = res.messages.filter(m => m && typeof m.id === 'string' && m.channelId === channelKey && (oldestLocalTs == null || getMsgTimestamp(m) <= oldestLocalTs));
           console.log(`[P2P LogSync] Received ${filteredIncoming.length} backfilled messages for ${res.channelId}`);
           await LocalStore.upsertMessagesBatch(filteredIncoming);
           // 現在開いているチャンネルと一致していれば復号して即時画面反映
@@ -44300,8 +44552,6 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
         }
       } catch (e) {
         console.warn('[P2P LogSync] Parse error:', e);
-      } finally {
-        cleanupP2P();
       }
     };
     pc.onicecandidate = (e) => {
@@ -51751,13 +52001,13 @@ window._subscribeVcSidebarStates = function(serverId) {
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.275" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.276" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.275" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.276" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -56027,7 +56277,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.275"></script>
+  <script type="module" src="js/main.js?v=1.1.276"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -57510,7 +57760,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 
 <file path="public/version.json">
 {
-  "version": "1.1.275",
+  "version": "1.1.276",
   "force": false
 }
 </file>
@@ -57519,7 +57769,7 @@ window._subscribeVcSidebarStates = function(serverId) {
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.275",
+  "version": "1.1.276",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

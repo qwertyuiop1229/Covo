@@ -213,7 +213,7 @@ export function getSystemDiagnosticInfo() {
     timestamp: new Date().toLocaleString('ja-JP'),
     appType: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
     platform: typeof window.__TAURI__ !== 'undefined' ? 'Windows Desktop App (Tauri)' : (window.matchMedia('(display-mode: standalone)').matches ? 'PWA Standalone' : 'Web Browser'),
-    appVersion: window.__covo_version || (typeof _appVersion !== 'undefined' ? _appVersion : '最新版'),
+    appVersion: window.__covo_version || (window._appVersion || '最新版'),
     userAgent: navigator.userAgent,
     language: navigator.language || 'ja',
     online: navigator.onLine,

@@ -982,18 +982,53 @@ fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String)
         .show();
 }
 
+fn is_official_installer_url(input: &str, tag: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(input) else { return false; };
+    let segments: Vec<_> = parsed.path_segments().map(|s| s.collect()).unwrap_or_default();
+    parsed.scheme() == "https"
+        && parsed.host_str() == Some("github.com")
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.port().is_none()
+        && parsed.query().is_none()
+        && parsed.fragment().is_none()
+        && segments.len() == 6
+        && segments[0].eq_ignore_ascii_case("qwertyuiop1229")
+        && segments[1].eq_ignore_ascii_case("covo")
+        && segments[2] == "releases"
+        && segments[3] == "download"
+        && segments[4].trim_start_matches('v') == tag.trim_start_matches('v')
+        && segments[5].to_ascii_lowercase().ends_with(".exe")
+}
+
+#[cfg(test)]
+mod installer_url_tests {
+    use super::is_official_installer_url;
+
+    #[test]
+    fn restrict_installer_to_the_selected_official_release() {
+        assert!(is_official_installer_url("https://github.com/qwertyuiop1229/covo/releases/download/v1.2.3/Covo.exe", "1.2.3"));
+        for input in [
+            "https://objects.githubusercontent.com/untrusted.exe",
+            "https://github.com/other/project/releases/download/v1.2.3/Covo.exe",
+            "https://github.com/qwertyuiop1229/covo/releases/download/v1.2.4/Covo.exe",
+            "https://github.com/qwertyuiop1229/covo/releases/download/../../other.exe",
+            "https://github.com@evil.example/qwertyuiop1229/covo/releases/download/v1.2.3/Covo.exe",
+        ] {
+            assert!(!is_official_installer_url(input, "1.2.3"));
+        }
+    }
+}
+
 #[tauri::command]
 async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
     log::info!("silent_install_past_version called: {} -> {}", tag, url);
 
-    if !tag.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+    if tag.is_empty() || tag.len() > 80 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
         return Err("Invalid tag format".to_string());
     }
 
-    let url_lower = url.to_lowercase();
-    let is_valid_url = url_lower.starts_with("https://github.com/qwertyuiop1229/covo/releases/download/")
-        || url.starts_with("https://objects.githubusercontent.com/");
-    if !is_valid_url {
+    if !is_official_installer_url(&url, &tag) {
         return Err("Invalid download URL: must be from official repository".to_string());
     }
 
@@ -1002,7 +1037,11 @@ async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, 
     let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
 
     // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
-    let response = reqwest::get(&url).await.map_err(|e| format!("Request failed: {}", e))?;
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build().map_err(|e| format!("Client failed: {}", e))?
+        .get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?
+        .error_for_status().map_err(|e| format!("Download failed: {}", e))?;
     let total = response.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
 

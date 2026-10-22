@@ -51,16 +51,16 @@ export function checkFileAllowed(file) {
  * Cloudflare Worker (KV) へファイルをアップロードします。
  * (main.jsのグローバル変数を引数として受け取る内部用関数)
  */
-export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
-  return new Promise(async (resolve, reject) => {
+export async function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
     let idToken = "";
     try {
       if (auth && auth.currentUser) {
         idToken = await auth.currentUser.getIdToken();
       }
     } catch (tokenErr) {
-      return reject(new Error("認証トークンの取得に失敗しました: " + tokenErr.message));
+      throw new Error("認証トークンの取得に失敗しました: " + tokenErr.message);
     }
+  return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('uploaderId', userId || '');
@@ -73,6 +73,8 @@ export function _uploadToExternalService(file, auth, userId, workerBaseUrl, onPr
     }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.timeout = 120000;
+    xhr.addEventListener('timeout', () => reject(new Error('アップロードがタイムアウトしました。接続を確認して再試行してください')));
     xhr.upload.addEventListener('progress', e => {
       if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));
     });
