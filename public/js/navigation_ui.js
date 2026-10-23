@@ -8,7 +8,7 @@ export function installNavigationUI({ conversations, openConversation, openSearc
     const events = new AbortController();
     const heading = document.createElement('div'); heading.className = 'covo-switcher-heading';
     const title = document.createElement('span'); title.textContent = '会話を切り替える';
-    const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'covo-icon-button'; dismiss.setAttribute('aria-label', '会話の切替を閉じる'); dismiss.textContent = '×';
+    const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'topbar-btn covo-icon-button'; dismiss.setAttribute('aria-label', '会話の切替を閉じる'); dismiss.textContent = '×';
     heading.append(title, dismiss);
     const input = document.createElement('input'); input.placeholder = 'チャンネル名・DMを検索'; input.setAttribute('aria-label', input.placeholder);
     input.setAttribute('role', 'combobox'); input.setAttribute('aria-expanded', 'true'); input.setAttribute('aria-controls', 'quickConversationResults'); input.setAttribute('aria-autocomplete', 'list');

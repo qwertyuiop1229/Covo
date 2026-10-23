@@ -9,7 +9,10 @@
  * @param {string} type - "info", "success", "error"
  */
 export function alertMessage(msg, type = "info") {
-  const stack = document.getElementById("notifStack");
+  const desktop = document.getElementById('notifStack');
+  const mobile = document.getElementById('mobileNotifContainer');
+  const isMobile = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)')?.matches;
+  const stack = (isMobile ? mobile : desktop) || desktop || mobile;
   if (!stack) return;
   const box = document.createElement("div");
   let colorClass = "bg-gray-800 text-white";
@@ -18,6 +21,8 @@ export function alertMessage(msg, type = "info") {
   
   box.className = `px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${colorClass} flex items-center gap-2`;
   box.style.cssText = "pointer-events:auto;animation:slideUpFade 0.22s ease both;";
+  box.style.maxWidth = 'min(420px, calc(100vw - 20px))';
+  box.setAttribute('role', type === 'error' ? 'alert' : 'status');
   let icon = '<i class="fas fa-info-circle"></i>';
   if (type === "error") icon = '<i class="fas fa-exclamation-triangle"></i>';
   else if (type === "success") icon = '<i class="fas fa-check-circle"></i>';

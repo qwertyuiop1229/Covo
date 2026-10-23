@@ -18,25 +18,33 @@ export function setAccountScope(uid) {
 }
 const DB_VERSION = 1;
 
-export async function getSettingsByPrefix(prefix) {
+export async function getSettingsByPrefix(prefix, { throwOnError = false } = {}) {
+  const generation = _accountGeneration;
   const db = await initLocalDB();
-  if (!db) return [];
-  return new Promise(resolve => {
+  if (!db || generation !== _accountGeneration) {
+    if (throwOnError) throw new Error('端末の保存領域を開けませんでした');
+    return [];
+  }
+  return new Promise((resolve, reject) => {
     const tx = db.transaction('settings', 'readonly');
     const request = tx.objectStore('settings').getAll(IDBKeyRange.bound(prefix, prefix + '\uffff'));
     request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => resolve([]);
+    const fail = () => throwOnError ? reject(new Error('端末の履歴を読み込めませんでした')) : resolve([]);
+    request.onerror = fail;
+    tx.onabort = fail;
   });
 }
 
 export async function deleteSetting(key) {
+  const generation = _accountGeneration;
   const db = await initLocalDB();
-  if (!db) return false;
+  if (!db || generation !== _accountGeneration) return false;
   return new Promise(resolve => {
     const tx = db.transaction('settings', 'readwrite');
     tx.objectStore('settings').delete(key);
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => resolve(false);
+    tx.onabort = () => resolve(false);
   });
 }
 

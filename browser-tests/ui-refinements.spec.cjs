@@ -131,3 +131,128 @@ test('quick switcher shows empty results, keeps the selected row visible and clo
   await page.keyboard.press('Enter'); await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0); expect(await page.evaluate(()=>opened)).toEqual([]);
   await page.keyboard.press('Control+k'); await page.keyboard.press('Control+k'); await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0); await expect(page.locator('#outside')).toBeFocused();
 });
+
+async function archiveFixture(page, theme = '', mobile = false) {
+  if (mobile) await page.setViewportSize({ width: 390, height: 740 });
+  await fixture(page, theme);
+  await page.evaluate(({ html, mobile }) => {
+    const source = new DOMParser().parseFromString(html, 'text/html');
+    for (const id of ['settingsModal', 'mobileDetailChatBackup', 'localArchivesPanel', 'chatBackupViewerModal', 'customConfirmModal', 'customPromptModal', 'customAlertModal', 'notifStack', 'mobileNotifContainer']) document.body.appendChild(document.importNode(source.getElementById(id), true));
+    if (mobile) document.getElementById('mobileDetailChatBackup').classList.add('active');
+    else {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.querySelectorAll('.settings-content-section').forEach(element => element.classList.remove('active'));
+      document.getElementById('chatbackupSection').classList.add('active');
+    }
+  }, { html: fs.readFileSync('public/index.html', 'utf8'), mobile });
+  for (const file of ['ui_helpers.js', 'local_archive_ui.js', 'navigation_ui.js']) await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/\bexport /g, '') });
+  const install = tree.program.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression' && node.expression.callee.name === 'installNavigationUI');
+  const close = install.expression.arguments[0].properties.find(property => property.key.name === 'closeOverlay').value;
+  await page.addScriptTag({ content: `
+    ${functionCode('openModal')}
+    ${functionCode('showCustomConfirm')}
+    window.owner='alice';window.archiveRows=[];window.deleted=[];window.archiveOpens=[];window.readCompleters=[];
+    window.archivesUI=installLocalArchiveUI({account:()=>owner,store:{
+      getSettingsByPrefix:async()=>{if(window.readFailure)throw Error('read failed');const rows=archiveRows;if(window.deferRead)await new Promise(resolve=>readCompleters.push(resolve));return rows;},
+      deleteSetting:async key=>{deleted.push(key);return !window.deleteFailure;}
+    },openArchive:async archive=>{archiveOpens.push(archive);if(window.openFailure)throw Error('パスフレーズを確認してください');},alertMessage,confirm:showCustomConfirm,openModal});
+    window.openLocalArchives=trigger=>archivesUI.open(trigger);
+    window.closeLocalArchives=()=>archivesUI.close();
+    installNavigationUI({conversations:()=>[],openConversation(){},openSearch(){},moveChannel(){},cancelRecording:()=>false,closeOverlay:${main.slice(close.start, close.end)}});
+  ` });
+  return page.locator(mobile ? '#mobileOpenLocalArchivesButton' : '#openLocalArchivesButton');
+}
+
+for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
+  test(`archive controls reuse backup styles and common notifications in ${theme || 'light'} theme`, async ({ page }) => {
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    const trigger = await archiveFixture(page, theme);
+    const comparison = await page.evaluate(() => {
+      const original = getComputedStyle(document.querySelector('#chatbackupSection button[onclick="openChatBackupViewerFilePicker()"]'));
+      const added = getComputedStyle(document.getElementById('openLocalArchivesButton'));
+      return ['backgroundColor', 'color', 'borderRadius', 'fontSize', 'fontWeight', 'minHeight'].every(key => original[key] === added[key]);
+    }); expect(comparison).toBe(true);
+    await page.screenshot({path:`scratch/archive-settings-${theme || 'light'}.png`});
+    await trigger.click();
+    await expect(page.locator('#localArchivesPanel')).toBeHidden();
+    await expect(page.locator('#notifStack')).toContainText('保存されたアーカイブはありません');
+    await page.evaluate(() => { archiveRows=[{key:'archive:one',value:{roomName:'# 一般',exportedAt:1800000000000}},{key:'archive:two',value:{roomName:'<img src=x onerror=alert(1)>'.repeat(6)}}]; });
+    await trigger.click();
+    const modal = page.locator('#localArchivesPanel'); await expect(modal).toBeVisible();
+    await expect(modal.locator('.local-archive-row')).toHaveCount(2); await expect(modal.locator('.local-archive-details img')).toHaveCount(0);
+    await expect(page.locator('#localArchivesCount')).toHaveText('2件のアーカイブ');
+    await page.locator('#notifStack').evaluate(element => element.replaceChildren());
+    await page.screenshot({path:`scratch/archive-controls-${theme || 'light'}.png`});
+    await modal.getByRole('button',{name:'# 一般を端末から削除',exact:true}).click();
+    await expect(page.locator('#customConfirmModal')).toBeVisible();
+    expect(await page.evaluate(()=>Number(getComputedStyle(document.getElementById('customConfirmModal')).zIndex)>Number(getComputedStyle(document.getElementById('localArchivesPanel')).zIndex))).toBe(true);
+    await page.keyboard.press('Escape'); await expect(page.locator('#customConfirmModal')).toBeHidden(); await expect(modal).toBeVisible();
+    expect(await page.evaluate(()=>deleted)).toEqual([]);
+    await page.evaluate(()=>{window.deleteFailure=true;});
+    await modal.getByRole('button',{name:'# 一般を端末から削除',exact:true}).click(); await page.locator('#customConfirmOk').click();
+    await expect(modal.locator('.local-archive-row')).toHaveCount(2); await expect(page.locator('#notifStack')).toContainText('削除できませんでした');
+    await page.keyboard.press('Escape'); await expect(modal).toBeHidden(); await expect(trigger).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+
+  test(`mobile archive feedback and list fit ${theme || 'light'} theme`, async ({ page }) => {
+    const trigger = await archiveFixture(page, theme, true);
+    await trigger.click(); await expect(page.locator('#mobileNotifContainer')).toContainText('保存されたアーカイブはありません');
+    await expect(page.locator('#mobileNotifContainer > [role="status"]')).toBeVisible();
+    await page.evaluate(()=>{archiveRows=[{key:'archive:one',value:{roomName:'長い会話名'.repeat(20),exportedAt:1800000000000}}];});
+    await trigger.click();
+    const modal=page.locator('#localArchivesPanel'); await expect(modal).toBeVisible();
+    await page.locator('#mobileNotifContainer').evaluate(element => element.replaceChildren());
+    for(const selector of ['.local-archive-row','.local-archive-actions']) {
+      const bounds=await modal.locator(selector).boundingBox(); expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.x+bounds.width).toBeLessThanOrEqual(390);
+    }
+    await page.screenshot({path:`scratch/archive-controls-mobile-${theme || 'light'}.png`});
+    await modal.getByRole('button',{name:'削除',exact:false}).click();await page.locator('#customConfirmOk').click();
+    await expect(modal).toBeHidden();await expect(page.locator('#mobileNotifContainer')).toContainText('この端末から削除しました');
+    await expect(trigger).toBeFocused();
+  });
+}
+
+test('archive deletion cannot cross accounts while the common confirmation dialog is open', async ({ page }) => {
+  const trigger=await archiveFixture(page);
+  await page.evaluate(()=>{archiveRows=[{key:'archive:one',value:{roomName:'Alice only'}}];});
+  await trigger.click(); await page.locator('#localArchivesPanel').getByRole('button',{name:'削除',exact:false}).click();
+  await page.evaluate(()=>{owner='bob';archivesUI.close(false);}); await page.locator('#customConfirmOk').click();
+  expect(await page.evaluate(()=>deleted)).toEqual([]);await expect(page.locator('#localArchivesPanel')).toBeHidden();
+});
+
+test('archive read and open failures use the shared toast without leaving an empty or blocked dialog', async ({ page }) => {
+  const trigger=await archiveFixture(page);
+  await page.evaluate(()=>{window.readFailure=true;});await trigger.click();
+  await expect(page.locator('#notifStack')).toContainText('読み込めませんでした');await expect(trigger).toBeEnabled();
+  await page.evaluate(()=>{window.readFailure=false;archiveRows=[{key:'archive:one',value:{roomName:'Open test'}}];window.openFailure=true;});
+  await trigger.click(); await page.locator('#localArchivesPanel').getByRole('button',{name:'Open testを開く',exact:true}).click();
+  await expect(page.locator('#localArchivesPanel')).toBeHidden();await expect(page.locator('#notifStack')).toContainText('パスフレーズを確認してください');
+  expect(await page.evaluate(()=>archiveOpens.length)).toBe(1);
+});
+
+test('a late archive read cannot replace a new account list or unlock its pending button', async ({ page }) => {
+  const trigger=await archiveFixture(page);
+  await page.evaluate(()=>{window.deferRead=true;archiveRows=[{key:'archive:alice',value:{roomName:'Alice only'}}];});
+  await trigger.click();await expect(trigger).toBeDisabled();
+  await page.evaluate(()=>{owner='bob';archivesUI.close(false);});await expect(trigger).toBeEnabled();
+  await page.evaluate(()=>{archiveRows=[{key:'archive:bob',value:{roomName:'Bob only'}}];openLocalArchives(document.getElementById('openLocalArchivesButton'));});
+  await expect(trigger).toBeDisabled();await page.evaluate(()=>readCompleters[0]());
+  await expect(trigger).toBeDisabled();await expect(page.locator('#localArchivesPanel')).toBeHidden();
+  await page.evaluate(()=>readCompleters[1]());await expect(trigger).toBeEnabled();
+  await expect(page.locator('#localArchivesList')).toContainText('Bob only');await expect(page.locator('#localArchivesList')).not.toContainText('Alice only');
+});
+
+test('backup pagination uses shared buttons and Escape closes the viewer above mobile settings', async ({ page }) => {
+  await archiveFixture(page, 'discord-dark-theme', true);
+  await page.addScriptTag({content:fs.readFileSync('public/js/backup_feature.js','utf8').replace(/\bexport /g,'')+`
+    installBackupFeature({userId:'alice',isEncrypted:()=>false,escapeHtml:value=>String(value),escapeHtmlAndLinkUrls:value=>String(value),_archiveBlobUrls:new Set()});
+  `});
+  await page.evaluate(()=>window.openChatBackupViewerModal('ページ送り確認',Array.from({length:201},(_,index)=>({id:'m'+index,senderId:'alice',text:'本文 '+index,timestamp:1800000000000+index})),1800000000000,true));
+  const viewer=page.locator('#chatBackupViewerModal');const older=viewer.getByRole('button',{name:'前の100件',exact:true});const newer=viewer.getByRole('button',{name:'次の100件',exact:true});
+  await expect(viewer.locator('.backup-pagination-count')).toHaveText('102–201 / 201件');await expect(newer).toBeDisabled();
+  await expect(older).toHaveClass(/covo-button-secondary/);await older.click();await expect(viewer.locator('.backup-pagination-count')).toHaveText('2–101 / 201件');
+  await older.click();await expect(viewer.locator('.backup-pagination-count')).toHaveText('1–1 / 201件');await expect(older).toBeDisabled();
+  await newer.click();await expect(viewer.locator('.backup-pagination-count')).toHaveText('2–101 / 201件');
+  await page.keyboard.press('Escape');await expect(viewer).toBeHidden();await expect(page.locator('#mobileDetailChatBackup')).toHaveClass(/active/);
+});

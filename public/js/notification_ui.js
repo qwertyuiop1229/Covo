@@ -3,7 +3,7 @@ export function installConversationNotificationUI({ header, target, preferences,
   const button = document.createElement('button');
   button.id = 'conversationNotificationButton';
   button.type = 'button';
-  button.className = 'conversation-notification-button';
+  button.className = 'topbar-btn conversation-notification-button';
   button.innerHTML = '<i class="fas fa-bell" aria-hidden="true"></i><span>通知</span>';
   button.setAttribute('aria-haspopup', 'dialog');
   button.setAttribute('aria-controls', 'conversationNotificationSettings');
@@ -46,6 +46,7 @@ export function installConversationNotificationUI({ header, target, preferences,
     const heading = document.createElement('div'); heading.className = 'covo-popover-heading';
     const title = document.createElement('strong'); title.id = 'conversationNotificationTitle'; title.textContent = '通知設定';
     const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'covo-icon-button';
+    dismiss.classList.add('topbar-btn');
     dismiss.setAttribute('aria-label', '通知設定を閉じる'); dismiss.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>'; dismiss.onclick = () => close();
     heading.append(title, dismiss); panel.appendChild(heading);
     const description = document.createElement('p'); description.className = 'covo-popover-description';

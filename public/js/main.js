@@ -1,10 +1,11 @@
-import { installNavigationUI } from './navigation_ui.js?v=1.1.280';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.280';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.281';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.281';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.281';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.280';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.281';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -99,13 +100,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.280';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.281';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.280';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.280';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.280';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.280';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.280';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.281';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.281';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.281';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.281';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.281';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -752,6 +753,7 @@ let currentFcmToken = null;
 const roomNames = {};
 let userId = null;
 let _notificationSettingsUI = null;
+let _localArchivesUI = null;
 let userNickname = null;
 let userAboutMe = "";
 let isAdmin = false;
@@ -1150,6 +1152,7 @@ function initializeFirebase() {
           setCryptoAccount(user.uid);
           LocalStore.setAccountScope(user.uid);
           userId = user.uid;
+          _localArchivesUI?.close(false);
           window._currentUserBannerColor = null;
           window._currentUserBannerAvatarUrl = undefined;
           navigator.serviceWorker?.ready.then(registration => {
@@ -1619,7 +1622,7 @@ function initializeFirebase() {
           for (const timer of _prunePendingTimers.values()) clearTimeout(timer);
           _prunePendingTimers.clear(); _pruneThrottleMap.clear();
           _searchPreloadedAt.clear();
-          document.getElementById('localArchivesPanel')?.remove();
+          _localArchivesUI?.close(false);
           window.closeChatBackupViewerModal?.();
           setCryptoAccount(null);
           LocalStore.setAccountScope(null);
@@ -16057,6 +16060,7 @@ function setChannelLoadStatus(text, retry = false) {
   element.appendChild(label);
   if (retry) {
     const button = document.createElement('button');
+    button.type = 'button'; button.className = 'covo-button covo-button-secondary covo-button-small';
     button.textContent = '再試行';
     button.onclick = () => subscribeToMessages({ preserve: true });
     element.appendChild(button);
@@ -21008,6 +21012,7 @@ function renderMessagesWithReadReceipts() {
   if (searchQuery && filteredMessages.length > _searchVisibleCount) {
     if (!moreSearch) {
       moreSearch = document.createElement('button'); moreSearch.id = 'moreSearchResults'; moreSearch.textContent = '検索結果をさらに50件表示';
+      moreSearch.type = 'button'; moreSearch.className = 'covo-button covo-button-secondary covo-button-small';
       moreSearch.onclick = () => { _searchVisibleCount += 50; renderMessagesWithReadReceipts(); }; searchContainer.appendChild(moreSearch);
     }
     filteredMessages = filteredMessages.slice(-_searchVisibleCount);
@@ -21204,7 +21209,7 @@ function renderMessagesWithReadReceipts() {
       label.textContent = pendingEntry.state === 'sending' ? '送信中…' : pendingEntry.state === 'waiting' ? 'サーバーの確認を待っています' : '送信または同期に失敗しました';
       delivery.appendChild(label);
       if (pendingEntry.state === 'failed') {
-        const retry = document.createElement('button'); retry.textContent = '再試行'; retry.onclick = () => window.retryOutboxMessage(msg.id); delivery.appendChild(retry);
+        const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'covo-button covo-button-secondary covo-button-small'; retry.textContent = '再試行'; retry.onclick = () => window.retryOutboxMessage(msg.id); delivery.appendChild(retry);
       }
     } else delivery?.remove();
     expectedElements.push(row);
@@ -29316,7 +29321,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.280').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.281').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -29886,27 +29891,9 @@ async function openEncryptedLocalArchive(container, restore = false) {
   window.openChatBackupViewerModal(payload.roomName, payload.messages, payload.exportedAt, true);
   if (payload.missingAttachments?.length) alertMessage(`未収録の添付が${payload.missingAttachments.length}件あります`, 'info');
 }
-window.openLocalArchives = async () => {
-  const owner = userId;
-  const archives = await LocalStore.getSettingsByPrefix('archive:');
-  if (owner !== userId) return;
-  const panel = document.createElement('div'); panel.className = 'covo-settings-popover'; panel.id = 'localArchivesPanel';
-  document.getElementById('localArchivesPanel')?.remove();
-  const title = document.createElement('strong'); title.textContent = '端末の暗号化アーカイブ'; panel.appendChild(title);
-  for (const archive of archives) {
-    const row = document.createElement('div');
-    const open = document.createElement('button'); open.textContent = String(archive.value.roomName || 'アーカイブ');
-    open.onclick = () => { panel.remove(); openEncryptedLocalArchive(archive.value).catch(error => alertMessage(error.message, 'warning')); };
-    const remove = document.createElement('button'); remove.textContent = '端末から削除'; remove.onclick = async () => { if (owner === userId && await showCustomConfirm('この端末のアーカイブを削除しますか？')) { await LocalStore.deleteSetting(archive.key); row.remove(); } };
-    row.append(open, remove); panel.appendChild(row);
-  }
-  if (!archives.length) panel.appendChild(document.createTextNode('保存されたアーカイブはありません。バックアップファイルを開くと、この端末へ暗号化したまま復元されます。'));
-  const close = document.createElement('button'); close.textContent = '閉じる'; close.onclick = () => panel.remove(); panel.appendChild(close); document.body.appendChild(panel);
-};
-for (const id of ['chatbackupSection', 'mobileDetailChatBackup']) {
-  const host = document.getElementById(id);
-  if (host) { const button = document.createElement('button'); button.textContent = '端末の暗号化アーカイブを開く'; button.className = 'p-3 rounded-lg border'; button.onclick = () => window.openLocalArchives(); host.appendChild(button); }
-}
+_localArchivesUI = installLocalArchiveUI({ account: () => userId, store: LocalStore, openArchive: openEncryptedLocalArchive, alertMessage, confirm: showCustomConfirm, openModal });
+window.openLocalArchives = trigger => _localArchivesUI.open(trigger);
+window.closeLocalArchives = () => _localArchivesUI.close();
 
 installNavigationUI({
   conversations: () => [
@@ -29922,8 +29909,17 @@ installNavigationUI({
   },
   cancelRecording: () => { if (_isVoiceRecording || _voiceRecordStarting) { window.cancelVoiceRecording(); return true; } return false; },
   closeOverlay: () => {
+    // Complete the shared dialog's promise before dismissing a lower overlay.
+    for (const [id, control] of [['customConfirmModal', 'customConfirmCancel'], ['customPromptModal', 'customPromptCancel'], ['customAlertModal', 'customAlertOk']]) {
+      const modal = document.getElementById(id);
+      if (modal && !modal.classList.contains('hidden')) { document.getElementById(control)?.click(); return true; }
+    }
+    for (const [id, close] of [['chatBackupViewerModal', window.closeChatBackupViewerModal], ['chatExportModal', window.closeChatExportModal]]) {
+      const modal = document.getElementById(id);
+      if (modal && !modal.classList.contains('hidden') && typeof close === 'function') { close(); return true; }
+    }
     const ids = ['conversationNotificationSettings', 'localArchivesPanel', 'covoUserVolumePopover'];
-    for (const id of ids) { const element = document.getElementById(id); if (element) { if (typeof element.close === 'function') element.close(); else element.remove(); return true; } }
+    for (const id of ids) { const element = document.getElementById(id); if (element && !element.classList.contains('hidden')) { if (typeof element.close === 'function') element.close(); else element.remove(); return true; } }
     return false;
   }
 });
@@ -29949,17 +29945,19 @@ async function searchCurrentServer() {
     panel.replaceChildren();
     for (const message of [...results].sort(compareHistoryMessages).reverse().slice(0, count)) {
       const button = document.createElement('button');
+      button.type = 'button'; button.className = 'server-search-result';
       button.textContent = `#${roomNames[message.sourceRoomId] || message.sourceRoomId} · ${message.senderNickname || 'ユーザー'}: ${String(message.text || message.fileName || 'スタンプ').slice(0, 180)}`;
       button.onclick = async () => { searchQuery = ''; if (searchInput) searchInput.value = ''; panel.remove(); await window.goToServerRoom(serverId, message.sourceRoomId); await jumpToUnloadedMessage(message.id); };
       panel.appendChild(button);
     }
-    if (results.length > count) { const more = document.createElement('button'); more.textContent = 'さらに50件表示'; more.onclick = () => render(count + 50); panel.appendChild(more); }
+    if (results.length > count) { const more = document.createElement('button'); more.type = 'button'; more.className = 'covo-button covo-button-secondary covo-button-small'; more.textContent = 'さらに50件表示'; more.onclick = () => render(count + 50); panel.appendChild(more); }
   };
   render(50);
   setSearchHistoryStatus(`${results.length}件の一致${incomplete ? '（未取得の履歴があります）' : ''}`);
 }
 if (searchContainer) {
   const scope = document.createElement('select'); scope.id = 'searchScope'; scope.setAttribute('aria-label', '検索範囲');
+  scope.className = 'covo-search-scope';
   for (const [value, text] of [['channel', 'この会話'], ['server', 'このサーバー']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; scope.appendChild(option); }
   scope.onchange = () => { _searchScope = scope.value; document.getElementById('serverSearchResults')?.remove(); ensureChannelHistoryForSearch(); };
   searchContainer.appendChild(scope);
@@ -29971,7 +29969,7 @@ function showAuthConnectionRetry() {
   if (!panel) { panel = document.createElement('div'); panel.id = 'authConnectionRetry'; panel.className = 'covo-settings-popover'; document.body.appendChild(panel); }
   panel.replaceChildren();
   panel.appendChild(document.createTextNode('利用許可の確認が完了していません。接続を確認して再試行してください。'));
-  const button = document.createElement('button'); button.textContent = '再試行'; button.onclick = () => { panel.remove(); window.retryAuthInitialization?.(); }; panel.appendChild(button);
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'covo-button covo-button-secondary'; button.textContent = '再試行'; button.onclick = () => { panel.remove(); window.retryAuthInitialization?.(); }; panel.appendChild(button);
 }
 
 async function migrateLegacyHistory(channelId, scope, active) {

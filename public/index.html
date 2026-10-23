@@ -35,13 +35,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.280" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.281" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" defer crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.280" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.281" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -2089,13 +2089,19 @@
                       <div class="text-xs text-gray-500 dark:text-slate-400 mt-1">チャットログを完全復号した状態で平文保存、または暗号化バックアップとして保存・閲覧します</div>
                     </div>
                     <div class="flex items-center gap-2">
-                      <button type="button" onclick="openChatExportModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                      <button type="button" onclick="openChatExportModal()" class="covo-button covo-button-success">
                         <i class="fas fa-download text-xs"></i>エクスポート
                       </button>
-                      <button type="button" onclick="openChatBackupViewerFilePicker()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer active:scale-95">
+                      <button type="button" onclick="openChatBackupViewerFilePicker()" class="covo-button covo-button-secondary">
                         <i class="fas fa-folder-open text-xs"></i>復号ビューア
                       </button>
                     </div>
+                  </div>
+                  <div class="backup-local-section">
+                    <button type="button" id="openLocalArchivesButton" onclick="openLocalArchives(this)" class="covo-button covo-button-secondary">
+                      <i class="fas fa-box-archive" aria-hidden="true"></i>端末の暗号化アーカイブを開く
+                    </button>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">このアカウントで端末に保存した履歴を確認・管理します。</p>
                   </div>
                 </div>
               </div>
@@ -4530,7 +4536,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.280"></script>
+  <script type="module" src="js/main.js?v=1.1.281"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5025,6 +5031,23 @@
     </div>
   </div>
   <!-- チャット履歴ビューアモーダル (インポート閲覧専用) -->
+  <div id="localArchivesPanel" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="localArchivesTitle" aria-describedby="localArchivesDescription">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 text-gray-800 dark:text-slate-200 local-archives-box">
+      <div class="px-5 py-3.5 bg-gray-50 dark:bg-slate-950 border-b border-gray-200/80 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm flex-shrink-0"><i class="fas fa-box-archive" aria-hidden="true"></i></div>
+          <div class="min-w-0"><h3 id="localArchivesTitle" class="text-sm font-bold text-gray-900 dark:text-white">端末の暗号化アーカイブ</h3><p id="localArchivesCount" class="text-xs text-gray-500 dark:text-slate-400" role="status" aria-live="polite"></p></div>
+        </div>
+        <button type="button" data-close-archives class="topbar-btn" aria-label="アーカイブ一覧を閉じる"><i class="fas fa-times" aria-hidden="true"></i></button>
+      </div>
+      <div class="local-archives-body">
+        <p id="localArchivesDescription" class="text-xs text-gray-500 dark:text-slate-400 leading-relaxed mb-4">保存した履歴はパスフレーズで復号して開きます。ここでの削除は、この端末の保存データだけが対象です。</p>
+        <div id="localArchivesList" class="local-archives-list"></div>
+      </div>
+      <div class="px-5 py-3.5 bg-gray-50 dark:bg-slate-950 border-t border-gray-200/80 dark:border-slate-800 flex justify-end flex-shrink-0"><button type="button" data-close-archives class="covo-button covo-button-secondary">閉じる</button></div>
+    </div>
+  </div>
+
   <div id="chatBackupViewerModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-[105] hidden p-2 sm:p-4 select-none" onclick="if(event.target===this) closeChatBackupViewerModal()">
     <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl h-[88vh] flex flex-col overflow-hidden modal-box animate-pop-in border border-gray-200/80 dark:border-slate-800 relative text-gray-800 dark:text-slate-200" onclick="event.stopPropagation()">
       <!-- ヘッダー -->
@@ -5485,12 +5508,16 @@
           チャットログを完全復号した平文テキストや暗号化バックアップとして保存・閲覧できます。
         </p>
         <div class="flex gap-2 pt-2">
-          <button type="button" onclick="openChatExportModal()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition active:scale-95 text-center">
+          <button type="button" onclick="openChatExportModal()" class="covo-button covo-button-success flex-1">
             <i class="fas fa-download mr-1"></i>エクスポート
           </button>
-          <button type="button" onclick="openChatBackupViewerFilePicker()" class="flex-1 py-2.5 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition active:scale-95 text-center">
+          <button type="button" onclick="openChatBackupViewerFilePicker()" class="covo-button covo-button-secondary flex-1">
             <i class="fas fa-folder-open mr-1"></i>復号ビューア
           </button>
+        </div>
+        <div class="backup-local-section">
+          <button type="button" id="mobileOpenLocalArchivesButton" onclick="openLocalArchives(this)" class="covo-button covo-button-secondary w-full"><i class="fas fa-box-archive" aria-hidden="true"></i>端末の暗号化アーカイブを開く</button>
+          <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">このアカウントで端末に保存した履歴を確認・管理します。</p>
         </div>
       </div>
     </div>

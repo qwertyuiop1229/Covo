@@ -490,10 +490,10 @@ async function renderViewerTimeline(msgs) {
   await _tryDecryptImportedMessages(page);
   if (generation !== _viewerRenderGeneration || owner !== context.userId) return;
   if (msgs.length > 100) {
-    const controls = document.createElement('div'); controls.className = 'flex items-center gap-3 p-3';
-    const older = document.createElement('button'); older.textContent = '前の100件'; older.disabled = start === 0; older.onclick = () => { ++_viewerPage; renderViewerTimeline(msgs); };
-    const newer = document.createElement('button'); newer.textContent = '次の100件'; newer.disabled = _viewerPage === 0; newer.onclick = () => { --_viewerPage; renderViewerTimeline(msgs); };
-    const count = document.createElement('span'); count.textContent = `${start + 1}–${end} / ${msgs.length}件`;
+    const controls = document.createElement('nav'); controls.className = 'backup-viewer-pagination'; controls.setAttribute('aria-label', 'アーカイブのページ切替');
+    const older = document.createElement('button'); older.type = 'button'; older.className = 'covo-button covo-button-secondary'; older.textContent = '前の100件'; older.disabled = start === 0; older.onclick = () => { ++_viewerPage; renderViewerTimeline(msgs); };
+    const newer = document.createElement('button'); newer.type = 'button'; newer.className = 'covo-button covo-button-secondary'; newer.textContent = '次の100件'; newer.disabled = _viewerPage === 0; newer.onclick = () => { --_viewerPage; renderViewerTimeline(msgs); };
+    const count = document.createElement('span'); count.className = 'backup-pagination-count'; count.setAttribute('role', 'status'); count.textContent = `${start + 1}–${end} / ${msgs.length}件`;
     controls.append(older, count, newer); container.appendChild(controls);
   }
   let lastDateStr = '';

@@ -267,6 +267,13 @@ test('switching local accounts separates history and encrypted outbox settings',
   (await ctx.initLocalDB()).close();
 });
 
+test('archive storage failures are distinguishable from an empty archive list', async () => {
+  const { getSettingsByPrefix, deleteSetting } = moduleApi('local_store.js', ['getSettingsByPrefix', 'deleteSetting'], { console: { warn() {} } });
+  await expect(getSettingsByPrefix('archive:', { throwOnError: true })).rejects.toThrow('保存領域');
+  await expect(getSettingsByPrefix('archive:')).resolves.toEqual([]);
+  await expect(deleteSetting('archive:one')).resolves.toBe(false);
+});
+
 function transferStore() {
   const storage = new Map();
   const ctx = vm.createContext({ indexedDB: new IDBFactory(), IDBKeyRange, console, window: {}, setTimeout, clearTimeout,

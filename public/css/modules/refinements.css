@@ -41,12 +41,9 @@ body.discord-dark-theme {
   color-scheme: dark;
 }
 .conversation-notification-button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  min-height: 36px; min-width: 36px; margin-left: 8px; padding: 7px 11px;
-  flex-shrink: 0; border: 1px solid transparent; border-radius: 8px;
-  font-size: 12px; font-weight: 650; color: var(--covo-text-muted); background: transparent;
-  transition: background .15s, color .15s, border-color .15s;
+  margin-left: 8px;
 }
+.conversation-notification-button > span { display: none; }
 .conversation-notification-button[hidden] { display: none; }
 #currentRoomActions .conversation-notification-button { margin-left: 0; }
 .conversation-notification-button:hover { background: var(--covo-hover); color: var(--covo-text); }
@@ -82,7 +79,6 @@ body.discord-dark-theme {
 .covo-preference-status[data-state="success"] { color: var(--covo-success); }
 .covo-preference-status[data-state="error"] { color: var(--covo-error); }
 .channel-load-status { background: var(--covo-surface-muted); color: var(--covo-text); border-bottom: 1px solid var(--covo-border); flex-wrap: wrap; }
-.channel-load-status button, .delivery-status button { color: var(--covo-accent); text-underline-offset: 3px; padding: 4px; }
 .covo-settings-popover select, .covo-quick-switcher input { background: var(--covo-surface-muted); color: var(--covo-text); border: 1px solid var(--covo-border); border-radius: 8px; }
 .covo-quick-switcher { box-shadow: 0 0 0 100vmax #0008, var(--covo-shadow); }
 .covo-quick-switcher input { font-size: 16px; margin-bottom: 12px; }
@@ -108,10 +104,68 @@ body.discord-dark-theme {
 #settingsModal .settings-close-btn > * { pointer-events: none; }
 #settingsModal .settings-section-title { padding-right: 48px; }
 @media (max-width: 600px) {
-  .conversation-notification-button { padding: 8px; min-height: 40px; min-width: 40px; }
-  .conversation-notification-button > span { display: none; }
   .covo-quick-switcher { top: 10dvh; max-height: 70dvh; padding: 14px; }
 }
+
+/* The same action styles serve the existing backup controls and newly added actions. */
+.covo-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 16px; min-height: 36px; border: 1px solid transparent; border-radius: 12px;
+  font-size: 12px; line-height: 1.5; font-weight: 700; cursor: pointer;
+  text-decoration: none; flex-shrink: 0;
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+.covo-button:disabled { opacity: .45; cursor: not-allowed; }
+.covo-button[aria-busy="true"] { cursor: wait; }
+.covo-button-secondary { background: #e2e8f0; color: #1e293b; }
+.covo-button-secondary:hover:not(:disabled) { background: #cbd5e1; }
+.covo-button-success { background: #059669; color: #fff; }
+.covo-button-success:hover:not(:disabled) { background: #047857; }
+.covo-button-danger { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.covo-button-danger:hover:not(:disabled) { background: #fee2e2; }
+:is(body.dark, body.dark-server-theme, body.discord-dark-theme) .covo-button-secondary { background: #334155; color: #e2e8f0; }
+:is(body.dark, body.dark-server-theme, body.discord-dark-theme) .covo-button-secondary:hover:not(:disabled) { background: #475569; }
+:is(body.dark, body.dark-server-theme, body.discord-dark-theme) .covo-button-danger { background: #ef44441a; color: #fca5a5; border-color: #ef44444d; }
+:is(body.dark, body.dark-server-theme, body.discord-dark-theme) .covo-button-danger:hover:not(:disabled) { background: #ef444433; }
+.covo-button-small { min-height: 28px; padding: 4px 10px; font-size: 11px; border-radius: 8px; }
+.covo-button:focus-visible, .covo-search-scope:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
+.channel-load-status button, .delivery-status button { text-decoration: none; }
+.backup-local-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--covo-border); }
+.local-archives-box { max-height: min(680px, calc(100dvh - 32px)); }
+/* Mobile settings use layer 300; backup dialogs and shared confirmations must sit above it. */
+#localArchivesPanel, #chatExportModal, #chatBackupViewerModal { z-index: 310; }
+#customConfirmModal, #customPromptModal, #customAlertModal { z-index: 320; }
+@media (max-width: 768px) {
+  body.discord-dark-theme :is(#localArchivesPanel, #chatExportModal, #chatBackupViewerModal) .modal-box { background: #313338 !important; }
+}
+.local-archives-body { padding: 20px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.local-archives-list { display: flex; flex-direction: column; gap: 12px; }
+.local-archive-row { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--covo-border); border-radius: 16px; background: var(--covo-surface-muted); }
+.local-archive-icon { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px; color: var(--covo-accent); background: var(--covo-selected); }
+.local-archive-details { min-width: 0; flex: 1; }
+.local-archive-details strong { display: block; font-size: 13px; color: var(--covo-text); overflow-wrap: anywhere; }
+.local-archive-details > span { display: block; font-size: 11px; margin-top: 4px; color: var(--covo-text-muted); }
+.local-archive-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.backup-viewer-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--covo-border); }
+.backup-pagination-count { color: var(--covo-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.covo-search-scope { padding: 7px 10px; margin-left: 8px; background: var(--covo-surface-muted); color: var(--covo-text); border: 1px solid var(--covo-border); border-radius: 8px; font-size: 12px; min-width: 0; }
+#searchContainer { flex-wrap: wrap; gap: 6px; }
+#searchContainer > #searchInput { min-width: 120px; }
+#serverSearchResults { background: var(--covo-surface); color: var(--covo-text); border: 1px solid var(--covo-border); border-radius: 12px; padding: 6px; margin-top: 8px; }
+#serverSearchResults .server-search-result { border-bottom: 0; border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#serverSearchResults .server-search-result:hover, #serverSearchResults .server-search-result:focus-visible { background: var(--covo-hover); outline: 2px solid var(--covo-accent); outline-offset: -2px; }
+#serverSearchResults > .covo-button { width: auto; margin: 8px; }
+#authConnectionRetry { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; line-height: 1.6; }
+@media (max-width: 480px) {
+  .local-archive-row { flex-wrap: wrap; padding: 12px; }
+  .local-archive-details { flex-basis: calc(100% - 48px); }
+  .local-archive-actions { justify-content: flex-end; width: 100%; }
+  .local-archives-body { padding: 16px; }
+  .covo-search-scope { margin-left: 0; }
+  #searchContainer > #moreSearchResults { width: 100%; }
+  #mobileOpenLocalArchivesButton { white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) { .covo-button { transition: none; } }
 @media (prefers-reduced-motion: reduce) {
   .conversation-notification-button, .covo-quick-switcher, .covo-notification-choice { transition: none; }
 }
