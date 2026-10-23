@@ -24,14 +24,19 @@ self._notifEnabled  = true; // 通知トグル状態
 // Persist only the account binding, never its auth token. SW globals disappear on suspension.
 let _bindingRevision = 0;
 let _bindingWrites = Promise.resolve();
+let _lastBinding = null;
 const _bindingReady = caches.open('covo_push_binding_v1').then(cache => cache.match('/__covo_push_binding__')).then(response => response ? response.json() : null).then(binding => {
-  if (_bindingRevision === 0) self._cachedUserId = binding?.userId || null;
+  if (_bindingRevision === 0) { self._cachedUserId = binding?.userId || null; self._notifEnabled = binding?.notifEnabled !== false; _lastBinding = JSON.stringify({ userId: self._cachedUserId, notifEnabled: self._notifEnabled }); }
 }).catch(() => {});
 function savePushBinding(userId) {
   _bindingRevision++;
+  const binding = { userId: userId || null, notifEnabled: self._notifEnabled };
   _bindingWrites = _bindingWrites.catch(() => {}).then(async () => {
+    const encoded = JSON.stringify(binding);
+    if (_lastBinding === encoded) return;
     const cache = await caches.open('covo_push_binding_v1');
-    await cache.put('/__covo_push_binding__', new Response(JSON.stringify({ userId: userId || null }), { headers: { 'Content-Type': 'application/json' } }));
+    await cache.put('/__covo_push_binding__', new Response(encoded, { headers: { 'Content-Type': 'application/json' } }));
+    _lastBinding = encoded;
   });
   return _bindingWrites.catch(() => {});
 }
@@ -59,18 +64,17 @@ self.addEventListener('message', (event) => {
   switch (event.data.type) {
     case 'SET_NOTIF_ENABLED':
       self._notifEnabled = event.data.enabled !== false;
-      console.log('⚙️ [バックグラウンド] 通知トグル状態を受信:', self._notifEnabled);
+      event.waitUntil(savePushBinding(self._cachedUserId));
       break;
 
     case 'SET_USER_ID':
       self._cachedUserId  = event.data.userId  || null;
       self._cachedAppId   = event.data.appId   || null;
       self._cachedIdToken = event.data.idToken || null;
-      event.waitUntil(savePushBinding(self._cachedUserId));
       if (typeof event.data.notifEnabled === 'boolean') {
         self._notifEnabled = event.data.notifEnabled;
       }
-      console.log('⚙️ [バックグラウンド] ユーザー情報をキャッシュしました:', self._cachedUserId ? self._cachedUserId.substring(0, 8) + '...' : 'null');
+      event.waitUntil(savePushBinding(self._cachedUserId));
       break;
 
     case 'CLEAR_USER_ID':
@@ -128,6 +132,10 @@ function _updateBadge() {
 async function _sendOfflineIfNoClients() {
   if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
   try {
+    const claims = JSON.parse(atob(self._cachedIdToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (claims.sub !== self._cachedUserId || !(claims.exp * 1000 > Date.now() + 5000)) return;
+  } catch (_) { return; }
+  try {
     const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
     // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
@@ -135,7 +143,8 @@ async function _sendOfflineIfNoClients() {
       const data = JSON.stringify({
         userId: self._cachedUserId,
         appId:  self._cachedAppId,
-        idToken: self._cachedIdToken
+        idToken: self._cachedIdToken,
+        clientProtocol: 2
       });
       fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
         method: 'POST',
@@ -303,20 +312,6 @@ messaging.onBackgroundMessage(async (payload) => {
   }
   if (data.ownerId !== self._cachedUserId) return;
   const showPromise = self.registration.showNotification(title, notificationOptions);
-  // 通常メッセージの通知はOS側で一生残り続けないよう7秒後に確実に自動消去
-  if (data.type !== 'incoming_call') {
-    const autoClosePromise = new Promise((resolve) => {
-      setTimeout(async () => {
-        try {
-          const notifs = await self.registration.getNotifications({ tag: notificationOptions.tag });
-          notifs.forEach(n => n.close());
-        } catch (_) {}
-        resolve();
-      }, 7000);
-    });
-    // waitUntil で Service Worker のアイドルサスペンドを防ぎ、7秒後の自動消去を確実に完遂させる
-    return Promise.all([showPromise, autoClosePromise]);
-  }
   return showPromise;
   });
 
@@ -330,7 +325,7 @@ self.addEventListener('notificationclick', (event) => {
 
   const data   = event.notification.data || {};
   const action = event.action;
-  const urlToOpen = self.location.origin + '/';
+  const urlToOpen = self.location.origin + '/?ownerId=' + encodeURIComponent(data.ownerId || '');
 
   // 着信「拒否」アクション
   if (data.type === 'incoming_call' && action === 'decline') {

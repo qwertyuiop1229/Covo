@@ -1,12 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.281",
+  "version": "1.1.282",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "node scripts/build_firebase.mjs",
+    "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File scripts/prepare_windows.ps1"
   },
   "app": {
     "windows": [
@@ -31,7 +31,10 @@
       "endpoints": [
         "https://github.com/qwertyuiop1229/Covo/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVERjY0RTU1QjU4QjlCOTYKUldTV200dTFWVTcyWGRJaEEzaEQyL29tVHFjMVZoT2JaeTlxalZ1b0daUkZoOWMyRndDSWRNVncK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVERjY0RTU1QjU4QjlCOTYKUldTV200dTFWVTcyWGRJaEEzaEQyL29tVHFjMVZoT2JaeTlxalZ1b0daUkZoOWMyRndDSWRNVncK",
+      "windows": {
+        "installMode": "quiet"
+      }
     },
     "deep-link": {
       "desktop": {
@@ -43,13 +46,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": "v1Compatible",
     "windows": {
       "nsis": {
         "languages": [
           "Japanese"
-        ]
+        ],
+        "installerHooks": "./windows/hooks.nsh",
+        "installMode": "currentUser"
       }
     },
     "icon": [

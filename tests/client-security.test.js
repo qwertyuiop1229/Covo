@@ -19,7 +19,7 @@ test.each([
     uploadToExternalService: upload, _getOrInitRTDB: async () => ({}),
   });
   // The Firebase import only initializes a connection; replace it with a local stub.
-  vm.runInContext(attachmentSender.replace("await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js')", '({ ref() {}, set() {} })'), context);
+  vm.runInContext(attachmentSender.replace("await import('../vendor/firebase/firebase-database.js')", '({ ref() {}, set() {} })'), context);
   await expect(context.sendSingleAttachmentMessage({ file: new Blob(['secret']), name: 'file.txt' }, {
     snapDmId: null, snapRoomId: 'room1', snapServerId: 'server1', snapDmParticipants: [], snapMembers: ['alice'], snapServerData: {}, snapServerNickname: 'Alice'
   })).rejects.toThrow('添付ファイル');
@@ -29,9 +29,10 @@ test.each([
 test('upload timeout and token errors reject instead of leaving the caller pending', async () => {
   const code = fs.readFileSync('public/js/file_uploader.js', 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '');
   let xhr;
-  const context = vm.createContext({ FormData, XMLHttpRequest: class {
+  const context = vm.createContext({ CLIENT_PROTOCOL: 2, assertSupportedClient() {}, requireClientUpdate() {}, FormData, XMLHttpRequest: class {
     constructor() { xhr = this; this.events = {}; this.upload = { addEventListener() {} }; }
     open() {}
+    setRequestHeader() {}
     addEventListener(name, callback) { this.events[name] = callback; }
     send() { this.events.timeout(); }
   } });

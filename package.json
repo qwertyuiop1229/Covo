@@ -11,8 +11,9 @@
     "build:css:regen": "node scripts/build_tailwind.mjs --regen",
     "test:web": "firebase serve --only hosting",
     "test:win": "tauri dev",
-    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/dependency-loader.test.js tests/runtime-stability.test.js",
-    "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore,database \"jest --runInBand --silent\""
+    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/dependency-loader.test.js tests/runtime-stability.test.js tests/communication.test.js",
+    "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore,database \"jest --runInBand --silent\"",
+    "build:firebase": "node scripts/build_firebase.mjs"
   },
   "repository": {
     "type": "git",
@@ -37,7 +38,10 @@
     "tailwindcss": "^3.4.19"
   },
   "dependencies": {
+    "@tauri-apps/plugin-updater": "2.10.0",
+    "esbuild": "0.25.12",
     "firebase-admin": "^14.1.0",
+    "firebase-runtime": "npm:firebase@11.6.1",
     "jimp": "^1.6.1"
   }
 }

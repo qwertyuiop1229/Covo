@@ -155,7 +155,7 @@ test('Windows activation URLs preserve underscore room IDs and reject foreign ac
   const route = api.createNotificationRouter({ uid: () => 'alice', ready: () => true, focus, openServer, openDm });
   const target = { ownerId: 'alice', serverId: 'server', roomId: 'room_with_underscore' };
   await route(api.targetFromUrl(api.notificationUrl(target)));
-  expect(openServer).toHaveBeenCalledWith('server', 'room_with_underscore');
+  expect(openServer).toHaveBeenCalledWith('server', 'room_with_underscore', expect.any(Function));
   await route({ ...target, ownerId: 'bob' });
   expect(openServer).toHaveBeenCalledTimes(1);
   await route({ ownerId: 'alice', dmId: 'alice_bob' });
@@ -334,4 +334,25 @@ test('approved legacy migration copies only its channel and never overwrites a r
   expect((await ctx.getMessage('approved', 'edited')).text).toBe('enc::new');
   expect(await ctx.getMessages('unapproved')).toHaveLength(0);
   (await ctx.initLocalDB()).close();
+});
+
+
+test('notification opt-out survives a service worker restart and identical account messages do not rewrite binding', async () => {
+  const entries = new Map(), first = pushWorker(entries);
+  await first.message({ type:'SET_USER_ID', userId:'alice', notifEnabled:false });
+  const before = await entries.get('/__covo_push_binding__').clone().json();
+  expect(before).toEqual({ userId:'alice', notifEnabled:false });
+  const restarted = pushWorker(entries);
+  await restarted.background({ data:{ ownerId:'alice', messageId:'muted', type:'chat_message' } });
+  expect(restarted.showNotification).not.toHaveBeenCalled();
+});
+
+
+test('beacon skips an expired or foreign token without treating decoded claims as server authorization', () => {
+  const {cachedTokenIsFresh}=moduleApi('notification_runtime.js',['cachedTokenIsFresh']);
+  const token=payload=>'header.'+Buffer.from(JSON.stringify(payload)).toString('base64url')+'.signature';
+  expect(cachedTokenIsFresh(token({sub:'alice',exp:200}),'alice',100000)).toBe(true);
+  expect(cachedTokenIsFresh(token({sub:'alice',exp:100}),'alice',100000)).toBe(false);
+  expect(cachedTokenIsFresh(token({sub:'bob',exp:200}),'alice',100000)).toBe(false);
+  expect(cachedTokenIsFresh('bad','alice',100000)).toBe(false);
 });

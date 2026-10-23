@@ -95,7 +95,7 @@ test('P2P responder cannot send another account history after a delayed local re
 });
 test('an unacknowledged write releases the composer while the optimistic message stays visible', async () => {
   const attempt = jest.fn(() => new Promise(() => {})), render = jest.fn();
-  const ctx = vm.createContext({ userId: 'alice', crypto: { randomUUID: () => 'fixed-id' }, Date,
+  const ctx = vm.createContext({ CLIENT_PROTOCOL: 2, userId: 'alice', crypto: { randomUUID: () => 'fixed-id' }, Date,
     currentDmId: 'alice_bob', currentServerId: null, currentRoomId: null, allLoadedMessages: [],
     mergeChannelRecords: (old, incoming) => [...old, ...incoming], compareHistoryMessages: (a,b) => a.timestamp - b.timestamp,
     renderMessagesWithReadReceipts: render, LocalStore: { putMessage: async () => {} }, _outbox: { attempt }, alertMessage: jest.fn(),
@@ -287,7 +287,7 @@ test('search reads remote history despite a partial cache and survives unavailab
     getMsgTimestamp: time, compareHistoryMessages: runtime().compareHistoryMessages,
     setSearchHistoryStatus: jest.fn(), _searchPreloadedAt: new Map(), setTimeout, Date, console, alertMessage: jest.fn(), renderMessagesWithReadReceipts: jest.fn(),
   });
-  vm.runInContext(declaration('_ensureChannelHistoryForSearchImpl').replace(/import\('https:\/\/www.gstatic.com\/firebasejs\/11.6.1\/firebase-database.js'\)/g, 'importDatabase()'), ctx);
+  vm.runInContext(declaration('_ensureChannelHistoryForSearchImpl').replace(/import\('\.\.\/vendor\/firebase\/firebase-database.js'\)/g, 'importDatabase()'), ctx);
   await ctx._ensureChannelHistoryForSearchImpl();
   expect(get).toHaveBeenCalledTimes(3);
   expect(ctx._searchHistoryResults.messages.map(m => m.id)).toEqual(['m0000']);

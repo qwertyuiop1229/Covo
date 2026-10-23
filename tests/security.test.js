@@ -31,6 +31,21 @@ const getDb = (auth) => {
   return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
 };
 
+test('RTDB-only message bodies cannot be mirrored by an old pending outbox', async () => {
+  const base = `artifacts/${APP_ID}/servers/storage`;
+  await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), base), {
+    createdBy: 'alice', joinedUsers: ['alice'], serverAdmins: []
+  }));
+  const alice = getDb({ uid: 'alice' });
+  const message = doc(alice, `${base}/rooms/general/messages/message`);
+  await assertFails(setDoc(message, { senderId: 'alice', text: 'encrypted', storageVersion: 2 }));
+  await assertFails(setDoc(message, { senderId: 'alice', text: 'legacy encrypted' }));
+  await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), message.path), { senderId: 'alice', text: 'legacy encrypted' }));
+  await assertFails(updateDoc(message, { storageVersion: 2 }));
+  await assertSucceeds(updateDoc(message, { text: 'edited legacy encrypted' }));
+  await assertSucceeds(deleteDoc(message));
+});
+
 test('notification preferences are private to their owner and reject unrelated fields', async () => {
   const path = `artifacts/${APP_ID}/users/alice/notificationSettings/preferences`;
   const alice = getDb({ uid: 'alice' }), bob = getDb({ uid: 'bob' });
@@ -63,7 +78,7 @@ test('nonmembers cannot read or inject room activity or request room keys', asyn
   for (const path of ['readReceipts', 'typing']) {
     await assertFails(getDoc(doc(outsider, `${base}/rooms/general/${path}/alice`)));
     await assertFails(setDoc(doc(outsider, `${base}/rooms/general/${path}/mallory`), { value: 1 }));
-    await assertSucceeds(setDoc(doc(alice, `${base}/rooms/general/${path}/alice`), { value: 1 }));
+    await (path === 'readReceipts' ? assertFails : assertSucceeds)(setDoc(doc(alice, `${base}/rooms/general/${path}/alice`), { value: 1 }));
   }
   await assertFails(setDoc(doc(outsider, `${base}/rooms/general/rescueRequests/mallory`), { requestedAt: 1 }));
 });
@@ -165,7 +180,8 @@ describe('Firestore Security Rules Testing', () => {
       const bob = getDb({ uid: 'bob' });
       const path = `artifacts/${APP_ID}/dm_channels/alice_bob`;
       await assertSucceeds(setDoc(doc(alice, path), { participants: ['alice', 'bob'] }));
-      await assertSucceeds(updateDoc(doc(bob, path), { lastMessageAt: 123 }));
+      await assertFails(updateDoc(doc(bob, path), { lastMessageAt: 123 }));
+      await assertSucceeds(updateDoc(doc(bob, path), { lastMessageAt: new Date(123), lastMessageStorageTimestamp: 123, lastMessageId: 'message', lastMessageStorageVersion: 2 }));
       await assertSucceeds(setDoc(doc(alice, `${path}/keys/bob`), { wrappedKey: 'cipher' }));
       await assertFails(updateDoc(doc(alice, path), { participants: ['alice', 'mallory'] }));
       await assertFails(setDoc(doc(alice, `artifacts/${APP_ID}/dm_channels/bob_mallory`), { participants: ['alice', 'bob'] }));
@@ -491,3 +507,61 @@ describe('Firestore Security Rules Testing', () => {
     });
     });
     });
+
+
+test('real Firestore REST updateTime preconditions protect a concurrently edited message', async () => {
+  const host = process.env.FIRESTORE_EMULATOR_HOST;
+  if (!host) throw Error('Firestore Emulator is required');
+  const base = 'artifacts/' + APP_ID + '/servers/rest'; const path = base + '/rooms/general/messages/message';
+  await testEnv.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), base), { createdBy: 'alice', joinedUsers: ['alice'], serverAdmins: [] }); await setDoc(doc(c.firestore(), path), { senderId: 'alice', text: 'before' }); });
+  const url = 'http://' + host + '/v1/projects/' + PROJECT_ID + '/databases/(default)/documents/' + path;
+  const headers = { Authorization: 'Bearer owner' };
+  const first = await fetch(url, { headers }); expect(first.status).toBe(200); const stale = (await first.json()).updateTime; expect(stale).toBeTruthy();
+  const reference = doc(getDb({ uid: 'alice' }), path); await updateDoc(reference, { text: 'after' });
+  const commitUrl = 'http://' + host + '/v1/projects/' + PROJECT_ID + '/databases/(default)/documents:commit';
+  const deleteVersion = updateTime => fetch(commitUrl, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ writes: [{ delete: 'projects/' + PROJECT_ID + '/databases/(default)/documents/' + path, currentDocument: { updateTime } }] }) });
+  const rejected = await deleteVersion(stale);
+  expect(rejected.ok).toBe(false); expect((await getDoc(reference)).data().text).toBe('after');
+  const current = (await (await fetch(url, { headers })).json()).updateTime;
+  const removed = await deleteVersion(current);
+  expect(removed.status).toBe(200); expect((await getDoc(reference)).exists()).toBe(false);
+});
+
+
+test.each([
+  'error_reports/old', 'status/alice', 'users/alice/readStates/general',
+  'servers/retired/rooms/general/readReceipts/alice'
+])('retired Firestore mirror %s rejects old client creation and updates', async path => {
+  const full = 'artifacts/' + APP_ID + '/' + path;
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'artifacts/' + APP_ID + '/servers/retired'), { createdBy: 'alice', joinedUsers: ['alice'] });
+  });
+  const own = doc(getDb({ uid: 'alice' }), full);
+  await assertFails(setDoc(own, { message: 'old error', state: 'online', lastReadAt: 2 }));
+  await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), full), { message: 'old error', state: 'online', lastReadAt: 1 }));
+  await assertFails(updateDoc(own, { lastReadAt: 2 }));
+});
+
+test('unauthenticated errors cannot consume Firestore writes', async () => {
+  await assertFails(setDoc(doc(testEnv.unauthenticatedContext().firestore(), 'artifacts/' + APP_ID + '/error_reports/spam'), { message: 'spam' }));
+});
+
+
+describe.each(['server','DM'])('%s message summary compatibility', kind => {
+  test('retired clients cannot create new unpaired activity or overwrite the current summary', async () => {
+    const base = 'artifacts/' + APP_ID;
+    const path = kind === 'server' ? base + '/servers/summary/rooms/general' : base + '/dm_channels/alice_bob';
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), base + '/servers/summary'), { createdBy: 'alice', joinedUsers: ['alice','bob'] });
+      await setDoc(doc(context.firestore(), path), kind === 'DM' ? { participants: ['alice','bob'] } : { name: 'general' });
+    });
+    const reference = doc(getDb({ uid: 'alice' }), path);
+    await assertFails(updateDoc(reference, { lastMessageAt: new Date(100), lastMessageText: 'unpaired' }));
+    const summary = { lastMessageAt: new Date(100), lastMessageStorageTimestamp: 100, lastMessageStorageVersion: 2, lastMessageId: 'msg_supported', lastMessageText: 'enc::cipher' };
+    await assertSucceeds(updateDoc(reference, summary));
+    await assertFails(updateDoc(reference, { lastMessageAt: new Date(200), lastMessageText: 'old client' }));
+    // Existing legacy message deletion may select a v1 previous message.
+    await assertSucceeds(updateDoc(reference, { ...summary, lastMessageStorageVersion: 1, lastMessageId: 'legacy_previous' }));
+    await assertSucceeds(updateDoc(reference, { lastMessageAt: null, lastMessageId: null, lastMessageStorageTimestamp: null, lastMessageText: null }));
+  });
+});

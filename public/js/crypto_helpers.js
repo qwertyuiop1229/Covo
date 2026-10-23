@@ -1,5 +1,5 @@
 import { withReadDeadline } from './loading_runtime.js';
-import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, deleteField, collection, query, where, getDocs, limit, serverTimestamp, writeBatch, runTransaction } from "../vendor/firebase/firebase-firestore.js";
 import { _abToB64, _b64ToAb } from './utils.js';
 import * as LocalStore from './local_store.js';
 

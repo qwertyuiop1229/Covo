@@ -615,7 +615,7 @@ class VoiceEngine {
 
     _getOrInitRTDB().then(rtdb => {
       if (!this.isActive) return;
-      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
+      import('../vendor/firebase/firebase-database.js').then(({ ref, onValue, off }) => {
         if (!this.isActive) return;
         const sId = this.serverId || 'direct';
         const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}`);
@@ -779,7 +779,7 @@ class VoiceEngine {
       throw new Error(`無効なモード: ${mode} (有効値: ${validModes.join(', ')})`);
     }
     const rtdb = await _getOrInitRTDB();
-    const { ref, set } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    const { ref, set } = await import('../vendor/firebase/firebase-database.js');
     const sId = this.serverId || 'direct';
     const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
     await set(configRef, {
@@ -1952,7 +1952,7 @@ class VoiceEngine {
     try {
       const rtdb = await _getOrInitRTDB();
       const { ref, set, onDisconnect: rtdbOnDisconnect } =
-        await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        await import('../vendor/firebase/firebase-database.js');
       const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}/${this._myUid}`);
       const stateData = {
         uid: this._myUid,
@@ -1987,7 +1987,7 @@ class VoiceEngine {
     try {
       const rtdb = await _getOrInitRTDB();
       const { ref, remove } =
-        await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+        await import('../vendor/firebase/firebase-database.js');
       if (this._onDisconnectRef) {
         try { await this._onDisconnectRef.cancel(); } catch(_){}
         this._onDisconnectRef = null;
@@ -2165,7 +2165,7 @@ window._subscribeVcSidebarStates = function(serverId) {
   if (!serverId) return;
 
   _getOrInitRTDB().then(rtdb => {
-    import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({ ref, onValue, off }) => {
+    import('../vendor/firebase/firebase-database.js').then(({ ref, onValue, off }) => {
       const serverStateRef = ref(rtdb, `voiceStates/${serverId}`);
       const handler = (snapshot) => {
         const allStates = snapshot.val() || {};

@@ -626,7 +626,7 @@ class VoiceEngine {
     }
     context._getOrInitRTDB().then(rtdb => {
       if (!this.isActive) return;
-      import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(({
+      import('../vendor/firebase/firebase-database.js').then(({
         ref,
         onValue,
         off
@@ -820,7 +820,7 @@ class VoiceEngine {
     const {
       ref,
       set
-    } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    } = await import('../vendor/firebase/firebase-database.js');
     const sId = this.serverId || 'direct';
     const configRef = ref(rtdb, `voiceStatesConfig/${sId}/${this.channelId}`);
     await set(configRef, {
@@ -2223,7 +2223,7 @@ class VoiceEngine {
         ref,
         set,
         onDisconnect: rtdbOnDisconnect
-      } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      } = await import('../vendor/firebase/firebase-database.js');
       const stateRef = ref(rtdb, `voiceStates/${sId}/${this.channelId}/${this._myUid}`);
       const stateData = {
         uid: this._myUid,
@@ -2259,7 +2259,7 @@ class VoiceEngine {
       const {
         ref,
         remove
-      } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+      } = await import('../vendor/firebase/firebase-database.js');
       if (this._onDisconnectRef) {
         try {
           await this._onDisconnectRef.cancel();

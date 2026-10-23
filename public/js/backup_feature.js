@@ -42,7 +42,7 @@ async function _fetchCurrentChannelDecryptedMessages() {
     const rtdb = await context._getOrInitRTDB();
     const {
       endBefore
-    } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js');
+    } = await import('../vendor/firebase/firebase-database.js');
     cursor = null;
     while (owner === context.userId) {
       const constraints = [context.orderByChild('timestamp'), context.limitToLast(100)];

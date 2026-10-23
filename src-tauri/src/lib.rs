@@ -41,6 +41,11 @@ struct NotificationState {
     pending: Mutex<Vec<PendingNotif>>,
     close_behavior: Mutex<String>,
     app_loaded: Mutex<bool>,
+    active_keyboard_shortcut: Mutex<String>,
+    microphone_shortcut: Mutex<bool>,
+    desktop_busy: Mutex<Option<bool>>,
+    badge_state: Mutex<Option<bool>>,
+    mouse_wakeup: std::sync::Condvar,
     active_mouse_shortcut: Mutex<Option<i32>>, // マウスVKコード (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
 }
 
@@ -310,7 +315,6 @@ fn show_main_window(app_handle: tauri::AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
         let _ = window.emit("window-focused", ());
-        let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
     }
 }
 
@@ -352,7 +356,6 @@ fn toggle_main_window_state(app_handle: &tauri::AppHandle) {
             let _ = window.show();
             let _ = window.set_focus();
             let _ = window.emit("window-focused", ());
-            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
             let _ = window.eval("if(window.focusMessageInput)window.focusMessageInput()");
         }
     }
@@ -394,7 +397,7 @@ fn close_window(app_handle: tauri::AppHandle, state: tauri::State<'_, Notificati
         };
         if behavior == "quit" {
             cleanup_and_quit(&app_handle);
-        } else if behavior == "hide" {
+        } else if behavior == "hide" || behavior.is_empty() {
             let _ = window.hide();
         } else {
             let _ = window.minimize();
@@ -849,55 +852,50 @@ extern "system" {
 }
 
 #[tauri::command]
-fn update_shortcut_key(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, NotificationState>,
-    key: String,
-) -> Result<(), String> {
+fn update_shortcut_key(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>, key: String) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-
-    // 既存のキーボードショートカットを全解除
-    let _ = app_handle.global_shortcut().unregister_all();
-
     let trimmed = key.trim();
-    let lower = trimmed.to_lowercase();
-
-    // マウスボタン指定の判定 (0x05=XButton1/戻る, 0x06=XButton2/進む, 0x04=MButton/中クリック)
-    let mouse_vk = match lower.as_str() {
+    let mouse_vk = match trimmed.to_lowercase().as_str() {
         "mouse4" | "mousex1" | "mouse_back" | "xbutton1" | "マウス戻るボタン" => Some(0x05),
         "mouse5" | "mousex2" | "mouse_forward" | "xbutton2" | "マウス進むボタン" => Some(0x06),
-        "mouse3" | "mousemiddle" | "mouse_wheel" | "mbutton" | "ホイールクリック" | "マウス中ボタン" => Some(0x04),
-        _ => None,
+        "mouse3" | "mousemiddle" | "mouse_wheel" | "mbutton" | "ホイールクリック" | "マウス中ボタン" => Some(0x04), _ => None,
     };
-
-    if let Ok(mut lock) = state.active_mouse_shortcut.lock() {
-        *lock = mouse_vk;
+    let mut previous = state.active_keyboard_shortcut.lock().map_err(|e| e.to_string())?;
+    let next = if mouse_vk.is_none() && !trimmed.is_empty() { Some(parse_custom_shortcut(trimmed).ok_or("無効なショートカットです")?) } else { None };
+    if next == parse_custom_shortcut("Ctrl+Shift+M") && *state.microphone_shortcut.lock().map_err(|e| e.to_string())? {
+        return Err("Ctrl+Shift+M はマイク切替に使用中です".into());
     }
-
-    // マウスボタンが設定された場合はキーボード登録を行わず即時完了
-    if mouse_vk.is_some() {
-        log::info!("Registered global mouse shortcut: {}", trimmed);
-        return Ok(());
+    let old = parse_custom_shortcut(&previous);
+    if next != old {
+        if let Some(shortcut) = next { app_handle.global_shortcut().register(shortcut).map_err(|e| e.to_string())?; }
+        if let Some(shortcut) = old { let _ = app_handle.global_shortcut().unregister(shortcut); }
     }
-
-    // キーボードショートカットの登録
-    if !trimmed.is_empty() {
-        if let Some(shortcut) = parse_custom_shortcut(trimmed) {
-            app_handle.global_shortcut().register(shortcut)
-                .map_err(|e| format!("ショートカット「{}」の登録に失敗しました (他アプリと競合の可能性): {}", trimmed, e))?;
-            log::info!("Registered custom global keyboard shortcut: {}", trimmed);
-        } else {
-            return Err(format!("無効なキー設定です: 「{}」", trimmed));
-        }
-    }
-
+    *previous = if next.is_some() { trimmed.to_string() } else { String::new() };
+    *state.active_mouse_shortcut.lock().map_err(|e| e.to_string())? = mouse_vk;
+    state.mouse_wakeup.notify_one();
     Ok(())
 }
 
+#[tauri::command]
+fn set_microphone_shortcut(app_handle: tauri::AppHandle, state: tauri::State<'_, NotificationState>, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let shortcut = parse_custom_shortcut("Ctrl+Shift+M").ok_or("マイクキーを登録できません")?;
+    let current_show = state.active_keyboard_shortcut.lock().map_err(|e| e.to_string())?.clone();
+    let mut current = state.microphone_shortcut.lock().map_err(|e| e.to_string())?;
+    if *current == enabled { return Ok(()); }
+    if enabled {
+        if parse_custom_shortcut(&current_show) == Some(shortcut) { return Err("このキーはアプリ表示に使用中です".into()); }
+        app_handle.global_shortcut().register(shortcut).map_err(|e| e.to_string())?;
+    } else { app_handle.global_shortcut().unregister(shortcut).map_err(|e| e.to_string())?; }
+    *current = enabled;
+    Ok(())
+}
 
 #[tauri::command]
 fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
-    log::info!("[DEBUG] set_badge called with has_unread: {}", has_unread);
+    let state = app_handle.state::<NotificationState>();
+    let Ok(mut last_badge) = state.badge_state.lock() else { return; };
+    if *last_badge == Some(has_unread) { return; }
     if let Some(window) = app_handle.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         {
@@ -907,7 +905,7 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
             if let Ok(hwnd_ptr) = window.hwnd() {
                 let hwnd = HWND(hwnd_ptr.0 as _);
                 unsafe {
-                    let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+                    let initialized = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
                     if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList3>(&TaskbarList, None, CLSCTX_INPROC_SERVER) {
                         if taskbar.HrInit().is_ok() {
                             if has_unread {
@@ -929,6 +927,7 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                             }
                         }
                     }
+                    if initialized.is_ok() { windows::Win32::System::Com::CoUninitialize(); }
                 }
             }
         }
@@ -947,7 +946,9 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                 let tauri_image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
                 // 変更前：左上のアイコンとトレイのアイコンだけ変えていた
                 // 今回はタスクバーにもバッジを付与するため、window.set_iconとtray.set_iconはそのまま維持
+                let mut icons_ok = true;
                 if let Err(e) = window.set_icon(tauri_image.clone()) {
+                    icons_ok = false;
                     log::error!("[DEBUG] window.set_icon failed: {}", e);
                 } else {
                     log::info!("[DEBUG] window.set_icon succeeded");
@@ -955,13 +956,16 @@ fn set_badge(app_handle: tauri::AppHandle, has_unread: bool) {
                 
                 if let Some(tray) = app_handle.tray_by_id("main-tray") {
                     if let Err(e) = tray.set_icon(Some(tauri_image)) {
+                        icons_ok = false;
                         log::error!("[DEBUG] tray.set_icon failed: {}", e);
                     } else {
                         log::info!("[DEBUG] tray.set_icon succeeded");
                     }
                 } else {
+                    icons_ok = false;
                     log::warn!("[DEBUG] main-tray not found");
                 }
+                if icons_ok { *last_badge = Some(has_unread); }
             },
             Err(e) => {
                 log::error!("[DEBUG] failed to load icon from memory: {}", e);
@@ -1014,115 +1018,36 @@ mod installer_url_tests {
 }
 
 #[tauri::command]
+fn set_desktop_busy(window: tauri::WebviewWindow, state: tauri::State<'_, NotificationState>, busy: bool) -> Result<(), String> {
+    if window.label() != "main" { return Err("Only the main window owns activity state".into()); }
+    *state.desktop_busy.lock().map_err(|e| e.to_string())? = Some(busy);
+    Ok(())
+}
+
+#[tauri::command]
 async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
-    log::info!("silent_install_past_version called: {} -> {}", tag, url);
-
-    if tag.is_empty() || tag.len() > 80 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_') {
-        return Err("Invalid tag format".to_string());
+    use tauri_plugin_updater::UpdaterExt;
+    if app_handle.state::<NotificationState>().desktop_busy.lock().map_err(|e| e.to_string())?.unwrap_or(true) { return Err("通話・録音・転送・送信が終わってから更新してください".into()); }
+    if !is_official_installer_url(&url, &tag) { return Err("公式リリースのみ選択できます".into()); }
+    let selected = tag.trim_start_matches('v').to_string();
+    let parts: Vec<u64> = selected.split('.').map(str::parse::<u64>).collect::<Result<_, _>>().map_err(|_| "バージョンの形式が不正です")?;
+    if parts.len() != 3 || parts.as_slice() < [1_u64, 1, 282].as_slice() {
+        return Err("このバージョンはサーバーに対応していません。1.1.282以降を選択してください".into());
     }
-
-    if !is_official_installer_url(&url, &tag) {
-        return Err("Invalid download URL: must be from official repository".to_string());
-    }
-
-    let temp_dir = std::env::temp_dir();
-    let safe_tag = tag.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
-    let exe_path = temp_dir.join(format!("Covo_installer_{}.exe", safe_tag));
-
-    // ─── ストリーミングダウンロード（chunk ごとに進捗イベントを発行）───
-    let response = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
-        .build().map_err(|e| format!("Client failed: {}", e))?
-        .get(&url).send().await.map_err(|e| format!("Request failed: {}", e))?
-        .error_for_status().map_err(|e| format!("Download failed: {}", e))?;
-    let total = response.content_length().unwrap_or(0);
+    let endpoint = url::Url::parse(&format!("https://github.com/qwertyuiop1229/Covo/releases/download/v{}/latest.json", selected)).map_err(|e| e.to_string())?;
+    let updater = app_handle.updater_builder().endpoints(vec![endpoint]).map_err(|e| e.to_string())?
+        .version_comparator(|_, _| true).build().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?.ok_or("署名付きの更新情報がありません")?;
+    if update.version != selected { return Err("選択したバージョンと署名付き更新情報が一致しません".into()); }
     let mut downloaded: u64 = 0;
-
-    let mut file = std::fs::File::create(&exe_path)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-
-    let mut stream = response;
-    loop {
-        let chunk = stream.chunk().await.map_err(|e| format!("Stream error: {}", e))?;
-        match chunk {
-            None => break,
-            Some(bytes) => {
-                use std::io::Write;
-                file.write_all(&bytes).map_err(|e| format!("Write error: {}", e))?;
-                downloaded += bytes.len() as u64;
-                let progress = if total > 0 {
-                    ((downloaded as f64 / total as f64) * 100.0) as u32
-                } else {
-                    0
-                };
-                let _ = app_handle.emit("download-progress", serde_json::json!({
-                    "tag": tag,
-                    "downloaded": downloaded,
-                    "total": total,
-                    "progress": progress
-                }));
-            }
-        }
-    }
-    drop(file);
-
-    // ─── 破損・不完全ダウンロード検証 (空ファイルやエラーHTML、不完全切断の防止) ───
-    let downloaded_meta = std::fs::metadata(&exe_path).map_err(|e| format!("インストーラー検証失敗: {}", e))?;
-    let downloaded_size = downloaded_meta.len();
-    if downloaded_size < 500_000 {
-        let _ = std::fs::remove_file(&exe_path);
-        return Err(format!("ダウンロードされたインストーラーが破損しています (サイズが極端に小さい: {} bytes)", downloaded_size));
-    }
-    if total > 0 && downloaded_size != total {
-        let _ = std::fs::remove_file(&exe_path);
-        return Err(format!("インストーラーのサイズが一致しません (期待: {} bytes, 実際: {} bytes)", total, downloaded_size));
-    }
-
-    log::info!("Downloaded installer verified successfully: {:?} ({} bytes)", exe_path, downloaded_size);
-
-    // ─── PowerShell 経由でサイレントインストール → 完了後に Covo.exe を自動再起動 ───
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-        let covo_exe = std::env::current_exe()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "Covo.exe".to_string());
-
-        let installer_path = exe_path.to_string_lossy().to_string();
-
-        // PowerShell スクリプト:
-        //   1. 5秒待機（UIでの再起動カウントダウン3秒の完了を待つ）
-        //   2. Covo.exe が残っていれば確実に強制終了（NSISの競合ポップアップ防止）
-        //   3. インストーラーを完全サイレント実行 (/S のみ指定)
-        //   4. Covo.exe を再起動
-        let ps_script = format!(
-            "Start-Sleep -Seconds 5; \
-             Stop-Process -Name 'Covo' -Force -ErrorAction SilentlyContinue; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{installer}' -ArgumentList '/S' -Wait; \
-             Start-Sleep -Seconds 1; \
-             Start-Process -FilePath '{covo}'",
-            installer = installer_path.replace('\'', "''").replace('`', "``").replace('$', "`$"),
-            covo = covo_exe.replace('\'', "''").replace('`', "``").replace('$', "`$"),
-        );
-
-        std::process::Command::new("powershell")
-            .args(["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
-
-        log::info!("Spawned silent installer via PowerShell; exiting current process after countdown.");
-
-        // UI側のカウントダウン(3秒)が綺麗に完了するのを待ってからプロセス終了
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_millis(3500)).await;
-            app_handle.exit(0);
-        });
-    }
-
+    let events = app_handle.clone();
+    let bytes = update.download(move |chunk, total| {
+        downloaded += chunk as u64;
+        let progress = total.filter(|t| *t > 0).map(|t| downloaded * 100 / t).unwrap_or(0);
+        let _ = events.emit("download-progress", serde_json::json!({ "downloaded": downloaded, "total": total, "progress": progress }));
+    }, || {}).await.map_err(|e| e.to_string())?;
+    if app_handle.state::<NotificationState>().desktop_busy.lock().map_err(|e| e.to_string())?.unwrap_or(true) { return Err("処理が終了してから適用してください".into()); }
+    update.install(bytes).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1361,6 +1286,8 @@ pub fn run() {
             get_saved_position,
             get_available_monitors,
             update_shortcut_key,
+            set_microphone_shortcut,
+            set_desktop_busy,
             open_devtools_for_picker,
             open_devtools_for_container,
             open_log_dir,
@@ -1394,47 +1321,45 @@ pub fn run() {
             let shortcut_plugin = {
                 let h = app.handle().clone();
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |_app, _sc, event: ShortcutEvent| {
+                    .with_handler(move |_app, sc, event: ShortcutEvent| {
                         if event.state() == ShortcutState::Pressed {
-                            toggle_main_window_state(&h);
+                            let mic = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyM);
+                            let enabled = *h.state::<NotificationState>().microphone_shortcut.lock().unwrap_or_else(|e| e.into_inner());
+                            if sc == &mic && enabled {
+                                if let Some(window) = h.get_webview_window("main") { let _ = window.emit("desktop-action", "mute-microphone"); }
+                            } else { toggle_main_window_state(&h); }
                         }
                     })
                     .build()
             };
             app.handle().plugin(shortcut_plugin)?;
             let _ = app.global_shortcut().register(ctrl_shift_s);
+            *app.state::<NotificationState>().active_keyboard_shortcut.lock().unwrap_or_else(|e| e.into_inner()) = "Ctrl+Shift+S".into();
 
-            // Windows グローバルマウスボタン (戻る/進む/中クリック) 超低負荷監視スレッド
+            // A disabled mouse shortcut sleeps until configuration changes.
+            // Active mouse shortcuts retain the existing 25ms response interval.
             let mouse_monitor_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut was_pressed = false;
+                let mut previous_vk = None;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(25));
-                    let vk_opt = {
+                    let vk = {
                         let state = mouse_monitor_handle.state::<NotificationState>();
-                        let val = match state.active_mouse_shortcut.lock() {
-                            Ok(guard) => *guard,
-                            Err(_) => None,
-                        };
-                        val
-                    };
-
-                    if let Some(vk) = vk_opt {
-                        #[cfg(target_os = "windows")]
-                        {
-                            let key_state = unsafe { GetAsyncKeyState(vk) };
-                            let is_pressed = (key_state as u16 & 0x8000) != 0;
-                            if is_pressed && !was_pressed {
-                                was_pressed = true;
-                                toggle_main_window_state(&mouse_monitor_handle);
-                            } else if !is_pressed {
-                                was_pressed = false;
-                            }
+                        let mut guard = state.active_mouse_shortcut.lock().unwrap_or_else(|e| e.into_inner());
+                        while guard.is_none() {
+                            was_pressed = false;
+                            guard = state.mouse_wakeup.wait(guard).unwrap_or_else(|e| e.into_inner());
                         }
-                    } else {
-                        was_pressed = false;
-                        std::thread::sleep(std::time::Duration::from_millis(150));
+                        guard.unwrap()
+                    };
+                    if previous_vk != Some(vk) { was_pressed = false; previous_vk = Some(vk); }
+                    #[cfg(target_os = "windows")]
+                    {
+                        let pressed = (unsafe { GetAsyncKeyState(vk) } as u16 & 0x8000) != 0;
+                        if pressed && !was_pressed { toggle_main_window_state(&mouse_monitor_handle); }
+                        was_pressed = pressed;
                     }
+                    std::thread::sleep(std::time::Duration::from_millis(25));
                 }
             });
 
@@ -1449,9 +1374,6 @@ pub fn run() {
                 };
                 if !loaded {
                     log::warn!("App loaded signal not received within 45 seconds. Assuming ERR_CONNECTION_REFUSED / network delay. Spawning recovery engine.");
-                    if let Some(main_win) = monitor_handle.get_webview_window("main") {
-                        let _ = main_win.hide();
-                    }
                     if let Ok(recovery_win) = tauri::WebviewWindowBuilder::new(
                         &monitor_handle,
                         "recovery-engine",
@@ -1474,8 +1396,10 @@ pub fn run() {
 
             let quit_i = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Covoを表示", true, None::<&str>)?;
+            let pause_i = MenuItem::with_id(app, "pause-notifications", "通知を1時間停止 / 再開", true, None::<&str>)?;
+            let mute_i = MenuItem::with_id(app, "mute-microphone", "マイクのミュート切替", true, None::<&str>)?;
             let recovery_i = MenuItem::with_id(app, "recovery", "リカバリーパネル", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &recovery_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&show_i, &pause_i, &mute_i, &recovery_i, &quit_i])?;
             let mut tray_builder = TrayIconBuilder::with_id("main-tray").menu(&menu);
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());
@@ -1483,13 +1407,15 @@ pub fn run() {
             let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => { cleanup_and_quit(&app); }
+                    "pause-notifications" | "mute-microphone" => {
+                        if let Some(window) = app.get_webview_window("main") { let _ = window.emit("desktop-action", event.id.as_ref()); }
+                    }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.unminimize();
                             let _ = window.show();
                             let _ = window.set_focus();
                             let _ = window.emit("window-focused", ());
-                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                     "recovery" => {
@@ -1528,7 +1454,6 @@ pub fn run() {
                             let _ = window.show();
                             let _ = window.set_focus();
                             let _ = window.emit("window-focused", ());
-                            let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                         }
                     }
                 })
@@ -1573,7 +1498,6 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
                 let _ = window.emit("window-focused", ());
-                let _ = window.eval("if(window.handleWindowFocus)window.handleWindowFocus()");
                 let _ = window.emit("single-instance-opened", ());
             }
         }))

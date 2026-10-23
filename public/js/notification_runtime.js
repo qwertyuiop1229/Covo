@@ -1,4 +1,11 @@
 import { parseNotificationTarget } from './loading_runtime.js';
+// A client-side expiry hint only; the Worker still verifies the token.
+export function cachedTokenIsFresh(token, owner, now = Date.now()) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.sub === owner && Number.isFinite(payload.exp) && payload.exp * 1000 > now + 5000;
+  } catch (_) { return false; }
+}
 
 export function notificationUrl(target) {
   const url = new URL('covo-notification://open');
@@ -23,9 +30,9 @@ export function createNotificationRouter({ uid, ready, focus, openServer, openDm
     const target = parseNotificationTarget(input, owner);
     if (!target || !ready()) return false;
     if (mine !== generation || owner !== uid()) return false;
-    if (target.serverId) await openServer(target.serverId, target.roomId);
+    if (target.serverId) await openServer(target.serverId, target.roomId, () => mine === generation && owner === uid());
     else await openDm(target.targetUid);
-    return true;
+    return mine === generation && owner === uid();
   };
 }
 

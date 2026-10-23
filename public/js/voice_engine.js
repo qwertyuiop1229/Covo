@@ -393,7 +393,7 @@ window._voiceEngine = new VoiceEngine();
 
 // ===== RTDB モジュール登録 =====
 (function _registerRtdbModules() {
-  import('https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js').then(m => {
+  import('../vendor/firebase/firebase-database.js').then(m => {
     window._rtdbModules = m;
     console.log('[VoiceEngine] RTDB モジュール登録完了');
   }).catch(e => console.warn('[VoiceEngine] RTDB モジュール登録失敗:', e.message));

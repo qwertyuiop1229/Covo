@@ -34,12 +34,13 @@ function getCorsHeaders(request) {
   const origin = request.headers.get("Origin");
   const headers = {
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret, X-Covo-Protocol",
     "Access-Control-Max-Age": "86400",
   };
   if (origin && isAllowedOrigin(origin)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Credentials"] = "true";
+    headers["Timing-Allow-Origin"] = origin;
   } else if (!origin) {
     // Origin ヘッダーのないリクエスト（curl、ネイティブアプリ、サーバー間通信など）
     headers["Access-Control-Allow-Origin"] = "*";
@@ -52,6 +53,7 @@ function getCorsHeaders(request) {
 function getFileCorsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": "*",
+    "Timing-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, DELETE",
     "Access-Control-Allow-Headers": "*",
     "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition, Accept-Ranges",
@@ -63,7 +65,7 @@ function getFileCorsHeaders(request) {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS, HEAD",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Admin-Secret, X-Covo-Protocol",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -140,6 +142,7 @@ function inferMimeType(fileName, fallbackType) {
 
 // --- Cloudflare API 監査・稼働メトリクスロガー ---
 const _cfApiLogs = [];
+const _auditPersistedAt = new Map();
 const _cfApiDailyStats = {
   date: new Date().toISOString().slice(0, 10),
   totalRequests: 0,
@@ -186,7 +189,8 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     _cfApiDailyStats.totalRequests++;
     if (status < 400) _cfApiDailyStats.successRequests++;
     else _cfApiDailyStats.errorRequests++;
-    const routeKey = `${request.method} ${pathname.startsWith('/api/file/') ? '/api/file/*' : pathname}`;
+    const candidateRouteKey = `${request.method} ${pathname.startsWith('/api/file/') ? '/api/file/*' : pathname}`;
+    const routeKey = _cfApiDailyStats.routes[candidateRouteKey] || Object.keys(_cfApiDailyStats.routes).length < 64 ? candidateRouteKey : 'OTHER /other';
     if (!_cfApiDailyStats.routes[routeKey]) {
       _cfApiDailyStats.routes[routeKey] = { total: 0, success: 0, error: 0 };
     }
@@ -221,12 +225,17 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     _cfApiLogs.unshift(logEntry);
     if (_cfApiLogs.length > 100) _cfApiLogs.pop();
     if (env && env.DB && ctx && typeof ctx.waitUntil === 'function') {
+      const sampleKey = routeKey + ':' + status;
+      const sampledAt = Date.now();
+      if (sampledAt - (_auditPersistedAt.get(sampleKey) ?? -Infinity) < 60000) return;
+      _auditPersistedAt.delete(sampleKey); _auditPersistedAt.set(sampleKey, sampledAt);
+      while (_auditPersistedAt.size > 128) _auditPersistedAt.delete(_auditPersistedAt.keys().next().value);
       ctx.waitUntil((async () => {
         try {
           await ensureAuditTable(env.DB);
           await env.DB.prepare(
             "INSERT INTO api_audit_logs (id, timestamp, method, path, status, duration_ms, client_ip, user_id, error_message, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-          ).bind(logEntry.id, logEntry.timestamp, logEntry.method, logEntry.pathname, logEntry.status, logEntry.durationMs, logEntry.clientIp, logEntry.userId, logEntry.error, null).run();
+          ).bind(logEntry.id, logEntry.timestamp, logEntry.method, logEntry.pathname, logEntry.status, logEntry.durationMs, logEntry.clientIp, logEntry.userId, logEntry.error, JSON.stringify({ sampled: true, windowMs: 60000, scope: 'first per route/status per isolate; all recent events remain in memory' })).run();
           // D1テーブルの自動プルーニング (最新1000件を超過した古いログを定期整理)
           if (Math.random() < 0.05) {
             await env.DB.prepare(
@@ -238,6 +247,29 @@ function recordApiAuditLog(request, url, response, startTime, env, ctx, errorDet
     }
   } catch (_) {}
 }
+const SUPPORTED_CLIENT_PROTOCOL = '2';
+async function supportsMutationProtocol(request, pathname) {
+  const header = request.headers.get('X-Covo-Protocol');
+  if (header !== null) return header === SUPPORTED_CLIENT_PROTOCOL;
+  // sendBeacon cannot attach a version header. Accept a small JSON envelope only
+  // on this endpoint; never parse uploads or arbitrary bodies before rejection.
+  if (pathname !== '/api/setOffline' || request.method !== 'POST' || !request.body) return false;
+  const reader = request.clone().body.getReader();
+  const chunks = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 8192) { reader.cancel().catch(() => {}); return false; }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(bytes)).clientProtocol === 2;
+  } catch (_) { return false; }
+  finally { reader.releaseLock(); }
+}
 export default {
   async fetch(request, env, ctx) {
     const startTime = Date.now();
@@ -248,6 +280,13 @@ export default {
       cors = isFileRoute ? getFileCorsHeaders(request) : getCorsHeaders(request);
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: cors });
+      }
+      if (url.pathname.startsWith('/api/') && !['GET', 'HEAD'].includes(request.method) && !(await supportsMutationProtocol(request, url.pathname))) {
+        // Return before auth/admin SDK calls and before persistent audit logging.
+        // This is a compatibility gate, never an authorization credential.
+        return new Response(JSON.stringify({ code: 'UPDATE_REQUIRED', error: 'Covoの最新版へ更新してください。', supportedProtocol: 2, minimumWindowsVersion: '1.1.282' }), {
+          status: 426, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
       }
       const response = await (async () => {
         if (url.pathname === "/api/signup" && request.method === "POST") {
@@ -1617,7 +1656,7 @@ async function handleSendCallNotification(request, env) {
 
     for (const t of tokens) {
       const tokenStr = t.stringValue;
-      const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+      const fcmRes = await sendFcmRequest(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${fcmAccessToken}`,
@@ -1657,8 +1696,8 @@ async function handleSendCallNotification(request, env) {
             },
             // Web Push (Chrome/Firefox/Safari PWA): SW の push イベントで表示（二重表示を防ぐため data 駆動に統一）
             webpush: {
-              headers: { "Urgency": "high" },
-              fcm_options: { link: "/" }
+              headers: { "Urgency": "high", "TTL": "60" },
+              fcm_options: { link: 'https://simplechat-65a0d.web.app/?' + new URLSearchParams({ ownerId: calleeId, callId }).toString() }
             }
           }
         })
@@ -1710,6 +1749,10 @@ async function handleSendCallNotification(request, env) {
 // -------------------------------------------------------------
 // FCM プッシュ通知送信処理
 // -------------------------------------------------------------
+async function sendFcmRequest(url, options) {
+  try { return await fetch(url, { ...options, signal: AbortSignal.timeout(8000) }); }
+  catch (_) { return new Response(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE' } }), { status: 503 }); }
+}
 async function handleSendNotification(request, env) {
   const dynamicCors = getCorsHeaders(request);
   try {
@@ -1891,7 +1934,7 @@ async function handleSendNotification(request, env) {
                     const tokenStr = t.stringValue;
                     // FCM V1 API: Androidはネイティブ通知、Web Push (iOS PWA / PCブラウザ) は高優先度data駆動に統一
                     // （webpush.notification や aps.alert があると iOS WebKit / PWA で OS自動表示 + SW表示の2重通知が発生するため）
-                    const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+                    const fcmRes = await sendFcmRequest(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
                         method: "POST",
                         headers: {
                             "Authorization": `Bearer ${fcmAccessToken}`,
@@ -1927,10 +1970,10 @@ async function handleSendNotification(request, env) {
                                 // Web Push (Chrome/Firefox/Edge/iOS PWA): Urgency=high で確実に配信（SW側で重複なし単一表示）
                                 webpush: {
                                     headers: {
-                                        "Urgency": "high"
+                                        "Urgency": "high", "TTL": "86400"
                                     },
                                     fcm_options: {
-                                        link: "/"
+                                        link: 'https://simplechat-65a0d.web.app/?' + new URLSearchParams({ ownerId: rid, serverId: serverId || '', roomId: roomId || '' }).toString()
                                     }
                                 }
                             }
@@ -1939,16 +1982,15 @@ async function handleSendNotification(request, env) {
 
                     const fcmResult = await fcmRes.json();
                     if (fcmResult.error) {
+                        results.push({ receiverId: rid, success: false, error: 'fcm-rejected' });
                         console.error("FCM Send Error:", fcmResult.error);
                         // 無効なトークン（UNREGISTERED / NOT_FOUND）は削除対象に追加
                         const errorCode = fcmResult.error.details?.[0]?.errorCode || fcmResult.error.code;
-                        if (errorCode === 'UNREGISTERED' || errorCode === 404 ||
-                            fcmResult.error.status === 'NOT_FOUND' ||
-                            (fcmResult.error.message && fcmResult.error.message.includes('not a valid FCM'))) {
+                        if (errorCode === 'UNREGISTERED') {
                             invalidTokens.push(tokenStr);
                         }
                     } else {
-                        results.push({ token: tokenStr, success: true });
+                        results.push({ receiverId: rid, success: true });
                     }
                 }
 
@@ -1986,10 +2028,14 @@ async function handleSendNotification(request, env) {
         }
     }
 
-    return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: dynamicCors });
+    const acceptedTokens = results.filter(result => result.success).length;
+    const failedTokens = results.filter(result => result.error === 'fcm-rejected').length;
+    const failedRecipients = results.filter(result => result.error === 'preferences-unavailable').length;
+    const failed = failedTokens + failedRecipients > 0;
+    return new Response(JSON.stringify({ success: !failed || acceptedTokens > 0, acceptedTokens, failedTokens, failedRecipients, delivery: 'accepted-by-fcm-not-os-delivery', results }), { status: failed && acceptedTokens === 0 ? 502 : 200, headers: dynamicCors });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ success: false, error: error.toString() }), { status: 200, headers: dynamicCors });
+    return new Response(JSON.stringify({ success: false, error: 'Notification delivery failed' }), { status: 500, headers: dynamicCors });
   }
 }
 
@@ -3004,6 +3050,15 @@ async function isAppAdmin(appId, verifiedUser, env) {
 // -------------------------------------------------------------
 // 管理者専用: メッセージ強制削除 (Firestore & RTDB)
 // -------------------------------------------------------------
+async function deleteFirestoreAtVersion(projectId, documentPath, updateTime, accessToken) {
+  if (!updateTime) throw new Error('Missing Firestore version');
+  const database = `projects/${projectId}/databases/(default)`;
+  return fetch(`https://firestore.googleapis.com/v1/${database}/documents:commit`, {
+    method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes: [{ delete: `${database}/documents/${documentPath}`, currentDocument: { updateTime } }] })
+  });
+}
+
 async function handleAdminDeleteMessage(request, env) {
   const cors = getCorsHeaders(request);
   try {
@@ -3053,51 +3108,59 @@ async function handleAdminDeleteMessage(request, env) {
       if (!isGlobal && !isParticipant) {
         return new Response(JSON.stringify({ error: "Forbidden: Not authorized for this DM" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
       }
+      const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
+      const msgCheckRes = await fetch(msgCheckUrl, { headers: { 'X-Firebase-ETag': 'true' } });
+      if (!msgCheckRes.ok && msgCheckRes.status !== 404) throw new Error("Message ownership lookup failed");
+      const msgCheckData = msgCheckRes.status === 404 ? null : await msgCheckRes.json();
+      if (!msgCheckData) return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: cors });
       if (!isGlobal) {
-        const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
-        const msgCheckRes = await fetch(msgCheckUrl);
-        const msgCheckData = await msgCheckRes.json().catch(() => null);
-        if (!msgCheckData) {
-          return new Response(JSON.stringify({ success: true, message: "Already deleted" }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const isSender = Boolean(msgCheckData && (msgCheckData.senderId === verifiedUser.uid || msgCheckData.userId === verifiedUser.uid));
+        const isSender = (msgCheckData.senderId || msgCheckData.userId) === verifiedUser.uid;
         if (!isSender) {
           return new Response(JSON.stringify({ error: "Forbidden: Only message sender or admin can delete" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
         }
       }
+      const etag = msgCheckRes.headers.get('ETag');
+      if (!etag) throw new Error('Message concurrency unavailable');
+      const removed = await fetch(msgCheckUrl, { method: 'DELETE', headers: { 'if-match': etag } });
+      if (removed.status === 412) return new Response(JSON.stringify({ error: 'Message changed; retry deletion' }), { status: 409, headers: cors });
+      if (!removed.ok) throw new Error('Message deletion failed');
       if (env.DB) {
         try {
-          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND (room_id = ? OR room_id = ?) AND app_id = ?").bind(messageId, dmId, `dm_${dmId}`, appId).run();
+          await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND (room_id = ? OR room_id = ?) AND app_id = ? AND sender_id = ?").bind(messageId, dmId, `dm_${dmId}`, appId, msgCheckData.senderId || msgCheckData.userId).run();
         } catch (d1Err) {
           console.warn("handleAdminDeleteMessage D1 DM delete error:", d1Err);
         }
       }
-      const rtdbUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${messageId}.json?access_token=${rtdbToken}`;
-      await fetch(rtdbUrl, { method: "DELETE" });
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // --- サーバーメッセージの削除処理 ---
     const isSvAdmin = await isServerAdminCheck(appId, serverId, verifiedUser, env);
+    if (!isGlobal && !isSvAdmin && !(await isServerMemberCheck(appId, serverId, verifiedUser, env))) {
+      return new Response(JSON.stringify({ error: "Forbidden: Server membership required" }), { status: 403, headers: cors });
+    }
     let isOwner = false;
     let targetSenderId = null;
 
     // メッセージの送信者情報を事前に取得して本人確認
     const msgCheckUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
-    const msgCheckRes = await fetch(msgCheckUrl);
-    const msgCheckData = await msgCheckRes.json().catch(() => null);
+    const msgCheckRes = await fetch(msgCheckUrl, { headers: { 'X-Firebase-ETag': 'true' } });
+    if (!msgCheckRes.ok && msgCheckRes.status !== 404) throw new Error('Message ownership lookup failed');
+    const msgCheckData = msgCheckRes.status === 404 ? null : await msgCheckRes.json();
     if (msgCheckData) {
       targetSenderId = msgCheckData.senderId || msgCheckData.userId || null;
       if (targetSenderId === verifiedUser.uid) isOwner = true;
     }
     let fsCheckData = null;
-    if (!isOwner) {
+    if (!(Number(msgCheckData?.storageVersion) >= 2)) {
       const fsCheckUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
       const fsCheckRes = await fetch(fsCheckUrl, { headers: { "Authorization": `Bearer ${adminToken}` } });
-      fsCheckData = await fsCheckRes.json().catch(() => null);
+      if (!fsCheckRes.ok && fsCheckRes.status !== 404) throw new Error("Legacy ownership lookup failed");
+      fsCheckData = fsCheckRes.status === 404 ? null : await fsCheckRes.json();
       if (fsCheckData && fsCheckData.fields) {
         targetSenderId = fsCheckData.fields.senderId?.stringValue || fsCheckData.fields.userId?.stringValue || targetSenderId;
-        if (targetSenderId === verifiedUser.uid) isOwner = true;
+        if (targetSenderId === verifiedUser.uid && (!msgCheckData || (msgCheckData.senderId || msgCheckData.userId) === verifiedUser.uid)) isOwner = true;
+        else if (!isGlobal && !isSvAdmin) return new Response(JSON.stringify({ error: "Conflicting message ownership" }), { status: 403, headers: cors });
       }
     }
     // メッセージがRTDBにもFirestoreにも存在しない場合、既に削除済みなので成功を返してクライアントキャッシュ消去を許可
@@ -3107,22 +3170,26 @@ async function handleAdminDeleteMessage(request, env) {
     if (!isGlobal && !isSvAdmin && !isOwner) {
       return new Response(JSON.stringify({ error: "Forbidden: Admin privileges or message sender ownership required" }), { status: 403, headers: { ...cors, "Content-Type": "application/json" } });
     }
+    const etag = msgCheckRes.headers.get('ETag');
+    if (msgCheckData && !etag) throw new Error('Message concurrency unavailable');
+    if (fsCheckData?.fields && !fsCheckData.updateTime) throw new Error('Legacy message concurrency unavailable');
+    if (fsCheckData?.fields) {
+      const deleted = await deleteFirestoreAtVersion(projectId, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`, fsCheckData.updateTime, adminToken);
+      if ([400, 409, 412].includes(deleted.status)) return new Response(JSON.stringify({ error: 'Legacy message changed; retry deletion' }), { status: 409, headers: cors });
+      if (!deleted.ok && deleted.status !== 404) throw new Error('Legacy deletion failed');
+    }
+    if (msgCheckData) {
+      const removed = await fetch(msgCheckUrl, { method: 'DELETE', headers: { 'if-match': etag } });
+      if (removed.status === 412) return new Response(JSON.stringify({ error: 'Message changed; retry deletion' }), { status: 409, headers: cors });
+      if (!removed.ok) throw new Error('Message deletion failed');
+    }
     if (env.DB) {
       try {
-        await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(messageId, roomId, appId).run();
+        await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND server_id = ? AND app_id = ?").bind(messageId, roomId, serverId, appId).run();
       } catch (d1Err) {
         console.warn("handleAdminDeleteMessage D1 delete error:", d1Err);
       }
     }
-    const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}`;
-    await fetch(fsUrl, {
-      method: "DELETE",
-      headers: { "Authorization": `Bearer ${adminToken}` }
-    });
-    const rtdbUrl = `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${messageId}.json?access_token=${rtdbToken}`;
-    await fetch(rtdbUrl, {
-      method: "DELETE"
-    });
     // 管理者による他者メッセージのモデレーション削除時のみ監査ログに記録（自分自身の通常削除は除外）
     if ((isGlobal || isSvAdmin) && !isOwner) {
       try {
@@ -3199,100 +3266,63 @@ async function handleSetOffline(request, env) {
     // -------------------------------------------------------------
     // エラー・警告テレメトリのRTDB確実保存 & 一覧取得処理 (Worker特権経由)
     // -------------------------------------------------------------
+    const telemetryRateWindows = new Map();
     async function handleReportError(request, env) {
       const cors = getCorsHeaders(request);
+      const respond = (status, body) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
       try {
-        const body = await request.json();
-        const { appId, signature, payload } = body;
-        // 🔒 signature は RTDB/Firestore のパス断片に使うため厳格に検証（../ によるパストラバーサル→特権トークンでの任意書き込みを防止）
-        if (typeof signature !== 'string' || !/^[A-Za-z0-9_\-]{1,128}$/.test(signature) || typeof payload !== 'object' || Array.isArray(payload) || JSON.stringify(payload).length > 40000) {
-          return new Response(JSON.stringify({ success: false, error: "Invalid signature or payload" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+        const text = await request.text();
+        if (text.length > 40000) return respond(413, { error: 'Report too large' });
+        const { appId, signature, payload, sessionId, sequence } = JSON.parse(text);
+        if (!isValidAppId(appId, env) || !/^[A-Za-z0-9_-]{1,128}$/.test(signature || '') ||
+          !/^[a-f0-9]{32}$/.test(sessionId || '') || !Number.isSafeInteger(sequence) || sequence < 1 || sequence > 1000000000 ||
+          !payload || typeof payload !== 'object' || Array.isArray(payload)) return respond(400, { error: 'Invalid report' });
+        const token = (request.headers.get('Authorization') || '').replace(/^Bearer /, '').trim();
+        const account = token && await verifyFirebaseIdToken(token, env);
+        if (!account) return respond(401, { error: 'Unauthorized' });
+        const nowForRate = Date.now();
+        let rate = telemetryRateWindows.get(account.uid);
+        if (!rate || nowForRate - rate.started >= 60000) { rate = { started: nowForRate, count: 0 }; telemetryRateWindows.set(account.uid, rate); }
+        if (++rate.count > 20) return respond(429, { error: 'Reporting rate limited' });
+        while (telemetryRateWindows.size > 2048) telemetryRateWindows.delete(telemetryRateWindows.keys().next().value);
+        if (!env.SERVICE_ACCOUNT_JSON) return respond(503, { error: 'Reporting unavailable' });
+        const accessToken = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+        const base = getRtdbBaseUrl(env);
+        const url = base + '/artifacts/' + appId + '/error_reports/' + signature + '.json?access_token=' + encodeURIComponent(accessToken);
+        const cursorKey = account.uid + '_' + sessionId;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const read = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
+          if (!read.ok) return respond(503, { error: 'Report read failed' });
+          const existing = await read.json() || {};
+          const cursors = { ...(existing.deliveryCursors || {}) };
+          const previous = Number(cursors[cursorKey]?.sequence) || 0;
+          if (previous >= sequence) return respond(200, { success: true });
+          const now = Date.now();
+          cursors[cursorKey] = { sequence, at: now };
+          // Bound the dedup ledger; keep the most recent reporting sessions.
+          const boundedCursors = Object.fromEntries(Object.entries(cursors).sort((a, b) =>
+            (b[1].at || 0) - (a[1].at || 0) || Number(b[0] === cursorKey) - Number(a[0] === cursorKey) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+          ).slice(0, 128));
+          const report = {
+            id: signature, signature, type: payload.type === 'warn' ? 'warn' : 'error',
+            message: String(payload.message || '').slice(0, 3000), stack: String(payload.stack || '').slice(0, 6000),
+            firstOccurredAt: existing.firstOccurredAt || now, lastOccurredAt: now,
+            count: (Number(existing.count) || 0) + sequence - previous,
+            affectedEmails: [...new Set([...(existing.affectedEmails || []), account.email || account.uid])].slice(-100),
+            environment: {
+              userAgent: String(payload.environment?.userAgent || '').slice(0, 500),
+              appVersion: String(payload.environment?.appVersion || '').slice(0, 40),
+              screenSize: String(payload.environment?.screenSize || '').slice(0, 30)
+            }, deliveryCursors: boundedCursors
+          };
+          const etag = read.headers.get('ETag');
+          if (!etag) return respond(503, { error: 'Report concurrency unavailable' });
+          const written = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'if-match': etag }, body: JSON.stringify(report) });
+          if (written.status === 412) continue;
+          return respond(written.ok ? 200 : 503, { success: written.ok });
         }
-        if (!appId || !signature || !payload) {
-          return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        const targetAppId = isValidAppId(appId, env) ? appId : (env.FIREBASE_APP_ID || "simplechat-65a0d");
-        const projectId = env.FIREBASE_PROJECT_ID || "simplechat-65a0d";
-        const rtdbUrl = `https://${projectId}-default-rtdb.asia-southeast1.firebasedatabase.app`;
-        // 1. RTDB 認証クエリパラメータの解決
-        let authParam = '';
-        if (env.SERVICE_ACCOUNT_JSON) {
-          try {
-            const token = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
-            if (token) authParam = `?access_token=${token}`;
-          } catch (_) {}
-        }
-        if (!authParam && env.WORKER_AUTH_EMAIL && env.WORKER_AUTH_PASSWORD) {
-          try {
-            const idToken = await getWorkerAuthToken(env);
-            if (idToken) authParam = `?auth=${idToken}`;
-          } catch (_) {}
-        }
-        // 既存エラーの取得とカウント加算・影響メールアドレスのマージ
-        let finalPayload = { ...payload };
-        if (authParam) {
-          try {
-            const getRes = await fetch(`${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`);
-            if (getRes.ok) {
-              const existing = await getRes.json();
-              if (existing && typeof existing === 'object' && existing.message) {
-                // payload.count は「今回の増分」ではなく、クライアントが数えた「その時点の累計値」。
-                // 足し算すると同じ 1 回の発生が二重に数えられるため、大きい方を採用する（複数経路から同じ値が届いても増えない）
-                const newCount = Math.max(Number(existing.count) || 1, Number(payload.count) || 1);
-                const mergedEmails = Array.from(new Set([...(existing.affectedEmails || []), ...(payload.affectedEmails || [])]));
-                finalPayload = {
-                  ...existing,
-                  ...payload,
-                  count: newCount,
-                  firstOccurredAt: existing.firstOccurredAt || payload.firstOccurredAt || existing.lastOccurredAt || payload.lastOccurredAt,
-                  lastOccurredAt: payload.lastOccurredAt || Date.now(),
-                  affectedEmails: mergedEmails
-                };
-              }
-            }
-          } catch (_) {}
-        }
-        // RTDB へ書き込み (.write: true なので認証なしでも確実に保存、authParam があれば特権書き込み)
-        let writeUrl = `${rtdbUrl}/artifacts/${targetAppId}/error_reports/${signature}.json${authParam}`;
-        let res = await fetch(writeUrl, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(finalPayload)
-        });
-        // 2. Firestore へもバックアップ書き込み (PATCH メソッドにより新規作成・上書き upsert を 100% 成功させる)
-        (async () => {
-          try {
-            const adminToken = await getAdminTokenForFirestore(env);
-            if (adminToken) {
-              const patchUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${targetAppId}/error_reports/${signature}`;
-              await fetch(patchUrl, {
-                method: "PATCH",
-                headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  fields: {
-                    id: { stringValue: signature },
-                    signature: { stringValue: signature },
-                    type: { stringValue: finalPayload.type || 'error' },
-                    message: { stringValue: String(finalPayload.message || '').substring(0, 3000) },
-                    stack: { stringValue: String(finalPayload.stack || '').substring(0, 6000) },
-                    lastOccurredAt: { timestampValue: new Date(finalPayload.lastOccurredAt || Date.now()).toISOString() },
-                    count: { integerValue: String(finalPayload.count || 1) },
-                    affectedEmails: { arrayValue: { values: (finalPayload.affectedEmails || []).map(e => ({ stringValue: String(e) })) } }
-                  }
-                })
-              });
-            }
-          } catch (_) {}
-        })();
-        if (!res.ok) {
-          const errTxt = await res.text().catch(() => "");
-          return new Response(JSON.stringify({ success: false, error: `RTDB write failed: ${res.status} ${errTxt}` }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-        }
-        return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...cors, "Content-Type": "application/json" } });
-      } catch (err) {
-        console.error("handleReportError error:", err);
-        return new Response(JSON.stringify({ success: false, error: err.toString() }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
-      }
+        return respond(503, { error: 'Report busy' });
+      } catch (_) { return respond(400, { error: 'Invalid report request' }); }
     }
     async function handleGetErrors(request, env, url) {
       const cors = getCorsHeaders(request);
@@ -4452,7 +4482,7 @@ async function handleSetOffline(request, env) {
             const rtdbPath = dmId
               ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}.json?${authQuery}`
               : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages.json?${authQuery}`;
-            const rtdbRes = await fetch(rtdbPath, {
+            const rtdbRes = await fetch(rtdbPath + '&shallow=true', {
               headers: {
                 "Accept": "application/json"
               }
@@ -4464,31 +4494,35 @@ async function handleSetOffline(request, env) {
                 status: 200, headers: { ...cors, "Content-Type": "application/json" }
               });
             }
-            const rtdbData = await rtdbRes.json();
-            if (!rtdbData || typeof rtdbData !== 'object') {
-              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
-                status: 200, headers: { ...cors, "Content-Type": "application/json" }
-              });
-            }
-            const msgsList = Object.keys(rtdbData).filter(k => /^[A-Za-z0-9_-]+$/.test(k)).map(k => ({ ...rtdbData[k], id: k }));
-            msgsList.sort((a, b) => {
-              const tA = a.timestamp || a.createdAt || 0;
-              const tB = b.timestamp || b.createdAt || 0;
-              return tA - tB;
-            });
-            // サーバー・個チャ問わず、常に最新1,000件超過分を自動消去（ピン留めメッセージは保護）
+            const keys = await rtdbRes.json();
             const maxAllowed = 1000;
-            const unpinnedMsgs = msgsList.filter(m => !m.isPinned);
-            let excessMsgs = [];
-            if (unpinnedMsgs.length > maxAllowed) {
-              const excessCount = unpinnedMsgs.length - maxAllowed;
-              excessMsgs = unpinnedMsgs.slice(0, Math.min(excessCount, 100));
-            }
-
-            if (excessMsgs.length === 0) {
-              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0 }), {
-                status: 200, headers: { ...cors, "Content-Type": "application/json" }
-              });
+            const count = keys && typeof keys === 'object' ? Object.keys(keys).length : 0;
+            const noPrune = () => new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, retentionLimit: maxAllowed }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+            if (count <= maxAllowed) return noPrune();
+            // Once count - 1000 pins are found, at most 1000 unpinned records
+            // remain. Downloading the rest of the pinned bodies proves nothing
+            // more and can dominate traffic in heavily pinned channels.
+            const pinnedResponse = await fetch(rtdbPath + '&orderBy=%22isPinned%22&equalTo=true&limitToFirst=' + (count - maxAllowed));
+            if (!pinnedResponse.ok) throw new Error('Pinned retention lookup failed');
+            const pinned = await pinnedResponse.json() || {};
+            const unpinnedCount = count - Object.keys(pinned).length;
+            if (unpinnedCount <= maxAllowed) return noPrune();
+            const excessCount = Math.min(100, unpinnedCount - maxAllowed);
+            const oldestResponse = await fetch(rtdbPath + '&orderBy=%22timestamp%22&limitToFirst=' + (Object.keys(pinned).length + excessCount));
+            if (!oldestResponse.ok) throw new Error('Retention tail lookup failed');
+            const rtdbData = await oldestResponse.json() || {};
+            const msgsList = Object.entries(rtdbData).filter(([id]) => /^[A-Za-z0-9_-]+$/.test(id)).map(([id, message]) => ({ ...message, id }));
+            msgsList.sort((a, b) => (a.timestamp || a.createdAt || 0) - (b.timestamp || b.createdAt || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            const excessMsgs = msgsList.filter(message => !message.isPinned).slice(0, excessCount);
+            // A second pruner may have removed the original tail while this
+            // request was selecting candidates. Never spend a stale excess
+            // count on the next (still retained) messages. Only keys, not full
+            // bodies, are downloaded for this conservative consistency check.
+            const currentKeysResponse = await fetch(rtdbPath + '&shallow=true');
+            if (!currentKeysResponse.ok) throw new Error('Retention consistency lookup failed');
+            const currentKeys = await currentKeysResponse.json() || {};
+            if (Object.keys(currentKeys).length !== count || Object.keys(keys).some(key => !Object.hasOwn(currentKeys, key))) {
+              return new Response(JSON.stringify({ success: true, prunedCount: 0, deletedFiles: 0, skipped: true, reason: 'channel-changed', retentionLimit: maxAllowed }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
             }
             let deletedFiles = 0;
             let prunedCount = 0;
@@ -4497,6 +4531,13 @@ async function handleSetOffline(request, env) {
               const delMsgRtdbUrl = dmId
                 ? `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/dm_messages/${dmId}/${msg.id}.json?${authQuery}`
                 : `${rtdbBase.replace(/\/$/, '')}/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}.json?${authQuery}`;
+              let restoreOnFailure = null;
+              const restoreLegacy = async () => {
+                if (!restoreOnFailure) return;
+                const restored = await fetch(delMsgRtdbUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'if-match': 'null_etag' }, body: JSON.stringify(restoreOnFailure) });
+                if (!restored.ok && restored.status !== 412) throw new Error('Retention rollback failed');
+                restoreOnFailure = null;
+              };
               try {
                 const liveResponse = await fetch(delMsgRtdbUrl, { headers: { 'X-Firebase-ETag': 'true' } });
                 if (!liveResponse.ok) { failedDeletes++; continue; }
@@ -4509,25 +4550,38 @@ async function handleSetOffline(request, env) {
                 if (!etag) { failedDeletes++; continue; }
                 const deleted = await fetch(delMsgRtdbUrl, { method: 'DELETE', headers: { 'if-match': etag } });
                 if (!deleted.ok) { failedDeletes++; continue; }
-                if (!dmId && serverId && roomId && adminToken) {
+                if (!dmId && serverId && roomId && adminToken && !(Number(live.storageVersion) >= 2)) {
+                  restoreOnFailure = live;
                   const fsUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`;
-                  const fsDeleted = await fetch(fsUrl, { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } }).catch(() => null);
-                  if (!fsDeleted || (!fsDeleted.ok && fsDeleted.status !== 404)) {
-                    // Restore only if the message is still absent; never remove its attachment on failure.
-                    await fetch(delMsgRtdbUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'if-match': 'null_etag' }, body: JSON.stringify(live) });
+                  const mirrorRead = await fetch(fsUrl + '?mask.fieldPaths=senderId&mask.fieldPaths=userId&mask.fieldPaths=timestamp&mask.fieldPaths=createdAt&mask.fieldPaths=isPinned', { headers: { Authorization: 'Bearer ' + adminToken } });
+                  let mirrorFailed = !mirrorRead.ok && mirrorRead.status !== 404;
+                  const mirror = mirrorRead.ok ? await mirrorRead.json() : null;
+                  const fields = mirror?.fields;
+                  const mirrorOwner = fields?.senderId?.stringValue || fields?.userId?.stringValue;
+                  const storedTime = fields?.timestamp || fields?.createdAt;
+                  const mirrorTime = storedTime?.integerValue != null ? Number(storedTime.integerValue) : storedTime?.doubleValue != null ? Number(storedTime.doubleValue) : Date.parse(storedTime?.timestampValue || '');
+                  // A colliding ID in a second store is not proof that both rows
+                  // represent the same message. Never delete a different owner/version.
+                  if (mirrorRead.ok && (!fields || mirrorOwner !== (live.senderId || live.userId) || mirrorTime !== (live.timestamp || live.createdAt || 0) || fields.isPinned?.booleanValue === true)) mirrorFailed = true;
+                  if (!mirrorFailed && fields) {
+                    if (!mirror.updateTime) mirrorFailed = true;
+                    else {
+                      const fsDeleted = await deleteFirestoreAtVersion(projectId, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages/${msg.id}`, mirror.updateTime, adminToken);
+                      mirrorFailed = !fsDeleted.ok && fsDeleted.status !== 404;
+                    }
+                  }
+                  if (mirrorFailed) {
+                    await restoreLegacy();
                     failedDeletes++;
                     continue;
                   }
+                  restoreOnFailure = null;
                 }
-              } catch (_) { failedDeletes++; continue; }
+              } catch (_) { await restoreLegacy().catch(() => {}); failedDeletes++; continue; }
               const fileUrls = [];
-              if (msg.kvFileUrl) fileUrls.push(msg.kvFileUrl);
-              if (msg.fileData && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
-              if (msg.text) {
-                const matches = [...msg.text.matchAll(/\/api\/file\/([A-Za-z0-9_\-]+)/g)];
-                matches.forEach(m => fileUrls.push(m[0]));
-              }
-              for (const u of fileUrls) {
+              if (typeof msg.kvFileUrl === 'string') fileUrls.push(msg.kvFileUrl);
+              if (typeof msg.fileData === 'string' && msg.fileData.includes('/api/file/')) fileUrls.push(msg.fileData);
+              for (const u of new Set(fileUrls)) {
                 const m = u.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
                 if (m && env.FILES) {
                   const fileKey = m[1];
@@ -4547,18 +4601,19 @@ async function handleSetOffline(request, env) {
               if (env.DB) {
                 try {
                   const rId = dmId ? (dmId.startsWith('dm_') ? dmId : `dm_${dmId}`) : roomId;
-                  await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ?").bind(msg.id, rId, appId).run();
+                  if (dmId) await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ? AND sender_id = ?").bind(msg.id, rId, appId, msg.senderId || msg.userId).run();
+                  else await env.DB.prepare("DELETE FROM messages WHERE message_id = ? AND room_id = ? AND app_id = ? AND server_id = ?").bind(msg.id, rId, appId, serverId).run();
                 } catch (_) {}
               }
               prunedCount++;
             }
-            return new Response(JSON.stringify({ success: failedDeletes === 0, prunedCount, deletedFiles, failedDeletes, retentionLimit: maxAllowed, remainingExcess: Math.max(0, unpinnedMsgs.length - maxAllowed - prunedCount) }), {
+            return new Response(JSON.stringify({ success: failedDeletes === 0, prunedCount, deletedFiles, failedDeletes, retentionLimit: maxAllowed, remainingExcess: Math.max(0, unpinnedCount - maxAllowed - prunedCount) }), {
               status: failedDeletes ? 502 : 200, headers: { ...cors, "Content-Type": "application/json" }
             });
           } catch (err) {
             console.error("handlePruneChannelMessages error:", err);
             return new Response(JSON.stringify({ success: false, error: err.toString(), skipped: true }), {
-              status: 200, headers: { ...cors, "Content-Type": "application/json" }
+              status: 502, headers: { ...cors, "Content-Type": "application/json" }
             });
           }
         }

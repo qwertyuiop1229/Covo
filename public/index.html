@@ -31,17 +31,16 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.281" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.282" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
-  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" defer crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.281" />
+  <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
+  <link rel="stylesheet" href="css/main.css?v=1.1.282" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -86,6 +85,8 @@
       window.gtag = function() {};
     }
   </script>
+  <link rel="stylesheet" href="css/desktop.css">
+  <script type="module" src="js/desktop_runtime.js"></script>
 </head>
 
 <body>
@@ -442,137 +443,12 @@
 
     // Windows版: 自動バックグラウンドアップデート＆整合性修復ルーチン
     let _emergencyAutoCheckRunning = false;
-    async function emergencyAutoCheckUpdateAndRepair() {
-      if (_emergencyAutoCheckRunning) return;
-      _emergencyAutoCheckRunning = true;
-      const titleEl = document.getElementById('emergencyAutoCheckTitle');
-      const barEl = document.getElementById('emergencyAutoCheckProgressBar');
-      const pctEl = document.getElementById('emergencyAutoCheckPercent');
-      const spinner = document.getElementById('emergencyAutoCheckSpinner');
-      const rollbackCard = document.getElementById('emergencyRollbackCard');
-      const fixedBanner = document.getElementById('emergencyFixedUpdateBanner');
-      const fixedDesc = document.getElementById('emergencyFixedUpdateDesc');
-      const prevBadge = document.getElementById('emergencyPrevVerBadge');
-
-      const setProg = (pct, title) => {
-        if (barEl) barEl.style.width = `${pct}%`;
-        if (pctEl) pctEl.textContent = `${pct}%`;
-        if (titleEl && title) titleEl.textContent = title;
-      };
-
-      setProg(20, "更新プログラムの確認中...");
-      const invoke = window.__TAURI__?.core?.invoke;
-      const rolledBackFrom = localStorage.getItem('covo_rolled_back_from_ver');
-
-      try {
-        let curVer = "1.0.0";
-        try {
-          const vRes = await fetch("version.json", { cache: "no-store" });
-          if (vRes.ok) curVer = (await vRes.json()).version || curVer;
-        } catch (_) {}
-
-        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-        if (ghRes.ok) {
-          const rels = await ghRes.json();
-          if (Array.isArray(rels) && rels.length > 0) {
-            const latest = rels[0];
-            const latestTag = latest.tag_name || "";
-            const isNewer = window.isSemverNewer(latestTag, curVer);
-
-            // ★ロールバック使用中の場合に、修正版の最新アプデを案内
-            if (rolledBackFrom && window.isSemverNewer(latestTag, rolledBackFrom)) {
-              if (fixedBanner) fixedBanner.classList.remove('hidden');
-              if (fixedDesc) {
-                fixedDesc.textContent = `以前エラーが発生したバージョン (${rolledBackFrom}) の問題が修正された最新バージョン (${latestTag}) が公開されました！`;
-              }
-              const applyFixedBtn = document.getElementById('emergencyApplyFixedBtn');
-              if (applyFixedBtn) {
-                applyFixedBtn.innerHTML = `<i class="fas fa-sparkles mr-1"></i>修正版 (${latestTag}) にアップデート`;
-              }
-            }
-
-            // 直前のバージョン名バッジ更新
-            if (rels.length > 1 && prevBadge) {
-              prevBadge.textContent = `${rels[1].tag_name} へ復帰`;
-            }
-          }
-        }
-      } catch (_) {}
-
-      // 整合性自己チェック（キャッシュ・DB）
-      setProg(80, "データ整合性を診断中...");
-      try {
-        if ('indexedDB' in window) {
-          const req = indexedDB.open('covo_local_db');
-          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 800); });
-        }
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) { if (k !== 'covo_media_cache_v1') await caches.delete(k); }
-        }
-      } catch (_) {}
-
-      setProg(100, "診断完了 (手動で操作を選択してください)");
-      if (spinner) spinner.className = "fas fa-check text-emerald-400";
-      _emergencyAutoCheckRunning = false;
-    }
+    async function emergencyAutoCheckUpdateAndRepair() { const title=document.getElementById('emergencyAutoCheckTitle'); if(title)title.textContent='接続を確認してから操作を選択してください'; }
 
     // 手動操作アクション群 (Windows / Web)
-    window.emergencyApplyLatestUpdate = async function(btn) {
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>最新版を取得中...'; }
-      const invoke = window.__TAURI__?.core?.invoke;
-      try {
-        const ghRes = await fetch('https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=5', { cache: 'no-store' });
-        if (!ghRes.ok) throw new Error("GitHub APIエラー");
-        const releases = await ghRes.json();
-        const latestRel = releases[0];
-        const exeAsset = latestRel.assets?.find(a => a.name?.endsWith(".exe"));
-        if (!exeAsset) throw new Error("インストーラーが見つかりません");
+    window.emergencyApplyLatestUpdate = async () => { await import('./js/desktop_runtime.js'); try { await window.covoCheckUpdate?.(true); } catch(error) { (await import('./js/recovery_runtime.js')).recoveryNotice(error.message); } };
 
-        localStorage.removeItem('covo_rolled_back_from_ver');
-        localStorage.removeItem('covo_ignore_force_update');
-
-        if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i>ダウンロード中...`;
-        if (invoke) {
-          await invoke('silent_install_past_version', { url: exeAsset.browser_download_url, tag: latestRel.tag_name });
-          if (btn) btn.innerHTML = `再起動して適用中...`;
-        } else {
-          window.open(exeAsset.browser_download_url, '_blank');
-        }
-      } catch (err) {
-        alert("アップデートエラー: " + (err.message || err));
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>最新アップデート適用</span>'; }
-      }
-    };
-
-    window.emergencyRunIntegrityRepair = async function(btn) {
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>修復中...'; }
-      try {
-        if ('indexedDB' in window) {
-          const req = indexedDB.open('covo_local_db');
-          await new Promise((res) => { req.onsuccess = () => { req.result.close(); res(); }; req.onerror = res; setTimeout(res, 1500); });
-        }
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) { if (k !== 'covo_media_cache_v1') await caches.delete(k); }
-        }
-        let repaired = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k) {
-            const v = localStorage.getItem(k);
-            if (v && (v.startsWith('{') || v.startsWith('['))) {
-              try { JSON.parse(v); } catch (_) { localStorage.removeItem(k); repaired++; }
-            }
-          }
-        }
-        alert('整合性チェックと自己修復が完了しました！');
-      } catch (err) {
-        alert('修復処理エラー: ' + (err.message || err));
-      } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-shield-halved"></i><span>整合性チェック & 修復</span>'; }
-      }
-    };
+    window.emergencyRunIntegrityRepair = async () => { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); };
 
     window.emergencyOpenRecoveryEngine = function() {
       const invoke = window.__TAURI__?.core?.invoke;
@@ -603,38 +479,13 @@
 
     // Web版: バックエンド復旧自動検知・自動リロードタイマー (Discord / Slack 準拠)
     let _webReconnectTimer = null;
-    function startWebAutoReconnectPolling() {
-      if (_webReconnectTimer) return;
-      _webReconnectTimer = setInterval(async () => {
-        try {
-          const res = await fetch('https://simplechat-api.astro-fray-server.workers.dev/api/inviteInfo?code=HEALTH', { cache: 'no-store' });
-          if (res.ok) {
-            clearInterval(_webReconnectTimer);
-            _webReconnectTimer = null;
-            window.location.reload();
-          }
-        } catch (_) {}
-      }, 10000);
-    }
+    function startWebAutoReconnectPolling() { /* Firebase's live connection resumes without reloading the app. */ }
 
     window.emergencyReloadWeb = function() {
       window.location.reload();
     };
 
-    window.emergencyClearCacheWeb = async function() {
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          for (const r of regs) await r.unregister();
-        }
-        sessionStorage.clear();
-      } catch (_) {}
-      window.location.href = window.location.pathname + '?v=' + Date.now();
-    };
+    window.emergencyClearCacheWeb = async () => { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); };
 
     // リカバリーボタン用先行フォールバック定義 (ReferenceError防止)
     if (typeof window.openPastVersionsModal !== 'function') {
@@ -2167,15 +2018,15 @@
                       <div class="setting-label"><i class="fas fa-times-circle"></i> ウィンドウを閉じる動作</div>
                       <div class="covo-custom-select" id="closeBehaviorDropdown">
                         <div class="covo-select-trigger" onclick="toggleCustomDropdown('closeBehaviorDropdown')">
-                          <span id="closeBehaviorSelectedLabel">タスクバーに最小化 (推奨)</span>
+                          <span id="closeBehaviorSelectedLabel">タスクトレイに格納</span>
                           <i class="fas fa-chevron-down text-xs opacity-60"></i>
                         </div>
                         <div class="covo-select-options">
-                          <div class="covo-select-option selected" data-value="minimize" onclick="selectCloseBehaviorOption('minimize', 'タスクバーに最小化 (推奨)')">タスクバーに最小化 (推奨)</div>
+                          <div class="covo-select-option selected" data-value="minimize" onclick="selectCloseBehaviorOption('minimize', 'タスクバーに最小化')">タスクバーに最小化</div>
                           <div class="covo-select-option" data-value="hide" onclick="selectCloseBehaviorOption('hide', 'タスクトレイに格納')">タスクトレイに格納</div>
                           <div class="covo-select-option" data-value="quit" onclick="selectCloseBehaviorOption('quit', '完全に終了する')">完全に終了する</div>
                         </div>
-                        <input type="hidden" id="closeBehaviorSelect" value="minimize" />
+                        <input type="hidden" id="closeBehaviorSelect" value="hide" />
                       </div>
                     </div>
                   </div>
@@ -4536,7 +4387,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.281"></script>
+  <script type="module" src="js/main.js?v=1.1.282"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

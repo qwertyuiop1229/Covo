@@ -54,3 +54,5 @@ public/repomix-output.xml
 scratch/
 
 ai-context/
+.cache/firebase/
+src-tauri/windows/bin/

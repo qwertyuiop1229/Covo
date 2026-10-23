@@ -8,6 +8,7 @@
   "hosting": {
     "public": "public",
     "predeploy": [
+      "node scripts/build_firebase.mjs",
       "node scripts/bump-version.js",
       "node_modules/.bin/tailwindcss.cmd -i tailwind.input.css -o public/css/styles.css --minify",
       "npm --prefix server run deploy"
@@ -23,6 +24,15 @@
     "headers": [
       {
         "source": "/js/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/vendor/**",
         "headers": [
           {
             "key": "Cache-Control",

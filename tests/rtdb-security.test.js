@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { ref, set, update, remove } = require('firebase/database');
+const { ref, set, update, remove, get } = require('firebase/database');
 
 let env;
 const app = 'artifacts/testApp';
@@ -21,6 +21,15 @@ beforeEach(async () => {
 });
 
 describe.each([['server', message], ['DM', dmMessage]])('%s message boundaries', (_, path) => {
+  test('new single-store records cannot have their storage version changed or removed', async () => {
+    await assertSucceeds(remove(ref(db('alice'), path)));
+    await assertSucceeds(set(ref(db('alice'), path), { senderId: 'alice', text: 'enc::v1::iv::new', timestamp: 2, storageVersion: 2, clientProtocol: 2 }));
+    await assertFails(update(ref(db('alice'), path), { storageVersion: 1 }));
+    await assertFails(remove(ref(db('alice'), `${path}/storageVersion`)));
+    await assertFails(update(ref(db('alice'), path), { clientProtocol: 1 }));
+    await assertFails(remove(ref(db('alice'), `${path}/clientProtocol`)));
+    await assertSucceeds(update(ref(db('alice'), path), { text: 'enc::v1::iv::edited' }));
+  });
   test('sender edits content, participant reacts and pins with proper scope', async () => {
     await assertSucceeds(update(ref(db('alice'), path), { text: 'enc::v1::iv::updated' }));
     await assertSucceeds(set(ref(db('bob'), `${path}/reactions/bob`), 'B'));
@@ -38,9 +47,20 @@ describe.each([['server', message], ['DM', dmMessage]])('%s message boundaries',
   });
   test('sender can delete and create encrypted messages', async () => {
     await assertSucceeds(remove(ref(db('alice'), path)));
-    await assertSucceeds(set(ref(db('alice'), path), { senderId: 'alice', text: 'enc::v1::iv::new', timestamp: 2 }));
+    await assertSucceeds(set(ref(db('alice'), path), { senderId: 'alice', text: 'enc::v1::iv::new', timestamp: 2, storageVersion: 2, clientProtocol: 2 }));
     await assertFails(set(ref(db('bob'), `${path}spoof`), { senderId: 'alice', text: 'spoof' }));
   });
+});
+
+test('one atomic receipt update cannot mark another user read', async () => {
+  await assertSucceeds(update(ref(db('alice')), {
+    [`${server}/rooms/general/readReceipts/alice`]: { lastReadMessageId: 'msg1', lastReadAt: 100 },
+    [`${app}/users/alice/readStates/general`]: { lastReadAt: 100 }
+  }));
+  await assertFails(update(ref(db('alice')), {
+    [`${server}/rooms/general/readReceipts/bob`]: { lastReadMessageId: 'msg1', lastReadAt: 100 },
+    [`${app}/users/alice/readStates/general`]: { lastReadAt: 100 }
+  }));
 });
 
 test('moderator cannot bypass message rules through a room or server update', async () => {
@@ -59,4 +79,49 @@ test.each([
   await assertFails(update(ref(db('mallory'), `${app}/${path}`), forged));
   await assertFails(update(ref(db('alice'), `${app}/${path}`), forged));
   await assertSucceeds(update(ref(db('alice'), `${app}/${path}`), { status: 'connected' }));
+});
+
+
+test.each([
+  server + '/members/mallory', server + '/serverAdmins/mallory',
+  app + '/settings/adminList/admins/mallory', 'artifacts/simplechat-65a0d/settings/adminList/admins/mallory'
+])('false role flags never authorize reads or writes: %s', async rolePath => {
+  await env.withSecurityRulesDisabled(c => set(ref(c.database(), rolePath), false));
+  const attacker = db('mallory');
+  await assertFails(get(ref(attacker, message)));
+  await assertFails(get(ref(attacker, dmMessage)));
+  await assertFails(update(ref(attacker, message), { isPinned: true }));
+  await assertFails(set(ref(attacker, server + '/rooms/general/readReceipts/mallory'), { lastReadAt: 100 }));
+  await assertFails(set(ref(attacker, 'status/alice'), { state: 'offline' }));
+  await assertSucceeds(get(ref(db('alice'), message)));
+});
+
+
+test('real RTDB REST ETags reject stale deletes and accept only the current version', async () => {
+  const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+  if (!host) throw Error('RTDB Emulator is required');
+  const url = 'http://' + host + '/' + message + '.json?ns=demo-covo-security-test';
+  const headers = { Authorization: 'Bearer owner', 'X-Firebase-ETag': 'true' };
+  const first = await fetch(url, { headers }); expect(first.status).toBe(200); const stale = first.headers.get('ETag'); expect(stale).toBeTruthy();
+  await update(ref(db('alice'), message), { text: 'enc::v1::iv::new-version' });
+  const rejected = await fetch(url, { method: 'DELETE', headers: { Authorization: 'Bearer owner', 'if-match': stale } });
+  expect(rejected.status).toBe(412); expect((await get(ref(db('alice'), message))).exists()).toBe(true);
+  const current = await fetch(url, { headers });
+  const removed = await fetch(url, { method: 'DELETE', headers: { Authorization: 'Bearer owner', 'if-match': current.headers.get('ETag') } });
+  expect(removed.status).toBe(200); expect((await get(ref(db('alice'), message))).exists()).toBe(false);
+});
+
+
+describe.each([['server', message], ['DM', dmMessage]])('%s retired message format', (_, path) => {
+  test('legacy create including partial child and multipath writes cannot allocate a body', async () => {
+    const fresh = path + '_old';
+    await assertFails(set(ref(db('alice'), fresh), { senderId: 'alice', text: 'legacy' }));
+    await assertFails(update(ref(db('alice'), fresh), { senderId: 'alice', text: 'legacy' }));
+    await assertFails(set(ref(db('alice'), fresh + '/text'), 'legacy'));
+    await assertFails(update(ref(db('alice')), { [fresh]: { senderId: 'alice', text: 'legacy' } }));
+    await assertFails(set(ref(db('alice'), fresh), { senderId: 'alice', text: 'legacy', storageVersion: 1 }));
+    await assertFails(set(ref(db('alice'), fresh), { senderId: 'alice', text: 'legacy', storageVersion: 2 }));
+    await assertSucceeds(set(ref(db('alice'), fresh), { senderId: 'alice', text: 'enc::iv::cipher', timestamp: 2, storageVersion: 2, clientProtocol: 2 }));
+    await assertFails(set(ref(db('mallory'), fresh + '_spoof'), { senderId: 'mallory', text: 'cipher', storageVersion: 2, clientProtocol: 2 }));
+  });
 });

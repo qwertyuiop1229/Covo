@@ -9,6 +9,20 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
+    function messageSummaryIsConsistent() {
+      let data = request.resource.data;
+      return (data.get('lastMessageAt', null) == null && data.get('lastMessageId', null) == null) ||
+        (data.get('lastMessageAt', null) is timestamp && data.get('lastMessageId', null) is string &&
+         data.lastMessageId.size() > 0 && data.lastMessageId.size() <= 160 &&
+         data.get('lastMessageStorageVersion', 0) in [1, 2] &&
+         data.get('lastMessageStorageTimestamp', null) == data.lastMessageAt.toMillis());
+    }
+    function preservesMessageSummary() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp',
+        'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText'
+      ]) || messageSummaryIsConsistent();
+    }
 
     // アプリ全体管理者 (Super Admin / Global Admin)
     function isGlobalAdmin(appId) {
@@ -121,10 +135,9 @@ service cloud.firestore {
 
       // システムエラー・警告テレメトリ
       match /error_reports/{docId} {
-        allow create, update: if
-          request.resource.data.message is string &&
-          request.resource.data.message.size() > 0 &&
-          request.resource.data.message.size() <= 8000;
+        // Current telemetry uses the authenticated, bounded Worker -> RTDB path.
+        // Do not let old clients (or unauthenticated callers) recreate copies.
+        allow create, update: if false;
         allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
       }
 
@@ -202,7 +215,8 @@ service cloud.firestore {
 
       // 既読状態の同期
       match /users/{userId}/readStates/{docId} {
-        allow read, write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow read, delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow create, update: if false;
       }
 
       // フレンド関係性 (Relationships)
@@ -226,8 +240,8 @@ service cloud.firestore {
           (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
           (resource == null && (dmId.matches('^' + request.auth.uid + '_.*') || dmId.matches('^.*_' + request.auth.uid + '$')))
         );
-        allow create: if isAuthenticated() && request.resource.data.get('sharedKey', null) == null && request.resource.data.participants is list && request.resource.data.participants.size() == 2 && request.resource.data.participants[0] != request.resource.data.participants[1] && request.auth.uid in request.resource.data.participants && (dmId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1] || dmId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
-        allow update: if isAuthenticated() && (isGlobalAdmin(appId) || (request.auth.uid in resource.data.participants && request.resource.data.participants == resource.data.participants &&
+        allow create: if isAuthenticated() && messageSummaryIsConsistent() && request.resource.data.get('sharedKey', null) == null && request.resource.data.participants is list && request.resource.data.participants.size() == 2 && request.resource.data.participants[0] != request.resource.data.participants[1] && request.auth.uid in request.resource.data.participants && (dmId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1] || dmId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
+        allow update: if isAuthenticated() && preservesMessageSummary() && (isGlobalAdmin(appId) || (request.auth.uid in resource.data.participants && request.resource.data.participants == resource.data.participants &&
           (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null)));
         allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
 
@@ -303,7 +317,8 @@ service cloud.firestore {
       // 3. グローバルオンライン状態 (Status)
       match /status/{userId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow create, update: if false;
       }
 
       // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
@@ -409,28 +424,25 @@ service cloud.firestore {
         // ルーム一覧 (Channels / Rooms)
         match /rooms/{roomId} {
           allow read: if isServerMember(appId, serverId);
-          allow create, delete: if isServerAdmin(appId, serverId);
-          allow update: if isServerAdmin(appId, serverId) || (
+          allow create: if isServerAdmin(appId, serverId) && messageSummaryIsConsistent();
+          allow delete: if isServerAdmin(appId, serverId);
+          allow update: if preservesMessageSummary() && (isServerAdmin(appId, serverId) || (
             isAuthenticated() &&
             exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion']) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp', 'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion']) &&
             (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null) &&
             (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentKeyVersion']) || (resource.data.get('currentKeyVersion', 1) == 1 && request.resource.data.currentKeyVersion == 1))
-          );
+          ));
 
           // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
           match /messages/{messageId} {
             allow read: if isServerMember(appId, serverId);
-            allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid &&
-              (isGlobalAdmin(appId) || isServerAdmin(appId, serverId) ||
-               (request.resource.data.senderId == request.auth.uid &&
-                exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-                request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)) &&
-              (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000)) &&
-              (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000));
+            // Version 2 bodies have a single authority in RTDB. In particular,
+            // a downgraded client's pending outbox must not recreate a mirror.
+            allow create: if false;
 
-            allow update: if isServerMember(appId, serverId) && (
+            allow update: if request.resource.data.get('storageVersion', 1) == 1 && isServerMember(appId, serverId) && (
               (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
                request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
               || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
@@ -454,8 +466,8 @@ service cloud.firestore {
           // 既読レシート (Read Receipts)
           match /readReceipts/{receiptUserId} {
             allow read: if isServerMember(appId, serverId);
-            allow create, update: if isServerMember(appId, serverId) &&
-              (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow create, update: if false;
+            allow delete: if isServerMember(appId, serverId) && (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
             allow delete: if isAuthenticated() &&
               (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
           }

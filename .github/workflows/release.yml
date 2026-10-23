@@ -48,8 +48,34 @@ jobs:
           echo "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $env:GITHUB_ENV
 
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
       - name: install frontend dependencies
-        run: npm install
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate rules and regressions before publishing
+        env:
+          JAVA_TOOL_OPTIONS: '-Djdk.net.unixdomain.tmpdir=C:\CovoUnavailableUnixSocketDirectory'
+        run: |
+          npm install --global firebase-tools@15.9.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build:firebase
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:security
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chrome
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: build Tailwind CSS
         run: node scripts/build_tailwind.mjs
@@ -63,7 +89,22 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
+          releaseBody: 'Windows: download CovoSetup.exe. Signed updater artifacts are also attached for in-app updates.'
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Build Covo setup shell
+        shell: pwsh
+        run: ./scripts/build_windows_setup.ps1 -Bootstrap
+
+      - name: Upload Covo setup shell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          gh release upload "v$($config.version)" src-tauri/windows/bin/CovoSetup.exe --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit "v$($config.version)" --draft=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -70,7 +70,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # [1/5] version.json + tauri.conf.json + index.html
-$vjContent = "{`n  `"version`": `"$newVersion`",`n  `"force`": false`n}`n"
+$versionData.version = $newVersion
+# Preserve compatibility floors and other release policy fields.
+$vjContent = ($versionData | ConvertTo-Json -Depth 20) + "`n"
 [System.IO.File]::WriteAllText($versionJsonPath, $vjContent, [System.Text.UTF8Encoding]::new($false))
 Write-Host "[1/5] Updated version.json -> $newVersion" -ForegroundColor Green
 
@@ -136,33 +138,13 @@ git commit -m "Release v$newVersion"
 Write-Host "[3/5] Creating tag $tagName ..." -ForegroundColor Green
 git tag $tagName
 
-# [4/5] Firebase
-Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
-firebase deploy --only "hosting,firestore:rules,database"
-
 # [5/5] git push
 Write-Host '[5/5] Pushing to GitHub...' -ForegroundColor Green
 git push origin HEAD --tags
+if ($LASTEXITCODE -ne 0) { throw 'Git push failed; production deployment was stopped.' }
 
 Write-Host ''
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host '  Deploy complete!' -ForegroundColor Green
-Write-Host "  Version : $newVersion" -ForegroundColor Green
-Write-Host "  Tag     : $tagName"    -ForegroundColor Green
-Write-Host '  Mode    : AUTOMATIC UPDATE' -ForegroundColor Green
-Write-Host '====================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Firebase : https://simplechat-65a0d.web.app' -ForegroundColor Yellow
-Write-Host 'GitHub   : https://github.com/qwertyuiop1229/Covo/actions' -ForegroundColor Yellow
-Write-Host ''
+Write-Host 'Windows release is building. Production rollout waits for the published signed update.' -ForegroundColor Yellow
 
 # ===========================================================================
 # GitHub Actions real-time build monitor
@@ -225,7 +207,7 @@ function Invoke-GHApi {
 
 function Get-LatestRun {
     param([string]$Tag)
-    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/runs?event=push&per_page=15')
+    $res = Invoke-GHApi -Path ('/repos/' + $REPO + '/actions/workflows/release.yml/runs?event=push&per_page=15')
     if (-not $res) { return $null }
     $run = $res.workflow_runs | Where-Object {
         ($_.head_branch -eq $Tag) -or
@@ -256,20 +238,20 @@ for ($i = 1; $i -le 15; $i++) {
 if ($global:RateLimitHit -and -not $run) {
     Write-Host ''
     Write-Host '!! [API Rate Limit Exceeded] Anonymous request limit (60/hr) reached.' -ForegroundColor Yellow
-    Write-Host '   Deployment (git push and Firebase) completed successfully!' -ForegroundColor Green
+    Write-Host '   Git push completed; production deployment is waiting for release verification.' -ForegroundColor Yellow
     Write-Host '   Check the build progress at:' -ForegroundColor Yellow
     Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
     Write-Host ''
-    exit 0
+    throw 'Windows release verification unavailable; production deployment was stopped.'
 }
 
 if (-not $run) {
     Write-Host ''
     Write-Host '!! Run not detected within 45s. (GitHub Actions might be taking longer to queue)' -ForegroundColor Yellow
-    Write-Host '   The deployment (git push and Firebase) was SUCCESSFUL.' -ForegroundColor Green
+    Write-Host '   Git push completed; production deployment has not started.' -ForegroundColor Yellow
     Write-Host '   Please check the build progress manually in your browser:' -ForegroundColor Yellow
     Write-Host ('   -> https://github.com/' + $REPO + '/actions') -ForegroundColor Cyan
-    exit 0
+    throw 'Windows release verification unavailable; production deployment was stopped.'
 }
 
 $runId  = $run.id
@@ -464,3 +446,24 @@ for ($totalSec = 0; $totalSec -lt $maxOverallSec; $totalSec++) {
     Start-Sleep -Seconds 1
     $secSinceLastPoll++
 }
+
+# Publish the compatible signed Windows installer BEFORE withdrawing the old protocol.
+if ($jobConclusion -ne 'success') { throw 'Windows release was not verified; production deployment was stopped.' }
+$publishedRelease = Invoke-GHApi -Path ('/repos/' + $REPO + '/releases/tags/' + $tagName)
+$assetNames = @($publishedRelease.assets | ForEach-Object { $_.name })
+if (-not $publishedRelease -or $publishedRelease.draft -or $publishedRelease.prerelease -or
+    'CovoSetup.exe' -notin $assetNames -or 'latest.json' -notin $assetNames -or
+    -not ($assetNames | Where-Object { $_ -like '*.exe.sig' })) {
+    throw 'The public Windows installer and signed updater are not ready; production deployment was stopped.'
+}
+# [4/5] Firebase
+Write-Host '[4/5] Deploying to Firebase...' -ForegroundColor Green
+# New clients use new metadata fields/indexes. Publish rules first so a hosting
+# rollout cannot expose clients to a partially updated permission boundary.
+firebase deploy --only "firestore:rules,database"
+if ($LASTEXITCODE -ne 0) { throw 'Rules deployment failed; hosting and push were stopped.' }
+firebase deploy --only "hosting"
+if ($LASTEXITCODE -ne 0) { throw 'Hosting/Worker deployment failed; push was stopped.' }
+
+
+Write-Host ('Deploy complete: ' + $newVersion) -ForegroundColor Green

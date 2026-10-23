@@ -1,4 +1,5 @@
 import { alertMessage } from './ui_helpers.js';
+import { CLIENT_PROTOCOL, assertSupportedClient, requireClientUpdate } from './client_protocol.js';
 
 const BLOCKED_EXTENSIONS = new Set([
   'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'pif', 'vbs', 'vbe', 'wsf', 'wsh',
@@ -52,6 +53,7 @@ export function checkFileAllowed(file) {
  * (main.jsのグローバル変数を引数として受け取る内部用関数)
  */
 export async function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
+    assertSupportedClient();
     let idToken = "";
     try {
       if (auth && auth.currentUser) {
@@ -73,6 +75,7 @@ export async function _uploadToExternalService(file, auth, userId, workerBaseUrl
     }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.setRequestHeader('X-Covo-Protocol', String(CLIENT_PROTOCOL));
     xhr.timeout = 120000;
     xhr.addEventListener('timeout', () => reject(new Error('アップロードがタイムアウトしました。接続を確認して再試行してください')));
     xhr.upload.addEventListener('progress', e => {
@@ -85,6 +88,7 @@ export async function _uploadToExternalService(file, auth, userId, workerBaseUrl
           d.url ? resolve(d.url) : reject(new Error(d.error || 'アップロード失敗'));
         } catch (e) { reject(new Error('応答の解析に失敗')); }
       } else {
+        if (xhr.status === 426) requireClientUpdate();
         let msg = `HTTP ${xhr.status}`;
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
         reject(new Error(msg));
