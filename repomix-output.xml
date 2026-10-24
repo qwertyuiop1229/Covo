@@ -250,275 +250,6 @@ UI_REFINEMENT_REPORT.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path="browser-tests/fixtures/timeline-before-virtualization.js">
-// Immutable performance baseline from 8c6e23cbbd939e7b680cd884113801f184cc3a63:public/js/main.js
-// Only the original renderMessagesWithReadReceipts declaration is retained.
-function renderMessagesWithReadReceipts() {
-  const channelId = currentDmId ? `dm_${currentDmId}` : `${currentServerId}_${currentRoomId}`;
-  const timeline = isJumpView ? lastMessagesData : allLoadedMessages;
-  if (searchQuery && _searchHistoryResults?.channelId === channelId && _searchHistoryResults.query === searchQuery) {
-    const combined = new Map(_searchHistoryResults.messages.map(message => [message.id, message]));
-    for (const message of timeline) combined.set(message.id, message);
-    lastMessagesData = [...combined.values()].sort(compareHistoryMessages);
-  } else {
-    lastMessagesData = [...timeline];
-  }
-  messagesIndexMap = {};
-  lastMessagesData.forEach((message, index) => { messagesIndexMap[message.id] = index; });
-  const filteredMessages = lastMessagesData.filter(msg => {
-    if (!searchQuery) return true;
-    const body = String(msg.text || msg._decryptedText || '').toLowerCase();
-    const sender = String(msg.senderNickname || msg.senderName || '').toLowerCase();
-    return body.includes(searchQuery) || sender.includes(searchQuery);
-  });
-  // スクロール中に新しいメッセージを受信した場合の「最新へジャンプ」バッジ連動
-  const newMessageCount = countNewerMessages(filteredMessages, window._covoLastRenderedNewest);
-  if (!searchQuery && newMessageCount > 0) {
-    const diff = newMessageCount;
-    if (messagesDisplay && messagesDisplay.scrollTop > 100) {
-      window._covoUnreadScrolledCount = (window._covoUnreadScrolledCount || 0) + diff;
-      const badge = document.getElementById("jumpModeUnreadBadge");
-      if (badge) {
-        badge.textContent = window._covoUnreadScrolledCount > 99 ? '99+' : window._covoUnreadScrolledCount;
-        badge.classList.remove('hidden');
-      }
-      const exitBtn = document.getElementById("jumpModeExitBtn");
-      if (exitBtn) {
-        exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
-        exitBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
-      }
-    }
-  }
-  window._covoLastRenderedCount = filteredMessages.length;
-  if (!searchQuery) window._covoLastRenderedNewest = filteredMessages[filteredMessages.length - 1]?.id || null;
-  // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
-  const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
-  const existingRowsMap = new Map();
-  existingRows.forEach(row => {
-    const bubble = row.querySelector('.message-bubble');
-    if (bubble && bubble.dataset.messageId) {
-      existingRowsMap.set(bubble.dataset.messageId, row);
-    }
-  });
-  const existingDividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
-  const existingDividersMap = new Map();
-  existingDividers.forEach(div => {
-    const inner = div.querySelector('.date-divider-inner');
-    if (inner) {
-      existingDividersMap.set(inner.textContent.trim(), div);
-    }
-  });
-  // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
-  const reversedMessages = [...filteredMessages].reverse();
-  const getDayString = (ts) => {
-    const ms = parseTimestampToMs(ts);
-    if (!ms || ms <= 0) return "";
-    const d = new Date(ms);
-    const today = new Date();
-    const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-    if (isToday) return "今日";
-    const yday = new Date(today); yday.setDate(today.getDate() - 1);
-    const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
-    if (isYday) return "昨日";
-    const days = ['日', '月', '火', '水', '木', '金', '土'];
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} (${days[d.getDay()]})`;
-  };
-  // 1. まず表示するべき全DOM要素をリスト化する（既存要素は再利用し、位置も維持する）
-  const expectedElements = [];
-  reversedMessages.forEach((msg, i) => {
-    const idx = messagesIndexMap[msg.id];
-    const readCount = computeReadByCount(msg, idx);
-    const isMyMsg = (msg.senderId === userId || msg.userId === userId);
-    let row = existingRowsMap.get(msg.id);
-    if (row) {
-      if (!isMyMsg) {
-        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
-        const cachedProf = window._userProfileCache?.get(msg.senderId);
-        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
-        const dmAvatar = (currentDmParticipant && currentDmParticipant.uid === msg.senderId) ? currentDmParticipant.avatarUrl : null;
-        const resolvedAvatarUrl = isUsableAvatarUrl(dmAvatar)
-          ? dmAvatar
-          : (isUsableAvatarUrl(cachedProf?.avatarUrl)
-              ? cachedProf.avatarUrl
-              : (isUsableAvatarUrl(senderUser?.avatarUrl)
-                  ? senderUser.avatarUrl
-                  : (isUsableAvatarUrl(msg.senderAvatarUrl) ? msg.senderAvatarUrl : null)));
-        const avatarDiv = row.querySelector('.msg-avatar');
-        if (avatarDiv) {
-          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
-            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
-          } else {
-            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
-            if (msg.senderId && window.getUserProfile) {
-              window.getUserProfile(msg.senderId).then(p => {
-                if (p && isUsableAvatarUrl(p.avatarUrl) && avatarDiv.parentElement) {
-                  __setAvatarImg(avatarDiv, p.avatarUrl, p.nickname || resolvedNickname, { style: '' });
-                }
-              }).catch(() => {});
-            }
-          }
-        }
-        const nameSpan = row.querySelector('.msg-sender-name');
-        if (nameSpan) {
-          nameSpan.textContent = resolvedNickname;
-        }
-      }
-      const readSpan = row.querySelector('.read-receipt');
-      if (readSpan) {
-        if (readCount > 0) {
-          readSpan.textContent = `既読${readCount > 1 ? `（${readCount}）` : ""}`;
-          readSpan.style.display = "";
-        } else {
-          readSpan.style.display = "none";
-        }
-      }
-      const timestampSpan = row.querySelector('.msg-timestamp');
-      if (timestampSpan) {
-        // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
-        const _getDateU = (ts) => {
-          if (!ts) return null;
-          if (typeof ts.toDate === 'function') return ts.toDate();
-          if (typeof ts === 'number') return new Date(ts);
-          return null;
-        };
-        const _tsDU = _getDateU(msg.timestamp) || _getDateU(msg.createdAt);
-        if (_tsDU) {
-          timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
-        } else {
-          timestampSpan.textContent = "送信中...";
-        }
-      }
-      const textSpan = row.querySelector('.message-content');
-      if (textSpan && msg.text) {
-        const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText)) || (typeof msg.text === 'string' && msg.text.startsWith('enc::'));
-        if (msg._decrypted && typeof msg.text === 'string' && !msg.text.startsWith('enc::')) {
-          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
-          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
-          if (ogUrl && window.attachDiscordOgEmbed) {
-            const bEl = row.querySelector('.message-bubble');
-            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
-          }
-        } else if (msg._decryptedErrorText) {
-          textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);
-        } else if (isEnc) {
-          textSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
-        } else {
-          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
-          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
-          if (ogUrl && window.attachDiscordOgEmbed) {
-            const bEl = row.querySelector('.message-bubble');
-            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
-          }
-        }
-      }
-      const bubbleElement = row.querySelector('.message-bubble');
-      if (bubbleElement) updateReactionsUI(bubbleElement, msg);
-      const replyQuoteText = row.querySelector('.reply-quote-text');
-      if (replyQuoteText && msg.replyTo) {
-        const replyRaw = msg.replyTo._decryptedErrorText || msg.replyTo.text || '（ファイル）';
-        const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
-        if (isReplyEnc) {
-          replyQuoteText.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
-        } else {
-          replyQuoteText.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
-        }
-      }
-      existingRowsMap.delete(msg.id);
-    } else {
-      row = createMessageElement(msg, msg.id, readCount);
-    }
-    expectedElements.push(row);
-    const currentDay = getDayString(getMsgTimestamp(msg));
-    const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(getMsgTimestamp(reversedMessages[i + 1])) : null;
-    if (currentDay && currentDay !== nextMsgDay) {
-      let div = existingDividersMap.get(currentDay);
-      if (div) {
-        existingDividersMap.delete(currentDay);
-      } else {
-        div = document.createElement("div");
-        div.className = "date-divider flipped";
-        div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
-      }
-      expectedElements.push(div);
-    }
-  });
-  // Discord本家完全準拠 DM Welcome Hero Header（画像2中央上部完全準拠）
-  if (currentDmId && currentDmParticipant) {
-    let hero = document.getElementById('dmHeroWelcomeBanner');
-    if (!hero) {
-      hero = document.createElement('div');
-      hero.id = 'dmHeroWelcomeBanner';
-      hero.className = 'dm-welcome-banner flipped select-none';
-    }
-    const safeNick = escapeHtml(currentDmParticipant.nickname || 'ユーザー');
-    const safeAv = isUsableAvatarUrl(currentDmParticipant.avatarUrl) 
-      ? `<img src="${escapeHtml(currentDmParticipant.avatarUrl)}" class="w-20 h-20 rounded-full object-cover shadow-lg border-2 border-indigo-500/20">`
-      : `<div class="w-20 h-20 rounded-full bg-slate-700 text-white font-bold text-3xl flex items-center justify-center shadow-lg">${safeNick.charAt(0)}</div>`;
-    const targetUid = currentDmParticipant.uid;
-    const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
-    let mutualServersCount = 0;
-    if (Array.isArray(allServersCache)) {
-      mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
-    }
-    const rel = friendRelationships[targetUid];
-    const isFriend = rel?.status === 'friends';
-    const friendActionText = isFriend ? 'フレンドを削除' : 'フレンド申請を送信';
-    hero.innerHTML = `
-      <div class="dm-hero-avatar mb-3.5">
-        ${safeAv}
-      </div>
-      <h2 class="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white mb-1 tracking-tight">${safeNick}</h2>
-      <div class="text-sm font-semibold text-gray-500 dark:text-gray-400 font-mono mb-2">${handleTag}</div>
-      <p class="text-xs sm:text-sm text-gray-600 dark:text-gray-300 font-normal mb-5 leading-relaxed">
-        ここが、あなたと <strong>${safeNick}</strong> のDM履歴の先頭です。
-      </p>
-      <div class="flex items-center gap-2.5 flex-wrap">
-        <button onclick="window.openUserProfileModal('${_jsq(targetUid)}', '${_jsq(currentDmParticipant.nickname || '')}', '${_jsq(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
-          <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
-          <span>${mutualServersCount}個の共通サーバー</span>
-        </button>
-        <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
-          ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
-        </button>
-        <button onclick="window.blockUser('${_jsq(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
-          <i class="fas fa-ban mr-1.5 text-xs"></i>ブロック
-        </button>
-      </div>
-    `;
-    expectedElements.push(hero);
-  } else {
-    const hero = document.getElementById('dmHeroWelcomeBanner');
-    if (hero) hero.remove();
-  }
-  // 2. 実際のDOMとexpectedElementsを先頭から順に照合。同一要素ならinsertBefore等の再配置を一切スキップ！
-  // これにより既存要素のLayout Thrashingやアニメーション再発火（パッとなる現象）が100%根絶される
-  let currentChild = messagesDisplay.firstElementChild;
-  for (const expectedEl of expectedElements) {
-    if (currentChild === expectedEl) {
-      currentChild = currentChild.nextElementSibling;
-    } else {
-      messagesDisplay.insertBefore(expectedEl, currentChild);
-    }
-  }
-  // 3. 削除された不要なメッセージや古くなったディバイダーを取り除く
-  existingRowsMap.forEach(row => row.remove());
-  existingDividersMap.forEach(div => div.remove());
-  // スピナーや終端メッセージは過去のメッセージの「さらに上」（DOM上は最後尾）に配置
-  const spinner = document.getElementById('topLoadingSpinner');
-  if (spinner) {
-    spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
-  }
-  // 未読の境界線（検索中は出さない。filteredMessages は時系列昇順の filteredMessages を使う）
-  if (!searchQuery) {
-    const boundaryId = resolveUnreadBoundaryMessageId(filteredMessages);
-    renderUnreadDivider(boundaryId);
-  } else {
-    const existing = messagesDisplay.querySelector('.unread-divider');
-    if (existing) existing.remove();
-  }
-}
-</file>
-
 <file path="public/css/modules/animations.css">
 /* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
 .splash-icon-container {
@@ -1135,218 +866,6 @@ console.log('====================================');
 console.log('');
 </file>
 
-<file path="scripts/release_monitor.ps1">
-# ASCII source: also parsed by Windows PowerShell 5.1 without a UTF-8 BOM.
-function Select-CovoWorkflowRun {
-    param($Runs, [string]$Commit, [string]$Workflow, [string]$Ref)
-    return $Runs | Where-Object {
-        $_.head_sha -eq $Commit -and $_.event -eq 'push' -and
-        ($_.path -split '@')[0] -eq ('.github/workflows/' + $Workflow) -and $_.head_branch -eq $Ref
-    } | Sort-Object -Property id -Descending | Select-Object -First 1
-}
-
-function Get-CovoCiSnapshot {
-    param($Runs, [hashtable]$JobsByRun, [string]$Commit, [string]$Tag, [string]$Branch)
-    $validation = Select-CovoWorkflowRun $Runs $Commit 'validate.yml' $Branch
-    $release = Select-CovoWorkflowRun $Runs $Commit 'release.yml' $Tag
-    $definitions = @(
-        @{ Label = 'web-and-rules'; Run = $validation; Job = '^web-and-rules$' },
-        @{ Label = 'native'; Run = $validation; Job = '^native$' },
-        @{ Label = 'release'; Run = $release; Job = '^release \(windows-latest\)$' }
-    )
-    $failed = $false
-    $allSucceeded = $true
-    $rows = foreach ($definition in $definitions) {
-        $run = $definition.Run
-        $jobs = if ($run) { @($JobsByRun[[string]$run.id]) } else { @() }
-        $job = $jobs | Where-Object { $_.name -match $definition.Job } | Select-Object -First 1
-        $status = 'waiting for workflow'
-        $detail = ''
-        $url = if ($run) { $run.html_url } else { '' }
-        if ($job) {
-            $status = [string]$job.status
-            if ($job.html_url) { $url = $job.html_url }
-            if ($status -eq 'completed') {
-                $status = [string]$job.conclusion
-                if ($job.conclusion -ne 'success') { $failed = $true }
-            }
-            $steps = @($job.steps)
-            $finished = @($steps | Where-Object { $_.status -eq 'completed' }).Count
-            $active = $steps | Where-Object { $_.status -eq 'in_progress' } | Select-Object -First 1
-            $detail = ('{0}/{1} steps' -f $finished, $steps.Count)
-            if ($active) { $detail += ' - ' + $active.name }
-        } elseif ($run) {
-            $status = [string]$run.status
-        }
-        # A successful first job must never hide a cancelled/failed workflow.
-        if ($run -and $run.status -eq 'completed' -and $run.conclusion -ne 'success') { $failed = $true }
-        if (-not $run -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or
-            -not $job -or $job.status -ne 'completed' -or $job.conclusion -ne 'success') { $allSucceeded = $false }
-        [pscustomobject]@{ Name = $definition.Label; Status = $status; Detail = $detail; Url = $url }
-    }
-    return [pscustomobject]@{ Rows = @($rows); Failed = $failed; Succeeded = ($allSucceeded -and -not $failed) }
-}
-
-function Invoke-CovoGitHubApi {
-    param([string]$Repo, [string]$Path, [string]$Token)
-    $headers = @{ 'User-Agent' = 'covo-deploy'; Accept = 'application/vnd.github+json' }
-    if ($Token) { $headers.Authorization = 'Bearer ' + $Token }
-    try {
-        return Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $Repo + $Path) -Headers $headers -TimeoutSec 30 -ErrorAction Stop
-    } catch {
-        throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message)
-    }
-}
-
-function Wait-CovoReleaseChecks {
-    param([string]$Repo, [string]$Commit, [string]$Tag, [string]$Branch, [string]$Token, [int]$TimeoutSeconds = 3600)
-    # At most three requests per poll: runs + validation jobs + release jobs.
-    # Anonymous: 240s keeps normal monitoring below 60 requests/hour.
-    $pollSeconds = if ($Token) { 20 } else { 240 }
-    Write-Host ('Monitoring web-and-rules, native, release for commit ' + $Commit) -ForegroundColor Cyan
-    Write-Host ('GitHub polling interval: ' + $pollSeconds + 's. Keep this terminal open; Firebase deployment runs here after all checks pass.') -ForegroundColor Yellow
-    $clock = [Diagnostics.Stopwatch]::StartNew()
-    while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token
-        $runs = @($response.workflow_runs)
-        $jobsByRun = @{}
-        $selected = @(
-            (Select-CovoWorkflowRun $runs $Commit 'validate.yml' $Branch),
-            (Select-CovoWorkflowRun $runs $Commit 'release.yml' $Tag)
-        )
-        foreach ($run in $selected) {
-            if ($run) {
-                $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token
-                $jobsByRun[[string]$run.id] = @($jobs.jobs)
-            }
-        }
-        $snapshot = Get-CovoCiSnapshot $runs $jobsByRun $Commit $Tag $Branch
-        Write-Host ('--- CI status (' + [int]$clock.Elapsed.TotalMinutes + ' min elapsed) ---') -ForegroundColor Cyan
-        foreach ($row in $snapshot.Rows) {
-            Write-Host ('  [{0}] {1}: {2}' -f $row.Status, $row.Name, $row.Detail)
-            if ($row.Url) { Write-Host ('      ' + $row.Url) -ForegroundColor DarkGray }
-        }
-        if ($snapshot.Failed) { throw 'A required CI check failed or was cancelled. Firebase/Worker production deployment was stopped.' }
-        if ($snapshot.Succeeded) { return }
-        # Short sleeps keep Ctrl+C responsive; no background deployment is created.
-        for ($second = 0; $second -lt $pollSeconds -and $clock.Elapsed.TotalSeconds -lt $TimeoutSeconds; $second++) { Start-Sleep -Seconds 1 }
-    }
-    throw 'CI verification timed out. Firebase/Worker production deployment was NOT started.'
-}
-
-function Assert-CovoPublishedRelease {
-    param($Release, [string]$Tag)
-    $assetNames = @($Release.assets | ForEach-Object { $_.name })
-    if (-not $Release -or $Release.tag_name -ne $Tag -or $Release.draft -or $Release.prerelease -or
-        'CovoSetup.exe' -notin $assetNames -or 'latest.json' -notin $assetNames -or
-        -not ($assetNames | Where-Object { $_ -like '*.exe.sig' })) {
-        throw 'The public Windows installer and signed updater are not ready; production deployment was stopped.'
-    }
-}
-</file>
-
-<file path="scripts/test_release_tools.ps1">
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'release_monitor.ps1')
-$script:assertions = 0
-function Assert-Test {
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-    $script:assertions++
-}
-function New-Fixture {
-    $script:ciRuns = @(
-        [pscustomobject]@{ id = 11; path = '.github/workflows/validate.yml'; head_branch = 'master'; head_sha = 'abc'; event = 'push'; status = 'completed'; conclusion = 'success'; html_url = 'validation' },
-        [pscustomobject]@{ id = 12; path = '.github/workflows/release.yml'; head_branch = 'v1.1.283'; head_sha = 'abc'; event = 'push'; status = 'completed'; conclusion = 'success'; html_url = 'release' }
-    )
-    $script:ciJobs = @{
-        '11' = @(
-            [pscustomobject]@{ name = 'web-and-rules'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'web' },
-            [pscustomobject]@{ name = 'native'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'native' }
-        );
-        '12' = @([pscustomobject]@{ name = 'release (windows-latest)'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'release-job' })
-    }
-}
-function Snapshot { Get-CovoCiSnapshot $script:ciRuns $script:ciJobs 'abc' 'v1.1.283' 'master' }
-
-New-Fixture
-$state = Snapshot
-Assert-Test ($state.Succeeded -and -not $state.Failed -and $state.Rows.Count -eq 3) 'All three jobs must be displayed and accepted.'
-foreach ($change in @('wrong-commit', 'wrong-tag', 'wrong-branch', 'wrong-event', 'wrong-workflow', 'pending-native', 'missing-job', 'pending-workflow')) {
-    New-Fixture
-    switch ($change) {
-        'wrong-commit' { $ciRuns[1].head_sha = 'stale' }
-        'wrong-tag' { $ciRuns[1].head_branch = 'v1.1.282' }
-        'wrong-branch' { $ciRuns[0].head_branch = 'another' }
-        'wrong-event' { $ciRuns[1].event = 'pull_request' }
-        'wrong-workflow' { $ciRuns[1].path = '.github/workflows/untrusted.yml' }
-        'pending-native' { $ciJobs['11'][1].status = 'in_progress'; $ciJobs['11'][1].conclusion = $null }
-        'missing-job' { $ciJobs['11'] = @($ciJobs['11'][0]) }
-        'pending-workflow' { $ciRuns[1].status = 'in_progress'; $ciRuns[1].conclusion = $null }
-    }
-    Assert-Test (-not (Snapshot).Succeeded) ('Must block rollout: ' + $change)
-}
-foreach ($change in @('failed-job', 'cancelled-workflow', 'skipped-job')) {
-    New-Fixture
-    switch ($change) {
-        'failed-job' { $ciJobs['11'][1].conclusion = 'failure' }
-        'cancelled-workflow' { $ciRuns[1].conclusion = 'cancelled' }
-        'skipped-job' { $ciJobs['11'][1].conclusion = 'skipped' }
-    }
-    $state = Snapshot
-    Assert-Test ($state.Failed -and -not $state.Succeeded) ('Must fail closed: ' + $change)
-}
-New-Fixture
-$ciRuns += [pscustomobject]@{ id = 20; path = '.github/workflows/release.yml'; head_branch = 'v1.1.283'; head_sha = 'abc'; event = 'push'; status = 'in_progress'; conclusion = $null; html_url = 'rerun' }
-Assert-Test (-not (Snapshot).Succeeded) 'A newer in-progress rerun must supersede old success.'
-
-foreach ($change in @('valid', 'draft', 'prerelease', 'wrong-tag', 'missing-installer', 'missing-update', 'missing-signature')) {
-    $release = [pscustomobject]@{ tag_name = 'v1.1.283'; draft = $false; prerelease = $false; assets = @(@{ name = 'CovoSetup.exe' }, @{ name = 'latest.json' }, @{ name = 'Covo.exe.sig' }) }
-    switch ($change) {
-        'draft' { $release.draft = $true }
-        'prerelease' { $release.prerelease = $true }
-        'wrong-tag' { $release.tag_name = 'v1.1.282' }
-        'missing-installer' { $release.assets = @($release.assets | Where-Object { $_.name -ne 'CovoSetup.exe' }) }
-        'missing-update' { $release.assets = @($release.assets | Where-Object { $_.name -ne 'latest.json' }) }
-        'missing-signature' { $release.assets = @($release.assets | Where-Object { $_.name -notlike '*.sig' }) }
-    }
-    $accepted = $true
-    try { Assert-CovoPublishedRelease $release 'v1.1.283' } catch { $accepted = $false }
-    Assert-Test ($accepted -eq ($change -eq 'valid')) ('Release asset guard: ' + $change)
-}
-
-# Exercise the actual polling entry point without networking, sleeping, or deploying.
-New-Fixture
-function Invoke-CovoGitHubApi {
-    param([string]$Repo, [string]$Path, [string]$Token)
-    if ($Path -eq '/actions/runs?head_sha=abc&event=push&per_page=100') { return @{ workflow_runs = $ciRuns } }
-    if ($Path -eq '/actions/runs/11/jobs?filter=latest&per_page=100') { return @{ jobs = $ciJobs['11'] } }
-    if ($Path -eq '/actions/runs/12/jobs?filter=latest&per_page=100') { return @{ jobs = $ciJobs['12'] } }
-    throw ('Unexpected API request: ' + $Path)
-}
-Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token ''
-$ciJobs['11'][1].conclusion = 'failure'
-$blocked = $false
-try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' } catch { $blocked = $true }
-Assert-Test $blocked 'The monitor must throw on failed native validation.'
-$blocked = $false
-try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' -TimeoutSeconds 0 } catch { $blocked = $true }
-Assert-Test $blocked 'The monitor must throw on timeout.'
-
-# Parse using Windows PowerShell itself, not just pwsh or a UTF-8 string parser.
-$root = Split-Path -Parent $PSScriptRoot
-foreach ($relative in @('deploy.ps1', 'scripts/prepare_windows.ps1', 'scripts/build_windows_setup.ps1', 'scripts/release_monitor.ps1')) {
-    $tokens = $null; $errors = $null
-    [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $root $relative), [ref]$tokens, [ref]$errors)
-    Assert-Test ($errors.Count -eq 0) ('PowerShell ParseFile failed: ' + $relative)
-}
-foreach ($relative in @('scripts/prepare_windows.ps1', 'scripts/build_windows_setup.ps1', 'scripts/release_monitor.ps1')) {
-    $bytes = [IO.File]::ReadAllBytes((Join-Path $root $relative))
-    Assert-Test (@($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) ('Build/monitor scripts must stay ASCII without BOM: ' + $relative)
-}
-Write-Output ('Release tooling: ' + $assertions + ' assertions passed (PowerShell ' + $PSVersionTable.PSVersion.ToString() + ').')
-</file>
-
 <file path="server/package.json">
 {
   "name": "simplechat-api",
@@ -1472,48 +991,6 @@ fn main() {
     "RTCIceCandidate": false
   }
 }
-</file>
-
-<file path="DEPLOYMENT_GUIDE.md">
-# CovoのデプロイとCI
-
-## 今回の停止原因と修正（2026-10-24）
-
-1. `prepare_windows.ps1` と `build_windows_setup.ps1` にあるUTF-8 BOMなしの日本語文字列を、Tauriが起動するWindows PowerShell 5.1がANSIとして解釈した。日本語が文字化けし、文字列終端の構文エラーになった。これらのスクリプトをASCIIだけに統一し、JSONを読む際はUTF-8を明示した。PowerShell 7のCIステップが成功していても、Tauri内部が別途 `powershell` を起動するため発生する。[Microsoftの文字コード説明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding)
-2. タイムライン性能比較テストが `git show 8c6e23c:public/js/main.js` に依存していた。CIの浅いチェックアウトにはその過去コミットが存在しない。元の関数だけを固定fixtureへ抽出してコミット対象にし、SHA-256で比較対象の変更を検出する。Git履歴の追加ダウンロードを行わず、CIとローカルで同じ比較を実行する。
-3. デプロイスクリプトはReleaseの最初のジョブだけを監視し、完了前に完了表示を出していた。今回、3ジョブと両ワークフロー全体の成功を確認し、最後だけ完了を表示するよう変更した。
-
-## なぜ3つあるのか
-
-実際には2つのワークフロー、計3ジョブ。
-
-| ワークフロー | ジョブ | 役割 |
-| --- | --- | --- |
-| Validate Covo (`validate.yml`) | web-and-rules | Firebaseルール・ロジック・ブラウザの回帰テスト |
-| Validate Covo (`validate.yml`) | native | Windowsネイティブテスト、検証用インストーラーのビルド。ここでは正式リリースしない |
-| Release (`release.yml`) | release (windows-latest) | リリース用の検証、署名付き更新ファイル・独自インストーラーの作成と公開 |
-
-Validateは対象ブランチへのpush/PR、Releaseはバージョンタグへのpushで起動する。`npm run deploy` はブランチとタグをpushするため、通常はこの3ジョブが動く。Release内でも公開前の回帰テストを実行するので一部の検証は重複している。GitHubのCI実行であり、利用者のFirebaseデータを大量に読み出す検証ではない（ルール検証はエミュレーター）。
-
-## npm run deployの実行順序
-
-0. CSSの生成。
-1. アプリのバージョンとキャッシュ更新番号を揃える。
-2. Repomix生成後、変更をGitへコミット。
-3. バージョンタグ作成。
-4. ブランチとタグをGitHubへpush。
-5. 同じコミット・対象ブランチ/タグの3ジョブと両ワークフロー全体の成功を待ち、正式リリースに `CovoSetup.exe`、`latest.json`、`.exe.sig` があることを確認。
-6. 待機中にHEADや作業ファイルが変わっていないことを確認し、Firebaseルール、Worker、Hostingを本番反映。WorkerはHostingのpredeployフックが実行する。
-
-GitHub側のリリース作成だけではFirebaseへ反映されない。最後の本番反映をするのは、手元で動いている `deploy.ps1`。ターミナルを閉じると、この処理は自動継続しない。
-
-進捗は3ジョブそれぞれの状態・実際の完了ステップ数・進行中ステップ名・リンクを表示する。以前の推定ログ行数や推定進捗率は表示しない。GitHub APIの残量を守るため、トークンなしでは4分間隔、設定済みでは20秒間隔。未認証の通常監視は最大3要求/回、約45要求/時（他のツールによる利用とは共有）。API失敗・ジョブ失敗/キャンセル・60分タイムアウト・配布物不足なら本番へ進まない。
-
-## 今回の再実行
-
-失敗した1.1.282のジョブをそのまま再実行しても、そのタグの古いコードで実行される。今回の修正を含む状態から `npm run deploy` を実行して、新しいバージョンとして公開する。現在のローカル版1.1.282からなら次は1.1.283。既存タグを上書きする必要はない。
-
-今回の確認: 関連Jest 50件、ブラウザ30件が成功。Jest内でWindows PowerShell 5.1による実行を含み、監視・配布物・文字コードの29項目を確認。PowerShell 7でも同じ29項目を確認。MSVCがないローカル環境ではWindowsアプリ全体のコンパイル成功までは確認していない。修正はローカル作業ファイルにあり、この修正後のpush・タグ作成・本番デプロイはまだ行っていない。
 </file>
 
 <file path="firestore.indexes.json">
@@ -1714,6 +1191,275 @@ jobs:
         with:
           name: Covo-setup-validation
           path: src-tauri/windows/bin/CovoSetup.exe
+</file>
+
+<file path="browser-tests/fixtures/timeline-before-virtualization.js">
+// Immutable performance baseline from 8c6e23cbbd939e7b680cd884113801f184cc3a63:public/js/main.js
+// Only the original renderMessagesWithReadReceipts declaration is retained.
+function renderMessagesWithReadReceipts() {
+  const channelId = currentDmId ? `dm_${currentDmId}` : `${currentServerId}_${currentRoomId}`;
+  const timeline = isJumpView ? lastMessagesData : allLoadedMessages;
+  if (searchQuery && _searchHistoryResults?.channelId === channelId && _searchHistoryResults.query === searchQuery) {
+    const combined = new Map(_searchHistoryResults.messages.map(message => [message.id, message]));
+    for (const message of timeline) combined.set(message.id, message);
+    lastMessagesData = [...combined.values()].sort(compareHistoryMessages);
+  } else {
+    lastMessagesData = [...timeline];
+  }
+  messagesIndexMap = {};
+  lastMessagesData.forEach((message, index) => { messagesIndexMap[message.id] = index; });
+  const filteredMessages = lastMessagesData.filter(msg => {
+    if (!searchQuery) return true;
+    const body = String(msg.text || msg._decryptedText || '').toLowerCase();
+    const sender = String(msg.senderNickname || msg.senderName || '').toLowerCase();
+    return body.includes(searchQuery) || sender.includes(searchQuery);
+  });
+  // スクロール中に新しいメッセージを受信した場合の「最新へジャンプ」バッジ連動
+  const newMessageCount = countNewerMessages(filteredMessages, window._covoLastRenderedNewest);
+  if (!searchQuery && newMessageCount > 0) {
+    const diff = newMessageCount;
+    if (messagesDisplay && messagesDisplay.scrollTop > 100) {
+      window._covoUnreadScrolledCount = (window._covoUnreadScrolledCount || 0) + diff;
+      const badge = document.getElementById("jumpModeUnreadBadge");
+      if (badge) {
+        badge.textContent = window._covoUnreadScrolledCount > 99 ? '99+' : window._covoUnreadScrolledCount;
+        badge.classList.remove('hidden');
+      }
+      const exitBtn = document.getElementById("jumpModeExitBtn");
+      if (exitBtn) {
+        exitBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-3');
+        exitBtn.classList.add('opacity-100', 'pointer-events-auto', 'translate-y-0');
+      }
+    }
+  }
+  window._covoLastRenderedCount = filteredMessages.length;
+  if (!searchQuery) window._covoLastRenderedNewest = filteredMessages[filteredMessages.length - 1]?.id || null;
+  // 既存のDOMとの差分同期（innerHTML = "" や remove によるカクつき・アニメーション再発火防止）
+  const existingRows = Array.from(messagesDisplay.querySelectorAll('.message-row'));
+  const existingRowsMap = new Map();
+  existingRows.forEach(row => {
+    const bubble = row.querySelector('.message-bubble');
+    if (bubble && bubble.dataset.messageId) {
+      existingRowsMap.set(bubble.dataset.messageId, row);
+    }
+  });
+  const existingDividers = Array.from(messagesDisplay.querySelectorAll('.date-divider'));
+  const existingDividersMap = new Map();
+  existingDividers.forEach(div => {
+    const inner = div.querySelector('.date-divider-inner');
+    if (inner) {
+      existingDividersMap.set(inner.textContent.trim(), div);
+    }
+  });
+  // DOM順序を新しい順にする（scaleY(-1)で反転表示するため）
+  const reversedMessages = [...filteredMessages].reverse();
+  const getDayString = (ts) => {
+    const ms = parseTimestampToMs(ts);
+    if (!ms || ms <= 0) return "";
+    const d = new Date(ms);
+    const today = new Date();
+    const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    if (isToday) return "今日";
+    const yday = new Date(today); yday.setDate(today.getDate() - 1);
+    const isYday = d.getDate() === yday.getDate() && d.getMonth() === yday.getMonth() && d.getFullYear() === yday.getFullYear();
+    if (isYday) return "昨日";
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} (${days[d.getDay()]})`;
+  };
+  // 1. まず表示するべき全DOM要素をリスト化する（既存要素は再利用し、位置も維持する）
+  const expectedElements = [];
+  reversedMessages.forEach((msg, i) => {
+    const idx = messagesIndexMap[msg.id];
+    const readCount = computeReadByCount(msg, idx);
+    const isMyMsg = (msg.senderId === userId || msg.userId === userId);
+    let row = existingRowsMap.get(msg.id);
+    if (row) {
+      if (!isMyMsg) {
+        const senderUser = cachedUsers.find(u => u.id === msg.senderId);
+        const cachedProf = window._userProfileCache?.get(msg.senderId);
+        const resolvedNickname = (currentDmParticipant?.uid === msg.senderId ? currentDmParticipant.nickname : null) || cachedProf?.nickname || senderUser?.nickname || msg.senderNickname || "ユーザー";
+        const dmAvatar = (currentDmParticipant && currentDmParticipant.uid === msg.senderId) ? currentDmParticipant.avatarUrl : null;
+        const resolvedAvatarUrl = isUsableAvatarUrl(dmAvatar)
+          ? dmAvatar
+          : (isUsableAvatarUrl(cachedProf?.avatarUrl)
+              ? cachedProf.avatarUrl
+              : (isUsableAvatarUrl(senderUser?.avatarUrl)
+                  ? senderUser.avatarUrl
+                  : (isUsableAvatarUrl(msg.senderAvatarUrl) ? msg.senderAvatarUrl : null)));
+        const avatarDiv = row.querySelector('.msg-avatar');
+        if (avatarDiv) {
+          if (isUsableAvatarUrl(resolvedAvatarUrl)) {
+            __setAvatarImg(avatarDiv, resolvedAvatarUrl, resolvedNickname, { style: '' });
+          } else {
+            avatarDiv.textContent = resolvedNickname.charAt(0).toUpperCase();
+            if (msg.senderId && window.getUserProfile) {
+              window.getUserProfile(msg.senderId).then(p => {
+                if (p && isUsableAvatarUrl(p.avatarUrl) && avatarDiv.parentElement) {
+                  __setAvatarImg(avatarDiv, p.avatarUrl, p.nickname || resolvedNickname, { style: '' });
+                }
+              }).catch(() => {});
+            }
+          }
+        }
+        const nameSpan = row.querySelector('.msg-sender-name');
+        if (nameSpan) {
+          nameSpan.textContent = resolvedNickname;
+        }
+      }
+      const readSpan = row.querySelector('.read-receipt');
+      if (readSpan) {
+        if (readCount > 0) {
+          readSpan.textContent = `既読${readCount > 1 ? `（${readCount}）` : ""}`;
+          readSpan.style.display = "";
+        } else {
+          readSpan.style.display = "none";
+        }
+      }
+      const timestampSpan = row.querySelector('.msg-timestamp');
+      if (timestampSpan) {
+        // Firestoreタイムスタンプ・D1シム・数値のいずれにも対応
+        const _getDateU = (ts) => {
+          if (!ts) return null;
+          if (typeof ts.toDate === 'function') return ts.toDate();
+          if (typeof ts === 'number') return new Date(ts);
+          return null;
+        };
+        const _tsDU = _getDateU(msg.timestamp) || _getDateU(msg.createdAt);
+        if (_tsDU) {
+          timestampSpan.textContent = `${String(_tsDU.getHours()).padStart(2, "0")}:${String(_tsDU.getMinutes()).padStart(2, "0")}`;
+        } else {
+          timestampSpan.textContent = "送信中...";
+        }
+      }
+      const textSpan = row.querySelector('.message-content');
+      if (textSpan && msg.text) {
+        const isEnc = isEncrypted(msg.text) || (msg._originalText && isEncrypted(msg._originalText)) || (typeof msg.text === 'string' && msg.text.startsWith('enc::'));
+        if (msg._decrypted && typeof msg.text === 'string' && !msg.text.startsWith('enc::')) {
+          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
+          if (ogUrl && window.attachDiscordOgEmbed) {
+            const bEl = row.querySelector('.message-bubble');
+            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
+          }
+        } else if (msg._decryptedErrorText) {
+          textSpan.innerHTML = escapeHtml(msg._decryptedErrorText);
+        } else if (isEnc) {
+          textSpan.innerHTML = '<span class="covo-msg-loading-shimmer inline-block w-28 sm:w-36 h-3.5 bg-gray-300/60 dark:bg-slate-700/60 rounded-md animate-pulse align-middle" aria-label="読み込み中"></span>';
+        } else {
+          textSpan.innerHTML = escapeHtmlAndLinkUrls(msg.text);
+          const ogUrl = window.extractFirstOgUrl ? window.extractFirstOgUrl(msg.text) : null;
+          if (ogUrl && window.attachDiscordOgEmbed) {
+            const bEl = row.querySelector('.message-bubble');
+            if (bEl) window.attachDiscordOgEmbed(bEl, ogUrl);
+          }
+        }
+      }
+      const bubbleElement = row.querySelector('.message-bubble');
+      if (bubbleElement) updateReactionsUI(bubbleElement, msg);
+      const replyQuoteText = row.querySelector('.reply-quote-text');
+      if (replyQuoteText && msg.replyTo) {
+        const replyRaw = msg.replyTo._decryptedErrorText || msg.replyTo.text || '（ファイル）';
+        const isReplyEnc = isEncrypted(replyRaw) || (typeof replyRaw === 'string' && replyRaw.startsWith('enc::'));
+        if (isReplyEnc) {
+          replyQuoteText.innerHTML = '<span class="inline-block w-20 h-2.5 bg-gray-300/60 dark:bg-slate-700/60 rounded animate-pulse align-middle"></span>';
+        } else {
+          replyQuoteText.textContent = replyRaw.length > 40 ? replyRaw.slice(0, 40) + '…' : replyRaw;
+        }
+      }
+      existingRowsMap.delete(msg.id);
+    } else {
+      row = createMessageElement(msg, msg.id, readCount);
+    }
+    expectedElements.push(row);
+    const currentDay = getDayString(getMsgTimestamp(msg));
+    const nextMsgDay = (i < reversedMessages.length - 1) ? getDayString(getMsgTimestamp(reversedMessages[i + 1])) : null;
+    if (currentDay && currentDay !== nextMsgDay) {
+      let div = existingDividersMap.get(currentDay);
+      if (div) {
+        existingDividersMap.delete(currentDay);
+      } else {
+        div = document.createElement("div");
+        div.className = "date-divider flipped";
+        div.innerHTML = `<div class="date-divider-inner">${currentDay}</div>`;
+      }
+      expectedElements.push(div);
+    }
+  });
+  // Discord本家完全準拠 DM Welcome Hero Header（画像2中央上部完全準拠）
+  if (currentDmId && currentDmParticipant) {
+    let hero = document.getElementById('dmHeroWelcomeBanner');
+    if (!hero) {
+      hero = document.createElement('div');
+      hero.id = 'dmHeroWelcomeBanner';
+      hero.className = 'dm-welcome-banner flipped select-none';
+    }
+    const safeNick = escapeHtml(currentDmParticipant.nickname || 'ユーザー');
+    const safeAv = isUsableAvatarUrl(currentDmParticipant.avatarUrl) 
+      ? `<img src="${escapeHtml(currentDmParticipant.avatarUrl)}" class="w-20 h-20 rounded-full object-cover shadow-lg border-2 border-indigo-500/20">`
+      : `<div class="w-20 h-20 rounded-full bg-slate-700 text-white font-bold text-3xl flex items-center justify-center shadow-lg">${safeNick.charAt(0)}</div>`;
+    const targetUid = currentDmParticipant.uid;
+    const handleTag = targetUid ? `${targetUid.slice(-4).toLowerCase()}` : '';
+    let mutualServersCount = 0;
+    if (Array.isArray(allServersCache)) {
+      mutualServersCount = allServersCache.filter(s => (s.joinedUsers || []).includes(targetUid) && (s.joinedUsers || []).includes(userId)).length;
+    }
+    const rel = friendRelationships[targetUid];
+    const isFriend = rel?.status === 'friends';
+    const friendActionText = isFriend ? 'フレンドを削除' : 'フレンド申請を送信';
+    hero.innerHTML = `
+      <div class="dm-hero-avatar mb-3.5">
+        ${safeAv}
+      </div>
+      <h2 class="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white mb-1 tracking-tight">${safeNick}</h2>
+      <div class="text-sm font-semibold text-gray-500 dark:text-gray-400 font-mono mb-2">${handleTag}</div>
+      <p class="text-xs sm:text-sm text-gray-600 dark:text-gray-300 font-normal mb-5 leading-relaxed">
+        ここが、あなたと <strong>${safeNick}</strong> のDM履歴の先頭です。
+      </p>
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <button onclick="window.openUserProfileModal('${_jsq(targetUid)}', '${_jsq(currentDmParticipant.nickname || '')}', '${_jsq(currentDmParticipant.avatarUrl || '')}')" class="dm-hero-action-btn">
+          <div class="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[9px] text-white mr-1.5"><i class="fas fa-server"></i></div>
+          <span>${mutualServersCount}個の共通サーバー</span>
+        </button>
+        <button onclick="window.handleDmHeroFriendAction('${_jsq(targetUid)}', '${_jsq(safeNick)}')" class="dm-hero-action-btn" id="dmHeroFriendBtn">
+          ${isFriend ? '<i class="fas fa-user-minus mr-1.5 text-xs text-gray-400"></i>' : '<i class="fas fa-user-plus mr-1.5 text-xs text-[#5865f2]"></i>'}${friendActionText}
+        </button>
+        <button onclick="window.blockUser('${_jsq(targetUid)}')" class="dm-hero-action-btn !text-rose-500 hover:!bg-rose-50 dark:hover:!bg-rose-950/40">
+          <i class="fas fa-ban mr-1.5 text-xs"></i>ブロック
+        </button>
+      </div>
+    `;
+    expectedElements.push(hero);
+  } else {
+    const hero = document.getElementById('dmHeroWelcomeBanner');
+    if (hero) hero.remove();
+  }
+  // 2. 実際のDOMとexpectedElementsを先頭から順に照合。同一要素ならinsertBefore等の再配置を一切スキップ！
+  // これにより既存要素のLayout Thrashingやアニメーション再発火（パッとなる現象）が100%根絶される
+  let currentChild = messagesDisplay.firstElementChild;
+  for (const expectedEl of expectedElements) {
+    if (currentChild === expectedEl) {
+      currentChild = currentChild.nextElementSibling;
+    } else {
+      messagesDisplay.insertBefore(expectedEl, currentChild);
+    }
+  }
+  // 3. 削除された不要なメッセージや古くなったディバイダーを取り除く
+  existingRowsMap.forEach(row => row.remove());
+  existingDividersMap.forEach(div => div.remove());
+  // スピナーや終端メッセージは過去のメッセージの「さらに上」（DOM上は最後尾）に配置
+  const spinner = document.getElementById('topLoadingSpinner');
+  if (spinner) {
+    spinner.style.display = isLoadingOlderMessages ? 'flex' : 'none';
+  }
+  // 未読の境界線（検索中は出さない。filteredMessages は時系列昇順の filteredMessages を使う）
+  if (!searchQuery) {
+    const boundaryId = resolveUnreadBoundaryMessageId(filteredMessages);
+    renderUnreadDivider(boundaryId);
+  } else {
+    const existing = messagesDisplay.querySelector('.unread-divider');
+    if (existing) existing.remove();
+  }
+}
 </file>
 
 <file path="browser-tests/communication.spec.cjs">
@@ -3865,39 +3611,6 @@ processor.process(inputCss, { from: inputFile, to: outputFile })
   });
 </file>
 
-<file path="scripts/build_windows_setup.ps1">
-param([switch]$Bootstrap)
-$ErrorActionPreference = 'Stop'
-$taskRoot = Split-Path -Parent $PSScriptRoot
-$sourceRoot = Join-Path $taskRoot 'src-tauri\windows'
-$outputRoot = Join-Path $sourceRoot 'bin'
-New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'Run this script in an MSVC Developer PowerShell environment.' }
-$config = Get-Content -LiteralPath (Join-Path $taskRoot 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$versionHeader = '#define COVO_SETUP_VERSION L"' + $config.version + '"'
-$resourceArgs = @()
-$definitions = @('/DCOVO_MAINTENANCE')
-$executableName = 'CovoMaintenance.exe'
-if ($Bootstrap) {
-  $engines = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'src-tauri\target\release\bundle\nsis') -Filter '*-setup.exe')
-  if ($engines.Count -ne 1) { throw 'Expected exactly one NSIS setup engine. Check the build artifacts.' }
-  $engine = $engines[0].FullName
-  $digest = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash
-  $bytes = for ($index = 0; $index -lt 64; $index += 2) { '0x' + $digest.Substring($index, 2) }
-  $versionHeader += "`n#define COVO_ENGINE_SHA256 " + ($bytes -join ',')
-  $resource = '101 RCDATA "' + $engine.Replace('\','\\') + '"'
-  [IO.File]::WriteAllText((Join-Path $outputRoot 'engine.rc'), $resource)
-  & rc.exe /nologo /fo (Join-Path $outputRoot 'engine.res') (Join-Path $outputRoot 'engine.rc')
-  if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
-  $resourceArgs = @((Join-Path $outputRoot 'engine.res'))
-  $definitions = @()
-  $executableName = 'CovoSetup.exe'
-}
-[IO.File]::WriteAllText((Join-Path $outputRoot 'setup_version.h'), $versionHeader)
-& cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /MT /W4 @definitions /I $outputRoot (Join-Path $sourceRoot 'setup.cpp') @resourceArgs /Fo"$outputRoot\setup.obj" /Fe"$outputRoot\$executableName" /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'"
-if ($LASTEXITCODE -ne 0) { throw 'Covo setup compilation failed.' }
-</file>
-
 <file path="scripts/check-static.cjs">
 const fs = require('fs');
 const path = require('path');
@@ -4060,11 +3773,216 @@ await writeFile('scratch/communication-measurements.json', JSON.stringify(result
 console.log(JSON.stringify(result, null, 2));
 </file>
 
-<file path="scripts/prepare_windows.ps1">
+<file path="scripts/release_monitor.ps1">
+# ASCII source: also parsed by Windows PowerShell 5.1 without a UTF-8 BOM.
+function Select-CovoWorkflowRun {
+    param($Runs, [string]$Commit, [string]$Workflow, [string]$Ref)
+    return $Runs | Where-Object {
+        $_.head_sha -eq $Commit -and $_.event -eq 'push' -and
+        ($_.path -split '@')[0] -eq ('.github/workflows/' + $Workflow) -and $_.head_branch -eq $Ref
+    } | Sort-Object -Property id -Descending | Select-Object -First 1
+}
+
+function Get-CovoCiSnapshot {
+    param($Runs, [hashtable]$JobsByRun, [string]$Commit, [string]$Tag, [string]$Branch)
+    $validation = Select-CovoWorkflowRun $Runs $Commit 'validate.yml' $Branch
+    $release = Select-CovoWorkflowRun $Runs $Commit 'release.yml' $Tag
+    $definitions = @(
+        @{ Label = 'web-and-rules'; Run = $validation; Job = '^web-and-rules$' },
+        @{ Label = 'native'; Run = $validation; Job = '^native$' },
+        @{ Label = 'release'; Run = $release; Job = '^release \(windows-latest\)$' }
+    )
+    $failed = $false
+    $allSucceeded = $true
+    $rows = foreach ($definition in $definitions) {
+        $run = $definition.Run
+        $jobs = if ($run) { @($JobsByRun[[string]$run.id]) } else { @() }
+        $job = $jobs | Where-Object { $_.name -match $definition.Job } | Select-Object -First 1
+        $status = 'waiting for workflow'
+        $detail = ''
+        $url = if ($run) { $run.html_url } else { '' }
+        if ($job) {
+            $status = [string]$job.status
+            if ($job.html_url) { $url = $job.html_url }
+            if ($status -eq 'completed') {
+                $status = [string]$job.conclusion
+                if ($job.conclusion -ne 'success') { $failed = $true }
+            }
+            $steps = @($job.steps)
+            $finished = @($steps | Where-Object { $_.status -eq 'completed' }).Count
+            $active = $steps | Where-Object { $_.status -eq 'in_progress' } | Select-Object -First 1
+            $detail = ('{0}/{1} steps' -f $finished, $steps.Count)
+            if ($active) { $detail += ' - ' + $active.name }
+        } elseif ($run) {
+            $status = [string]$run.status
+        }
+        # A successful first job must never hide a cancelled/failed workflow.
+        if ($run -and $run.status -eq 'completed' -and $run.conclusion -ne 'success') { $failed = $true }
+        if (-not $run -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or
+            -not $job -or $job.status -ne 'completed' -or $job.conclusion -ne 'success') { $allSucceeded = $false }
+        [pscustomobject]@{ Name = $definition.Label; Status = $status; Detail = $detail; Url = $url }
+    }
+    return [pscustomobject]@{ Rows = @($rows); Failed = $failed; Succeeded = ($allSucceeded -and -not $failed) }
+}
+
+function Invoke-CovoGitHubApi {
+    param([string]$Repo, [string]$Path, [string]$Token)
+    $headers = @{ 'User-Agent' = 'covo-deploy'; Accept = 'application/vnd.github+json' }
+    if ($Token) { $headers.Authorization = 'Bearer ' + $Token }
+    try {
+        return Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $Repo + $Path) -Headers $headers -TimeoutSec 30 -ErrorAction Stop
+    } catch {
+        throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message)
+    }
+}
+
+function Wait-CovoReleaseChecks {
+    param([string]$Repo, [string]$Commit, [string]$Tag, [string]$Branch, [string]$Token, [int]$TimeoutSeconds = 3600)
+    # At most three requests per poll: runs + validation jobs + release jobs.
+    # Anonymous: 240s keeps normal monitoring below 60 requests/hour.
+    $pollSeconds = if ($Token) { 20 } else { 240 }
+    Write-Host ('Monitoring web-and-rules, native, release for commit ' + $Commit) -ForegroundColor Cyan
+    Write-Host ('GitHub polling interval: ' + $pollSeconds + 's. Keep this terminal open; Firebase deployment runs here after all checks pass.') -ForegroundColor Yellow
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token
+        $runs = @($response.workflow_runs)
+        $jobsByRun = @{}
+        $selected = @(
+            (Select-CovoWorkflowRun $runs $Commit 'validate.yml' $Branch),
+            (Select-CovoWorkflowRun $runs $Commit 'release.yml' $Tag)
+        )
+        foreach ($run in $selected) {
+            if ($run) {
+                $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token
+                $jobsByRun[[string]$run.id] = @($jobs.jobs)
+            }
+        }
+        $snapshot = Get-CovoCiSnapshot $runs $jobsByRun $Commit $Tag $Branch
+        Write-Host ('--- CI status (' + [int]$clock.Elapsed.TotalMinutes + ' min elapsed) ---') -ForegroundColor Cyan
+        foreach ($row in $snapshot.Rows) {
+            Write-Host ('  [{0}] {1}: {2}' -f $row.Status, $row.Name, $row.Detail)
+            if ($row.Url) { Write-Host ('      ' + $row.Url) -ForegroundColor DarkGray }
+        }
+        if ($snapshot.Failed) { throw 'A required CI check failed or was cancelled. Firebase/Worker production deployment was stopped.' }
+        if ($snapshot.Succeeded) { return }
+        # Short sleeps keep Ctrl+C responsive; no background deployment is created.
+        for ($second = 0; $second -lt $pollSeconds -and $clock.Elapsed.TotalSeconds -lt $TimeoutSeconds; $second++) { Start-Sleep -Seconds 1 }
+    }
+    throw 'CI verification timed out. Firebase/Worker production deployment was NOT started.'
+}
+
+function Assert-CovoPublishedRelease {
+    param($Release, [string]$Tag)
+    $assetNames = @($Release.assets | ForEach-Object { $_.name })
+    if (-not $Release -or $Release.tag_name -ne $Tag -or $Release.draft -or $Release.prerelease -or
+        'CovoSetup.exe' -notin $assetNames -or 'latest.json' -notin $assetNames -or
+        -not ($assetNames | Where-Object { $_ -like '*.exe.sig' })) {
+        throw 'The public Windows installer and signed updater are not ready; production deployment was stopped.'
+    }
+}
+</file>
+
+<file path="scripts/test_release_tools.ps1">
 $ErrorActionPreference = 'Stop'
-& node (Join-Path $PSScriptRoot 'build_firebase.mjs')
-if ($LASTEXITCODE -ne 0) { throw 'Firebase bundle build failed.' }
-& (Join-Path $PSScriptRoot 'build_windows_setup.ps1')
+. (Join-Path $PSScriptRoot 'release_monitor.ps1')
+$script:assertions = 0
+function Assert-Test {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw $Message }
+    $script:assertions++
+}
+function New-Fixture {
+    $script:ciRuns = @(
+        [pscustomobject]@{ id = 11; path = '.github/workflows/validate.yml'; head_branch = 'master'; head_sha = 'abc'; event = 'push'; status = 'completed'; conclusion = 'success'; html_url = 'validation' },
+        [pscustomobject]@{ id = 12; path = '.github/workflows/release.yml'; head_branch = 'v1.1.283'; head_sha = 'abc'; event = 'push'; status = 'completed'; conclusion = 'success'; html_url = 'release' }
+    )
+    $script:ciJobs = @{
+        '11' = @(
+            [pscustomobject]@{ name = 'web-and-rules'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'web' },
+            [pscustomobject]@{ name = 'native'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'native' }
+        );
+        '12' = @([pscustomobject]@{ name = 'release (windows-latest)'; status = 'completed'; conclusion = 'success'; steps = @(); html_url = 'release-job' })
+    }
+}
+function Snapshot { Get-CovoCiSnapshot $script:ciRuns $script:ciJobs 'abc' 'v1.1.283' 'master' }
+
+New-Fixture
+$state = Snapshot
+Assert-Test ($state.Succeeded -and -not $state.Failed -and $state.Rows.Count -eq 3) 'All three jobs must be displayed and accepted.'
+foreach ($change in @('wrong-commit', 'wrong-tag', 'wrong-branch', 'wrong-event', 'wrong-workflow', 'pending-native', 'missing-job', 'pending-workflow')) {
+    New-Fixture
+    switch ($change) {
+        'wrong-commit' { $ciRuns[1].head_sha = 'stale' }
+        'wrong-tag' { $ciRuns[1].head_branch = 'v1.1.282' }
+        'wrong-branch' { $ciRuns[0].head_branch = 'another' }
+        'wrong-event' { $ciRuns[1].event = 'pull_request' }
+        'wrong-workflow' { $ciRuns[1].path = '.github/workflows/untrusted.yml' }
+        'pending-native' { $ciJobs['11'][1].status = 'in_progress'; $ciJobs['11'][1].conclusion = $null }
+        'missing-job' { $ciJobs['11'] = @($ciJobs['11'][0]) }
+        'pending-workflow' { $ciRuns[1].status = 'in_progress'; $ciRuns[1].conclusion = $null }
+    }
+    Assert-Test (-not (Snapshot).Succeeded) ('Must block rollout: ' + $change)
+}
+foreach ($change in @('failed-job', 'cancelled-workflow', 'skipped-job')) {
+    New-Fixture
+    switch ($change) {
+        'failed-job' { $ciJobs['11'][1].conclusion = 'failure' }
+        'cancelled-workflow' { $ciRuns[1].conclusion = 'cancelled' }
+        'skipped-job' { $ciJobs['11'][1].conclusion = 'skipped' }
+    }
+    $state = Snapshot
+    Assert-Test ($state.Failed -and -not $state.Succeeded) ('Must fail closed: ' + $change)
+}
+New-Fixture
+$ciRuns += [pscustomobject]@{ id = 20; path = '.github/workflows/release.yml'; head_branch = 'v1.1.283'; head_sha = 'abc'; event = 'push'; status = 'in_progress'; conclusion = $null; html_url = 'rerun' }
+Assert-Test (-not (Snapshot).Succeeded) 'A newer in-progress rerun must supersede old success.'
+
+foreach ($change in @('valid', 'draft', 'prerelease', 'wrong-tag', 'missing-installer', 'missing-update', 'missing-signature')) {
+    $release = [pscustomobject]@{ tag_name = 'v1.1.283'; draft = $false; prerelease = $false; assets = @(@{ name = 'CovoSetup.exe' }, @{ name = 'latest.json' }, @{ name = 'Covo.exe.sig' }) }
+    switch ($change) {
+        'draft' { $release.draft = $true }
+        'prerelease' { $release.prerelease = $true }
+        'wrong-tag' { $release.tag_name = 'v1.1.282' }
+        'missing-installer' { $release.assets = @($release.assets | Where-Object { $_.name -ne 'CovoSetup.exe' }) }
+        'missing-update' { $release.assets = @($release.assets | Where-Object { $_.name -ne 'latest.json' }) }
+        'missing-signature' { $release.assets = @($release.assets | Where-Object { $_.name -notlike '*.sig' }) }
+    }
+    $accepted = $true
+    try { Assert-CovoPublishedRelease $release 'v1.1.283' } catch { $accepted = $false }
+    Assert-Test ($accepted -eq ($change -eq 'valid')) ('Release asset guard: ' + $change)
+}
+
+# Exercise the actual polling entry point without networking, sleeping, or deploying.
+New-Fixture
+function Invoke-CovoGitHubApi {
+    param([string]$Repo, [string]$Path, [string]$Token)
+    if ($Path -eq '/actions/runs?head_sha=abc&event=push&per_page=100') { return @{ workflow_runs = $ciRuns } }
+    if ($Path -eq '/actions/runs/11/jobs?filter=latest&per_page=100') { return @{ jobs = $ciJobs['11'] } }
+    if ($Path -eq '/actions/runs/12/jobs?filter=latest&per_page=100') { return @{ jobs = $ciJobs['12'] } }
+    throw ('Unexpected API request: ' + $Path)
+}
+Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token ''
+$ciJobs['11'][1].conclusion = 'failure'
+$blocked = $false
+try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' } catch { $blocked = $true }
+Assert-Test $blocked 'The monitor must throw on failed native validation.'
+$blocked = $false
+try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' -TimeoutSeconds 0 } catch { $blocked = $true }
+Assert-Test $blocked 'The monitor must throw on timeout.'
+
+# Parse using Windows PowerShell itself, not just pwsh or a UTF-8 string parser.
+$root = Split-Path -Parent $PSScriptRoot
+foreach ($relative in @('deploy.ps1', 'scripts/prepare_windows.ps1', 'scripts/build_windows_setup.ps1', 'scripts/release_monitor.ps1')) {
+    $tokens = $null; $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $root $relative), [ref]$tokens, [ref]$errors)
+    Assert-Test ($errors.Count -eq 0) ('PowerShell ParseFile failed: ' + $relative)
+}
+foreach ($relative in @('scripts/prepare_windows.ps1', 'scripts/build_windows_setup.ps1', 'scripts/release_monitor.ps1')) {
+    $bytes = [IO.File]::ReadAllBytes((Join-Path $root $relative))
+    Assert-Test (@($bytes | Where-Object { $_ -gt 127 }).Count -eq 0) ('Build/monitor scripts must stay ASCII without BOM: ' + $relative)
+}
+Write-Output ('Release tooling: ' + $assertions + ' assertions passed (PowerShell ' + $PSVersionTable.PSVersion.ToString() + ').')
 </file>
 
 <file path="src-tauri/capabilities/default.json">
@@ -4847,6 +4765,58 @@ KVには存在しないキーのキャッシュと反映遅延があるため、
 ブラウザテストはデータサービスと行生成の一部をテスト用実装に置き換えており、本番認証・実アカウントでの一連の操作の確認ではない。本番環境へのデプロイは実行していない。通常の deploy.ps1 は追加した補助モジュールのURLも次のリリース番号へ更新する。本番反映後はアプリを開き直してサーバー・DMの実データを確認する。暗号鍵を失う可能性があるため、この問題への対処としてサイトデータを削除する必要はない。
 </file>
 
+<file path="DEPLOYMENT_GUIDE.md">
+# CovoのデプロイとCI
+
+## 今回の停止原因と修正（2026-10-24）
+
+1. `prepare_windows.ps1` と `build_windows_setup.ps1` にあるUTF-8 BOMなしの日本語文字列を、Tauriが起動するWindows PowerShell 5.1がANSIとして解釈した。日本語が文字化けし、文字列終端の構文エラーになった。これらのスクリプトをASCIIだけに統一し、JSONを読む際はUTF-8を明示した。PowerShell 7のCIステップが成功していても、Tauri内部が別途 `powershell` を起動するため発生する。[Microsoftの文字コード説明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding)
+2. タイムライン性能比較テストが `git show 8c6e23c:public/js/main.js` に依存していた。CIの浅いチェックアウトにはその過去コミットが存在しない。元の関数だけを固定fixtureへ抽出してコミット対象にし、SHA-256で比較対象の変更を検出する。Git履歴の追加ダウンロードを行わず、CIとローカルで同じ比較を実行する。
+3. デプロイスクリプトはReleaseの最初のジョブだけを監視し、完了前に完了表示を出していた。今回、3ジョブと両ワークフロー全体の成功を確認し、最後だけ完了を表示するよう変更した。
+
+## なぜ3つあるのか
+
+実際には2つのワークフロー、計3ジョブ。
+
+| ワークフロー | ジョブ | 役割 |
+| --- | --- | --- |
+| Validate Covo (`validate.yml`) | web-and-rules | Firebaseルール・ロジック・ブラウザの回帰テスト |
+| Validate Covo (`validate.yml`) | native | Windowsネイティブテスト、検証用インストーラーのビルド。ここでは正式リリースしない |
+| Release (`release.yml`) | release (windows-latest) | リリース用の検証、署名付き更新ファイル・独自インストーラーの作成と公開 |
+
+Validateは対象ブランチへのpush/PR、Releaseはバージョンタグへのpushで起動する。`npm run deploy` はブランチとタグをpushするため、通常はこの3ジョブが動く。Release内でも公開前の回帰テストを実行するので一部の検証は重複している。GitHubのCI実行であり、利用者のFirebaseデータを大量に読み出す検証ではない（ルール検証はエミュレーター）。
+
+## npm run deployの実行順序
+
+0. CSSの生成。
+1. アプリのバージョンとキャッシュ更新番号を揃える。
+2. Repomix生成後、変更をGitへコミット。
+3. バージョンタグ作成。
+4. ブランチとタグをGitHubへpush。
+5. 同じコミット・対象ブランチ/タグの3ジョブと両ワークフロー全体の成功を待ち、正式リリースに `CovoSetup.exe`、`latest.json`、`.exe.sig` があることを確認。
+6. 待機中にHEADや作業ファイルが変わっていないことを確認し、Firebaseルール、Worker、Hostingを本番反映。WorkerはHostingのpredeployフックが実行する。
+
+GitHub側のリリース作成だけではFirebaseへ反映されない。最後の本番反映をするのは、手元で動いている `deploy.ps1`。ターミナルを閉じると、この処理は自動継続しない。
+
+進捗は3ジョブそれぞれの状態・実際の完了ステップ数・進行中ステップ名・リンクを表示する。以前の推定ログ行数や推定進捗率は表示しない。GitHub APIの残量を守るため、トークンなしでは4分間隔、設定済みでは20秒間隔。未認証の通常監視は最大3要求/回、約45要求/時（他のツールによる利用とは共有）。API失敗・ジョブ失敗/キャンセル・60分タイムアウト・配布物不足なら本番へ進まない。
+
+## 今回の再実行
+
+失敗した1.1.282のジョブをそのまま再実行しても、そのタグの古いコードで実行される。今回の修正を含む状態から `npm run deploy` を実行して、新しいバージョンとして公開する。現在のローカル版1.1.282からなら次は1.1.283。既存タグを上書きする必要はない。
+
+今回の確認: 関連Jest 50件、ブラウザ30件が成功。Jest内でWindows PowerShell 5.1による実行を含み、監視・配布物・文字コードの29項目を確認。PowerShell 7でも同じ29項目を確認。MSVCがないローカル環境ではWindowsアプリ全体のコンパイル成功までは確認していない。修正はローカル作業ファイルにあり、この修正後のpush・タグ作成・本番デプロイはまだ行っていない。
+
+## 1.1.283のReleaseだけが停止した件（2026-10-24追記）
+
+[Releaseジョブ](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977101/job/120740283972)の全ログを確認。Jest 268件とブラウザ30件は成功した。その後 `cargo test` がコンパイラ情報を取得する `sccache ... rustc.exe -vV` で停止した。根本のエラーは `Server startup failed: cache storage failed to read` とGitHubキャッシュAPIのHTTP 400・サービス利用不可応答。提示された `aws_lc_0_41_0_jent_entropy_switch_notime_impl` はこの失敗に伴うバックトレース内のシンボルであり、これだけでCovo本体の暗号処理が壊れたとは判断しない。
+
+同じコミットの [native検証](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977100/job/120740283614)は、Rustテスト・NSISビルド・独自セットアップ生成まで成功済み。web-and-rulesも成功済み。
+
+修正: Releaseから `mozilla-actions/sccache-action` と `SCCACHE_GHA_ENABLED` / `RUSTC_WRAPPER=sccache` の設定を削除した。Cargo成果物用の `Swatinem/rust-cache` は維持する。コンパイラの各起動を外部キャッシュサービスの可用性へ依存させず、native検証と同じ直接コンパイル方式に揃える。テスト失敗を無視する設定は追加していない。
+
+修正はまだローカルのみ。現在のローカル版1.1.283から次に `npm run deploy` を実行すると1.1.284になる。1.1.283の失敗ジョブを再実行しても古いsccache設定は残る。Release失敗により、この試行でのFirebase/Worker本番反映は開始されていない。正式な署名付きRelease全体の成功は、修正版CIで引き続き確認する必要がある。
+</file>
+
 <file path="DESIGN_HARMONIZATION_REPORT.md">
 # 追加UIと既存デザインの統一（2026-10-23）
 
@@ -5360,17 +5330,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      # Cache Cargo artifacts without making rustc depend on the sccache service.
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri'
           shared-key: 'tauri-build'
-      - name: install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-      - name: setup sccache env
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $env:GITHUB_ENV
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
@@ -5424,185 +5389,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit "v$($config.version)" --draft=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-</file>
-
-<file path="browser-tests/timeline.spec.cjs">
-const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const parser = require('@babel/parser');
-const main = fs.readFileSync('public/js/main.js', 'utf8');
-const ast = parser.parse(main, { sourceType: 'module' });
-const codeFor = name => {
-  const node = ast.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
-  return main.slice(node.start, node.end);
-};
-test('real chat reconciliation keeps 10,000 messages bounded and stable through scroll, arrival and resize', async ({ page }) => {
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  await page.setContent(`<style>
-    #messagesDisplay { height:600px; width:800px; overflow:auto; transform:scaleY(-1); overflow-anchor:none; }
-    .message-row { transform:scaleY(-1); min-height:64px; margin-top:8px; box-sizing:border-box; }
-    .message-content { display:block; white-space:normal; }
-    .date-divider { height:24px; transform:scaleY(-1); }
-  </style><div id="searchContainer"></div><div id="messagesDisplay"></div>`);
-  await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
-  await page.addScriptTag({ content: `
-    const messagesDisplay = document.getElementById('messagesDisplay'), searchContainer = document.getElementById('searchContainer');
-    let currentDmId = null, currentServerId = 'server', currentRoomId = 'room', currentDmParticipant = null;
-    let searchQuery = '', _searchHistoryResults = null, _searchVisibleCount = 50, isJumpView = false, isLoadingOlderMessages = false, hasMoreOlderMessages = true;
-    let allLoadedMessages = Array.from({length:10000}, (_,i)=>({id:'m'+i,text:'message '+i,senderId:'alice',timestamp:1700000000000+i}));
-    let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
-    const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
-    const getMsgTimestamp = message => message.timestamp;
-    const parseTimestampToMs = value => Number(value || 0);
-    const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
-    const compareHistoryMessages = (a,b) => a.timestamp-b.timestamp;
-    const isEncrypted = () => false;
-    const escapeHtmlAndLinkUrls = text => text;
-    const escapeHtml = text => text;
-    const computeReadByCount = () => 0;
-    const updateReactionsUI = () => {};
-    const resolveUnreadBoundaryMessageId = () => null;
-    const renderUnreadDivider = () => {};
-    function createMessageElement(message) {
-      const row=document.createElement('div');row.className='message-row';
-      const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
-      const text=document.createElement('span');text.className='message-content';text.textContent=message.text;
-      bubble.appendChild(text);row.appendChild(bubble);return row;
-    }
-    ${codeFor('virtualSpacer')}
-    ${codeFor('patchMessageHtml')}
-    ${codeFor('renderMessagesWithReadReceipts')}
-    window.testRender = renderMessagesWithReadReceipts;
-    window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
-    window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
-    window.testRender();window.testRender();
-  ` });
-  await expect(page.locator('.message-row')).toHaveCount(160);
-  for (const offset of [10000, 250000, 500000, 800000]) {
-    await page.evaluate(offset => window.testMove(offset), offset);
-    expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-    expect(await page.locator('.message-row').count()).toBeGreaterThan(0);
-  }
-  const before = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
-  await page.evaluate(() => window.testArrive());
-  const after = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
-  expect(after.id).toBe(before.id);
-  expect(after.offset).toBeGreaterThan(before.offset);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => { messagesDisplay.style.width='350px';window.testRender(); });
-  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-  expect(errors).toEqual([]);
-  // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
-  const oldMain = fs.readFileSync(require('path').join(__dirname, 'fixtures/timeline-before-virtualization.js'), 'utf8');
-  const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
-  const client = await page.context().newCDPSession(page);
-  await client.send('Performance.enable');
-  const metrics = async () => {
-    await client.send('HeapProfiler.collectGarbage');
-    const performance = await client.send('Performance.getMetrics');
-    const memory = await client.send('Memory.getDOMCounters');
-    return { heapBytes: performance.metrics.find(metric => metric.name === 'JSHeapUsedSize').value, domNodes: memory.nodes, rows: await page.locator('.message-row').count() };
-  };
-  await page.addScriptTag({ content: oldMain.slice(oldNode.start, oldNode.end) });
-  const baselineMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
-  const baseline = await metrics();
-  await page.addScriptTag({ content: codeFor('renderMessagesWithReadReceipts') });
-  const optimizedMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); _virtualTimeline.reset(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
-  const optimized = await metrics();
-  await page.evaluate(() => { for (let i = 0; i < 100; i++) { messagesDisplay.scrollTop = i % 2 ? 0 : 20000; renderMessagesWithReadReceipts(); } });
-  const repeated = await metrics();
-  expect(baseline.rows).toBe(10001);
-  expect(optimized.rows).toBeLessThanOrEqual(160);
-  expect(repeated.rows).toBeLessThanOrEqual(160);
-  expect(repeated.domNodes).toBeLessThan(baseline.domNodes / 5);
-  expect(repeated.heapBytes).toBeLessThan(optimized.heapBytes + 1024 * 1024);
-  const report = { fixture: 'Chrome on Windows, 10001 text messages, current reconciliation with mocked data services', baseline: { ...baseline, renderMs: baselineMs }, optimized: { ...optimized, renderMs: optimizedMs }, after100Scrolls: repeated };
-  fs.mkdirSync('scratch', { recursive: true });
-  fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
-  console.log(JSON.stringify(report));
-});
-for (const channel of ['server', 'dm']) {
-  test(`${channel}: cached ciphertext, textless arrivals and real decryption update existing rows`, async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    await page.route('https://covo.test/**', route => route.fulfill({ contentType: 'text/html', body: '<div id="searchContainer"></div><div id="messagesDisplay" style="height:600px;overflow:auto"></div>' }));
-    await page.goto('https://covo.test/');
-    for (const file of ['loading_runtime.js', 'virtual_timeline.js', 'crypto_helpers.js']) {
-      await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '') });
-    }
-    await page.addScriptTag({ content: `
-      const channel = ${JSON.stringify(channel)};
-      const messagesDisplay=document.getElementById('messagesDisplay'),searchContainer=document.getElementById('searchContainer');
-      let currentDmId=channel==='dm'?'alice_bob':null,currentServerId=channel==='server'?'server':null,currentRoomId=channel==='server'?'room':null,currentDmParticipant=null;
-      let userId='alice',userNickname='Alice',cachedUsers=[],roomNames={room:'Room'},_outboxEntries=new Map(),messagesIndexMap={};
-      let searchQuery='',_searchHistoryResults=null,_searchVisibleCount=50,isJumpView=false,isLoadingOlderMessages=false,hasMoreOlderMessages=true;
-      let allLoadedMessages=[],lastMessagesData=[],jumpViewMessages=[];
-      const _virtualTimeline=new VirtualTimeline(),_virtualRowObserver=null,_attachmentResources={prune(){}};
-      const _abToB64=buffer=>btoa(String.fromCharCode(...new Uint8Array(buffer)));
-      const _b64ToAb=value=>Uint8Array.from(atob(value),character=>character.charCodeAt(0)).buffer;
-      const LocalStore={putMessage:async()=>{}},doc=(_,path)=>path;
-      const getDoc=async path=>({exists:()=>true,data:()=>path.includes('/roomKeys/')?window.wrappedKeys:{currentKeyVersion:2}});
-      const getMsgTimestamp=message=>message.timestamp,parseTimestampToMs=value=>Number(value||0),countNewerMessages=()=>0;
-      const isEncrypted=_isEncrypted,escapeHtml=text=>String(text||''),escapeHtmlAndLinkUrls=escapeHtml;
-      const computeReadByCount=()=>0,updateReactionsUI=()=>{},resolveUnreadBoundaryMessageId=()=>null,renderUnreadDivider=()=>{};
-      function createMessageElement(message){
-        const row=document.createElement('div');row.className='message-row';
-        const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
-        const text=document.createElement('span');text.className='message-content';
-        if(message.text?.startsWith('enc::')){const waiting=document.createElement('span');waiting.className='covo-msg-loading-shimmer';text.appendChild(waiting);}else text.textContent=message.text||'';
-        bubble.appendChild(text);row.appendChild(bubble);return row;
-      }
-      ${codeFor('virtualSpacer')}
-      ${codeFor('patchMessageHtml')}
-      ${codeFor('renderMessagesWithReadReceipts')}
-      initCryptoContext({getDb:()=>({}),getUserId:()=>userId,getAppId:()=>'testApp',getIsAdmin:()=>false});
-      window.exerciseEncryptedTimeline=async()=>{
-        const keys={};
-        for(const version of ['1','2'])keys[version]=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
-        const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
-        Object.assign(_e2ee,{ready:true,privateKey:pair.privateKey,publicKey:pair.publicKey});
-        const versions={};
-        for(const version of ['1','2'])versions[version]=_abToB64(await crypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,await crypto.subtle.exportKey('raw',keys[version])));
-        window.wrappedKeys={versions,latestVersion:'1'};
-        observeRoomKeyVersion('server','room',2);
-        if(channel==='dm')_e2ee.dmKeyCache.alice_bob={...keys,latest:keys['2'],latestVersion:'2'};
-        const old=await _encryptText('保存済みの本文',{latest:keys['1'],latestVersion:'1'});
-        const fresh=await _encryptText('新着の本文',{latest:keys['2'],latestVersion:'2'});
-        allLoadedMessages=[{id:'old',senderId:'alice',timestamp:1,text:old,_originalText:old,_decrypted:false}];
-        renderMessagesWithReadReceipts();
-        const incoming=[{id:'old',senderId:'alice',timestamp:1,text:old},{id:'file',senderId:'alice',timestamp:2,fileName:'file',fileData:'https://covo.test/file'},{id:'sticker',senderId:'alice',timestamp:3,sticker:'🙂'},{id:'fresh',senderId:'alice',timestamp:4,text:fresh}];
-        allLoadedMessages=mergeChannelRecords(allLoadedMessages,incoming);
-        renderMessagesWithReadReceipts();
-        if(channel==='dm')await _decryptDmMessagesInPlace(incoming,'alice_bob',['alice','bob']);
-        else await _decryptMessagesInPlace(incoming,'server','room',['alice']);
-        renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();
-        return allLoadedMessages.filter(message=>message.text).map(message=>({text:message.text,decrypted:message._decrypted}));
-      };
-    ` });
-    expect(await page.evaluate(() => window.exerciseEncryptedTimeline())).toEqual([{ text: '保存済みの本文', decrypted: true }, { text: '新着の本文', decrypted: true }]);
-    await expect(page.locator('.message-row')).toHaveCount(4);
-    await expect(page.locator('.covo-msg-loading-shimmer')).toHaveCount(0);
-    await expect(page.locator('[data-message-id="old"] .message-content')).toHaveText('保存済みの本文');
-    await expect(page.locator('[data-message-id="fresh"] .message-content')).toHaveText('新着の本文');
-    expect(errors).toEqual([]);
-  });
-}
-test('quick switcher ignores IME Enter and closes with focus restored', async ({ page }) => {
-  await page.setContent('<button id="origin">Open</button>');
-  await page.addScriptTag({ content: fs.readFileSync('public/js/navigation_ui.js', 'utf8').replace(/\bexport /g, '') + `
-    window.opened=[];
-    installNavigationUI({conversations:()=>[{id:'one',name:'# general'}],openConversation:item=>window.opened.push(item.id),openSearch(){},moveChannel(){},cancelRecording:()=>false,closeOverlay:()=>false});
-  ` });
-  await page.locator('#origin').focus();
-  await page.keyboard.press('Control+k');
-  await expect(page.locator('#quickConversationSwitcher')).toBeVisible();
-  await page.locator('#quickConversationSwitcher input').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
-  expect(await page.evaluate(() => window.opened)).toEqual([]);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0);
-  await expect(page.locator('#origin')).toBeFocused();
-});
 </file>
 
 <file path="browser-tests/ui-refinements.spec.cjs">
@@ -10059,6 +9845,46 @@ if (isMain) {
 export { splitUnits, extractKeywords };
 </file>
 
+<file path="scripts/build_windows_setup.ps1">
+param([switch]$Bootstrap)
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+$sourceRoot = Join-Path $taskRoot 'src-tauri\windows'
+$outputRoot = Join-Path $sourceRoot 'bin'
+New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'Run this script in an MSVC Developer PowerShell environment.' }
+$config = Get-Content -LiteralPath (Join-Path $taskRoot 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$versionHeader = '#define COVO_SETUP_VERSION L"' + $config.version + '"'
+$resourceArgs = @()
+$definitions = @('/DCOVO_MAINTENANCE')
+$executableName = 'CovoMaintenance.exe'
+if ($Bootstrap) {
+  $engines = @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'src-tauri\target\release\bundle\nsis') -Filter '*-setup.exe')
+  if ($engines.Count -ne 1) { throw 'Expected exactly one NSIS setup engine. Check the build artifacts.' }
+  $engine = $engines[0].FullName
+  $digest = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash
+  $bytes = for ($index = 0; $index -lt 64; $index += 2) { '0x' + $digest.Substring($index, 2) }
+  $versionHeader += "`n#define COVO_ENGINE_SHA256 " + ($bytes -join ',')
+  $resource = '101 RCDATA "' + $engine.Replace('\','\\') + '"'
+  [IO.File]::WriteAllText((Join-Path $outputRoot 'engine.rc'), $resource)
+  & rc.exe /nologo /fo (Join-Path $outputRoot 'engine.res') (Join-Path $outputRoot 'engine.rc')
+  if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
+  $resourceArgs = @((Join-Path $outputRoot 'engine.res'))
+  $definitions = @()
+  $executableName = 'CovoSetup.exe'
+}
+[IO.File]::WriteAllText((Join-Path $outputRoot 'setup_version.h'), $versionHeader)
+& cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /MT /W4 @definitions /I $outputRoot (Join-Path $sourceRoot 'setup.cpp') @resourceArgs /Fo"$outputRoot\setup.obj" /Fe"$outputRoot\$executableName" /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'"
+if ($LASTEXITCODE -ne 0) { throw 'Covo setup compilation failed.' }
+</file>
+
+<file path="scripts/prepare_windows.ps1">
+$ErrorActionPreference = 'Stop'
+& node (Join-Path $PSScriptRoot 'build_firebase.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Firebase bundle build failed.' }
+& (Join-Path $PSScriptRoot 'build_windows_setup.ps1')
+</file>
+
 <file path=".gitignore">
 # Logs & Debug
 logs
@@ -10213,6 +10039,185 @@ src-tauri/windows/bin/
     ]
   }
 }
+</file>
+
+<file path="browser-tests/timeline.spec.cjs">
+const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const parser = require('@babel/parser');
+const main = fs.readFileSync('public/js/main.js', 'utf8');
+const ast = parser.parse(main, { sourceType: 'module' });
+const codeFor = name => {
+  const node = ast.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
+  return main.slice(node.start, node.end);
+};
+test('real chat reconciliation keeps 10,000 messages bounded and stable through scroll, arrival and resize', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setContent(`<style>
+    #messagesDisplay { height:600px; width:800px; overflow:auto; transform:scaleY(-1); overflow-anchor:none; }
+    .message-row { transform:scaleY(-1); min-height:64px; margin-top:8px; box-sizing:border-box; }
+    .message-content { display:block; white-space:normal; }
+    .date-divider { height:24px; transform:scaleY(-1); }
+  </style><div id="searchContainer"></div><div id="messagesDisplay"></div>`);
+  await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
+  await page.addScriptTag({ content: `
+    const messagesDisplay = document.getElementById('messagesDisplay'), searchContainer = document.getElementById('searchContainer');
+    let currentDmId = null, currentServerId = 'server', currentRoomId = 'room', currentDmParticipant = null;
+    let searchQuery = '', _searchHistoryResults = null, _searchVisibleCount = 50, isJumpView = false, isLoadingOlderMessages = false, hasMoreOlderMessages = true;
+    let allLoadedMessages = Array.from({length:10000}, (_,i)=>({id:'m'+i,text:'message '+i,senderId:'alice',timestamp:1700000000000+i}));
+    let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
+    const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
+    const getMsgTimestamp = message => message.timestamp;
+    const parseTimestampToMs = value => Number(value || 0);
+    const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
+    const compareHistoryMessages = (a,b) => a.timestamp-b.timestamp;
+    const isEncrypted = () => false;
+    const escapeHtmlAndLinkUrls = text => text;
+    const escapeHtml = text => text;
+    const computeReadByCount = () => 0;
+    const updateReactionsUI = () => {};
+    const resolveUnreadBoundaryMessageId = () => null;
+    const renderUnreadDivider = () => {};
+    function createMessageElement(message) {
+      const row=document.createElement('div');row.className='message-row';
+      const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
+      const text=document.createElement('span');text.className='message-content';text.textContent=message.text;
+      bubble.appendChild(text);row.appendChild(bubble);return row;
+    }
+    ${codeFor('virtualSpacer')}
+    ${codeFor('patchMessageHtml')}
+    ${codeFor('renderMessagesWithReadReceipts')}
+    window.testRender = renderMessagesWithReadReceipts;
+    window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
+    window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
+    window.testRender();window.testRender();
+  ` });
+  await expect(page.locator('.message-row')).toHaveCount(160);
+  for (const offset of [10000, 250000, 500000, 800000]) {
+    await page.evaluate(offset => window.testMove(offset), offset);
+    expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+    expect(await page.locator('.message-row').count()).toBeGreaterThan(0);
+  }
+  const before = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
+  await page.evaluate(() => window.testArrive());
+  const after = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
+  expect(after.id).toBe(before.id);
+  expect(after.offset).toBeGreaterThan(before.offset);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { messagesDisplay.style.width='350px';window.testRender(); });
+  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+  expect(errors).toEqual([]);
+  // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
+  const oldMain = fs.readFileSync(require('path').join(__dirname, 'fixtures/timeline-before-virtualization.js'), 'utf8');
+  const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
+  const client = await page.context().newCDPSession(page);
+  await client.send('Performance.enable');
+  const metrics = async () => {
+    await client.send('HeapProfiler.collectGarbage');
+    const performance = await client.send('Performance.getMetrics');
+    const memory = await client.send('Memory.getDOMCounters');
+    return { heapBytes: performance.metrics.find(metric => metric.name === 'JSHeapUsedSize').value, domNodes: memory.nodes, rows: await page.locator('.message-row').count() };
+  };
+  await page.addScriptTag({ content: oldMain.slice(oldNode.start, oldNode.end) });
+  const baselineMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
+  const baseline = await metrics();
+  await page.addScriptTag({ content: codeFor('renderMessagesWithReadReceipts') });
+  const optimizedMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); _virtualTimeline.reset(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
+  const optimized = await metrics();
+  await page.evaluate(() => { for (let i = 0; i < 100; i++) { messagesDisplay.scrollTop = i % 2 ? 0 : 20000; renderMessagesWithReadReceipts(); } });
+  const repeated = await metrics();
+  expect(baseline.rows).toBe(10001);
+  expect(optimized.rows).toBeLessThanOrEqual(160);
+  expect(repeated.rows).toBeLessThanOrEqual(160);
+  expect(repeated.domNodes).toBeLessThan(baseline.domNodes / 5);
+  expect(repeated.heapBytes).toBeLessThan(optimized.heapBytes + 1024 * 1024);
+  const report = { fixture: 'Chrome on Windows, 10001 text messages, current reconciliation with mocked data services', baseline: { ...baseline, renderMs: baselineMs }, optimized: { ...optimized, renderMs: optimizedMs }, after100Scrolls: repeated };
+  fs.mkdirSync('scratch', { recursive: true });
+  fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+});
+for (const channel of ['server', 'dm']) {
+  test(`${channel}: cached ciphertext, textless arrivals and real decryption update existing rows`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://covo.test/**', route => route.fulfill({ contentType: 'text/html', body: '<div id="searchContainer"></div><div id="messagesDisplay" style="height:600px;overflow:auto"></div>' }));
+    await page.goto('https://covo.test/');
+    for (const file of ['loading_runtime.js', 'virtual_timeline.js', 'crypto_helpers.js']) {
+      await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '') });
+    }
+    await page.addScriptTag({ content: `
+      const channel = ${JSON.stringify(channel)};
+      const messagesDisplay=document.getElementById('messagesDisplay'),searchContainer=document.getElementById('searchContainer');
+      let currentDmId=channel==='dm'?'alice_bob':null,currentServerId=channel==='server'?'server':null,currentRoomId=channel==='server'?'room':null,currentDmParticipant=null;
+      let userId='alice',userNickname='Alice',cachedUsers=[],roomNames={room:'Room'},_outboxEntries=new Map(),messagesIndexMap={};
+      let searchQuery='',_searchHistoryResults=null,_searchVisibleCount=50,isJumpView=false,isLoadingOlderMessages=false,hasMoreOlderMessages=true;
+      let allLoadedMessages=[],lastMessagesData=[],jumpViewMessages=[];
+      const _virtualTimeline=new VirtualTimeline(),_virtualRowObserver=null,_attachmentResources={prune(){}};
+      const _abToB64=buffer=>btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const _b64ToAb=value=>Uint8Array.from(atob(value),character=>character.charCodeAt(0)).buffer;
+      const LocalStore={putMessage:async()=>{}},doc=(_,path)=>path;
+      const getDoc=async path=>({exists:()=>true,data:()=>path.includes('/roomKeys/')?window.wrappedKeys:{currentKeyVersion:2}});
+      const getMsgTimestamp=message=>message.timestamp,parseTimestampToMs=value=>Number(value||0),countNewerMessages=()=>0;
+      const isEncrypted=_isEncrypted,escapeHtml=text=>String(text||''),escapeHtmlAndLinkUrls=escapeHtml;
+      const computeReadByCount=()=>0,updateReactionsUI=()=>{},resolveUnreadBoundaryMessageId=()=>null,renderUnreadDivider=()=>{};
+      function createMessageElement(message){
+        const row=document.createElement('div');row.className='message-row';
+        const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
+        const text=document.createElement('span');text.className='message-content';
+        if(message.text?.startsWith('enc::')){const waiting=document.createElement('span');waiting.className='covo-msg-loading-shimmer';text.appendChild(waiting);}else text.textContent=message.text||'';
+        bubble.appendChild(text);row.appendChild(bubble);return row;
+      }
+      ${codeFor('virtualSpacer')}
+      ${codeFor('patchMessageHtml')}
+      ${codeFor('renderMessagesWithReadReceipts')}
+      initCryptoContext({getDb:()=>({}),getUserId:()=>userId,getAppId:()=>'testApp',getIsAdmin:()=>false});
+      window.exerciseEncryptedTimeline=async()=>{
+        const keys={};
+        for(const version of ['1','2'])keys[version]=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+        const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+        Object.assign(_e2ee,{ready:true,privateKey:pair.privateKey,publicKey:pair.publicKey});
+        const versions={};
+        for(const version of ['1','2'])versions[version]=_abToB64(await crypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,await crypto.subtle.exportKey('raw',keys[version])));
+        window.wrappedKeys={versions,latestVersion:'1'};
+        observeRoomKeyVersion('server','room',2);
+        if(channel==='dm')_e2ee.dmKeyCache.alice_bob={...keys,latest:keys['2'],latestVersion:'2'};
+        const old=await _encryptText('保存済みの本文',{latest:keys['1'],latestVersion:'1'});
+        const fresh=await _encryptText('新着の本文',{latest:keys['2'],latestVersion:'2'});
+        allLoadedMessages=[{id:'old',senderId:'alice',timestamp:1,text:old,_originalText:old,_decrypted:false}];
+        renderMessagesWithReadReceipts();
+        const incoming=[{id:'old',senderId:'alice',timestamp:1,text:old},{id:'file',senderId:'alice',timestamp:2,fileName:'file',fileData:'https://covo.test/file'},{id:'sticker',senderId:'alice',timestamp:3,sticker:'🙂'},{id:'fresh',senderId:'alice',timestamp:4,text:fresh}];
+        allLoadedMessages=mergeChannelRecords(allLoadedMessages,incoming);
+        renderMessagesWithReadReceipts();
+        if(channel==='dm')await _decryptDmMessagesInPlace(incoming,'alice_bob',['alice','bob']);
+        else await _decryptMessagesInPlace(incoming,'server','room',['alice']);
+        renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();
+        return allLoadedMessages.filter(message=>message.text).map(message=>({text:message.text,decrypted:message._decrypted}));
+      };
+    ` });
+    expect(await page.evaluate(() => window.exerciseEncryptedTimeline())).toEqual([{ text: '保存済みの本文', decrypted: true }, { text: '新着の本文', decrypted: true }]);
+    await expect(page.locator('.message-row')).toHaveCount(4);
+    await expect(page.locator('.covo-msg-loading-shimmer')).toHaveCount(0);
+    await expect(page.locator('[data-message-id="old"] .message-content')).toHaveText('保存済みの本文');
+    await expect(page.locator('[data-message-id="fresh"] .message-content')).toHaveText('新着の本文');
+    expect(errors).toEqual([]);
+  });
+}
+test('quick switcher ignores IME Enter and closes with focus restored', async ({ page }) => {
+  await page.setContent('<button id="origin">Open</button>');
+  await page.addScriptTag({ content: fs.readFileSync('public/js/navigation_ui.js', 'utf8').replace(/\bexport /g, '') + `
+    window.opened=[];
+    installNavigationUI({conversations:()=>[{id:'one',name:'# general'}],openConversation:item=>window.opened.push(item.id),openSearch(){},moveChannel(){},cancelRecording:()=>false,closeOverlay:()=>false});
+  ` });
+  await page.locator('#origin').focus();
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('#quickConversationSwitcher')).toBeVisible();
+  await page.locator('#quickConversationSwitcher input').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
+  expect(await page.evaluate(() => window.opened)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0);
+  await expect(page.locator('#origin')).toBeFocused();
+});
 </file>
 
 <file path="public/js/navigation_ui.js">
@@ -12846,344 +12851,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/css/modules/base.css">
-/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
-    :root {
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-    html, body {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      overflow: hidden;
-      overscroll-behavior: none;
-      touch-action: pan-x pan-y;
-      background-color: #ffffff;
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      transition: none !important;
-    }
-    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
-      background-color: #111827 !important;
-    }
-    /* 入力フィールドでのみ文字選択を許可 */
-    textarea,
-    input[type="text"],
-    input[type="email"],
-    input[type="password"],
-    input[type="number"],
-    .select-all,
-    [contenteditable="true"] {
-      -webkit-user-select: text;
-      -moz-user-select: text;
-      -ms-user-select: text;
-      user-select: text;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      width: 100%;
-      height: 100%;
-      max-width: none;
-      margin: 0;
-      padding: 0;
-      border-radius: 0;
-      overflow: hidden;
-      background-color: #ffffff;
-      box-shadow: none;
-    }
-    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
-    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
-      top: 0 !important;
-      bottom: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      padding: 0 !important;
-    }
-    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
-    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
-    textarea,
-    select {
-      font-size: 16px !important;
-    }
-    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
-    .stamp-jump-anim {
-      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes stampSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
-    .message-jump-anim,
-    .message-bubble.message-jump-anim {
-      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
-      will-change: transform;
-    }
-    @keyframes messageSway {
-      0%   { transform: translateX(0); }
-      15%  { transform: translateX(5.5px); }
-      32%  { transform: translateX(-3.8px); }
-      48%  { transform: translateX(2.2px); }
-      64%  { transform: translateX(-1.1px); }
-      80%  { transform: translateX(0.4px); }
-      100% { transform: translateX(0); }
-    }
-    /* Reactions */
-    .reaction-picker-bar {
-      display: flex;
-      gap: 8px;
-      padding: 8px 12px;
-      background: white;
-      border: 1px solid #ddd;
-      border-radius: 9999px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 2px;
-    }
-    .reaction-picker-bar.scrollable {
-      justify-content: flex-start;
-      overflow-x: auto;
-      border-radius: 12px;
-      max-width: 100%;
-    }
-    .reaction-picker-bar.scrollable::-webkit-scrollbar {
-      display: none;
-    }
-    body.dark-server-theme .reaction-picker-bar,
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #1e293b;
-      border-color: rgba(255,255,255,0.1);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    }
-    body.discord-dark-theme .reaction-picker-bar {
-      background: #2b2d31;
-      border-color: #383a40;
-    }
-    .reaction-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.2s, background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-btn:hover {
-      transform: scale(1.2);
-      background-color: #f3f4f6;
-    }
-    body.dark-server-theme .reaction-btn:hover,
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #334155;
-    }
-    body.discord-dark-theme .reaction-btn:hover {
-      background-color: #35373c;
-    }
-    .reaction-btn img.emoji {
-      width: 24px;
-      height: 24px;
-      pointer-events: none;
-    }
-    .reaction-more-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #6b7280;
-      background: #f3f4f6;
-      transition: background-color 0.2s;
-      cursor: pointer;
-    }
-    .reaction-more-btn:hover {
-      background-color: #e5e7eb;
-    }
-    body.dark-server-theme .reaction-more-btn {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-    body.dark-server-theme .reaction-more-btn:hover {
-      background-color: #475569;
-    }
-    .reactions-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      position: relative;
-      margin-top: 6px;
-      margin-bottom: -2px;
-      z-index: 20;
-    }
-    .my-message .reactions-container {
-      justify-content: flex-end;
-    }
-    .other-message .reactions-container {
-      justify-content: flex-start;
-    }
-    .date-divider {
-      text-align: center;
-      margin: 1.5rem 0;
-      width: 100%;
-    }
-    .date-divider-inner, #floatingDateBadge {
-      display: inline-block;
-      padding: 4px 16px;
-      background-color: rgba(71, 85, 105, 0.85);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      color: #ffffff;
-      font-size: 0.75rem;
-      font-weight: 500;
-      border-radius: 9999px;
-      box-shadow: none;
-      border: none;
-      line-height: 1.25rem;
-      letter-spacing: 0.05em;
-      transition: opacity 0.3s ease;
-    }
-    body.dark-server-theme .date-divider-inner,
-    body.dark-server-theme #floatingDateBadge,
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(51, 65, 85, 0.85);
-      color: #ffffff;
-      border: none;
-      box-shadow: none;
-    }
-    body.discord-dark-theme .date-divider-inner,
-    body.discord-dark-theme #floatingDateBadge {
-      background-color: rgba(43, 45, 49, 0.9);
-      color: #dbdee1;
-    }
-    .reaction-modal-emoji img {
-      width: 28px !important;
-      height: 28px !important;
-      object-fit: contain;
-    }
-   .reply-quote {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      background-color: transparent;
-      padding: 2px 0 2px 28px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: #64748b;
-      max-width: 100%;
-      min-width: 0;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
-    .reply-quote::before {
-      content: "";
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      height: 12px;
-      width: 12px;
-      border-left: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-left-radius: 6px;
-    }
-    .my-reply {
-      padding: 2px 28px 2px 0;
-      justify-content: flex-end;
-      max-width: 100%;
-      min-width: 0;
-    }
-    .my-reply::before {
-      left: auto;
-      right: 12px;
-      border-left: none;
-      border-right: 2px solid #9ca3af;
-      border-top: 2px solid #9ca3af;
-      border-top-right-radius: 6px;
-      border-top-left-radius: 0;
-    }
-    .reaction-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      padding: 2px 6px;
-      border-radius: 9999px;
-      background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-size: 0.85rem;
-      color: #4b5563;
-      cursor: pointer;
-      user-select: none;
-      transition: all 0.2s ease;
-      border: 1px solid #f3f4f6;
-    }
-    body.dark-server-theme .reaction-badge,
-    body.discord-dark-theme .reaction-badge {
-      background: #334155;
-      color: #cbd5e1;
-      border: 1px solid #475569;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    body.discord-dark-theme .reaction-badge {
-      background: #2b2d31;
-      border-color: #383a40;
-      color: #dbdee1;
-    }
-    body.dark-server-theme .reaction-badge.reacted-by-me,
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #60a5fa;
-    }
-    body.discord-dark-theme .reaction-badge.reacted-by-me {
-      color: #5865f2;
-    }
-    .reaction-badge:hover {
-      transform: scale(1.1);
-    }
-    .reaction-badge img.emoji {
-      width: 1.25rem;
-      height: 1.25rem;
-      pointer-events: none;
-    }
-    .reaction-badge.reacted-by-me {
-      background: transparent;
-      border: none;
-      color: #3b82f6;
-    }
-    .reaction-badge:active {
-      transform: scale(0.95);
-    }
-    .reaction-badge img.emoji {
-      width: 14px;
-      height: 14px;
-      pointer-events: none;
-    }
-</file>
-
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -14660,6 +14327,344 @@ if (typeof window !== 'undefined') {
     }
     .covo-og-embed-card a:hover {
       text-decoration: underline;
+    }
+</file>
+
+<file path="public/css/modules/base.css">
+/* アプリ全体の基底スタイル（全画面固定・文字選択制御・スクロール基盤の一本化） */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: pan-x pan-y;
+      background-color: #ffffff;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      transition: none !important;
+    }
+    html.dark-server-theme, body.dark-server-theme, html:has(body.dark-server-theme) {
+      background-color: #111827 !important;
+    }
+    /* 入力フィールドでのみ文字選択を許可 */
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    .select-all,
+    [contenteditable="true"] {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      overflow: hidden;
+      background-color: #ffffff;
+      box-shadow: none;
+    }
+    /* モーダル・オーバーレイの正規全画面配置（-100pxハックを廃止しスクロールズレを防止） */
+    .modal-overlay, #bottomSheetOverlay, #loadingOverlay, #updateOverlay, #dropOverlay {
+      top: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      padding: 0 !important;
+    }
+    /* iOSでのタップ時強制ズーム回避のため、テキスト入力要素のみ16px以上に固定 */
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+    /* スタンプ用 LINE完全準拠の滑らかなスウェイ揺動（優しく揺れて穏やかに収束） */
+    .stamp-jump-anim {
+      animation: stampSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes stampSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* 通常メッセージ用 LINE完全準拠の滑らかなスウェイ揺動（横にゆるやかになめらかにゆすって緩やかに終了） */
+    .message-jump-anim,
+    .message-bubble.message-jump-anim {
+      animation: messageSway 0.85s cubic-bezier(0.2, 0.8, 0.25, 1) both !important;
+      will-change: transform;
+    }
+    @keyframes messageSway {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(5.5px); }
+      32%  { transform: translateX(-3.8px); }
+      48%  { transform: translateX(2.2px); }
+      64%  { transform: translateX(-1.1px); }
+      80%  { transform: translateX(0.4px); }
+      100% { transform: translateX(0); }
+    }
+    /* Reactions */
+    .reaction-picker-bar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 9999px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .reaction-picker-bar.scrollable {
+      justify-content: flex-start;
+      overflow-x: auto;
+      border-radius: 12px;
+      max-width: 100%;
+    }
+    .reaction-picker-bar.scrollable::-webkit-scrollbar {
+      display: none;
+    }
+    body.dark-server-theme .reaction-picker-bar,
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #1e293b;
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    body.discord-dark-theme .reaction-picker-bar {
+      background: #2b2d31;
+      border-color: #383a40;
+    }
+    .reaction-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-btn:hover {
+      transform: scale(1.2);
+      background-color: #f3f4f6;
+    }
+    body.dark-server-theme .reaction-btn:hover,
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #334155;
+    }
+    body.discord-dark-theme .reaction-btn:hover {
+      background-color: #35373c;
+    }
+    .reaction-btn img.emoji {
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+    }
+    .reaction-more-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      background: #f3f4f6;
+      transition: background-color 0.2s;
+      cursor: pointer;
+    }
+    .reaction-more-btn:hover {
+      background-color: #e5e7eb;
+    }
+    body.dark-server-theme .reaction-more-btn {
+      background-color: #334155;
+      color: #cbd5e1;
+    }
+    body.dark-server-theme .reaction-more-btn:hover {
+      background-color: #475569;
+    }
+    .reactions-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      position: relative;
+      margin-top: 6px;
+      margin-bottom: -2px;
+      z-index: 20;
+    }
+    .my-message .reactions-container {
+      justify-content: flex-end;
+    }
+    .other-message .reactions-container {
+      justify-content: flex-start;
+    }
+    .date-divider {
+      text-align: center;
+      margin: 1.5rem 0;
+      width: 100%;
+    }
+    .date-divider-inner, #floatingDateBadge {
+      display: inline-block;
+      padding: 4px 16px;
+      background-color: rgba(71, 85, 105, 0.85);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border-radius: 9999px;
+      box-shadow: none;
+      border: none;
+      line-height: 1.25rem;
+      letter-spacing: 0.05em;
+      transition: opacity 0.3s ease;
+    }
+    body.dark-server-theme .date-divider-inner,
+    body.dark-server-theme #floatingDateBadge,
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(51, 65, 85, 0.85);
+      color: #ffffff;
+      border: none;
+      box-shadow: none;
+    }
+    body.discord-dark-theme .date-divider-inner,
+    body.discord-dark-theme #floatingDateBadge {
+      background-color: rgba(43, 45, 49, 0.9);
+      color: #dbdee1;
+    }
+    .reaction-modal-emoji img {
+      width: 28px !important;
+      height: 28px !important;
+      object-fit: contain;
+    }
+   .reply-quote {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background-color: transparent;
+      padding: 2px 0 2px 28px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #64748b;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .reply-quote::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      height: 12px;
+      width: 12px;
+      border-left: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-left-radius: 6px;
+    }
+    .my-reply {
+      padding: 2px 28px 2px 0;
+      justify-content: flex-end;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .my-reply::before {
+      left: auto;
+      right: 12px;
+      border-left: none;
+      border-right: 2px solid #9ca3af;
+      border-top: 2px solid #9ca3af;
+      border-top-right-radius: 6px;
+      border-top-left-radius: 0;
+    }
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-size: 0.85rem;
+      color: #4b5563;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      border: 1px solid #f3f4f6;
+    }
+    body.dark-server-theme .reaction-badge,
+    body.discord-dark-theme .reaction-badge {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    body.discord-dark-theme .reaction-badge {
+      background: #2b2d31;
+      border-color: #383a40;
+      color: #dbdee1;
+    }
+    body.dark-server-theme .reaction-badge.reacted-by-me,
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #60a5fa;
+    }
+    body.discord-dark-theme .reaction-badge.reacted-by-me {
+      color: #5865f2;
+    }
+    .reaction-badge:hover {
+      transform: scale(1.1);
+    }
+    .reaction-badge img.emoji {
+      width: 1.25rem;
+      height: 1.25rem;
+      pointer-events: none;
+    }
+    .reaction-badge.reacted-by-me {
+      background: transparent;
+      border: none;
+      color: #3b82f6;
+    }
+    .reaction-badge:active {
+      transform: scale(0.95);
+    }
+    .reaction-badge img.emoji {
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
     }
 </file>
 
@@ -20440,580 +20445,6 @@ body.covo-background .animate-pulse,body.covo-background .covo-msg-loading-shimm
 .server-search-results button { display:block; padding:8px; width:100%; text-align:left; border-bottom:1px solid #8883; }
 </file>
 
-<file path="firestore.rules">
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // ========================================================================
-    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
-    // ========================================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    function messageSummaryIsConsistent() {
-      let data = request.resource.data;
-      return (data.get('lastMessageAt', null) == null && data.get('lastMessageId', null) == null) ||
-        (data.get('lastMessageAt', null) is timestamp && data.get('lastMessageId', null) is string &&
-         data.lastMessageId.size() > 0 && data.lastMessageId.size() <= 160 &&
-         data.get('lastMessageStorageVersion', 0) in [1, 2] &&
-         data.get('lastMessageStorageTimestamp', null) == data.lastMessageAt.toMillis());
-    }
-    function preservesMessageSummary() {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp',
-        'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText'
-      ]) || messageSummaryIsConsistent();
-    }
-
-    // アプリ全体管理者 (Super Admin / Global Admin)
-    function isGlobalAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
-        );
-    }
-
-    // ログイン許可リスト管理者 (List Admin)
-    function isListAdmin(appId) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
-        (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
-          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
-        );
-    }
-
-    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
-    function isServerAdmin(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          (
-            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
-            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
-          )
-        )
-      );
-    }
-
-    // サーバーオーナー判定
-    function isServerOwner(appId, serverId) {
-      return isAuthenticated() && (
-        isGlobalAdmin(appId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
-        )
-      );
-    }
-
-    // サーバーメンバー判定 (サーバー参加者またはサーバー管理者)
-    function isServerMember(appId, serverId) {
-      return isAuthenticated() && (
-        isServerAdmin(appId, serverId) ||
-        (
-          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-          ('joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
-           request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
-        )
-      );
-    }
-
-    // ========================================================================
-    // 📁 各コレクションのセキュリティルール
-    // ========================================================================
-
-    match /artifacts/{appId} {
-
-      // 1. 全体設定 (Settings)
-      match /settings/{docId} {
-        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-      match /settings/allowedEmailsConfig {
-        allow read: if isAuthenticated();
-        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
-      }
-
-      // ログイン許可リスト (Allowed Emails)
-      match /allowedEmails/{emailId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId) ||
-                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-        allow create: if isGlobalAdmin(appId) ||
-                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
-        allow update, delete: if isGlobalAdmin(appId) ||
-                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
-      }
-
-      // 全体サーバーカスタムスタンプ
-      match /server_stamps/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // バグ報告・フィードバック
-      match /feedbacks/{docId} {
-        allow create: if isAuthenticated() &&
-          request.resource.data.createdBy == request.auth.uid &&
-          request.resource.data.content is string &&
-          request.resource.data.content.size() > 0 &&
-          request.resource.data.content.size() <= 10000 &&
-          (!('category' in request.resource.data) ||
-           request.resource.data.category in ['bug', 'feature', 'other']);
-        allow read, update, delete: if isGlobalAdmin(appId);
-      }
-
-      // 全体お知らせ・リリースノート (What's New)
-      match /announcements/{docId} {
-        allow read: if isAuthenticated();
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // システムエラー・警告テレメトリ
-      match /error_reports/{docId} {
-        // Current telemetry uses the authenticated, bounded Worker -> RTDB path.
-        // Do not let old clients (or unauthenticated callers) recreate copies.
-        allow create, update: if false;
-        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
-      }
-
-      // 緊急アカウントリカバリー保管庫
-      match /recovery_vault/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow write: if isAuthenticated() && request.auth.uid == userDocId;
-      }
-      match /recovery_index/{emailHash} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
-        allow update: if isGlobalAdmin(appId) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId);
-        allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
-      }
-
-      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
-      match /admin_recovery_requests/{userDocId} {
-        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
-        allow create, delete: if isGlobalAdmin(appId);
-        allow update: if isGlobalAdmin(appId) ||
-          (isAuthenticated() && request.auth.uid == userDocId &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
-           request.resource.data.used == true);
-      }
-      match /admin_recovery_index/{emailHash} {
-        allow read: if isGlobalAdmin(appId);
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      // モデレーション監査ログ (Audit Logs)
-      match /audit_logs/{logId} {
-        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
-        allow create: if isAuthenticated();
-        allow update, delete: if false;
-      }
-
-      // 招待コードインデックス (逆引き)
-      match /inviteIndex/{code} {
-        allow get: if isAuthenticated();
-        allow create: if isServerAdmin(appId, request.resource.data.serverId) || isServerMember(appId, request.resource.data.serverId);
-        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
-        allow delete: if isServerAdmin(appId, resource.data.serverId);
-      }
-
-      // 2. ユーザー情報 (Users & Profiles: IDOR保護 & Stored XSS防止)
-      match /users/{userId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId))
-          && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || request.resource.data.avatarUrl == '' || request.resource.data.avatarUrl.matches('^https?://.*') || request.resource.data.avatarUrl.matches('^data:image/.*'));
-      }
-
-      match /userQuotas/{qUserId} {
-        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
-        allow write: if isGlobalAdmin(appId);
-      }
-
-      match /users/{userId}/profile/{docId} {
-        allow get: if isAuthenticated();
-        allow list: if isGlobalAdmin(appId);
-        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-      }
-
-      match /users/{userId}/notificationSettings/preferences {
-        allow read, delete: if isAuthenticated() && request.auth.uid == userId;
-        allow create, update: if isAuthenticated() && request.auth.uid == userId
-          && request.resource.data.keys().hasOnly(['servers', 'channels'])
-          && (!('servers' in request.resource.data) || request.resource.data.servers is map)
-          && (!('channels' in request.resource.data) || request.resource.data.channels is map);
-      }
-
-      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
-      match /users/{userId}/private/{document=**} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      }
-
-      // 既読状態の同期
-      match /users/{userId}/readStates/{docId} {
-        allow read, delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-        allow create, update: if false;
-      }
-
-      // フレンド関係性 (Relationships)
-      match /users/{userId}/relationships/{targetUserId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          request.auth.uid == userId ||
-          (request.auth.uid == targetUserId && (
-            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
-            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
-          ))
-        );
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
-      }
-
-      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
-      match /dm_channels/{dmId} {
-        allow read: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
-          (resource == null && (dmId.matches('^' + request.auth.uid + '_.*') || dmId.matches('^.*_' + request.auth.uid + '$')))
-        );
-        allow create: if isAuthenticated() && messageSummaryIsConsistent() && request.resource.data.get('sharedKey', null) == null && request.resource.data.participants is list && request.resource.data.participants.size() == 2 && request.resource.data.participants[0] != request.resource.data.participants[1] && request.auth.uid in request.resource.data.participants && (dmId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1] || dmId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
-        allow update: if isAuthenticated() && preservesMessageSummary() && (isGlobalAdmin(appId) || (request.auth.uid in resource.data.participants && request.resource.data.participants == resource.data.participants &&
-          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null)));
-        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
-
-        match /keys/{keyUserId} {
-          allow read: if isAuthenticated() && (
-            isGlobalAdmin(appId) ||
-            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants)
-          );
-          function isDmParticipant() {
-            return isAuthenticated() && exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
-              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants;
-          }
-          allow create: if isGlobalAdmin(appId) || (isDmParticipant() && keyUserId in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants);
-          allow delete: if isGlobalAdmin(appId) || (isDmParticipant() && request.auth.uid == keyUserId);
-          allow update: if isGlobalAdmin(appId) || (isDmParticipant() &&
-            (request.auth.uid == keyUserId ||
-             (request.resource.data.versions is map && resource.data.get('versions', {}) is map &&
-              request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
-              request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
-              request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
-              (!('wrappedKey' in resource.data) || ('versions' in resource.data) || request.resource.data.versions.get('1', null) == resource.data.wrappedKey) &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
-        }
-      }
-
-      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
-      match /device_transfers/{sessionCode} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
-        );
-        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
-        allow update: if isAuthenticated() && (isGlobalAdmin(appId) || (resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid));
-        match /{subcollection}/{docId} {
-          function isSessionParticipant() {
-            let session = get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data;
-            return isAuthenticated() && (isGlobalAdmin(appId) || ('uid' in session && session.uid == request.auth.uid));
-          }
-          allow read, write: if isSessionParticipant();
-        }
-      }
-
-      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定、削除後の完了読み取りを許容)
-      match /p2p_log_sync/{syncId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          resource == null ||
-          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
-          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
-        );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.requesterUid == request.auth.uid &&
-            (!('dmId' in request.resource.data) ||
-             request.resource.data.dmId == null ||
-             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
-             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
-        allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId', 'beforeTs']) && isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
-          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
-        );
-        match /{subcollection}/{docId} {
-          function isSessionParticipant() {
-            let session = get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data;
-            return isAuthenticated() && (isGlobalAdmin(appId) || ('requesterUid' in session && session.requesterUid == request.auth.uid) || ('targetUid' in session && session.targetUid == request.auth.uid));
-          }
-          allow read, write: if isSessionParticipant();
-        }
-      }
-
-      // 3. グローバルオンライン状態 (Status)
-      match /status/{userId} {
-        allow read: if isAuthenticated();
-        allow delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
-        allow create, update: if false;
-      }
-
-      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
-      match /calls/{callId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
-          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
-          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
-        );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            (
-              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
-               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
-               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
-            )
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
-            request.resource.data.caller.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          function isSessionParticipant() {
-            let session = get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data;
-            return isAuthenticated() && (isGlobalAdmin(appId) || ('caller' in session && 'uid' in session.caller && session.caller.uid == request.auth.uid) || ('calleeUid' in session && session.calleeUid == request.auth.uid) || ('callee' in session && 'uid' in session.callee && session.callee.uid == request.auth.uid));
-          }
-          allow read, write: if isSessionParticipant();
-        }
-      }
-
-      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
-      match /fileshares/{shareId} {
-        allow read, delete: if isAuthenticated() && (
-          isGlobalAdmin(appId) ||
-          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
-          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
-        );
-        allow update: if isAuthenticated() &&
-          (
-            isGlobalAdmin(appId) ||
-            (
-              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
-               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
-              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
-            )
-          );
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
-            request.resource.data.sender.uid == request.auth.uid));
-
-        match /{subcollection}/{candId} {
-          function isSessionParticipant() {
-            let session = get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data;
-            return isAuthenticated() && (isGlobalAdmin(appId) || ('sender' in session && 'uid' in session.sender && session.sender.uid == request.auth.uid) || ('receiverUid' in session && session.receiverUid == request.auth.uid));
-          }
-          allow read, write: if isSessionParticipant();
-        }
-      }
-
-      // ========================================================================
-      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
-      // ========================================================================
-
-      match /servers/{serverId} {
-        allow read: if isAuthenticated();
-
-        // サーバー作成: 自分自身を管理者・初期参加者として作成
-        allow create: if isAuthenticated() &&
-          (isGlobalAdmin(appId) ||
-           (request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.serverAdmins == [request.auth.uid] &&
-            request.resource.data.joinedUsers == [request.auth.uid]));
-
-        // サーバー設定の更新:
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
-
-        allow update: if isServerAdmin(appId, serverId) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'serverAdmins']);
-
-        allow update: if isAuthenticated() &&
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
-          request.auth.uid in resource.data.joinedUsers &&
-          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
-          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
-          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
-
-        // サーバー削除: サーバーオーナーまたは全体管理者のみ
-        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-
-        // サーバー内の秘密情報 (パスワードハッシュ等)
-        match /secrets/{docId} {
-          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // ルーム一覧 (Channels / Rooms)
-        match /rooms/{roomId} {
-          allow read: if isServerMember(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId) && messageSummaryIsConsistent();
-          allow delete: if isServerAdmin(appId, serverId);
-          allow update: if preservesMessageSummary() && (isServerAdmin(appId, serverId) || (
-            isAuthenticated() &&
-            exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
-            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp', 'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion']) &&
-            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null) &&
-            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentKeyVersion']) || (resource.data.get('currentKeyVersion', 1) == 1 && request.resource.data.currentKeyVersion == 1))
-          ));
-
-          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
-          match /messages/{messageId} {
-            allow read: if isServerMember(appId, serverId);
-            // Version 2 bodies have a single authority in RTDB. In particular,
-            // a downgraded client's pending outbox must not recreate a mirror.
-            allow create: if false;
-
-            allow update: if request.resource.data.get('storageVersion', 1) == 1 && isServerMember(appId, serverId) && (
-              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
-               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
-              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
-
-              || (resource.data.senderId == request.auth.uid
-                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'userId', 'createdAt', 'timestamp', 'isPinned', 'reactions'])
-                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
-                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
-              || isGlobalAdmin(appId)
-            );
-
-            allow delete: if isAuthenticated() && (
-              resource.data.senderId == request.auth.uid ||
-              (!('senderId' in resource.data) && resource.data.get('userId', null) == request.auth.uid) ||
-              isServerAdmin(appId, serverId) ||
-              isServerOwner(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-          }
-
-          // 既読レシート (Read Receipts)
-          match /readReceipts/{receiptUserId} {
-            allow read: if isServerMember(appId, serverId);
-            allow create, update: if false;
-            allow delete: if isServerMember(appId, serverId) && (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
-            allow delete: if isAuthenticated() &&
-              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
-          }
-
-          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
-          match /roomKeys/{keyId} {
-            allow read, create: if isServerMember(appId, serverId);
-            allow delete: if isServerAdmin(appId, serverId);
-            allow update: if isServerAdmin(appId, serverId) ||
-              (isServerMember(appId, serverId) && (request.auth.uid == keyId ||
-                (request.resource.data.versions is map && resource.data.get('versions', {}) is map &&
-                 request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
-                 request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
-                 request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
-                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
-          }
-
-          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
-          match /rescueRequests/{reqUserId} {
-            allow read, delete: if isAuthenticated() && (
-              request.auth.uid == reqUserId ||
-              isServerAdmin(appId, serverId) ||
-              isGlobalAdmin(appId)
-            );
-            allow create, update: if isServerMember(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
-          }
-
-          // タイピングインジケーター (Typing)
-          match /typing/{userId} {
-            allow read: if isServerMember(appId, serverId);
-            allow write: if isServerMember(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
-          }
-        }
-
-        // サーバー別プロフィール (Profiles)
-        match /profiles/{profileUserId} {
-          allow read: if isAuthenticated();
-          allow create, update: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
-          allow delete: if isAuthenticated() &&
-            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
-        }
-
-        // サーバーカスタムスタンプ (Stamps)
-        match /stamps/{stampId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string &&
-            request.resource.data.name.size() > 0 &&
-            request.resource.data.name.size() <= 32 &&
-            request.resource.data.url is string &&
-            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // スタンプグループ (Stamp Groups)
-        match /stampGroups/{groupId} {
-          allow read: if isAuthenticated();
-          allow create: if isAuthenticated() &&
-            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
-            request.resource.data.name is string;
-          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
-        }
-
-        // 招待コード (Invite Codes: メンバーによる招待画面表示・コード発行に対応)
-        match /inviteCodes/{code} {
-          allow get: if isAuthenticated();
-          allow list: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
-          allow update, delete: if isServerAdmin(appId, serverId);
-        }
-      }
-
-      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
-      match /vc_signaling/{sigDocId} {
-        allow read, delete: if isAuthenticated() &&
-          (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId));
-        allow create: if isAuthenticated() &&
-          request.resource.data.fromUid == request.auth.uid &&
-          request.resource.data.toUid is string;
-        allow update: if isAuthenticated() &&
-          (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId)) &&
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fromUid', 'toUid']);
-      }
-    }
-
-    // ルート直下 VC シグナリング (フォールバック用)
-    match /vc_signaling/{sigDocId} {
-      allow read, delete: if isAuthenticated() &&
-        (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
-      allow create: if isAuthenticated() &&
-        request.resource.data.fromUid == request.auth.uid &&
-        request.resource.data.toUid is string;
-      allow update: if isAuthenticated() &&
-        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fromUid', 'toUid']);
-    }
-
-  }
-}
-</file>
-
 <file path="public/css/modules/sidebar.css">
 /* --- メンバーリスト・プロフィール・アクティブパネル用スタイル (Discord完全準拠) --- */
     #membersSidebar {
@@ -23651,6 +23082,580 @@ html.dark .server-menu-item.text-rose-500:hover {
 #ssContentArea::-webkit-scrollbar-thumb {
   background: rgba(128,128,128,0.3);
   border-radius: 4px;
+}
+</file>
+
+<file path="firestore.rules">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================================================
+    // 🛡️ ユーティリティ関数 & ロール判定 (軽量・高速化)
+    // ========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function messageSummaryIsConsistent() {
+      let data = request.resource.data;
+      return (data.get('lastMessageAt', null) == null && data.get('lastMessageId', null) == null) ||
+        (data.get('lastMessageAt', null) is timestamp && data.get('lastMessageId', null) is string &&
+         data.lastMessageId.size() > 0 && data.lastMessageId.size() <= 160 &&
+         data.get('lastMessageStorageVersion', 0) in [1, 2] &&
+         data.get('lastMessageStorageTimestamp', null) == data.lastMessageAt.toMillis());
+    }
+    function preservesMessageSummary() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp',
+        'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText'
+      ]) || messageSummaryIsConsistent();
+    }
+
+    // アプリ全体管理者 (Super Admin / Global Admin)
+    function isGlobalAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.admins)
+        );
+    }
+
+    // ログイン許可リスト管理者 (List Admin)
+    function isListAdmin(appId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
+        (
+          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
+        );
+    }
+
+    // サーバー管理者 / モデレーター判定 (get呼び出しを1回のみに集約)
+    function isServerAdmin(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          (
+            request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy ||
+            ('serverAdmins' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.serverAdmins)
+          )
+        )
+      );
+    }
+
+    // サーバーオーナー判定
+    function isServerOwner(appId, serverId) {
+      return isAuthenticated() && (
+        isGlobalAdmin(appId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          request.auth.uid == get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.createdBy
+        )
+      );
+    }
+
+    // サーバーメンバー判定 (サーバー参加者またはサーバー管理者)
+    function isServerMember(appId, serverId) {
+      return isAuthenticated() && (
+        isServerAdmin(appId, serverId) ||
+        (
+          exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+          ('joinedUsers' in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data &&
+           request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers)
+        )
+      );
+    }
+
+    // ========================================================================
+    // 📁 各コレクションのセキュリティルール
+    // ========================================================================
+
+    match /artifacts/{appId} {
+
+      // 1. 全体設定 (Settings)
+      match /settings/{docId} {
+        allow read: if (isAuthenticated() && docId != 'allowedEmails') || isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+      match /settings/allowedEmailsConfig {
+        allow read: if isAuthenticated();
+        allow write: if isListAdmin(appId) || isGlobalAdmin(appId);
+      }
+
+      // ログイン許可リスト (Allowed Emails)
+      match /allowedEmails/{emailId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId) ||
+                    (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+        allow create: if isGlobalAdmin(appId) ||
+                      (isListAdmin(appId) && request.resource.data.addedBy == request.auth.uid);
+        allow update, delete: if isGlobalAdmin(appId) ||
+                              (isListAdmin(appId) && ('addedBy' in resource.data && resource.data.addedBy == request.auth.uid));
+      }
+
+      // 全体サーバーカスタムスタンプ
+      match /server_stamps/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // バグ報告・フィードバック
+      match /feedbacks/{docId} {
+        allow create: if isAuthenticated() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 10000 &&
+          (!('category' in request.resource.data) ||
+           request.resource.data.category in ['bug', 'feature', 'other']);
+        allow read, update, delete: if isGlobalAdmin(appId);
+      }
+
+      // 全体お知らせ・リリースノート (What's New)
+      match /announcements/{docId} {
+        allow read: if isAuthenticated();
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // システムエラー・警告テレメトリ
+      match /error_reports/{docId} {
+        // Current telemetry uses the authenticated, bounded Worker -> RTDB path.
+        // Do not let old clients (or unauthenticated callers) recreate copies.
+        allow create, update: if false;
+        allow read, delete: if isGlobalAdmin(appId) || isListAdmin(appId);
+      }
+
+      // 緊急アカウントリカバリー保管庫
+      match /recovery_vault/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow write: if isAuthenticated() && request.auth.uid == userDocId;
+      }
+      match /recovery_index/{emailHash} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isGlobalAdmin(appId));
+        allow update: if isGlobalAdmin(appId) || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId);
+        allow delete: if isAuthenticated() && (('userId' in resource.data && resource.data.userId == request.auth.uid) || isGlobalAdmin(appId));
+      }
+
+      // 管理者承認による緊急パスワード再設定支援 (ワンタイムPIN)
+      match /admin_recovery_requests/{userDocId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userDocId || isGlobalAdmin(appId));
+        allow create, delete: if isGlobalAdmin(appId);
+        allow update: if isGlobalAdmin(appId) ||
+          (isAuthenticated() && request.auth.uid == userDocId &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedAt']) &&
+           request.resource.data.used == true);
+      }
+      match /admin_recovery_index/{emailHash} {
+        allow read: if isGlobalAdmin(appId);
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      // モデレーション監査ログ (Audit Logs)
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && (isGlobalAdmin(appId) || isListAdmin(appId));
+        allow create: if isAuthenticated();
+        allow update, delete: if false;
+      }
+
+      // 招待コードインデックス (逆引き)
+      match /inviteIndex/{code} {
+        allow get: if isAuthenticated();
+        allow create: if isServerAdmin(appId, request.resource.data.serverId) || isServerMember(appId, request.resource.data.serverId);
+        allow update: if isServerAdmin(appId, resource.data.serverId) && isServerAdmin(appId, request.resource.data.serverId);
+        allow delete: if isServerAdmin(appId, resource.data.serverId);
+      }
+
+      // 2. ユーザー情報 (Users & Profiles: IDOR保護 & Stored XSS防止)
+      match /users/{userId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId))
+          && (!('avatarUrl' in request.resource.data) || request.resource.data.avatarUrl == null || request.resource.data.avatarUrl == '' || request.resource.data.avatarUrl.matches('^https?://.*') || request.resource.data.avatarUrl.matches('^data:image/.*'));
+      }
+
+      match /userQuotas/{qUserId} {
+        allow read: if isAuthenticated() && (request.auth.uid == qUserId || isGlobalAdmin(appId));
+        allow write: if isGlobalAdmin(appId);
+      }
+
+      match /users/{userId}/profile/{docId} {
+        allow get: if isAuthenticated();
+        allow list: if isGlobalAdmin(appId);
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+      }
+
+      match /users/{userId}/notificationSettings/preferences {
+        allow read, delete: if isAuthenticated() && request.auth.uid == userId;
+        allow create, update: if isAuthenticated() && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['servers', 'channels'])
+          && (!('servers' in request.resource.data) || request.resource.data.servers is map)
+          && (!('channels' in request.resource.data) || request.resource.data.channels is map);
+      }
+
+      // E2EE 秘密鍵バックアップ (本人のみ読み書き)
+      match /users/{userId}/private/{document=**} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+
+      // 既読状態の同期
+      match /users/{userId}/readStates/{docId} {
+        allow read, delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow create, update: if false;
+      }
+
+      // フレンド関係性 (Relationships)
+      match /users/{userId}/relationships/{targetUserId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          request.auth.uid == userId ||
+          (request.auth.uid == targetUserId && (
+            (request.resource.data.status == 'pending_received' && (resource == null || !('status' in resource.data) || resource.data.status != 'blocked')) ||
+            (request.resource.data.status == 'friends' && resource != null && 'status' in resource.data && (resource.data.status == 'pending_sent' || resource.data.status == 'friends'))
+          ))
+        );
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || request.auth.uid == targetUserId || isGlobalAdmin(appId));
+      }
+
+      // ダイレクトメッセージ (DM) チャンネル (IDOR保護・参加者限定アクセス)
+      match /dm_channels/{dmId} {
+        allow read: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+          (resource == null && (dmId.matches('^' + request.auth.uid + '_.*') || dmId.matches('^.*_' + request.auth.uid + '$')))
+        );
+        allow create: if isAuthenticated() && messageSummaryIsConsistent() && request.resource.data.get('sharedKey', null) == null && request.resource.data.participants is list && request.resource.data.participants.size() == 2 && request.resource.data.participants[0] != request.resource.data.participants[1] && request.auth.uid in request.resource.data.participants && (dmId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1] || dmId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0]);
+        allow update: if isAuthenticated() && preservesMessageSummary() && (isGlobalAdmin(appId) || (request.auth.uid in resource.data.participants && request.resource.data.participants == resource.data.participants &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null)));
+        allow delete: if isAuthenticated() && (request.auth.uid in resource.data.participants || isGlobalAdmin(appId));
+
+        match /keys/{keyUserId} {
+          allow read: if isAuthenticated() && (
+            isGlobalAdmin(appId) ||
+            (exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants)
+          );
+          function isDmParticipant() {
+            return isAuthenticated() && exists(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants;
+          }
+          allow create: if isGlobalAdmin(appId) || (isDmParticipant() && keyUserId in get(/databases/$(database)/documents/artifacts/$(appId)/dm_channels/$(dmId)).data.participants);
+          allow delete: if isGlobalAdmin(appId) || (isDmParticipant() && request.auth.uid == keyUserId);
+          allow update: if isGlobalAdmin(appId) || (isDmParticipant() &&
+            (request.auth.uid == keyUserId ||
+             (request.resource.data.versions is map && resource.data.get('versions', {}) is map &&
+              request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
+              request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
+              request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
+              (!('wrappedKey' in resource.data) || ('versions' in resource.data) || request.resource.data.versions.get('1', null) == resource.data.wrappedKey) &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
+        }
+      }
+
+      // 端末間データ移行 (P2P Device Transfers: 本人・管理者限定)
+      match /device_transfers/{sessionCode} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'uid' in resource.data && request.auth.uid == resource.data.uid)
+        );
+        allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+        allow update: if isAuthenticated() && (isGlobalAdmin(appId) || (resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid));
+        match /{subcollection}/{docId} {
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/device_transfers/$(sessionCode)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('uid' in session && session.uid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
+        }
+      }
+
+      // P2P 過去ログ分散補完 (P2P Log Sync: 要求者・対象者・管理者限定、削除後の完了読み取りを許容)
+      match /p2p_log_sync/{syncId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          resource == null ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.requesterUid == request.auth.uid &&
+            (!('dmId' in request.resource.data) ||
+             request.resource.data.dmId == null ||
+             request.resource.data.dmId == request.auth.uid + '_' + request.resource.data.targetUid ||
+             request.resource.data.dmId == request.resource.data.targetUid + '_' + request.auth.uid)));
+        allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterUid', 'targetUid', 'channelType', 'serverId', 'roomId', 'dmId', 'beforeTs']) && isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'requesterUid' in resource.data && request.auth.uid == resource.data.requesterUid) ||
+          (resource != null && 'targetUid' in resource.data && request.auth.uid == resource.data.targetUid)
+        );
+        match /{subcollection}/{docId} {
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/p2p_log_sync/$(syncId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('requesterUid' in session && session.requesterUid == request.auth.uid) || ('targetUid' in session && session.targetUid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
+        }
+      }
+
+      // 3. グローバルオンライン状態 (Status)
+      match /status/{userId} {
+        allow read: if isAuthenticated();
+        allow delete: if isAuthenticated() && (request.auth.uid == userId || isGlobalAdmin(appId));
+        allow create, update: if false;
+      }
+
+      // 4. P2P音声通話シグナリング (Calls: 通話参加者・管理者限定)
+      match /calls/{callId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+          (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+          (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)
+        );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            (
+              ((resource != null && 'caller' in resource.data && 'uid' in resource.data.caller && request.auth.uid == resource.data.caller.uid) ||
+               (resource != null && 'calleeUid' in resource.data && request.auth.uid == resource.data.calleeUid) ||
+               (resource != null && 'callee' in resource.data && 'uid' in resource.data.callee && request.auth.uid == resource.data.callee.uid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['caller', 'callee', 'calleeUid'])
+            )
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('caller' in request.resource.data && 'uid' in request.resource.data.caller &&
+            request.resource.data.caller.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/calls/$(callId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('caller' in session && 'uid' in session.caller && session.caller.uid == request.auth.uid) || ('calleeUid' in session && session.calleeUid == request.auth.uid) || ('callee' in session && 'uid' in session.callee && session.callee.uid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
+        }
+      }
+
+      // 4b. P2Pファイル共有シグナリング (File Shares: 送信者・受信者・管理者限定)
+      match /fileshares/{shareId} {
+        allow read, delete: if isAuthenticated() && (
+          isGlobalAdmin(appId) ||
+          (resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+          (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)
+        );
+        allow update: if isAuthenticated() &&
+          (
+            isGlobalAdmin(appId) ||
+            (
+              ((resource != null && 'sender' in resource.data && 'uid' in resource.data.sender && request.auth.uid == resource.data.sender.uid) ||
+               (resource != null && 'receiverUid' in resource.data && request.auth.uid == resource.data.receiverUid)) &&
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sender', 'receiverUid'])
+            )
+          );
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           ('sender' in request.resource.data && 'uid' in request.resource.data.sender &&
+            request.resource.data.sender.uid == request.auth.uid));
+
+        match /{subcollection}/{candId} {
+          function isSessionParticipant() {
+            let session = get(/databases/$(database)/documents/artifacts/$(appId)/fileshares/$(shareId)).data;
+            return isAuthenticated() && (isGlobalAdmin(appId) || ('sender' in session && 'uid' in session.sender && session.sender.uid == request.auth.uid) || ('receiverUid' in session && session.receiverUid == request.auth.uid));
+          }
+          allow read, write: if isSessionParticipant();
+        }
+      }
+
+      // ========================================================================
+      // 🏰 サーバーベース構造 (Servers, Rooms, Messages)
+      // ========================================================================
+
+      match /servers/{serverId} {
+        allow read: if isAuthenticated();
+
+        // サーバー作成: 自分自身を管理者・初期参加者として作成
+        allow create: if isAuthenticated() &&
+          (isGlobalAdmin(appId) ||
+           (request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.serverAdmins == [request.auth.uid] &&
+            request.resource.data.joinedUsers == [request.auth.uid]));
+
+        // サーバー設定の更新:
+        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
+
+        allow update: if isServerAdmin(appId, serverId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'serverAdmins']);
+
+        allow update: if isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['joinedUsers', 'serverAdmins', 'memberCount']) &&
+          request.auth.uid in resource.data.joinedUsers &&
+          request.resource.data.joinedUsers == resource.data.joinedUsers.removeAll([request.auth.uid]) &&
+          (!('serverAdmins' in resource.data) ? (!('serverAdmins' in request.resource.data)) : (request.resource.data.serverAdmins == resource.data.serverAdmins.removeAll([request.auth.uid]))) &&
+          (!('memberCount' in resource.data) || request.resource.data.memberCount == resource.data.memberCount - 1);
+
+        // サーバー削除: サーバーオーナーまたは全体管理者のみ
+        allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+
+        // サーバー内の秘密情報 (パスワードハッシュ等)
+        match /secrets/{docId} {
+          allow read, write: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+          allow delete: if isServerOwner(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // ルーム一覧 (Channels / Rooms)
+        match /rooms/{roomId} {
+          allow read: if isServerMember(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId) && messageSummaryIsConsistent();
+          allow delete: if isServerAdmin(appId, serverId);
+          allow update: if preservesMessageSummary() && (isServerAdmin(appId, serverId) || (
+            isAuthenticated() &&
+            exists(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)) &&
+            request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/servers/$(serverId)).data.joinedUsers &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageId', 'lastMessageStorageVersion', 'lastMessageStorageTimestamp', 'lastMessageAt', 'lastMessageSender', 'lastMessageSenderNickname', 'lastMessageText', 'sharedKey', 'legacyKeyMigrated', 'currentKeyVersion']) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['sharedKey']) || request.resource.data.get('sharedKey', null) == null) &&
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentKeyVersion']) || (resource.data.get('currentKeyVersion', 1) == 1 && request.resource.data.currentKeyVersion == 1))
+          ));
+
+          // ルーム内メッセージ (Messages: サーバー参加者・管理者のみ作成可能)
+          match /messages/{messageId} {
+            allow read: if isServerMember(appId, serverId);
+            // Version 2 bodies have a single authority in RTDB. In particular,
+            // a downgraded client's pending outbox must not recreate a mirror.
+            allow create: if false;
+
+            allow update: if request.resource.data.get('storageVersion', 1) == 1 && isServerMember(appId, serverId) && (
+              (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+               request.resource.data.get('reactions', {}).diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPinned']) && (resource.data.senderId == request.auth.uid || isServerAdmin(appId, serverId)))
+
+              || (resource.data.senderId == request.auth.uid
+                  && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['senderId', 'userId', 'createdAt', 'timestamp', 'isPinned', 'reactions'])
+                  && (!('content' in request.resource.data) || (request.resource.data.content is string && request.resource.data.content.size() <= 32000))
+                  && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 32000)))
+              || isGlobalAdmin(appId)
+            );
+
+            allow delete: if isAuthenticated() && (
+              resource.data.senderId == request.auth.uid ||
+              (!('senderId' in resource.data) && resource.data.get('userId', null) == request.auth.uid) ||
+              isServerAdmin(appId, serverId) ||
+              isServerOwner(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+          }
+
+          // 既読レシート (Read Receipts)
+          match /readReceipts/{receiptUserId} {
+            allow read: if isServerMember(appId, serverId);
+            allow create, update: if false;
+            allow delete: if isServerMember(appId, serverId) && (request.auth.uid == receiptUserId || isGlobalAdmin(appId));
+            allow delete: if isAuthenticated() &&
+              (request.auth.uid == receiptUserId || isServerAdmin(appId, serverId));
+          }
+
+          // E2EE ルーム暗号鍵 (Room Keys: サーバーメンバーおよび管理者限定)
+          match /roomKeys/{keyId} {
+            allow read, create: if isServerMember(appId, serverId);
+            allow delete: if isServerAdmin(appId, serverId);
+            allow update: if isServerAdmin(appId, serverId) ||
+              (isServerMember(appId, serverId) && (request.auth.uid == keyId ||
+                (request.resource.data.versions is map && resource.data.get('versions', {}) is map &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
+                 request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
+                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
+          }
+
+          // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)
+          match /rescueRequests/{reqUserId} {
+            allow read, delete: if isAuthenticated() && (
+              request.auth.uid == reqUserId ||
+              isServerAdmin(appId, serverId) ||
+              isGlobalAdmin(appId)
+            );
+            allow create, update: if isServerMember(appId, serverId) && (request.auth.uid == reqUserId || isGlobalAdmin(appId));
+          }
+
+          // タイピングインジケーター (Typing)
+          match /typing/{userId} {
+            allow read: if isServerMember(appId, serverId);
+            allow write: if isServerMember(appId, serverId) && (request.auth.uid == userId || isGlobalAdmin(appId));
+          }
+        }
+
+        // サーバー別プロフィール (Profiles)
+        match /profiles/{profileUserId} {
+          allow read: if isAuthenticated();
+          allow create, update: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isGlobalAdmin(appId));
+          allow delete: if isAuthenticated() &&
+            (request.auth.uid == profileUserId || isServerAdmin(appId, serverId));
+        }
+
+        // サーバーカスタムスタンプ (Stamps)
+        match /stamps/{stampId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 &&
+            request.resource.data.name.size() <= 32 &&
+            request.resource.data.url is string &&
+            (request.resource.data.url.matches('https://.*') || request.resource.data.url.matches('data:image/.*'));
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // スタンプグループ (Stamp Groups)
+        match /stampGroups/{groupId} {
+          allow read: if isAuthenticated();
+          allow create: if isAuthenticated() &&
+            (request.resource.data.createdBy == request.auth.uid || isGlobalAdmin(appId)) &&
+            request.resource.data.name is string;
+          allow delete, update: if isServerAdmin(appId, serverId) || isGlobalAdmin(appId);
+        }
+
+        // 招待コード (Invite Codes: メンバーによる招待画面表示・コード発行に対応)
+        match /inviteCodes/{code} {
+          allow get: if isAuthenticated();
+          allow list: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
+          allow create: if isServerAdmin(appId, serverId) || isServerMember(appId, serverId);
+          allow update, delete: if isServerAdmin(appId, serverId);
+        }
+      }
+
+      // VC シグナリング (P2P WebRTC Offer/Answer/ICE候補交換 - artifacts配下)
+      match /vc_signaling/{sigDocId} {
+        allow read, delete: if isAuthenticated() &&
+          (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId));
+        allow create: if isAuthenticated() &&
+          request.resource.data.fromUid == request.auth.uid &&
+          request.resource.data.toUid is string;
+        allow update: if isAuthenticated() &&
+          (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid || isGlobalAdmin(appId)) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fromUid', 'toUid']);
+      }
+    }
+
+    // ルート直下 VC シグナリング (フォールバック用)
+    match /vc_signaling/{sigDocId} {
+      allow read, delete: if isAuthenticated() &&
+        (resource == null || resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if isAuthenticated() &&
+        request.resource.data.fromUid == request.auth.uid &&
+        request.resource.data.toUid is string;
+      allow update: if isAuthenticated() &&
+        (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fromUid', 'toUid']);
+    }
+
+  }
 }
 </file>
 
@@ -29552,9 +29557,9 @@ async function handleSetOffline(request, env) {
 </file>
 
 <file path="public/js/main.js">
-import { installNavigationUI } from './navigation_ui.js?v=1.1.283';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.283';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.283';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.284';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.284';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.284';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -29562,7 +29567,7 @@ import { createMediaPlaceholder } from './media_placeholder.js';
 import { createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.283';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.284';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -29657,13 +29662,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.283';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.284';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.283';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.283';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.283';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.283';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.283';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.284';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.284';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.284';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.284';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.284';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -56357,7 +56362,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.283').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.284').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -57140,13 +57145,13 @@ document.addEventListener('visibilitychange', retryPushRegistration);
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.283" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.284" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.283" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.284" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -61279,7 +61284,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.283"></script>
+  <script type="module" src="js/main.js?v=1.1.284"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -62781,7 +62786,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
 
 <file path="public/version.json">
 {
-    "version":  "1.1.283",
+    "version":  "1.1.284",
     "force":  true,
     "dataProtocol":  2,
     "minimumWindowsVersion":  "1.1.282"
@@ -62792,7 +62797,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.283",
+  "version": "1.1.284",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

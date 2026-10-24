@@ -34,19 +34,12 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      # Cache Cargo artifacts without making rustc depend on the sccache service.
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri'
           shared-key: 'tauri-build'
-
-      - name: install sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: setup sccache env
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $env:GITHUB_ENV
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:

@@ -37,3 +37,13 @@ GitHub側のリリース作成だけではFirebaseへ反映されない。最後
 失敗した1.1.282のジョブをそのまま再実行しても、そのタグの古いコードで実行される。今回の修正を含む状態から `npm run deploy` を実行して、新しいバージョンとして公開する。現在のローカル版1.1.282からなら次は1.1.283。既存タグを上書きする必要はない。
 
 今回の確認: 関連Jest 50件、ブラウザ30件が成功。Jest内でWindows PowerShell 5.1による実行を含み、監視・配布物・文字コードの29項目を確認。PowerShell 7でも同じ29項目を確認。MSVCがないローカル環境ではWindowsアプリ全体のコンパイル成功までは確認していない。修正はローカル作業ファイルにあり、この修正後のpush・タグ作成・本番デプロイはまだ行っていない。
+
+## 1.1.283のReleaseだけが停止した件（2026-10-24追記）
+
+[Releaseジョブ](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977101/job/120740283972)の全ログを確認。Jest 268件とブラウザ30件は成功した。その後 `cargo test` がコンパイラ情報を取得する `sccache ... rustc.exe -vV` で停止した。根本のエラーは `Server startup failed: cache storage failed to read` とGitHubキャッシュAPIのHTTP 400・サービス利用不可応答。提示された `aws_lc_0_41_0_jent_entropy_switch_notime_impl` はこの失敗に伴うバックトレース内のシンボルであり、これだけでCovo本体の暗号処理が壊れたとは判断しない。
+
+同じコミットの [native検証](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977100/job/120740283614)は、Rustテスト・NSISビルド・独自セットアップ生成まで成功済み。web-and-rulesも成功済み。
+
+修正: Releaseから `mozilla-actions/sccache-action` と `SCCACHE_GHA_ENABLED` / `RUSTC_WRAPPER=sccache` の設定を削除した。Cargo成果物用の `Swatinem/rust-cache` は維持する。コンパイラの各起動を外部キャッシュサービスの可用性へ依存させず、native検証と同じ直接コンパイル方式に揃える。テスト失敗を無視する設定は追加していない。
+
+修正はまだローカルのみ。現在のローカル版1.1.283から次に `npm run deploy` を実行すると1.1.284になる。1.1.283の失敗ジョブを再実行しても古いsccache設定は残る。Release失敗により、この試行でのFirebase/Worker本番反映は開始されていない。正式な署名付きRelease全体の成功は、修正版CIで引き続き確認する必要がある。
