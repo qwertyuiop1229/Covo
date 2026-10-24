@@ -5,7 +5,19 @@
   const standalone = Boolean(navigator.standalone || matchMedia('(display-mode: standalone)').matches);
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   root.classList.toggle('covo-ios-standalone', ios && standalone);
-  let frame = 0, probe;
+  let frame = 0, probe, settleTimers = [];
+  const editing = () => document.activeElement?.matches('textarea,input:not([type=checkbox]):not([type=radio]),[contenteditable=true]');
+  function cancelSettle() { settleTimers.forEach(clearTimeout); settleTimers = []; }
+  function settleAfterKeyboard() {
+    cancelSettle();
+    if (!ios || !standalone) return;
+    // Only restore the document viewport; never move the chat's independent scroller.
+    for (const delay of [80, 250, 500]) settleTimers.push(setTimeout(() => {
+      if (editing() || document.hidden || (window.visualViewport?.scale ?? 1) !== 1) return;
+      if (window.scrollX || window.scrollY || document.scrollingElement?.scrollTop) window.scrollTo(0, 0);
+      schedule();
+    }, delay));
+  }
   function snapshot() {
     if (!probe && document.body) {
       probe = document.createElement('div');
@@ -26,8 +38,7 @@
   function update() {
     frame = 0;
     const vv = window.visualViewport;
-    const editing = document.activeElement?.matches('textarea,input:not([type=checkbox]):not([type=radio]),[contenteditable=true]');
-    const keyboard = ios && vv && vv.scale === 1 && editing && innerHeight - vv.height > 120;
+    const keyboard = ios && vv && vv.scale === 1 && editing() && innerHeight - vv.height > 120;
     root.classList.toggle('covo-keyboard-open', Boolean(keyboard));
     if (keyboard) {
       root.style.setProperty('--covo-keyboard-height', `${Math.round(vv.height)}px`);
@@ -35,10 +46,24 @@
     } else {
       root.style.removeProperty('--covo-keyboard-height'); root.style.removeProperty('--covo-keyboard-top');
     }
+    if (ios && standalone && document.body?.classList.contains('discord-ui-mode')) {
+      const nav = document.getElementById('discordServerNav');
+      const navColor = nav && getComputedStyle(nav).backgroundColor;
+      const color = navColor && navColor !== 'rgba(0, 0, 0, 0)' && navColor !== 'transparent' ? navColor :
+        document.body.classList.contains('discord-dark-theme') ? '#1e1f22' : document.body.classList.contains('dark-server-theme') ? '#0b0f19' : '#e2e8f0';
+      root.style.setProperty('--covo-shell-background', color);
+      const theme = document.querySelector('meta[name="theme-color"]');
+      if (theme && theme.content !== color && !document.getElementById('appLoadingSplash')) theme.content = color;
+    }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
   for (const event of ['resize', 'pageshow', 'orientationchange']) window.addEventListener(event, schedule);
   for (const event of ['focusin', 'focusout', 'visibilitychange', 'DOMContentLoaded']) document.addEventListener(event, schedule);
+  document.addEventListener('focusout', settleAfterKeyboard);
+  document.addEventListener('focusin', cancelSettle);
+  window.addEventListener('pagehide', cancelSettle);
+  const watchTheme = () => { if (document.body) new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class'], childList: true }); };
+  if (document.body) watchTheme(); else document.addEventListener('DOMContentLoaded', watchTheme, { once: true });
   window.visualViewport?.addEventListener('resize', schedule);
   window.visualViewport?.addEventListener('scroll', schedule);
   window.covoViewport = { snapshot, refresh: schedule };

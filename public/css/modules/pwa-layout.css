@@ -1,5 +1,8 @@
 /* Use the opaque OS status bar and keep the browser's actual safe-area values. */
 html.covo-ios-standalone { background: var(--covo-shell-background, #f2f3f5); }
+html.covo-ios-standalone:has(body.discord-ui-mode):not(:has(#appLoadingSplash)),
+html.covo-ios-standalone:has(body.discord-ui-mode):not(:has(#appLoadingSplash)) body,
+html.covo-ios-standalone body.discord-ui-mode .container { background: var(--covo-shell-background, #e2e8f0) !important; }
 html.covo-ios-standalone body { position: relative; height: 100%; min-height: 0; }
 html.covo-ios-standalone .container { position: absolute; inset: 0; height: 100%; min-height: 0; }
 #appLoadingSplash { height: 100%; background: #232b38; }
@@ -25,6 +28,15 @@ html.covo-keyboard-open { --safe-bottom: 0px; }
 }
 html.covo-ios-standalone :is(#mobileProfileScreen,#mobileNotifScreen,.mobile-settings-detail) { height: 100% !important; min-height: 0 !important; }
 html.covo-ios-standalone :is(#authContainer,#nicknameContainer) { min-height: 0 !important; }
+@media (max-width: 768px) {
+  html.covo-ios-standalone body.discord-ui-mode #sidebar #userPanel {
+    box-shadow: none !important; filter: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  }
+}
+.covo-mobile-diagnostics-entry { width: 100%; text-align: left; background: transparent; font: inherit; }
+.covo-mobile-diagnostics-entry .mobile-settings-row-icon { background: var(--covo-selected); color: var(--covo-accent); }
+.covo-mobile-diagnostics-content { padding: 20px 16px max(24px,var(--safe-bottom)); }
+.covo-mobile-diagnostics-content .covo-diagnostics { margin: 0; }
 
 /* Discovery cards adapt to their actual available column width, not the entire iPad. */
 #discordHomeServerGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; }

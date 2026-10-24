@@ -31,6 +31,21 @@ const getDb = (auth) => {
   return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
 };
 
+test('server names require authoritative owner/admin rights and bounded nonempty strings', async () => {
+  const path = `artifacts/${APP_ID}/servers/rename`;
+  await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), path), { name: 'Before', createdBy: 'alice', serverAdmins: ['bob'], joinedUsers: ['alice', 'bob', 'member'] }));
+  const alice = doc(getDb({ uid: 'alice' }), path), bob = doc(getDb({ uid: 'bob' }), path);
+  await assertSucceeds(updateDoc(alice, { name: 'After' }));
+  await assertSucceeds(updateDoc(bob, { name: '管理者の変更' }));
+  for (const uid of ['member', 'eve']) await assertFails(updateDoc(doc(getDb({ uid }), path), { name: 'Forged' }));
+  for (const name of ['', '   ', 'x'.repeat(101), 123, deleteField()]) await assertFails(updateDoc(alice, { name }));
+  await assertFails(updateDoc(bob, { name: 'Escalation', createdBy: 'bob' }));
+  await assertFails(updateDoc(bob, { name: 'Escalation', serverAdmins: ['bob', 'eve'] }));
+  await testEnv.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), path), { serverAdmins: { eve: false } }));
+  await assertFails(updateDoc(doc(getDb({ uid: 'eve' }), path), { name: 'Map-key bypass' }));
+  await assertSucceeds(updateDoc(alice, { name: 'Owner' }));
+}, 30000);
+
 test('RTDB-only message bodies cannot be mirrored by an old pending outbox', async () => {
   const base = `artifacts/${APP_ID}/servers/storage`;
   await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), base), {

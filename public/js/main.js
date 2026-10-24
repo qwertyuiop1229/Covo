@@ -1,7 +1,8 @@
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.285';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.285';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.285';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.285';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.286';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.286';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.286';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.286';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.286';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -9,7 +10,7 @@ import { createMediaPlaceholder } from './media_placeholder.js';
 import { createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.285';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.286';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -105,13 +106,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.285';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.286';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.285';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.285';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.285';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.285';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.285';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.286';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.286';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.286';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.286';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.286';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -5791,10 +5792,12 @@ window.openMobileDetail = function (type) {
     reports: 'mobileDetailReports',
     cfstatus: 'mobileDetailCfStatus',
     appinfo: 'mobileDetailAppInfo',
+    diagnostics: 'mobileDetailDiagnostics',
     admintools: 'mobileDetailAdminTools'
   };
   const el = document.getElementById(m[type]);
   if (el) {
+    if (type === 'diagnostics') loadLocalDiagnostics();
     if (type === 'profile') {
       if (typeof initProfileState === 'function') initProfileState();
     }
@@ -12661,6 +12664,24 @@ document.getElementById("confirmJoinServerBtn")?.addEventListener("click", async
 
 // ─── Discord 本家完全準拠 サーバーメニュー & サーバー設定 ──────────────────────
 const serverSettingsModal = document.getElementById("serverSettingsModal");
+const serverProfileEditor = createServerProfileEditor({
+  getOwner: () => userId,
+  transact: (id, mutate) => runTransaction(db, async transaction => {
+    const target = doc(db, `artifacts/${appId}/servers`, id);
+    const snapshot = await transaction.get(target);
+    if (!snapshot.exists()) throw new Error('サーバーが見つかりません。');
+    await mutate(snapshot.data(), patch => transaction.update(target, patch));
+  }),
+  confirmDiscard: () => showCustomConfirm('保存していない変更を破棄して閉じますか？', '変更を破棄', '編集を続ける'),
+  applied: (id, name) => {
+    allServersCache = allServersCache.map(server => server.id === id ? { ...server, name } : server);
+    for (const field of ['serverSettingsTitle', 'serverSettingsTitleMobile']) { const element = document.getElementById(field); if (element) element.textContent = name; }
+    if (currentServerId === id) { currentServerData = { ...currentServerData, name }; const label = document.getElementById('serverNameDisplay'); if (label) label.textContent = name; updateTitleBarContext('server', currentServerData); }
+    if (!currentServerData?.iconUrl) for (const field of ['serverIconSettingsPreview', 'serverIconSettingsPreviewMobile', 'serverProfileIconPreview']) { const element = document.getElementById(field); if (element) element.textContent = name.charAt(0).toUpperCase(); }
+    renderDiscordServerNav();
+  }
+});
+
 const serverMenuDropdown = document.getElementById("serverMenuDropdown");
 const serverActionSheetOverlay = document.getElementById("serverActionSheetOverlay");
 const serverActionSheet = document.getElementById("serverActionSheet");
@@ -12777,21 +12798,13 @@ window.confirmLeaveCurrentServer = async function () {
 
 // サーバー設定モーダルを閉じる
 window.closeServerSettingsModal = function () {
-  if (serverSettingsModal) {
-    serverSettingsModal.classList.add("hidden");
-  }
-  // スマホドリルダウンをトップメニューにリセット
-  goBackSsMobileMenu();
+  return serverProfileEditor.close(() => {
+    serverSettingsModal?.classList.add('hidden');
+    goBackSsMobileMenu();
+  });
 };
-document.getElementById("closeServerSettingsBtn")?.addEventListener("click", closeServerSettingsModal);
 
-// ESCキーでサーバー設定を閉じる
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && serverSettingsModal && !serverSettingsModal.classList.contains("hidden")) {
-    closeServerSettingsModal();
-  }
-});
-
+// Escape is handled by the common topmost-modal dispatcher.
 // スマホ用ドリルダウン操作
 window.openSsMobileTab = function (tab, title) {
   const mobileNav = document.getElementById("ssMobileNavMenu");
@@ -12820,10 +12833,10 @@ window.goBackSsMobileMenu = function () {
 };
 
 // サーバー設定のタブ切り替え
-let currentSsTab = "rooms";
+let currentSsTab = "overview";
 window.switchSsTab = function (tab) {
   currentSsTab = tab;
-  ["rooms", "members", "invites", "stamps", "danger"].forEach(t => {
+  ["overview", "rooms", "members", "invites", "stamps", "danger"].forEach(t => {
     const tabBtn = document.getElementById(`ssTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
     if (tabBtn) tabBtn.classList.toggle("active", t === tab);
     const sec = document.getElementById(`ss${t.charAt(0).toUpperCase() + t.slice(1)}Section`);
@@ -12863,10 +12876,9 @@ async function openServerSettings() {
   const msgEl = document.getElementById("serverSettingsMessage");
   if (msgEl) msgEl.textContent = "";
 
-  const isOwner = currentServerData?.createdBy === userId ||
-    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
-  const hasAdminRights = isOwner || isAdmin;
-
+  const hasAdminRights = canManageServerProfile(currentServerData, userId, isAdmin);
+  const mobileIconButton = document.getElementById('serverMobileIconSettingsBtn'); if (mobileIconButton) mobileIconButton.disabled = !hasAdminRights;
+  serverProfileEditor.open({ id: currentServerId, uid: userId, server: currentServerData, globalAdmin: isAdmin });
   // サーバーアイコン設定の表示・更新 (PC & モバイル両方)
   const iconWrapper = document.getElementById("serverIconSettingsWrapper");
   const iconPreview = document.getElementById("serverIconSettingsPreview");
@@ -12886,9 +12898,10 @@ async function openServerSettings() {
 
   updatePreviewEl(iconPreview);
   updatePreviewEl(iconPreviewMobile);
+  updatePreviewEl(document.getElementById("serverProfileIconPreview"));
 
   if (iconWrapper) {
-    if (hasAdminRights || isListAdmin) {
+    if (hasAdminRights) {
       iconWrapper.classList.add("cursor-pointer", "group");
       iconWrapper.dataset.canEdit = "true";
     } else {
@@ -12900,7 +12913,7 @@ async function openServerSettings() {
   // 削除ボタンは管理者向け
   const deleteBtn = document.getElementById("deleteServerBtn");
   if (deleteBtn) {
-    deleteBtn.style.display = hasAdminRights ? "" : "none";
+    deleteBtn.style.display = (currentServerData?.createdBy === userId || isAdmin) ? "" : "none";
   }
 
   // PCタブの表示制御
@@ -12909,6 +12922,11 @@ async function openServerSettings() {
     const el = document.getElementById(tabId);
     if (el) el.style.display = hasAdminRights ? "" : "none";
   });
+
+  for (const button of document.querySelectorAll('#ssMobileNavMenu button[onclick]')) {
+    const adminOnly = /openSsMobileTab\('(rooms|members|invites|danger)'/.test(button.getAttribute('onclick'));
+    button.hidden = adminOnly && !hasAdminRights;
+  }
 
   // サーバー保管ポリシー初期値設定
   const retentionSel = document.getElementById("serverMessageRetentionSelect");
@@ -12922,11 +12940,11 @@ async function openServerSettings() {
   openModal(serverSettingsModal);
 
   if (hasAdminRights) {
-    switchSsTab("rooms");
-    await loadServerSettingsRooms();
+    switchSsTab("overview");
+    if (window.innerWidth <= 768) openSsMobileTab("overview", "概要");
   } else {
     switchSsTab("stamps");
-    await loadServerStampsForAdmin();
+
   }
 }
 
@@ -14525,30 +14543,18 @@ document.getElementById("createInviteCodeBtn")?.addEventListener("click", async 
 });
 
 // その他タブ
-document.getElementById("renameServerBtn")?.addEventListener("click", async () => {
-  const name = document.getElementById("renameServerInput")?.value.trim() || "";
-  if (!name) return;
-  try {
-    await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { name });
-    const nameDisplay = document.getElementById("serverNameDisplay");
-    const settingsTitle = document.getElementById("serverSettingsTitle");
-    if (nameDisplay) nameDisplay.textContent = name;
-    if (settingsTitle) settingsTitle.textContent = name;
-    currentServerData = { ...currentServerData, name };
-    if (typeof updateTitleBarContext === 'function') {
-      updateTitleBarContext('server', currentServerData);
-    }
-    alertMessage("サーバー名を変更しました", "success");
-  } catch (e) { alertMessage("変更に失敗しました", "error"); }
-});
-
 document.getElementById("changeServerPasswordBtn")?.addEventListener("click", async () => {
+  const targetServerId = currentServerId, owner = userId;
+  if (!targetServerId || !canManageServerProfile(currentServerData, owner, isAdmin)) return;
   const newPass = document.getElementById("changeServerPasswordInput")?.value || "";
   if (!newPass || newPass.length < 4) { alertMessage("パスワードは4文字以上にしてください", "error"); return; }
   try {
-    const hash = await hashPassword(newPass, currentServerId);
-    await setDoc(doc(db, `artifacts/${appId}/servers/${currentServerId}/secrets`, 'auth'), { passwordHash: hash }, { merge: true });
-    await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { passwordHash: deleteField() });
+    const hash = await hashPassword(newPass, targetServerId);
+    if (userId !== owner) return;
+    await setDoc(doc(db, `artifacts/${appId}/servers/${targetServerId}/secrets`, 'auth'), { passwordHash: hash }, { merge: true });
+    if (userId !== owner) return;
+    await updateDoc(doc(db, `artifacts/${appId}/servers`, targetServerId), { passwordHash: deleteField() });
+    if (currentServerId !== targetServerId) return;
     const passInp = document.getElementById("changeServerPasswordInput");
     if (passInp) passInp.value = "";
     alertMessage("パスワードを変更しました", "success");
@@ -14556,14 +14562,15 @@ document.getElementById("changeServerPasswordBtn")?.addEventListener("click", as
 });
 
 document.getElementById("deleteServerBtn")?.addEventListener("click", async () => {
+  const targetServerId = currentServerId, owner = userId;
+  if (!targetServerId || !(currentServerData?.createdBy === owner || isAdmin)) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
   if (!await showCustomConfirm(`「${currentServerData?.name || currentServerId}」を削除しますか？`, "削除する", "キャンセル", "この操作は取り消せません。")) return;
-  const canDelete = currentServerData?.createdBy === userId ||
-    (currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId)) || isAdmin;
-  if (!canDelete) { alertMessage("削除できるのはサーバーオーナーのみです", "error"); return; }
+  if (currentServerId !== targetServerId || userId !== owner) return;
   const loadingOverlayEl = document.getElementById("loadingOverlay");
   if (loadingOverlayEl) loadingOverlayEl.classList.remove("hidden");
   try {
-    await deleteServerCascade(currentServerId);
+    await deleteServerCascade(targetServerId);
+    if (userId !== owner || currentServerId !== targetServerId) return;
     serverSettingsModal?.classList.add("hidden");
     leaveServerView();
     alertMessage("サーバーを削除しました", "success");
@@ -15194,6 +15201,7 @@ let sIconImage = null, sIconScale = 1, sIconMinScale = 1;
 let sIconOffsetX = 0, sIconOffsetY = 0, sIconIsDragging = false;
 let sIconDragStartX = 0, sIconDragStartY = 0, sIconDragStartOffsetX = 0, sIconDragStartOffsetY = 0;
 let isNewServerIconCrop = false;
+let sIconSelection = 0, sIconTarget = null;
 window.pendingNewServerIconBlob = null;
 const SICON_SIZE = 240;
 
@@ -15212,16 +15220,22 @@ window.openNewServerIconPicker = function () {
 async function handleSIconFileChange(e) {
   let file = e.target.files[0];
   if (!file) return;
+  const selection = ++sIconSelection;
+  const target = { id: currentServerId, uid: userId, isNew: e.target === newServerIconUploadInput };
+  if (!target.isNew && !canManageServerProfile(currentServerData, target.uid, isAdmin)) return;
+  sIconTarget = target; isNewServerIconCrop = target.isNew;
   // iPhone (iOS) で撮影された HEIC/HEIF 画像を JPEG へ自動変換
   if (typeof processHeicFile === 'function') {
     file = await processHeicFile(file);
   }
+  if (selection !== sIconSelection || userId !== target.uid || (!target.isNew && currentServerId !== target.id)) return;
   if (typeof checkFileAllowed === 'function' && !checkFileAllowed(file)) return;
   const objectUrl = URL.createObjectURL(file);
-  sIconImage = new Image();
-  sIconImage.onerror = () => { URL.revokeObjectURL(objectUrl); sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
-  sIconImage.onload = () => {
+  const image = new Image(); sIconImage = image;
+  image.onerror = () => { URL.revokeObjectURL(objectUrl); if (selection !== sIconSelection) return; sIconImage = null; alertMessage("画像の読み込みに失敗しました", "error"); };
+  image.onload = () => {
     URL.revokeObjectURL(objectUrl);
+    if (selection !== sIconSelection || sIconImage !== image || userId !== target.uid || (!target.isNew && currentServerId !== target.id)) return;
     const scaleX = SICON_SIZE / sIconImage.naturalWidth;
     const scaleY = SICON_SIZE / sIconImage.naturalHeight;
     sIconMinScale = Math.max(scaleX, scaleY);
@@ -15238,7 +15252,7 @@ async function handleSIconFileChange(e) {
     drawSIconPreview();
   };
   e.target.value = '';
-  if (sIconImage) sIconImage.src = objectUrl;
+  image.src = objectUrl;
 }
 
 if (serverIconUploadInput) serverIconUploadInput.addEventListener("change", handleSIconFileChange);
@@ -15314,6 +15328,7 @@ serverIconZoomSlider?.addEventListener('input', () => {
 });
 
 document.getElementById('serverIconCropCancel')?.addEventListener('click', () => {
+  ++sIconSelection; sIconTarget = null;
   serverIconCropModal?.classList.add('hidden'); sIconImage = null;
   if (serverIconUploadInput) serverIconUploadInput.value = '';
   const newFileInput = document.getElementById("newServerIconUploadInput");
@@ -15323,6 +15338,9 @@ document.getElementById('serverIconCropCancel')?.addEventListener('click', () =>
 document.getElementById('serverIconCropConfirm')?.addEventListener('click', async () => {
   if (!sIconImage) return;
   if (!isNewServerIconCrop && !currentServerId) return;
+  if (!sIconTarget || sIconTarget.uid !== userId || (!sIconTarget.isNew && sIconTarget.id !== currentServerId)) { alertMessage('サーバーが変更されました。画像を選び直してください。', 'info'); return; }
+  const cropIsNew = sIconTarget.isNew, targetServerId = sIconTarget.id, owner = sIconTarget.uid;
+  if (!cropIsNew && !canManageServerProfile(currentServerData, owner, isAdmin)) return;
 
   // 元画像サイズを考慮した最適な出力解像度（最大1024px）
   const maxOutputSize = 1024;
@@ -15347,7 +15365,8 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
   offscreen.toBlob(async (blob) => {
     if (!blob) { alertMessage("クロップに失敗しました", "error"); return; }
 
-    if (isNewServerIconCrop) {
+    if (userId !== owner) return;
+    if (cropIsNew) {
       window.pendingNewServerIconBlob = blob;
       const previewContent = document.getElementById("newServerIconPreviewContent");
       const previewWrapper = document.getElementById("newServerIconPreviewWrapper");
@@ -15376,14 +15395,18 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
         'simplechat/servericons'
       );
 
-      await updateDoc(doc(db, `artifacts/${appId}/servers`, currentServerId), { iconUrl: fileUrl });
+      if (userId !== owner) return;
+      await updateDoc(doc(db, `artifacts/${appId}/servers`, targetServerId), { iconUrl: fileUrl });
+      allServersCache = allServersCache.map(server => server.id === targetServerId ? { ...server, iconUrl: fileUrl } : server);
+      if (currentServerId !== targetServerId) return;
 
       if (currentServerData) currentServerData.iconUrl = fileUrl;
       if (typeof updateTitleBarContext === 'function') {
         updateTitleBarContext('server', currentServerData);
       }
-      const iconPreview = document.getElementById("serverIconSettingsPreview");
-      if (iconPreview) {
+      for (const id of ['serverIconSettingsPreview', 'serverIconSettingsPreviewMobile', 'serverProfileIconPreview']) {
+        const iconPreview = document.getElementById(id);
+        if (!iconPreview) continue;
         iconPreview.innerHTML = `<img src="${escapeHtml(fileUrl)}" class="w-full h-full object-cover" />`;
         iconPreview.style.backgroundColor = "transparent";
       }
@@ -28709,7 +28732,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.285').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.286').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -29501,8 +29524,13 @@ function loadLocalDiagnostics() {
     paused: Number(localStorage.getItem('covo_notifications_paused_until') || 0) > Date.now(),
     jsHeapUsedBytes: performance.memory?.usedJSHeapSize }),
   notify: (message, type) => alertMessage(message, type)
-  })).catch(() => {}).finally(() => { _diagnosticsLoading = false; });
+  })).catch(() => {
+    document.querySelectorAll('[data-covo-diagnostics-status] span').forEach(element => {
+      element.textContent = '診断の読み込みに失敗しました。接続を確認して再試行してください。';
+    });
+  }).finally(() => { _diagnosticsLoading = false; });
 }
+window.covoEnsureDiagnostics = loadLocalDiagnostics;
 loadLocalDiagnostics();
 window.addEventListener('online', loadLocalDiagnostics);
 const retryPushRegistration = () => {

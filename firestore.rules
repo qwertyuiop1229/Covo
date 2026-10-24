@@ -388,6 +388,15 @@ service cloud.firestore {
       // ========================================================================
 
       match /servers/{serverId} {
+        function serverNameUpdateIsValid() {
+          return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name']) || (
+            request.resource.data.name is string &&
+            request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100 &&
+            request.resource.data.name.matches('.*[^ ].*') &&
+            (isServerOwner(appId, serverId) || isGlobalAdmin(appId) ||
+              (resource.data.get('serverAdmins', []) is list && request.auth.uid in resource.data.get('serverAdmins', [])))
+          );
+        }
         allow read: if isAuthenticated();
 
         // サーバー作成: 自分自身を管理者・初期参加者として作成
@@ -398,10 +407,10 @@ service cloud.firestore {
             request.resource.data.joinedUsers == [request.auth.uid]));
 
         // サーバー設定の更新:
-        allow update: if (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
+        allow update: if serverNameUpdateIsValid() && (isServerOwner(appId, serverId) || isGlobalAdmin(appId)) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy']);
 
-        allow update: if isServerAdmin(appId, serverId) &&
+        allow update: if serverNameUpdateIsValid() && isServerAdmin(appId, serverId) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'serverAdmins']);
 
         allow update: if isAuthenticated() &&

@@ -67,7 +67,7 @@ export function installDiagnostics({ context = () => ({}), notify = () => {} } =
   }
   window.addEventListener('error', () => diagnostics.failure('window.error'));
   window.addEventListener('unhandledrejection', () => diagnostics.failure('promise.unhandled'));
-  for (const parent of [document.getElementById('appinfoSection'), document.querySelector('#mobileDetailAppInfo > div:last-child')]) {
+  for (const parent of [document.getElementById('appinfoSection'), document.querySelector('#mobileDetailAppInfo > div:last-child'), document.querySelector('[data-covo-diagnostics-host]')]) {
     if (!parent) continue;
     const section = document.createElement('section'); section.className = 'covo-diagnostics';
     const title = document.createElement('strong'); title.textContent = '通信・安定性の診断';
@@ -83,5 +83,6 @@ export function installDiagnostics({ context = () => ({}), notify = () => {} } =
     reset.onclick = () => { diagnostics.reset(); render(); };
     buttons.append(show, copy, reset); section.append(title, description, buttons, output); parent.append(section);
   }
+  document.querySelectorAll('[data-covo-diagnostics-status]').forEach(element => { element.hidden = true; });
   return diagnostics;
 }

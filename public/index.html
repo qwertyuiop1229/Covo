@@ -31,17 +31,17 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <script src="js/viewport_runtime.js?v=1.1.285" async></script>
+  <script src="js/viewport_runtime.js?v=1.1.286" async></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.285" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.286" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.285" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.286" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -165,6 +165,7 @@
       metaTheme.setAttribute('content', blendedHex);
       
       document.documentElement.classList.toggle('dark-server-theme', isDark);
+      window.covoViewport?.refresh();
     }
 
     // ダークテーマを最初のレンダリング前に適用（Tailwindのdarkクラスも同時に完全同期）
@@ -3104,7 +3105,7 @@
       </div>
 
       <!-- サーバー設定モーダル (Discord完全準拠: PC 2カラム / スマホ フルスクリーンドリルダウン) -->
-      <div id="serverSettingsModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden md:p-4">
+      <div id="serverSettingsModal" role="dialog" aria-modal="true" aria-label="サーバー設定" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden md:p-4">
         <div class="bg-white dark:bg-[#313338] md:rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden modal-box animate-pop-in flex flex-col h-full md:h-[min(720px,calc(100dvh-3rem))] relative">
           <!-- PC専用 閉じるボタン (右上固定・スクロールバーと重ならない位置) -->
           <button class="hidden md:flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer absolute top-4 right-6 z-50" id="closeServerSettingsBtn" title="閉じる" onclick="closeServerSettingsModal()">
@@ -3135,7 +3136,7 @@
                 <span class="settings-sidebar-name flex-1" id="serverSettingsTitle"></span>
               </div>
               <!-- ナビ -->
-              <div class="settings-nav-label">サーバー設定</div>
+              <div class="settings-nav-label">サーバー設定</div><button class="settings-nav-item" id="ssTabOverview" onclick="switchSsTab('overview')"><i class="fas fa-sliders fa-fw"></i>概要</button>
               <button class="settings-nav-item active" id="ssTabRooms" onclick="switchSsTab('rooms')">
                 <i class="fas fa-hashtag fa-fw"></i>ルーム
               </button>
@@ -3150,7 +3151,7 @@
               </button>
               <div class="settings-nav-divider"></div>
               <button class="settings-nav-item danger" id="ssTabDanger" onclick="switchSsTab('danger')">
-                <i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除
+                <i class="fas fa-exclamation-triangle fa-fw"></i>安全と管理
               </button>
             </div>
 
@@ -3158,10 +3159,10 @@
             <div id="ssMobileNavMenu" class="md:hidden flex-1 overflow-y-auto p-4 space-y-4">
               <!-- サーバー情報カード -->
               <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22]">
-                <div class="relative group cursor-pointer" onclick="document.getElementById('serverIconUploadInput')?.click()">
+                <button type="button" id="serverMobileIconSettingsBtn" class="relative group cursor-pointer" aria-label="サーバーアイコンを変更" onclick="document.getElementById('serverIconSettingsWrapper')?.click()">
                   <div class="w-12 h-12 rounded-full overflow-hidden bg-indigo-500 text-white flex items-center justify-center font-bold text-lg" id="serverIconSettingsPreviewMobile"></div>
                   <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center text-white text-xs"><i class="fas fa-camera"></i></div>
-                </div>
+                </button>
                 <div class="min-w-0 flex-1">
                   <div id="serverSettingsTitleMobile" class="font-extrabold text-base text-gray-900 dark:text-white truncate">サーバー</div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">タップしてアイコン変更</div>
@@ -3170,6 +3171,7 @@
 
               <!-- メニューリスト -->
               <div class="bg-gray-50 dark:bg-[#2b2d31] rounded-2xl border border-gray-200/80 dark:border-[#1e1f22] overflow-hidden divide-y divide-gray-200/60 dark:divide-white/5">
+                <button class="covo-ss-mobile-option" onclick="openSsMobileTab('overview', '概要')"><span>概要・サーバー名</span><span aria-hidden="true">›</span></button>
                 <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-gray-800 dark:text-[#dbdee1] active:bg-gray-100 dark:active:bg-white/5 transition-colors cursor-pointer" onclick="openSsMobileTab('rooms', 'ルーム管理')">
                   <span class="flex items-center gap-3"><i class="fas fa-hashtag fa-fw text-indigo-500"></i>ルーム管理</span>
                   <i class="fas fa-chevron-right text-xs text-gray-400"></i>
@@ -3186,8 +3188,8 @@
                   <span class="flex items-center gap-3"><i class="fas fa-icons fa-fw text-blue-500"></i>スタンプ管理</span>
                   <i class="fas fa-chevron-right text-xs text-gray-400"></i>
                 </button>
-                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-rose-500 active:bg-rose-50 dark:active:bg-rose-500/10 transition-colors cursor-pointer" onclick="openSsMobileTab('danger', 'その他 / 削除')">
-                  <span class="flex items-center gap-3"><i class="fas fa-exclamation-triangle fa-fw"></i>その他 / 削除</span>
+                <button class="w-full flex items-center justify-between p-3.5 text-left text-sm font-semibold text-rose-500 active:bg-rose-50 dark:active:bg-rose-500/10 transition-colors cursor-pointer" onclick="openSsMobileTab('danger', '安全と管理')">
+                  <span class="flex items-center gap-3"><i class="fas fa-exclamation-triangle fa-fw"></i>安全と管理</span>
                   <i class="fas fa-chevron-right text-xs text-rose-400"></i>
                 </button>
               </div>
@@ -3195,7 +3197,14 @@
 
             <!-- 右コンテンツエリア (PC常時 / スマホはドリルダウン選択時) -->
             <div id="ssContentArea" class="settings-content relative flex-1 hidden md:block overflow-y-auto p-4 md:p-8 bg-white dark:bg-[#313338]">
-              <div id="ssRoomsSection" class="settings-content-section active">
+              <section id="ssOverviewSection" class="settings-content-section hidden" aria-labelledby="serverProfileHeading">
+  <div class="covo-ss-heading"><h2 id="serverProfileHeading">サーバーの概要</h2><p>名前やアイコンを編集して、サーバーを見つけやすくしましょう。</p></div>
+  <div class="covo-server-profile-card"><button type="button" id="serverProfileIconBtn" class="covo-ss-icon-change" onclick="document.getElementById('serverIconSettingsWrapper').click()" aria-label="サーバーアイコンを変更"><span id="serverProfileIconPreview"></span><span>アイコンを変更</span></button>
+    <div class="covo-ss-name-field"><label for="renameServerInput">サーバー名</label><input id="renameServerInput" type="text" maxlength="100" autocomplete="off" aria-describedby="serverProfileNameHint serverProfileStatus"><p id="serverProfileNameHint">1〜100文字で入力してください。招待コードや会話の内容は変わりません。</p></div>
+  </div>
+  <p id="serverProfileStatus" role="status" aria-live="polite"></p>
+</section>
+<div id="ssRoomsSection" class="settings-content-section active">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-white/10 gap-3 pr-12 md:pr-14">
                   <div>
                     <h3 class="text-base font-bold text-gray-900 dark:text-white">チャンネル管理</h3>
@@ -3272,16 +3281,7 @@
               </div>
 
               <div id="ssDangerSection" class="settings-content-section hidden space-y-6">
-                <div class="settings-section-title text-red-500">その他 / 削除</div>
-                <div>
-                  <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">サーバー名を変更</label>
-                  <div class="flex gap-2">
-                    <input type="text" id="renameServerInput" placeholder="新しいサーバー名"
-                      class="flex-1 p-3 bg-white dark:bg-[#1e1f22] border border-gray-300 dark:border-[#383a40] text-gray-800 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium" />
-                    <button id="renameServerBtn"
-                      class="bg-[#5865f2] hover:bg-[#4752c4] text-white px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer">変更</button>
-                  </div>
-                </div>
+                <div class="settings-section-title text-red-500">安全と管理</div>
                 <div>
                   <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">パスワードを変更</label>
                   <form class="space-y-2" onsubmit="event.preventDefault();">
@@ -3315,6 +3315,7 @@
                 </div>
               </div>
 
+              <div id="serverProfileSaveBar" class="covo-ss-savebar" hidden><span>保存していない変更があります</span><div><button id="resetServerProfileBtn" type="button" class="covo-button covo-button-secondary">変更を取り消す</button><button id="renameServerBtn" type="button" class="covo-button covo-button-success">変更を保存</button></div></div>
               <p id="serverSettingsMessage" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm font-medium text-red-500"></p>
             </div>
           </div>
@@ -4396,7 +4397,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.285"></script>
+  <script type="module" src="js/main.js?v=1.1.286"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
@@ -5099,6 +5100,11 @@
           <span class="mobile-settings-row-text">通知設定</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
+        <button type="button" class="mobile-settings-row covo-mobile-diagnostics-entry" onclick="openMobileDetail('diagnostics')">
+          <span class="mobile-settings-row-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></span>
+          <span class="mobile-settings-row-text">通信・表示の診断</span>
+          <i class="fas fa-chevron-right mobile-settings-row-arrow" aria-hidden="true"></i>
+        </button>
         <div class="mobile-settings-row" onclick="openMobileDetail('appinfo')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-info-circle"></i></div>
           <span class="mobile-settings-row-text">アプリ情報</span>
@@ -5409,6 +5415,18 @@
   </div>
 
   <!-- Mobile Detail: App Info -->
+  <div class="mobile-settings-detail" id="mobileDetailDiagnostics">
+    <div class="mobile-detail-header">
+      <button type="button" class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailDiagnostics')" aria-label="設定に戻る"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+      <span>通信・表示の診断</span>
+    </div>
+    <div class="covo-mobile-diagnostics-content" data-covo-diagnostics-host>
+      <div data-covo-diagnostics-status role="status">
+        <span>端末内の診断を準備しています…</span>
+        <button type="button" class="covo-button covo-button-secondary" onclick="window.covoEnsureDiagnostics?.()">再試行</button>
+      </div>
+    </div>
+  </div>
   <div class="mobile-settings-detail" id="mobileDetailAppInfo">
     <div class="mobile-detail-header">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAppInfo')"><i class="fas fa-chevron-left"></i></div>

@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const parser = require('@babel/parser');
 
 async function routeApp(page, { standalone = false, ios = false, recovery = false } = {}) {
   await page.addInitScript(({ standalone, ios }) => {
@@ -71,6 +72,104 @@ test('keyboard resize is temporary and pinch zoom never resizes the shell', asyn
   await page.evaluate(() => { visualViewport.scale = 1; visualViewport.height = innerHeight; document.getElementById('keyboardProbe').blur(); window.covoViewport.refresh(); });
   expect((await page.locator('.container').boundingBox()).height).toBe(850);
 });
+
+test('keyboard dismissal restores only document scrolling and cancels on refocus', async ({ page }) => {
+  await routeApp(page, { standalone: true, ios: true });
+  await page.evaluate(() => {
+    document.getElementById('appLoadingSplash').remove();
+    const chat = document.createElement('div'); chat.id = 'scrollProbe'; chat.style.cssText = 'height:80px;overflow:auto'; chat.innerHTML = '<div style="height:1000px">chat</div>'; document.body.append(chat); chat.scrollTop = 300;
+    const input = document.createElement('textarea'); input.id = 'focusProbe'; document.body.append(input);
+    window.rootResets = 0; window.scrollTo = () => { window.rootResets++; };
+    Object.defineProperty(window, 'scrollY', { get: () => 80, configurable: true });
+    input.focus(); input.blur();
+  });
+  await expect.poll(() => page.evaluate(() => window.rootResets)).toBeGreaterThan(0);
+  expect(await page.locator('#scrollProbe').evaluate(el => el.scrollTop)).toBe(300);
+  await page.evaluate(() => { focusProbe.focus(); focusProbe.blur(); focusProbe.focus(); window.rootResets = 0; });
+  await page.waitForTimeout(550);
+  expect(await page.evaluate(() => window.rootResets)).toBe(0);
+});
+
+test('installed mobile server panel has no gradient shadow and chrome follows navigation in all themes', async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await routeApp(page, { standalone: true, ios: true });
+  for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
+    await page.evaluate(theme => { document.getElementById('appLoadingSplash')?.remove(); document.body.className = `auth-ready logged-in discord-ui-mode ${theme}`; window.covoViewport.refresh(); }, theme);
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(await page.locator('#discordServerNav').evaluate(el => getComputedStyle(el).backgroundColor));
+    expect(await page.locator('#userPanel').evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
+  }
+});
+
+test('mobile diagnostics has a direct settings entry, back navigation and a viewport report', async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  await routeApp(page, { standalone: true, ios: true });
+  const main = fs.readFileSync('public/js/main.js', 'utf8');
+  const navigation = parser.parse(main, { sourceType: 'module' }).program.body.filter(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && ['openMobileDetail', 'closeMobileDetail'].includes(node.expression.left.property?.name)).map(node => main.slice(node.start, node.end)).join('\n');
+  await page.evaluate(async navigation => {
+    document.getElementById('appLoadingSplash').remove();
+    document.body.className = 'auth-ready logged-in discord-ui-mode';
+    document.getElementById('mobileProfileScreen').classList.add('active');
+    window.loadLocalDiagnostics = () => {};
+    window.eval(navigation);
+    (await import('/js/diagnostics_runtime.js')).installDiagnostics();
+  }, navigation);
+  await page.locator('.covo-mobile-diagnostics-entry').click();
+  await expect(page.locator('#mobileDetailDiagnostics')).toBeVisible();
+  await page.locator('#mobileDetailDiagnostics').getByRole('button', { name: '結果を表示', exact: true }).click();
+  const report = JSON.parse(await page.locator('#mobileDetailDiagnostics pre').textContent());
+  expect(report.viewport.standalone).toBe(true); expect(report.viewport.ios).toBe(true);
+  await expect(page.locator('[data-covo-diagnostics-status]')).toBeHidden();
+  await page.getByRole('button', { name: '設定に戻る', exact: true }).click();
+  await expect(page.locator('#mobileDetailDiagnostics')).toBeHidden();
+});
+
+for (const [theme, width] of [['', 1180], ['dark-server-theme', 402], ['discord-dark-theme', 820]]) {
+  test(`server settings ${theme || 'light'} ${width}: real navigation, safe rename, cancel and retry`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await routeApp(page, { standalone: true, ios: true });
+    const source = fs.readFileSync('public/js/main.js', 'utf8');
+    const nodes = parser.parse(source, { sourceType: 'module' }).program.body;
+    const snippets = nodes.filter(node => (node.type === 'FunctionDeclaration' && node.id.name === 'openServerSettings') ||
+      (node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && ['openSsMobileTab', 'goBackSsMobileMenu', 'switchSsTab'].includes(node.expression.left.property?.name))).map(node => source.slice(node.start, node.end)).join('\n');
+    await page.evaluate(async ({ theme, snippets }) => {
+      document.getElementById('appLoadingSplash').remove(); document.body.className = `auth-ready logged-in discord-ui-mode ${theme}`;
+      const api = await import('/js/server_profile_settings.js'); Object.assign(window, api);
+      window.currentServerId = 'server-a'; window.userId = 'alice'; window.isAdmin = false; window.currentSsTab = 'overview';
+      window.currentServerData = { name: 'Before', createdBy: 'alice', serverAdmins: [] };
+      window.serverSettingsModal = document.getElementById('serverSettingsModal'); window.writes = [];
+      window.closeServerMenu = window.closeServerActionSheet = () => {};
+      window.openModal = el => el.classList.remove('hidden'); window.escapeHtml = text => text;
+      window.loadServerSettingsRooms = window.loadServerSettingsMembers = window.loadInviteCodes = window.loadServerStampsForAdmin = () => { throw new Error('Unexpected initial data read'); };
+      window.discard = false;
+      window.serverProfileEditor = api.createServerProfileEditor({ getOwner: () => userId,
+        confirmDiscard: async () => window.discard, applied: (id, name) => { currentServerData.name = name; },
+        transact: async (id, mutate) => { if (window.failSave) throw new Error('offline'); const server = { ...currentServerData }; if (window.delaySave) await new Promise(resolve => { window.finishSave = resolve; }); await mutate(server, patch => { window.writes.push({ id, patch }); }); }
+      });
+      window.eval(snippets); window.openServerSettings = openServerSettings;
+      window.closeServerSettingsModal = () => serverProfileEditor.close(() => serverSettingsModal.classList.add('hidden'));
+      await openServerSettings();
+    }, { theme, snippets });
+    const input = page.locator('#renameServerInput'); await expect(input).toBeVisible(); await expect(input).toHaveValue('Before');
+    if (width < 769) await expect(page.locator('#closeServerSettingsBtn')).toBeHidden();
+    else await expect(page.locator('#ssMobileHeader')).toBeHidden();
+    await input.fill('After'); await expect(page.locator('#serverProfileSaveBar')).toBeVisible();
+    await page.evaluate(() => closeServerSettingsModal()); await expect(input).toBeVisible();
+    await page.evaluate(() => { window.failSave = true; }); await page.locator('#renameServerBtn').click();
+    await expect(page.locator('#serverProfileStatus')).toHaveText('offline'); await expect(input).toHaveValue('After');
+    await page.evaluate(() => { window.failSave = false; }); await page.locator('#renameServerBtn').click();
+    await expect(page.locator('#serverProfileSaveBar')).toBeHidden();
+    await expect(input).toHaveAttribute('aria-invalid', 'false');
+    expect(await page.evaluate(() => window.writes)).toEqual([{ id: 'server-a', patch: { name: 'After' } }]);
+    const box = await input.boundingBox(); expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `scratch/server-settings-${width}.png` });
+    await input.fill('Delayed name'); await page.evaluate(() => { window.delaySave = true; }); await page.locator('#renameServerBtn').click();
+    await page.evaluate(() => { currentServerId = 'server-b'; currentServerData = { name: 'Other server', createdBy: 'alice', serverAdmins: [] }; serverProfileEditor.open({ id: currentServerId, uid: 'alice', server: currentServerData, globalAdmin: false }); window.finishSave(); });
+    await expect(input).toHaveValue('Other server'); await expect(page.locator('#serverProfileSaveBar')).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.writes.length)).toBe(2);
+    expect(await page.evaluate(() => window.writes[1])).toEqual({ id: 'server-a', patch: { name: 'Delayed name' } });
+    expect(await page.evaluate(() => currentServerData.name)).toBe('Other server');
+  });
+}
 
 for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
   test(`discovery ${theme || 'light'}: narrow columns, long names, keyboard and local search stay usable`, async ({ page }) => {
