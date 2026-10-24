@@ -374,8 +374,10 @@ test('acknowledged legacy envelope is never re-read or migrated', async () => {
 test('strict production rollout waits for a published signed Windows update', () => {
   const deploy = fs.readFileSync('deploy.ps1', 'utf8');
   expect(deploy.indexOf('git push origin HEAD --tags')).toBeLessThan(deploy.indexOf('firebase deploy --only "firestore:rules,database"'));
-  expect(deploy.indexOf("$jobConclusion -ne 'success'")).toBeLessThan(deploy.indexOf('firebase deploy --only "firestore:rules,database"'));
-  expect(deploy.indexOf("'CovoSetup.exe' -notin $assetNames")).toBeLessThan(deploy.indexOf('firebase deploy --only "firestore:rules,database"'));
+  for (const check of ['Wait-CovoReleaseChecks -Repo', 'Assert-CovoPublishedRelease -Release']) {
+    expect(deploy.indexOf(check)).toBeGreaterThan(0);
+    expect(deploy.indexOf(check)).toBeLessThan(deploy.indexOf('firebase deploy --only "firestore:rules,database"'));
+  }
   expect(deploy).toContain('$versionData.version = $newVersion');
 });
 

@@ -1,7 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const parser = require('@babel/parser');
-const cp = require('child_process');
 const main = fs.readFileSync('public/js/main.js', 'utf8');
 const ast = parser.parse(main, { sourceType: 'module' });
 const codeFor = name => {
@@ -67,7 +66,7 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
   expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
   expect(errors).toEqual([]);
   // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
-  const oldMain = cp.execFileSync('git', ['show', '8c6e23c:public/js/main.js'], { encoding: 'utf8', maxBuffer: 5e6 });
+  const oldMain = fs.readFileSync(require('path').join(__dirname, 'fixtures/timeline-before-virtualization.js'), 'utf8');
   const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
   const client = await page.context().newCDPSession(page);
   await client.send('Performance.enable');
