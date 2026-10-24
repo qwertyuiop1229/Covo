@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationTarget {

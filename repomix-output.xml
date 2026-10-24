@@ -44,6 +44,9 @@ The content is organized as follows:
 
 <directory_structure>
 .github/
+  actions/
+    setup-firebase/
+      action.yml
   workflows/
     release.yml
     validate.yml
@@ -53,6 +56,7 @@ browser-tests/
   fixtures/
     timeline-before-virtualization.js
   communication.spec.cjs
+  pwa-recovery.spec.cjs
   timeline.spec.cjs
   ui-refinements.spec.cjs
 public/
@@ -64,6 +68,7 @@ public/
       components.css
       layout.css
       mobile.css
+      pwa-layout.css
       refinements.css
       sidebar.css
       theme.css
@@ -81,6 +86,7 @@ public/
     dependency_loader.js
     desktop_runtime.js
     diagnostics_runtime.js
+    discovery_ui.js
     file_uploader.js
     loading_runtime.js
     local_archive_ui.js
@@ -91,6 +97,7 @@ public/
     notification_runtime.js
     notification_ui.js
     outbox.js
+    recovery_panel.js
     recovery_runtime.js
     search_engine.js
     settings_feature.js
@@ -98,6 +105,7 @@ public/
     ui_helpers.js
     update_controller.js
     utils.js
+    viewport_runtime.js
     virtual_timeline.js
   vendor/
     firebase/
@@ -238,6 +246,7 @@ IMPLEMENTATION_REPORT.md
 jest.config.cjs
 package.json
 playwright.config.cjs
+PWA_RECOVERY_REFINEMENT_REPORT.md
 README.md
 REGRESSION_VERIFICATION_REPORT.md
 SECURITY_REAUDIT_REPORT.md
@@ -249,6 +258,189 @@ UI_REFINEMENT_REPORT.md
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path=".github/actions/setup-firebase/action.yml">
+name: Setup cached Firebase tools
+description: Reuse the pinned Firebase CLI installation and emulator downloads.
+inputs:
+  version:
+    description: Firebase CLI version
+    default: '15.9.1'
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/covo-ci/firebase-${{ inputs.version }}
+        key: firebase-cli-v1-${{ runner.os }}-${{ runner.arch }}-node22-${{ inputs.version }}
+    - shell: pwsh
+      env:
+        COVO_FIREBASE_VERSION: ${{ inputs.version }}
+      run: |
+        $toolRoot = Join-Path $env:RUNNER_TEMP "covo-ci/firebase-$env:COVO_FIREBASE_VERSION"
+        $cli = Join-Path $toolRoot 'node_modules/.bin/firebase.cmd'
+        if (-not (Test-Path -LiteralPath $cli)) {
+          npm install --prefix $toolRoot --no-save --package-lock=false --no-audit --no-fund "firebase-tools@$env:COVO_FIREBASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        & $cli --version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        (Split-Path -Parent $cli) | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/firebase/emulators
+        key: firebase-emulators-v1-${{ runner.os }}-${{ inputs.version }}
+</file>
+
+<file path="browser-tests/pwa-recovery.spec.cjs">
+const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
+async function routeApp(page, { standalone = false, ios = false, recovery = false } = {}) {
+  await page.addInitScript(({ standalone, ios }) => {
+    Object.defineProperty(navigator, 'standalone', { value: standalone, configurable: true });
+    if (ios) { Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPad; CPU OS 26_5_2 like Mac OS X)', configurable: true }); Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true }); }
+    localStorage.setItem('covo_private_key_alice', 'KEEP_KEY');
+    localStorage.setItem('covo_outbox_alice', 'KEEP_OUTBOX');
+    localStorage.setItem('covo_missing_files_v3', '[]');
+  }, { standalone, ios });
+  await page.route('https://covo.test/**', route => {
+    const url = new URL(route.request().url());
+    let file = path.resolve('public', '.' + (url.pathname === '/' ? '/index.html' : url.pathname));
+    if (!file.startsWith(path.resolve('public') + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404 });
+    if (url.pathname === '/') {
+      // Exercise the real document/CSS with all authenticated/network application scripts removed.
+      let html = fs.readFileSync(file, 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      html = html.replace('</head>', '<script src="/js/viewport_runtime.js"></script></head>');
+      return route.fulfill({ contentType: 'text/html', body: html });
+    }
+    return route.fulfill({ path: file, contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : undefined });
+  });
+  await page.route(/https:\/\/(?!covo\.test)/, route => route.abort());
+  await page.goto(recovery ? 'https://covo.test/recovery.html' : 'https://covo.test/');
+}
+for (const [name, width, height] of [['iphone', 402, 874], ['ipad', 1180, 820]]) {
+  test(`${name}: installed shell fills its viewport, consumes safe area once and aligns header actions`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await routeApp(page, { standalone: true, ios: true });
+    await expect(page.locator('html')).toHaveClass(/covo-ios-standalone/);
+    expect(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content')).toBe('default');
+    const splash = await page.locator('#appLoadingSplash').boundingBox();
+    expect(splash.y).toBe(0); expect(splash.height).toBe(height);
+    await page.evaluate(() => { document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready logged-in discord-ui-mode discord-home-view discord-discover-view'; });
+    const shell = await page.locator('.container').boundingBox();
+    expect(shell.y).toBe(0); expect(shell.height).toBe(height);
+    if (width > 768) {
+      // Reproduce nonzero safe insets independently of browser env() emulation.
+      await page.evaluate(() => document.documentElement.style.setProperty('--safe-top', '24px'));
+      const title = await page.locator('#discordTitleBarContext').boundingBox();
+      const inbox = await page.locator('#titlebarInboxBtn').boundingBox();
+      expect(Math.abs(title.y + title.height / 2 - inbox.y - inbox.height / 2)).toBeLessThan(1);
+      expect((await page.locator('#discordDiscoverHeader').boundingBox()).height).toBe(48);
+    }
+  });
+}
+test('Safari browser mode is unchanged and viewport sizing does not grow to the physical screen', async ({ page }) => {
+  await routeApp(page, { ios: true });
+  await expect(page.locator('html')).not.toHaveClass(/covo-ios-standalone/);
+  const result = await page.evaluate(() => window.covoViewport.snapshot());
+  expect(result.standalone).toBe(false); expect(result.shellBottom).toBe(result.innerHeight);
+});
+test('keyboard resize is temporary and pinch zoom never resizes the shell', async ({ page }) => {
+  await routeApp(page, { standalone: true, ios: true });
+  await page.evaluate(() => {
+    const vv = new EventTarget(); Object.assign(vv, { height: 420, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    const input = document.createElement('textarea'); input.id = 'keyboardProbe'; document.body.append(input); input.focus();
+    window.covoViewport.refresh();
+  });
+  await expect(page.locator('html')).toHaveClass(/covo-keyboard-open/);
+  expect((await page.locator('.container').boundingBox()).height).toBe(420);
+  await page.evaluate(() => { visualViewport.scale = 2; window.covoViewport.refresh(); });
+  await expect(page.locator('html')).not.toHaveClass(/covo-keyboard-open/);
+  expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--covo-keyboard-height'))).toBe('');
+  await page.evaluate(() => { visualViewport.scale = 1; visualViewport.height = innerHeight; document.getElementById('keyboardProbe').blur(); window.covoViewport.refresh(); });
+  expect((await page.locator('.container').boundingBox()).height).toBe(850);
+});
+for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
+  test(`discovery ${theme || 'light'}: narrow columns, long names, keyboard and local search stay usable`, async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 820 });
+    await routeApp(page, { standalone: true, ios: true });
+    await page.evaluate(async theme => {
+      document.body.className = `auth-ready logged-in discord-ui-mode discord-home-view discord-discover-view ${theme}`;
+      document.getElementById('appLoadingSplash').remove();
+      const grid = document.getElementById('discordHomeServerGrid'); grid.replaceChildren(); grid.style.width = '460px';
+      const { createDiscoveryCard, installDiscoveryFilter } = await import('/js/discovery_ui.js');
+      window.opened = [];
+      for (const [index, name] of ['長い名前のサーバーが何文字あっても壊れない', 'テスト部屋', '<script>bad</script>'].entries()) grid.append(createDiscoveryCard({ id: String(index), name, joinedUsers: ['a', 'b'] }, s => window.opened.push(s.id)));
+      installDiscoveryFilter(grid, document.getElementById('covoDiscoverySearch'), document.getElementById('covoDiscoveryResultCount'));
+    }, theme);
+    const card = page.locator('.discord-server-card').first();
+    const button = card.getByRole('button');
+    const box = await card.boundingBox(), btn = await button.boundingBox();
+    expect(btn.width).toBeGreaterThan(100); expect(btn.x + btn.width).toBeLessThanOrEqual(box.x + box.width);
+    await card.focus(); await page.keyboard.press('Enter'); expect(await page.evaluate(() => window.opened)).toEqual(['0']);
+    await page.locator('#covoDiscoverySearch').fill('テスト');
+    await expect(page.locator('.discord-server-card:visible')).toHaveCount(1);
+    await page.locator('#covoDiscoverySearch').fill('ありません'); await expect(page.locator('.covo-discovery-filter-empty')).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(page.locator('.discord-server-card:visible')).toHaveCount(3);
+    await page.screenshot({ path: `scratch/discovery-${theme || 'light'}.png` });
+  });
+}
+test('recovery diagnosis and repair preserve keys/outbox and work without the main app', async ({ page }) => {
+  await page.setViewportSize({ width: 402, height: 874 });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await routeApp(page, { standalone: true, ios: true, recovery: true });
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const request = indexedDB.open('covo_local_db_user_alice', 1); request.onupgradeneeded = () => request.result.createObjectStore('settings'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    await new Promise((resolve, reject) => { const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put('KEEP_ARCHIVE', 'archive'); tx.oncomplete = resolve; tx.onerror = reject; }); db.close();
+    await (await caches.open('covo_media_cache_v1')).put('/encrypted-file', new Response('ENCRYPTED_ATTACHMENT'));
+  });
+  await page.locator('[data-action="inspect"]').click();
+  await expect(page.locator('#recoveryStatus')).toContainText('診断が完了');
+  const report = JSON.parse(await page.locator('#recoveryReport').textContent());
+  expect(report.viewport.standalone).toBe(true);
+  expect(JSON.stringify(report)).not.toMatch(/KEEP_KEY|KEEP_OUTBOX|alice/);
+  await page.locator('[data-action="repair"]').click();
+  expect((await page.locator('#covoRecoveryNotice').boundingBox()).height).toBeLessThan(250);
+  expect(await page.evaluate(() => [localStorage.getItem('covo_private_key_alice'), localStorage.getItem('covo_outbox_alice'), localStorage.getItem('covo_missing_files_v3')])).toEqual(['KEEP_KEY', 'KEEP_OUTBOX', null]);
+  expect(await page.evaluate(async () => (await (await caches.open('covo_media_cache_v1')).match('/encrypted-file')).text())).toBe('ENCRYPTED_ATTACHMENT');
+  await expect(page.locator('[data-action="logs"]')).toBeDisabled();
+  await expect(page.locator('[data-action="quit"]')).toBeDisabled();
+  expect(await page.evaluate(() => document.body.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+  await page.locator('#covoRecoveryNotice button').click();
+  await page.evaluate(() => { document.body.scrollTop = 0; });
+  await page.screenshot({ path: 'scratch/recovery-mobile.png' });
+});
+test('recovery versions retry the same page and block unsupported or unsigned installs', async ({ page }) => {
+  const pages = []; let requests = 0;
+  await routeApp(page, { recovery: true });
+  await page.route('https://api.github.com/**', route => {
+    pages.push(new URL(route.request().url()).searchParams.get('page'));
+    if (++requests === 1) return route.fulfill({ status: 503, body: '{}' });
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify([
+      { tag_name: 'v1.1.1', assets: [] }, { tag_name: 'v1.1.284', assets: [{ name: 'Covo.exe', browser_download_url: 'https://evil.test/app.exe' }] }
+    ]) });
+  });
+  const button = page.locator('[data-action="releases"]');
+  await button.click(); await expect(page.locator('#recoveryStatus')).toContainText('HTTP 503');
+  await expect(button).toBeEnabled(); await button.click();
+  await expect(page.locator('#recoveryReleases .covo-recovery-release')).toHaveCount(2);
+  await expect(page.locator('#recoveryReleases button:enabled')).toHaveCount(0);
+  expect(pages).toEqual(['1', '1']);
+  expect(await page.evaluate(() => localStorage.getItem('covo_ignore_force_update'))).toBe(null);
+});
+test('recovery inspection reports blocked storage instead of claiming success or rejecting the page', async ({ page }) => {
+  await routeApp(page, { recovery: true });
+  await page.evaluate(() => { indexedDB.databases = () => Promise.reject(new Error('blocked')); caches.keys = () => Promise.reject(new Error('blocked')); });
+  await page.locator('[data-action="inspect"]').click();
+  await expect(page.locator('#recoveryStatus')).toContainText('一部の保存領域');
+  const report = JSON.parse(await page.locator('#recoveryReport').textContent());
+  expect(report.databases).toBe(null); expect(report.caches).toBe(null);
+  await expect(page.locator('[data-action="inspect"]')).toBeEnabled();
+});
+</file>
 
 <file path="public/css/modules/animations.css">
 /* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
@@ -758,6 +950,228 @@ This section contains the contents of the repository's files.
 /* Main layout container styles */
 </file>
 
+<file path="public/css/modules/pwa-layout.css">
+/* Use the opaque OS status bar and keep the browser's actual safe-area values. */
+html.covo-ios-standalone { background: var(--covo-shell-background, #f2f3f5); }
+html.covo-ios-standalone body { position: relative; height: 100%; min-height: 0; }
+html.covo-ios-standalone .container { position: absolute; inset: 0; height: 100%; min-height: 0; }
+#appLoadingSplash { height: 100%; background: #232b38; }
+html:has(#appLoadingSplash), html:has(#appLoadingSplash) body { background: #232b38 !important; }
+html.covo-keyboard-open .container {
+  top: var(--covo-keyboard-top); bottom: auto; height: var(--covo-keyboard-height);
+}
+html.covo-keyboard-open { --safe-bottom: 0px; }
+/* The global titlebar, then the content header, consume the top safe area once. */
+#discordTitleBar { --titlebar-safe-top: var(--safe-top); padding-top: var(--titlebar-safe-top); height: calc(30px + var(--titlebar-safe-top)); min-height: calc(30px + var(--titlebar-safe-top)); }
+#discordTitleBar .titlebar-center-context { top: calc(50% + var(--titlebar-safe-top) / 2); }
+#discordDiscoverHeader { padding-top: 0; min-height: 48px; height: 48px; }
+#discordDiscoverHeader > div:first-child { color: var(--covo-text); }
+#discordDiscoverHeader > div:first-child > span:last-child:not(:first-of-type) { color: var(--covo-text-muted); }
+@media (min-width: 769px) {
+  #discordTitleBar > .titlebar-center-context { max-width: calc(100% - 300px); }
+}
+@media (max-width: 768px) {
+  body.discord-ui-mode :is(#serverHeader,#discordDiscoverHeader,#discordDmHeader), #currentRoomHeader {
+    padding-top: var(--safe-top) !important;
+    height: calc(48px + var(--safe-top)) !important; min-height: calc(48px + var(--safe-top)) !important;
+  }
+}
+html.covo-ios-standalone :is(#mobileProfileScreen,#mobileNotifScreen,.mobile-settings-detail) { height: 100% !important; min-height: 0 !important; }
+html.covo-ios-standalone :is(#authContainer,#nicknameContainer) { min-height: 0 !important; }
+/* Discovery cards adapt to their actual available column width, not the entire iPad. */
+#discordHomeServerGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; }
+#discordHomeServerGrid .discord-server-card { display: grid; grid-template-columns: 48px minmax(0,1fr); align-items: center; gap: 12px; padding: 18px; min-width: 0; border-radius: 12px; }
+#discordHomeServerGrid .discord-card-icon { width: 48px; height: 48px; }
+#discordHomeServerGrid .discord-card-btn { grid-column: 1 / -1; width: 100%; min-height: 40px; white-space: nowrap; padding: 8px 12px; border-radius: 8px; font-weight: 600; }
+#discordHomeServerGrid .discord-card-info { min-width: 0; }
+#discordHomeServerGrid .discord-card-members { color: var(--covo-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.covo-discovery-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.covo-discovery-search { flex: 1 1 220px; min-width: 0; border: 1px solid var(--covo-border); border-radius: 8px; background: var(--covo-surface); color: var(--covo-text); padding: 10px 12px; }
+.covo-discovery-search:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 2px; }
+.covo-discovery-empty { grid-column: 1 / -1; padding: 24px; color: var(--covo-text-muted); text-align: center; }
+#discordHomeServerGrid [hidden] { display: none !important; }
+.covo-discovery-result-count { color: var(--covo-text-muted); margin-bottom: 12px; font-size: 12px; }
+.discord-server-card:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
+#discordDiscoverView > div:last-child { min-height: 0; padding-bottom: calc(24px + var(--safe-bottom)); }
+@media (max-width: 1100px) { body.discord-ui-mode.discord-discover-view #discordHomeMembers { display: none !important; } }
+@media (prefers-reduced-motion: reduce) { #appLoadingSplash { transition: none; } }
+body.covo-recovery-page { height: 100%; overflow-y: auto; background: var(--covo-surface-muted) !important; color: var(--covo-text); padding: max(20px,var(--safe-top)) max(16px,var(--safe-right)) max(24px,var(--safe-bottom)) max(16px,var(--safe-left)); user-select: text; }
+.covo-recovery-shell { max-width: 840px; margin: 0 auto; padding: 16px 0; }
+.covo-recovery-shell h1 { font-size: 28px; font-weight: 700; margin: 4px 0 12px; }
+.covo-recovery-shell h2 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.covo-recovery-shell p { color: var(--covo-text-muted); line-height: 1.6; margin-bottom: 12px; }
+.covo-recovery-eyebrow { font-size: 13px; }
+.covo-recovery-actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 16px; margin: 20px 0; }
+.covo-recovery-actions article, .covo-recovery-results { padding: 20px; background: var(--covo-surface); border: 1px solid var(--covo-border); border-radius: 12px; }
+.covo-recovery-actions article { display: flex; flex-direction: column; align-items: flex-start; }
+.covo-recovery-actions article button { margin-top: auto; min-height: 44px; }
+.covo-recovery-status { padding: 12px 16px; margin-top: 16px; border-radius: 8px; background: var(--covo-selected); line-height: 1.6; }
+.covo-recovery-results { margin-bottom: 16px; }
+.covo-recovery-results pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
+.covo-recovery-shell footer { display: flex; flex-wrap: wrap; gap: 12px; }
+.covo-recovery-release { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--covo-border); }
+.covo-recovery-release span { min-width: 0; overflow-wrap: anywhere; }
+#covoRecoveryNotice { position: fixed; z-index: 1000001; top: auto; height: auto; left: 16px; right: 16px; bottom: max(16px,var(--safe-bottom)); max-width: 520px; max-height: 40svh; overflow-y: auto; margin: 0 auto; }
+</file>
+
+<file path="public/js/discovery_ui.js">
+export function createDiscoveryCard(server, open) {
+  const name = String(server.name || server.id || 'サーバー');
+  const card = document.createElement('article'); card.className = 'discord-server-card'; card.tabIndex = 0;
+  card.dataset.serverName = name.toLocaleLowerCase(); card.setAttribute('aria-label', name);
+  const icon = document.createElement('div'); icon.className = 'discord-card-icon rounded-full overflow-hidden flex items-center justify-center';
+  if (typeof server.iconUrl === 'string' && /^https?:\/\//i.test(server.iconUrl)) {
+    const image = document.createElement('img'); image.src = server.iconUrl; image.alt = ''; image.loading = 'lazy'; image.className = 'w-full h-full object-cover';
+    image.onerror = () => { icon.textContent = name.charAt(0).toUpperCase(); }; icon.append(image);
+  } else icon.textContent = name.charAt(0).toUpperCase();
+  const info = document.createElement('div'); info.className = 'discord-card-info';
+  const title = document.createElement('strong'); title.className = 'block truncate'; title.textContent = name;
+  const members = document.createElement('p'); members.className = 'discord-card-members';
+  const count = Array.isArray(server.joinedUsers) ? server.joinedUsers.length : Object.values(server.joinedUsers || {}).filter(Boolean).length;
+  members.textContent = `${count}名のメンバー`; info.append(title, members);
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'discord-card-btn'; button.textContent = '開く'; button.setAttribute('aria-label', `${name}を開く`);
+  card.append(icon, info, button);
+  card.onclick = () => open(server);
+  card.onkeydown = event => { if (event.target === card && ['Enter', ' '].includes(event.key) && !event.isComposing) { event.preventDefault(); open(server); } };
+  return card;
+}
+export function installDiscoveryFilter(grid, input, status) {
+  if (!grid || !input) return;
+  let empty = grid.querySelector('.covo-discovery-filter-empty');
+  if (!empty) { empty = document.createElement('p'); empty.className = 'covo-discovery-empty covo-discovery-filter-empty'; empty.textContent = '一致するサーバーはありません。検索語を変えてください。'; grid.append(empty); }
+  const filter = () => {
+    const query = input.value.trim().toLocaleLowerCase(); let visible = 0;
+    const cards = grid.querySelectorAll('.discord-server-card');
+    for (const card of cards) { card.hidden = !card.dataset.serverName.includes(query); if (!card.hidden) visible++; }
+    empty.hidden = !query || visible > 0;
+    if (status) status.textContent = `${visible}件のサーバー${query ? 'が一致' : ''}`;
+  };
+  input.oninput = filter;
+  input.onkeydown = event => { if (event.key === 'Escape' && input.value) { event.stopPropagation(); input.value = ''; filter(); } };
+  filter();
+}
+</file>
+
+<file path="public/js/recovery_panel.js">
+import { inspectLocalStorage, repairPresentation, recoveryNotice } from './recovery_runtime.js';
+import { supportsWindowsVersion } from './client_protocol.js';
+const invoke = window.__TAURI__?.core?.invoke;
+const status = document.getElementById('recoveryStatus');
+const output = document.getElementById('recoveryReport');
+let report = null, page = 1, hasMore = true;
+const inspect = async () => { report = await inspectLocalStorage(); output.textContent = JSON.stringify(report, null, 2); status.textContent = report.partial ? '一部の保存領域を確認できませんでした。アクセス制限や端末の状態を確認してください。' : '診断が完了しました。保存されている履歴と暗号鍵は変更していません。'; return report; };
+const actions = {
+  inspect,
+  repair: async () => { await repairPresentation(); status.textContent = '修復操作を実行しました。アプリへ戻って読み込みを確認してください。'; },
+  copy: async () => {
+    if (!report) await inspect();
+    try { await navigator.clipboard.writeText(output.textContent); status.textContent = '診断結果をコピーしました。'; }
+    catch (_) { output.focus(); const range = document.createRange(); range.selectNodeContents(output); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); status.textContent = '結果を選択しました。端末のコピー操作でコピーしてください。'; }
+  },
+  update: async () => {
+    if (!invoke) { status.textContent = 'Web版はアプリへ戻り、読み込みを再試行してください。端末の保存データを消す必要はありません。'; return; }
+    await window.__TAURI__.event.emitTo('main', 'request-update-check', {}); await invoke('show_main_window');
+    status.textContent = 'メイン画面に更新の確認を依頼しました。';
+  },
+  return: async () => {
+    if (invoke) { await invoke('show_main_window'); const win = window.__TAURI__.window?.getCurrentWindow?.(); if (win && win.label !== 'main') { await win.hide(); return; } }
+    location.href = './index.html';
+  },
+  logs: () => invoke('open_log_dir'),
+  quit: () => invoke('exit_app'),
+  releases: async button => {
+    if (!hasMore) return;
+    const response = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${page}`, { signal: AbortSignal.timeout(12000) });
+    if (!response.ok) throw new Error(`バージョン一覧を取得できませんでした（HTTP ${response.status}）。もう一度お試しください。`);
+    const releases = await response.json();
+    if (!Array.isArray(releases)) throw new Error('バージョン一覧の形式を確認できませんでした。');
+    const list = document.getElementById('recoveryReleases');
+    for (const release of releases) {
+      if (!release || release.draft || release.prerelease) continue;
+      const assets = Array.isArray(release.assets) ? release.assets : [];
+      const asset = assets.find(a => a?.name?.endsWith('.exe') && assets.some(s => s?.name === a.name + '.sig'));
+      const row = document.createElement('div'); row.className = 'covo-recovery-release';
+      const name = document.createElement('span'); name.textContent = String(release.tag_name);
+      const install = document.createElement('button'); install.className = 'covo-button covo-button-secondary covo-button-small';
+      const supported = supportsWindowsVersion(release.tag_name);
+      const url = asset?.browser_download_url;
+      const safe = typeof url === 'string' && url.startsWith('https://github.com/qwertyuiop1229/Covo/releases/download/');
+      install.disabled = !invoke || !supported || !safe;
+      install.textContent = !supported ? '更新対象外' : !invoke ? 'Windows版専用' : !safe ? '配布物なし' : 'インストール';
+      install.onclick = async () => {
+        if (!confirm(`${release.tag_name}をインストールします。メイン画面での通話やファイル転送を終了してから実行してください。`)) return;
+        install.disabled = true;
+        try { await invoke('silent_install_past_version', { url, tag: release.tag_name }); status.textContent = '署名を確認してインストールを開始しました。'; }
+        catch (error) { status.textContent = String(error.message || error); recoveryNotice(status.textContent); install.disabled = false; }
+      };
+      row.append(name, install); list.append(row);
+    }
+    page++; hasMore = releases.length === 10;
+    button.textContent = hasMore ? 'さらに表示' : '一覧の終わり';
+    if (!list.children.length) { const empty = document.createElement('p'); empty.textContent = '公開バージョンがありません。'; list.append(empty); }
+  }
+};
+for (const button of document.querySelectorAll('[data-action]')) {
+  const action = button.dataset.action;
+  if (!invoke && ['logs', 'quit'].includes(action)) { button.disabled = true; button.title = 'Windows版専用の操作です'; }
+  button.onclick = async () => {
+    button.disabled = true; button.setAttribute('aria-busy', 'true'); status.textContent = '操作を実行中…';
+    try { await actions[action](button); }
+    catch (error) { status.textContent = String(error.message || error); recoveryNotice(status.textContent); }
+    finally { button.disabled = action === 'releases' && !hasMore; button.removeAttribute('aria-busy'); }
+  };
+}
+</file>
+
+<file path="public/js/viewport_runtime.js">
+// Early, local-only viewport coordination. Never infer a window's size from screen.height.
+(function () {
+  if (window.covoViewport) return;
+  const root = document.documentElement;
+  const standalone = Boolean(navigator.standalone || matchMedia('(display-mode: standalone)').matches);
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  root.classList.toggle('covo-ios-standalone', ios && standalone);
+  let frame = 0, probe;
+  function snapshot() {
+    if (!probe && document.body) {
+      probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+      probe.setAttribute('aria-hidden', 'true'); document.body.append(probe);
+    }
+    const css = probe ? getComputedStyle(probe) : null;
+    const vv = window.visualViewport;
+    const box = document.querySelector('.container')?.getBoundingClientRect();
+    return { standalone, ios, innerWidth, innerHeight, clientHeight: root.clientHeight,
+      screenWidth: screen.width, screenHeight: screen.height, pixelRatio: devicePixelRatio,
+      statusBarStyle: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.content || null,
+      visualHeight: vv?.height ?? null, visualOffsetTop: vv?.offsetTop ?? null, scale: vv?.scale ?? 1,
+      safeTop: css ? parseFloat(css.paddingTop) : null, safeBottom: css ? parseFloat(css.paddingBottom) : null,
+      shellTop: box?.top ?? null, shellBottom: box?.bottom ?? null,
+      keyboard: root.classList.contains('covo-keyboard-open') };
+  }
+  function update() {
+    frame = 0;
+    const vv = window.visualViewport;
+    const editing = document.activeElement?.matches('textarea,input:not([type=checkbox]):not([type=radio]),[contenteditable=true]');
+    const keyboard = ios && vv && vv.scale === 1 && editing && innerHeight - vv.height > 120;
+    root.classList.toggle('covo-keyboard-open', Boolean(keyboard));
+    if (keyboard) {
+      root.style.setProperty('--covo-keyboard-height', `${Math.round(vv.height)}px`);
+      root.style.setProperty('--covo-keyboard-top', `${Math.max(0, Math.round(vv.offsetTop))}px`);
+    } else {
+      root.style.removeProperty('--covo-keyboard-height'); root.style.removeProperty('--covo-keyboard-top');
+    }
+  }
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+  for (const event of ['resize', 'pageshow', 'orientationchange']) window.addEventListener(event, schedule);
+  for (const event of ['focusin', 'focusout', 'visibilitychange', 'DOMContentLoaded']) document.addEventListener(event, schedule);
+  window.visualViewport?.addEventListener('resize', schedule);
+  window.visualViewport?.addEventListener('scroll', schedule);
+  window.covoViewport = { snapshot, refresh: schedule };
+  schedule();
+})();
+</file>
+
 <file path="public/manifest.json">
 {
   "name": "Covo",
@@ -1009,6 +1423,49 @@ fn main() {
 }
 </file>
 
+<file path="PWA_RECOVERY_REFINEMENT_REPORT.md">
+# PWA・探索画面・リカバリーパネルの改修（2026-10-24）
+
+対象: ユーザー提供のiPhone 17/iOS 27.2、iPad A16/iPadOS 26.5.2のPWAスクリーンショット。Safari通常タブでは正常という報告を前提とする。
+
+## 確認できた原因と、OS側の不確実性
+
+- HTMLが `black-translucent` を指定していた。[Appleの仕様](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariHTMLRef/Articles/MetaTags.html)ではステータスバー下へコンテンツが入り込むモード。PWAでの上端ぼかし・不整合を避けるため、通常の `default` へ変更した。通常のSafariタブではこの設定は全画面Webアプリ向けのため影響を受けない。
+- iPadで表示されるタイトルバーは安全領域を含む高さを持つが、中央タイトルはバー全体の50%、右側ボタンは上余白を除く内容領域に配置されていた。タイトルの中央基準を内容領域に一致させた。
+- 探索ヘッダーも安全領域の上余白を持ち、タイトルバーと二重に確保していた。デスクトップ幅では内部ヘッダーの上余白をなくし、スマホ幅では非表示のタイトルバーの代わりに内部ヘッダーが一度だけ確保する。
+- 起動スプラッシュは固定配置の全面指定と明示的な `100dvh` が併存し、html/body・アプリシェルの100%高と異なる基準を使っていた。全面指定と100%へ統一し、起動中のroot背景も同色にした。Apple PWAのシェルはbody基準のabsoluteへ変更。画面の物理解像度をレイアウト高さへ加算する回避策は使わない。
+- [WebKit 313800](https://www2.webkit.org/show_bug.cgi?id=313800)、[317153](https://www2.webkit.org/show_bug.cgi?id=317153)、[292603](https://bugs.webkit.org/show_bug.cgi?id=292603)には、PWAで公開されるviewportとOS側の領域・キーボード領域の不整合が報告されている。ユーザーの実機でどのOS問題に該当するかは、画像だけでは断定できない。今回の変更でiOS 27.2/iPadOS 26.5.2のOS側現象自体が修正されたとは主張しない。
+
+`viewport_runtime.js` はPWA判定に `navigator.standalone` とdisplay-modeの両方を使い、通常タブやWindowsへPWA専用補正を適用しない。画面キーボードは入力中・等倍・明確なviewport縮小時だけ追従し、閉じる/ズーム時は補正を解除する。安全領域を固定の数値や機種名で上書きしない。resize/pageshow/focus等をまとめて処理し、常時ポーリングや通信を追加しない。
+
+## 探索画面
+
+固定の画面幅別3列と横並びの「アイコン・名前・メンバー数・ボタン」が、右サイドバーを除いた狭い領域で押し合っていた。カードは実際の利用可能幅に応じるauto-fitの列へ変更。アイコンと説明、全幅ボタンの2段構成とし、長い名前・日本語の会員数で縦文字化しない。狭いタブレット幅では補助メンバー欄を隠して主要内容を優先する。
+
+名前のローカル絞り込み、件数と空状態、Escapeでの検索解除、カードのキーボード操作、失敗したアイコンの文字フォールバックを追加した。DBへの追加検索・追加購読は行わない。文字列はtextContentで挿入し、任意のHTMLとして解釈しない。
+
+[DiscordのDiscover](https://support.discord.com/hc/en-us/articles/25323248535319-Discover-Tab)の「一覧から見つけて選ぶ」流れと、[モバイルでの一貫したナビゲーション](https://discord.com/blog/refining-discords-mobile-experience-with-your-feedback)を参考にした。Covoで実装していない公開コミュニティ探索を新たにサーバー全件検索するものではない。
+
+## リカバリー
+
+以前は「修復」「キャッシュクリア」が同じ診断処理を呼ぶだけで、表示と実動作が一致していなかった。独立ページを共有テーマ・ボタンに統一し、診断・修復・更新・結果コピー・アプリへ戻る操作を明確にした。[LINEの復元時の進行状況案内](https://help-o.line.me/line/smartphone?contentId=200002097&lang=en)を参考に、実行中・部分的な確認失敗・依頼を送った段階と完了を区別した。
+
+- 診断は保存領域の一覧と設定形式の集計のみ。非対応APIや拒否は確認不可とし、応答が停止しても4秒で部分結果を返す。DBを開いて作成・削除しない。
+- 修復は一時的な404失敗記録だけを解除し、メイン画面では古い購読を解除して同じアカウント/会話を既存の認可処理経由で再購読。保持済みメッセージを残し、通話・録音・転送中は停止する。送信待ちは消さない。
+- IndexedDBの暗号鍵・アーカイブ・送信待ち、Firebase認証、添付ファイルの暗号化キャッシュは削除しない。
+- 別ウィンドウからの操作はメイン画面への依頼として表示し、実際の表示・接続が直ったと断定しない。更新適用は既存の署名確認・native側のbusyガードを維持。
+- 旧版リストはユーザーが開いた時だけ取得。失敗時は同じページを再試行し、対応版・正式版・署名付き配布物のみを選択対象にする。失敗したインストールでバージョンロックを勝手に有効化していた旧処理も削除。
+- 通知のフォールバックに残っていた `top:80px` と新しいbottom指定の衝突により、通知が画面全高になることを画像確認で発見し修正。共通モバイルCSSが独立ページにも暗い背景を強制する問題も補正した。
+
+## 検証と公開状況
+
+関連Jest 111件（既存106件と新規5件）、Chromeのブラウザ40件、WebKit 27.2の対象ブラウザ10件が成功。再実行した同じテストを加算しない。キーボード復帰・ズーム・Safari/PWA分離・ヘッダー整列・3テーマ・検索・旧版/不正URL・診断拒否/タイムアウト・通話中ガード・送信待ち保持を確認した。ブラウザテストでは保存した暗号化添付キャッシュや秘密鍵の目印が修復後も残ることを確認した。通常起動、DM/サーバーの実際の復号、タイムライン上限、通知設定、バックアップ操作の既存テストも成功。
+
+Windows版WebKitの自動試験は、実機iOSのOSステータスバー・インストール時のメタ情報・ネイティブPWAシェルを再現しない。このため、ユーザー端末の最終確認が必要。設定の「通信・安定性の診断」とリカバリーの結果にviewport/safe-area/screenの数値を追加し、残る不整合をコピーして比較できるようにした。本文やアカウントIDは含めず、自動送信しない。
+
+スクリーンショット: `scratch/discovery-light.png`、`scratch/discovery-dark-server-theme.png`、`scratch/discovery-discord-dark-theme.png`、`scratch/recovery-mobile.png`。変更はローカルに適用済み、本番へは未デプロイ。既存のCSSビルド結果および前回のデプロイ最適化の変更は保持した。
+</file>
+
 <file path="README.md">
 # Covo プロジェクト構成メモ
 
@@ -1158,7 +1615,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
-      - run: npm install --global firebase-tools@15.9.1
+      - uses: ./.github/actions/setup-firebase
       - run: npm run build:firebase
       - run: npm run test:security
         env:
@@ -1180,11 +1637,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: 'tauri-build'
+          cache-on-failure: true
       - run: npm ci
       - run: ./scripts/prepare_windows.ps1
         shell: pwsh
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
-      - run: npm run tauri build -- --bundles nsis --config src-tauri/tauri.validation.conf.json
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - run: npm run tauri build -- --bundles nsis --config src-tauri/tauri.validation.conf.json -- --locked
       - run: ./scripts/build_windows_setup.ps1 -Bootstrap
         shell: pwsh
       - uses: actions/upload-artifact@v4
@@ -1642,6 +2101,7 @@ test('diagnostic copy is local, bounded and excludes private context', async ({ 
 @import url('./modules/animations.css');
 @import url('./modules/theme.css');
 @import url('./modules/refinements.css');
+@import url('./modules/pwa-layout.css');
 </file>
 
 <file path="public/js/archive_codec.js">
@@ -1995,6 +2455,7 @@ export function createDiagnostics(now = () => Date.now(), initialStartedAt = now
         notifications: { permission: String(context.permission || 'unknown'), serviceWorkerControlled: Boolean(context.serviceWorkerControlled),
           pushTokenRegistered: Boolean(context.pushTokenRegistered), standalone: Boolean(context.standalone), paused: Boolean(context.paused),
           delivery: 'OS delivery and closed-process Windows delivery are not guaranteed or measured here.' },
+        viewport: typeof window !== 'undefined' && window.covoViewport ? window.covoViewport.snapshot() : null,
         privacy: 'Local aggregates only. No message text, filenames, URLs, account IDs, tokens or automatic uploads.' };
     },
     reset() { startedAt = now(); transferBytes = unknownTransfers = resources = longTasks = longTaskMs = layoutShift = 0; timings.clear(); for (const key of Object.keys(failures)) delete failures[key]; traffic.reset(); }
@@ -2225,15 +2686,25 @@ export function createOutbox({ uid, persist, write, changed, timeoutMs = 8000 })
 // Recovery diagnoses device storage without opening/creating old unscoped DBs,
 // deleting keys, or clearing another account's encrypted history.
 export async function inspectLocalStorage() {
-  const databases = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
-  const cacheNames = typeof caches !== 'undefined' ? await caches.keys() : [];
+  const limited = task => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('保存領域の確認がタイムアウトしました')), 4000);
+    Promise.resolve().then(task).then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+  const checks = await Promise.allSettled([
+    limited(() => typeof indexedDB !== 'undefined' && typeof indexedDB.databases === 'function' ? indexedDB.databases() : null),
+    limited(() => typeof caches !== 'undefined' ? caches.keys() : null)
+  ]);
+  const databases = checks[0].status === 'fulfilled' ? checks[0].value : null;
+  const cacheNames = checks[1].status === 'fulfilled' ? checks[1].value : null;
   let malformedSettings = 0;
-  for (let index = 0; index < localStorage.length; index++) {
+  let settingsReadable = true;
+  try { for (let index = 0; index < Math.min(localStorage.length, 500); index++) {
     const key = localStorage.key(index);
     const value = key && localStorage.getItem(key);
     if (value && /^[\[{]/.test(value)) { try { JSON.parse(value); } catch (_) { malformedSettings++; } }
-  }
-  return { databases: databases.length, caches: cacheNames.length, malformedSettings };
+  } } catch (_) { settingsReadable = false; }
+  return { databases: databases?.length ?? null, caches: cacheNames?.length ?? null, malformedSettings, settingsReadable,
+    partial: !databases || !cacheNames || !settingsReadable, viewport: window.covoViewport?.snapshot() || null };
 }
 export function recoveryNotice(message) {
   if (window.alertMessage) { window.alertMessage(message, 'info'); return; }
@@ -2248,8 +2719,27 @@ export function recoveryNotice(message) {
 }
 export async function runRecoveryInspection() {
   const result = await inspectLocalStorage();
-  recoveryNotice(`端末保存領域 ${result.databases}件、キャッシュ ${result.caches}件を確認しました。${result.malformedSettings ? `形式を確認できない設定が${result.malformedSettings}件あります。` : ''}暗号鍵と履歴は保持しています。`);
+  recoveryNotice(`端末保存領域 ${result.databases ?? '確認不可'}件、キャッシュ ${result.caches ?? '確認不可'}件を確認しました。${result.malformedSettings ? `形式を確認できない設定が${result.malformedSettings}件あります。` : ''}暗号鍵と履歴は保持しています。`);
   return result;
+}
+export async function repairPresentation() {
+  // Only transient failure hints. Never delete message/media caches, auth, keys or outbox.
+  try { localStorage.removeItem('covo_missing_files_v3'); } catch (_) {}
+  window.covoViewport?.refresh();
+  if (typeof window.covoRepairLoading === 'function') {
+    await window.covoRepairLoading();
+    recoveryNotice('表示と接続を再確認しました。送信待ち・暗号鍵・端末の履歴は保持しています。');
+    return { requested: true };
+  }
+  const event = window.__TAURI__?.event;
+  if (event?.emitTo) {
+    await event.emitTo('main', 'request-recovery-repair', {});
+    await window.__TAURI__.core.invoke('show_main_window');
+    recoveryNotice('メイン画面に修復を依頼しました。接続状況をメイン画面で確認してください。');
+    return { requested: true };
+  }
+  recoveryNotice('一時的な読込失敗の記録を解除しました。アプリへ戻って表示を確認してください。');
+  return { requested: false };
 }
 </file>
 
@@ -3825,37 +4315,119 @@ function Get-CovoCiSnapshot {
     return [pscustomobject]@{ Rows = @($rows); Failed = $failed; Succeeded = ($allSucceeded -and -not $failed) }
 }
 
+function Invoke-CovoHttpGet {
+    param([string]$Uri, [hashtable]$Headers)
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromSeconds(30)
+    $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $Uri)
+    $response = $null
+    try {
+        foreach ($name in $Headers.Keys) { [void]$request.Headers.TryAddWithoutValidation($name, [string]$Headers[$name]) }
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        $responseHeaders = @{}
+        foreach ($header in $response.Headers) { $responseHeaders[$header.Key] = $header.Value -join ',' }
+        return [pscustomobject]@{ Status = [int]$response.StatusCode; Headers = $responseHeaders; Content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() }
+    } finally {
+        if ($response) { $response.Dispose() }
+        $request.Dispose(); $client.Dispose()
+    }
+}
+
+function Get-CovoPollSeconds {
+    param([bool]$Authenticated, $Budget, [datetime]$Now = [DateTime]::UtcNow)
+    $delay = if ($Authenticated) { 10 } else { 30 }
+    if ($Budget -and $Budget.Reset -gt $Now) {
+        if ($Budget.Remaining -le 8) { return [int][Math]::Ceiling(($Budget.Reset - $Now).TotalSeconds + 2) }
+        if (-not $Authenticated -and $Budget.Remaining -le 12) {
+            $delay = [Math]::Max($delay, [Math]::Ceiling(($Budget.Reset - $Now).TotalSeconds / ($Budget.Remaining - 8)))
+        }
+    }
+    return [int]$delay
+}
+
 function Invoke-CovoGitHubApi {
-    param([string]$Repo, [string]$Path, [string]$Token)
+    param([string]$Repo, [string]$Path, [string]$Token, [datetime]$Deadline = [DateTime]::MaxValue)
+    if (-not $script:CovoApiRequests) { $script:CovoApiRequests = New-Object 'System.Collections.Generic.List[datetime]' }
+    if (-not $script:CovoApiCache) { $script:CovoApiCache = @{} }
     $headers = @{ 'User-Agent' = 'covo-deploy'; Accept = 'application/vnd.github+json' }
     if ($Token) { $headers.Authorization = 'Bearer ' + $Token }
-    try {
-        return Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $Repo + $Path) -Headers $headers -TimeoutSec 30 -ErrorAction Stop
-    } catch {
-        throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message)
+    $cacheKey = $Repo + $Path + [bool]$Token
+    $cached = $script:CovoApiCache[$cacheKey]
+    if ($cached -and $cached.ETag) { $headers['If-None-Match'] = $cached.ETag }
+    for ($attempt = 0; $attempt -lt 4; $attempt++) {
+        # Reserve quota for publication verification and other tools sharing this IP.
+        while ($true) {
+            $now = [DateTime]::UtcNow
+            if ($now -ge $Deadline) { throw 'GitHub verification timed out before production deployment.' }
+            $recent = @($script:CovoApiRequests | Where-Object { $_ -gt $now.AddHours(-1) })
+            $delay = 0
+            if ($script:CovoApiBudget -and $script:CovoApiBudget.Reset -gt $now -and $script:CovoApiBudget.Remaining -le 8) {
+                $delay = [Math]::Ceiling(($script:CovoApiBudget.Reset - $now).TotalSeconds + 2)
+            }
+            if (-not $Token -and $recent.Count -ge 50) { $delay = [Math]::Max($delay, [Math]::Ceiling(($recent[0].AddHours(1) - $now).TotalSeconds + 2)) }
+            if ($script:CovoApiNotBefore -gt $now) { $delay = [Math]::Max($delay, [Math]::Ceiling(($script:CovoApiNotBefore - $now).TotalSeconds)) }
+            if ($delay -le 0) { break }
+            Write-Host ('GitHub quota/backoff: waiting up to ' + [int]$delay + 's before the next request.') -ForegroundColor Yellow
+            Start-Sleep -Seconds ([int][Math]::Min(30.0, [Math]::Min([double]$delay, [Math]::Max(1.0, ($Deadline - $now).TotalSeconds))))
+        }
+        $script:CovoApiRequests.Add([DateTime]::UtcNow)
+        try { $response = Invoke-CovoHttpGet ('https://api.github.com/repos/' + $Repo + $Path) $headers }
+        catch { throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message) }
+        $remaining = 0; $reset = [long]0
+        if ([int]::TryParse([string]$response.Headers['X-RateLimit-Remaining'], [ref]$remaining) -and
+            [long]::TryParse([string]$response.Headers['X-RateLimit-Reset'], [ref]$reset)) {
+            $script:CovoApiBudget = @{ Remaining = $remaining; Reset = [DateTimeOffset]::FromUnixTimeSeconds($reset).UtcDateTime }
+        }
+        if ($response.Status -eq 304 -and $cached) { return $cached.Body }
+        if ($response.Status -eq 200) {
+            $body = $response.Content | ConvertFrom-Json
+            if ($script:CovoApiCache.Count -ge 16) { $script:CovoApiCache.Clear() }
+            $script:CovoApiCache[$cacheKey] = @{ ETag = $response.Headers['ETag']; Body = $body }
+            return $body
+        }
+        if ($response.Status -in @(403, 429) -and ($response.Headers['Retry-After'] -or $response.Headers['X-RateLimit-Remaining'] -eq '0')) {
+            $retry = 60; $parsedRetry = 0
+            if ([int]::TryParse([string]$response.Headers['Retry-After'], [ref]$parsedRetry)) { $retry = [Math]::Max(1, $parsedRetry) }
+            $script:CovoApiNotBefore = [DateTime]::UtcNow.AddSeconds($retry)
+            continue
+        }
+        throw ('GitHub verification failed (HTTP ' + $response.Status + '). Production was NOT deployed. https://github.com/' + $Repo + '/actions')
     }
+    throw 'GitHub kept rejecting verification requests. Production was NOT deployed.'
 }
 
 function Wait-CovoReleaseChecks {
     param([string]$Repo, [string]$Commit, [string]$Tag, [string]$Branch, [string]$Token, [int]$TimeoutSeconds = 3600)
-    # At most three requests per poll: runs + validation jobs + release jobs.
-    # Anonymous: 240s keeps normal monitoring below 60 requests/hour.
-    $pollSeconds = if ($Token) { 20 } else { 240 }
+    $pollSeconds = Get-CovoPollSeconds ([bool]$Token) $script:CovoApiBudget
     Write-Host ('Monitoring web-and-rules, native, release for commit ' + $Commit) -ForegroundColor Cyan
     Write-Host ('GitHub polling interval: ' + $pollSeconds + 's. Keep this terminal open; Firebase deployment runs here after all checks pass.') -ForegroundColor Yellow
     $clock = [Diagnostics.Stopwatch]::StartNew()
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $jobsByRun = @{}
+    $jobRefreshes = @{}
+    $jobRunStates = @{}
     while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token
+        # One summary request detects completion of both workflows.
+        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token $deadline
         $runs = @($response.workflow_runs)
-        $jobsByRun = @{}
         $selected = @(
             (Select-CovoWorkflowRun $runs $Commit 'validate.yml' $Branch),
             (Select-CovoWorkflowRun $runs $Commit 'release.yml' $Tag)
         )
         foreach ($run in $selected) {
             if ($run) {
-                $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token
-                $jobsByRun[[string]$run.id] = @($jobs.jobs)
+                $key = [string]$run.id
+                $state = [string]$run.status + ':' + [string]$run.conclusion + ':' + [string]$run.run_attempt
+                $detailInterval = if ($Token) { 60 } else { 300 }
+                # Completed jobs are fetched once. Refresh immediately on terminal state or rerun.
+                if (-not $jobsByRun.ContainsKey($key) -or $jobRunStates[$key] -ne $state -or
+                    ($run.status -ne 'completed' -and ($clock.Elapsed.TotalSeconds - $jobRefreshes[$key]) -ge $detailInterval)) {
+                    $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token $deadline
+                    $jobsByRun[$key] = @($jobs.jobs)
+                    $jobRefreshes[$key] = $clock.Elapsed.TotalSeconds
+                    $jobRunStates[$key] = $state
+                }
             }
         }
         $snapshot = Get-CovoCiSnapshot $runs $jobsByRun $Commit $Tag $Branch
@@ -3866,6 +4438,8 @@ function Wait-CovoReleaseChecks {
         }
         if ($snapshot.Failed) { throw 'A required CI check failed or was cancelled. Firebase/Worker production deployment was stopped.' }
         if ($snapshot.Succeeded) { return }
+        $pollSeconds = Get-CovoPollSeconds ([bool]$Token) $script:CovoApiBudget
+        Write-Host ('Next completion check in ' + $pollSeconds + 's; job step details refresh less often.') -ForegroundColor DarkGray
         # Short sleeps keep Ctrl+C responsive; no background deployment is created.
         for ($second = 0; $second -lt $pollSeconds -and $clock.Elapsed.TotalSeconds -lt $TimeoutSeconds; $second++) { Start-Sleep -Seconds 1 }
     }
@@ -3953,6 +4527,56 @@ foreach ($change in @('valid', 'draft', 'prerelease', 'wrong-tag', 'missing-inst
     Assert-Test ($accepted -eq ($change -eq 'valid')) ('Release asset guard: ' + $change)
 }
 
+# Test quota calculations and conditional reads without reaching GitHub.
+$testNow = [DateTime]::UtcNow
+Assert-Test ((Get-CovoPollSeconds $false $null $testNow) -eq 30) 'Anonymous completion checks should normally use 30 seconds.'
+Assert-Test ((Get-CovoPollSeconds $true $null $testNow) -eq 10) 'Authenticated completion checks should normally use 10 seconds.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 8; Reset = $testNow.AddSeconds(90) } $testNow) -eq 92) 'Reserve eight requests until reset.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 12; Reset = $testNow.AddSeconds(400) } $testNow) -eq 100) 'Low anonymous quota must slow polling.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 0; Reset = $testNow.AddSeconds(-1) } $testNow) -eq 30) 'Expired quota windows must not block.'
+$script:CovoApiRequests = New-Object 'System.Collections.Generic.List[datetime]'
+$script:CovoApiCache = @{}
+$script:CovoApiBudget = $null
+$script:httpCalls = @()
+$script:httpResponses = @(
+    @{ Status = 200; Headers = @{ ETag = '"etag"'; 'X-RateLimit-Remaining' = '100'; 'X-RateLimit-Reset' = [DateTimeOffset]::UtcNow.AddHours(1).ToUnixTimeSeconds() }; Content = '{"value":42}' },
+    @{ Status = 304; Headers = @{}; Content = '' }
+)
+function Invoke-CovoHttpGet {
+    param([string]$Uri, [hashtable]$Headers)
+    $script:httpCalls += @{ Uri = $Uri; Headers = $Headers.Clone() }
+    return $script:httpResponses[$script:httpCalls.Count - 1]
+}
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/probe' 'test-token').value -eq 42) 'First API response must be decoded.'
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/probe' 'test-token').value -eq 42) 'A 304 must reuse the exact cached body.'
+Assert-Test ($httpCalls[1].Headers['If-None-Match'] -eq '"etag"') 'Conditional reads must send the stored ETag.'
+Assert-Test ($httpCalls[1].Headers.Authorization -eq 'Bearer test-token') 'Conditional reads must retain authorization.'
+Assert-Test ($script:CovoApiBudget.Remaining -eq 100) 'API quota must be read from response headers.'
+
+# Exhausting the local anonymous request budget must wait before making HTTP requests.
+$script:CovoApiRequests.Clear()
+for ($index = 0; $index -lt 50; $index++) { $script:CovoApiRequests.Add([DateTime]::UtcNow) }
+$script:CovoApiBudget = $null
+$script:httpCalls = @()
+$script:backoffs = 0
+function Start-Sleep {
+    param([int]$Seconds)
+    $script:backoffs++
+    $script:CovoApiRequests.Clear()
+    $script:CovoApiNotBefore = [DateTime]::MinValue
+}
+[void](Invoke-CovoGitHubApi 'test/repo' '/budget' '')
+Assert-Test ($backoffs -eq 1 -and $httpCalls.Count -eq 1) 'An exhausted anonymous budget must delay before sending.'
+
+$script:httpCalls = @()
+$script:httpResponses = @(
+    @{ Status = 429; Headers = @{ 'Retry-After' = '2' }; Content = '' },
+    @{ Status = 200; Headers = @{}; Content = '{"value":43}' }
+)
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/retry' '').value -eq 43) 'Retry-After must allow a later successful read.'
+Assert-Test ($backoffs -eq 2 -and $httpCalls.Count -eq 2) 'A rate-limited response must back off before retrying.'
+$script:CovoApiBudget = $null
+
 # Exercise the actual polling entry point without networking, sleeping, or deploying.
 New-Fixture
 function Invoke-CovoGitHubApi {
@@ -3970,6 +4594,29 @@ Assert-Test $blocked 'The monitor must throw on failed native validation.'
 $blocked = $false
 try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' -TimeoutSeconds 0 } catch { $blocked = $true }
 Assert-Test $blocked 'The monitor must throw on timeout.'
+
+# Step details are cached, but a summary transition must trigger immediate final verification.
+New-Fixture
+$script:summaryReads = 0; $script:detailReads = 0
+function Invoke-CovoGitHubApi {
+    param([string]$Repo, [string]$Path, [string]$Token)
+    if ($Path.StartsWith('/actions/runs?')) {
+        $script:summaryReads++
+        $ciRuns[1].status = if ($script:summaryReads -ge 3) { 'completed' } else { 'in_progress' }
+        $ciRuns[1].conclusion = if ($script:summaryReads -ge 3) { 'success' } else { $null }
+        return @{ workflow_runs = $ciRuns }
+    }
+    $script:detailReads++
+    if ($Path.Contains('/11/jobs')) { return @{ jobs = $ciJobs['11'] } }
+    if ($Path.Contains('/12/jobs')) {
+        $ciJobs['12'][0].status = $ciRuns[1].status
+        $ciJobs['12'][0].conclusion = $ciRuns[1].conclusion
+        return @{ jobs = $ciJobs['12'] }
+    }
+    throw 'Unexpected request.'
+}
+Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token ''
+Assert-Test ($summaryReads -eq 3 -and $detailReads -eq 3) 'Three polls must use three summaries and only three detail reads, including immediate completion.'
 
 # Parse using Windows PowerShell itself, not just pwsh or a UTF-8 string parser.
 $root = Split-Path -Parent $PSScriptRoot
@@ -4031,7 +4678,6 @@ Write-Output ('Release tooling: ' + $assertions + ' assertions passed (PowerShel
 </file>
 
 <file path="src-tauri/src/desktop_notification.rs">
-use tauri::Manager;
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationTarget {
@@ -4765,58 +5411,6 @@ KVには存在しないキーのキャッシュと反映遅延があるため、
 ブラウザテストはデータサービスと行生成の一部をテスト用実装に置き換えており、本番認証・実アカウントでの一連の操作の確認ではない。本番環境へのデプロイは実行していない。通常の deploy.ps1 は追加した補助モジュールのURLも次のリリース番号へ更新する。本番反映後はアプリを開き直してサーバー・DMの実データを確認する。暗号鍵を失う可能性があるため、この問題への対処としてサイトデータを削除する必要はない。
 </file>
 
-<file path="DEPLOYMENT_GUIDE.md">
-# CovoのデプロイとCI
-
-## 今回の停止原因と修正（2026-10-24）
-
-1. `prepare_windows.ps1` と `build_windows_setup.ps1` にあるUTF-8 BOMなしの日本語文字列を、Tauriが起動するWindows PowerShell 5.1がANSIとして解釈した。日本語が文字化けし、文字列終端の構文エラーになった。これらのスクリプトをASCIIだけに統一し、JSONを読む際はUTF-8を明示した。PowerShell 7のCIステップが成功していても、Tauri内部が別途 `powershell` を起動するため発生する。[Microsoftの文字コード説明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding)
-2. タイムライン性能比較テストが `git show 8c6e23c:public/js/main.js` に依存していた。CIの浅いチェックアウトにはその過去コミットが存在しない。元の関数だけを固定fixtureへ抽出してコミット対象にし、SHA-256で比較対象の変更を検出する。Git履歴の追加ダウンロードを行わず、CIとローカルで同じ比較を実行する。
-3. デプロイスクリプトはReleaseの最初のジョブだけを監視し、完了前に完了表示を出していた。今回、3ジョブと両ワークフロー全体の成功を確認し、最後だけ完了を表示するよう変更した。
-
-## なぜ3つあるのか
-
-実際には2つのワークフロー、計3ジョブ。
-
-| ワークフロー | ジョブ | 役割 |
-| --- | --- | --- |
-| Validate Covo (`validate.yml`) | web-and-rules | Firebaseルール・ロジック・ブラウザの回帰テスト |
-| Validate Covo (`validate.yml`) | native | Windowsネイティブテスト、検証用インストーラーのビルド。ここでは正式リリースしない |
-| Release (`release.yml`) | release (windows-latest) | リリース用の検証、署名付き更新ファイル・独自インストーラーの作成と公開 |
-
-Validateは対象ブランチへのpush/PR、Releaseはバージョンタグへのpushで起動する。`npm run deploy` はブランチとタグをpushするため、通常はこの3ジョブが動く。Release内でも公開前の回帰テストを実行するので一部の検証は重複している。GitHubのCI実行であり、利用者のFirebaseデータを大量に読み出す検証ではない（ルール検証はエミュレーター）。
-
-## npm run deployの実行順序
-
-0. CSSの生成。
-1. アプリのバージョンとキャッシュ更新番号を揃える。
-2. Repomix生成後、変更をGitへコミット。
-3. バージョンタグ作成。
-4. ブランチとタグをGitHubへpush。
-5. 同じコミット・対象ブランチ/タグの3ジョブと両ワークフロー全体の成功を待ち、正式リリースに `CovoSetup.exe`、`latest.json`、`.exe.sig` があることを確認。
-6. 待機中にHEADや作業ファイルが変わっていないことを確認し、Firebaseルール、Worker、Hostingを本番反映。WorkerはHostingのpredeployフックが実行する。
-
-GitHub側のリリース作成だけではFirebaseへ反映されない。最後の本番反映をするのは、手元で動いている `deploy.ps1`。ターミナルを閉じると、この処理は自動継続しない。
-
-進捗は3ジョブそれぞれの状態・実際の完了ステップ数・進行中ステップ名・リンクを表示する。以前の推定ログ行数や推定進捗率は表示しない。GitHub APIの残量を守るため、トークンなしでは4分間隔、設定済みでは20秒間隔。未認証の通常監視は最大3要求/回、約45要求/時（他のツールによる利用とは共有）。API失敗・ジョブ失敗/キャンセル・60分タイムアウト・配布物不足なら本番へ進まない。
-
-## 今回の再実行
-
-失敗した1.1.282のジョブをそのまま再実行しても、そのタグの古いコードで実行される。今回の修正を含む状態から `npm run deploy` を実行して、新しいバージョンとして公開する。現在のローカル版1.1.282からなら次は1.1.283。既存タグを上書きする必要はない。
-
-今回の確認: 関連Jest 50件、ブラウザ30件が成功。Jest内でWindows PowerShell 5.1による実行を含み、監視・配布物・文字コードの29項目を確認。PowerShell 7でも同じ29項目を確認。MSVCがないローカル環境ではWindowsアプリ全体のコンパイル成功までは確認していない。修正はローカル作業ファイルにあり、この修正後のpush・タグ作成・本番デプロイはまだ行っていない。
-
-## 1.1.283のReleaseだけが停止した件（2026-10-24追記）
-
-[Releaseジョブ](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977101/job/120740283972)の全ログを確認。Jest 268件とブラウザ30件は成功した。その後 `cargo test` がコンパイラ情報を取得する `sccache ... rustc.exe -vV` で停止した。根本のエラーは `Server startup failed: cache storage failed to read` とGitHubキャッシュAPIのHTTP 400・サービス利用不可応答。提示された `aws_lc_0_41_0_jent_entropy_switch_notime_impl` はこの失敗に伴うバックトレース内のシンボルであり、これだけでCovo本体の暗号処理が壊れたとは判断しない。
-
-同じコミットの [native検証](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977100/job/120740283614)は、Rustテスト・NSISビルド・独自セットアップ生成まで成功済み。web-and-rulesも成功済み。
-
-修正: Releaseから `mozilla-actions/sccache-action` と `SCCACHE_GHA_ENABLED` / `RUSTC_WRAPPER=sccache` の設定を削除した。Cargo成果物用の `Swatinem/rust-cache` は維持する。コンパイラの各起動を外部キャッシュサービスの可用性へ依存させず、native検証と同じ直接コンパイル方式に揃える。テスト失敗を無視する設定は追加していない。
-
-修正はまだローカルのみ。現在のローカル版1.1.283から次に `npm run deploy` を実行すると1.1.284になる。1.1.283の失敗ジョブを再実行しても古いsccache設定は残る。Release失敗により、この試行でのFirebase/Worker本番反映は開始されていない。正式な署名付きRelease全体の成功は、修正版CIで引き続き確認する必要がある。
-</file>
-
 <file path="DESIGN_HARMONIZATION_REPORT.md">
 # 追加UIと既存デザインの統一（2026-10-23）
 
@@ -5298,97 +5892,6 @@ module.exports = {
 ブラウザ検証は実際のHTML/CSSと関連処理を使い、認証・通信はテスト用データに置き換えたもの。本番アカウント、Safari/iOS実機、Tauri実機での操作確認は未実施。デプロイは実行していない。作業開始前からの `public/css/styles.css` の変更は保持し、この作業で再生成していない。
 
 プレビュー: [ライト](scratch/ui-notifications-light.png)、[ネイビー](scratch/ui-notifications-dark-server-theme.png)、[Discord風ダーク](scratch/ui-notifications-discord-dark-theme.png)。
-</file>
-
-<file path=".github/workflows/release.yml">
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
-permissions:
-  contents: write
-jobs:
-  release:
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [windows-latest]
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: install Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: 'npm'
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      # Cache Cargo artifacts without making rustc depend on the sccache service.
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: 'src-tauri'
-          shared-key: 'tauri-build'
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-      - name: install frontend dependencies
-        run: npm ci
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Validate rules and regressions before publishing
-        env:
-          JAVA_TOOL_OPTIONS: '-Djdk.net.unixdomain.tmpdir=C:\CovoUnavailableUnixSocketDirectory'
-        run: |
-          npm install --global firebase-tools@15.9.1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run build:firebase
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run test:security
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npx playwright install chrome
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npx playwright test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/Cargo.toml --lib
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: build Tailwind CSS
-        run: node scripts/build_tailwind.mjs
-      - name: build tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v__VERSION__
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'Windows: download CovoSetup.exe. Signed updater artifacts are also attached for in-app updates.'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-      - name: Build Covo setup shell
-        shell: pwsh
-        run: ./scripts/build_windows_setup.ps1 -Bootstrap
-      - name: Upload Covo setup shell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          gh release upload "v$($config.version)" src-tauri/windows/bin/CovoSetup.exe --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit "v$($config.version)" --draft=false
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 </file>
 
 <file path="browser-tests/ui-refinements.spec.cjs">
@@ -9946,6 +10449,76 @@ ai-context/
 src-tauri/windows/bin/
 </file>
 
+<file path="DEPLOYMENT_GUIDE.md">
+# CovoのデプロイとCI
+
+## 今回の停止原因と修正（2026-10-24）
+
+1. `prepare_windows.ps1` と `build_windows_setup.ps1` にあるUTF-8 BOMなしの日本語文字列を、Tauriが起動するWindows PowerShell 5.1がANSIとして解釈した。日本語が文字化けし、文字列終端の構文エラーになった。これらのスクリプトをASCIIだけに統一し、JSONを読む際はUTF-8を明示した。PowerShell 7のCIステップが成功していても、Tauri内部が別途 `powershell` を起動するため発生する。[Microsoftの文字コード説明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding)
+2. タイムライン性能比較テストが `git show 8c6e23c:public/js/main.js` に依存していた。CIの浅いチェックアウトにはその過去コミットが存在しない。元の関数だけを固定fixtureへ抽出してコミット対象にし、SHA-256で比較対象の変更を検出する。Git履歴の追加ダウンロードを行わず、CIとローカルで同じ比較を実行する。
+3. デプロイスクリプトはReleaseの最初のジョブだけを監視し、完了前に完了表示を出していた。今回、3ジョブと両ワークフロー全体の成功を確認し、最後だけ完了を表示するよう変更した。
+
+## なぜ3つあるのか
+
+実際には2つのワークフロー、計3ジョブ。
+
+| ワークフロー | ジョブ | 役割 |
+| --- | --- | --- |
+| Validate Covo (`validate.yml`) | web-and-rules | Firebaseルール・ロジック・ブラウザの回帰テスト |
+| Validate Covo (`validate.yml`) | native | Windowsネイティブテスト、検証用インストーラーのビルド。ここでは正式リリースしない |
+| Release (`release.yml`) | release (windows-latest) | リリース用の検証、署名付き更新ファイル・独自インストーラーの作成と公開 |
+
+Validateは対象ブランチへのpush/PR、Releaseはバージョンタグへのpushで起動する。`npm run deploy` はブランチとタグをpushするため、通常はこの3ジョブが動く。Release内でも公開前の回帰テストを実行するので一部の検証は重複している。GitHubのCI実行であり、利用者のFirebaseデータを大量に読み出す検証ではない（ルール検証はエミュレーター）。
+
+## npm run deployの実行順序
+
+0. CSSの生成。
+1. アプリのバージョンとキャッシュ更新番号を揃える。
+2. Repomix生成後、変更をGitへコミット。
+3. バージョンタグ作成。
+4. ブランチとタグをGitHubへpush。
+5. 同じコミット・対象ブランチ/タグの3ジョブと両ワークフロー全体の成功を待ち、正式リリースに `CovoSetup.exe`、`latest.json`、`.exe.sig` があることを確認。
+6. 待機中にHEADや作業ファイルが変わっていないことを確認し、Firebaseルール、Worker、Hostingを本番反映。WorkerはHostingのpredeployフックが実行する。
+
+GitHub側のリリース作成だけではFirebaseへ反映されない。最後の本番反映をするのは、手元で動いている `deploy.ps1`。ターミナルを閉じると、この処理は自動継続しない。
+
+進捗は3ジョブそれぞれの状態・実際の完了ステップ数・進行中ステップ名・リンクを表示する。以前の推定ログ行数や推定進捗率は表示しない。最新版の監視頻度・読み取り制限対策は末尾の「1.1.284成功後の最適化」を参照。API失敗・ジョブ失敗/キャンセル・60分タイムアウト・配布物不足なら本番へ進まない。
+
+## 今回の再実行
+
+失敗した1.1.282のジョブをそのまま再実行しても、そのタグの古いコードで実行される。今回の修正を含む状態から `npm run deploy` を実行して、新しいバージョンとして公開する。現在のローカル版1.1.282からなら次は1.1.283。既存タグを上書きする必要はない。
+
+今回の確認: 関連Jest 50件、ブラウザ30件が成功。Jest内でWindows PowerShell 5.1による実行を含み、監視・配布物・文字コードの29項目を確認。PowerShell 7でも同じ29項目を確認。MSVCがないローカル環境ではWindowsアプリ全体のコンパイル成功までは確認していない。修正はローカル作業ファイルにあり、この修正後のpush・タグ作成・本番デプロイはまだ行っていない。
+
+## 1.1.283のReleaseだけが停止した件（2026-10-24追記）
+
+[Releaseジョブ](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977101/job/120740283972)の全ログを確認。Jest 268件とブラウザ30件は成功した。その後 `cargo test` がコンパイラ情報を取得する `sccache ... rustc.exe -vV` で停止した。根本のエラーは `Server startup failed: cache storage failed to read` とGitHubキャッシュAPIのHTTP 400・サービス利用不可応答。提示された `aws_lc_0_41_0_jent_entropy_switch_notime_impl` はこの失敗に伴うバックトレース内のシンボルであり、これだけでCovo本体の暗号処理が壊れたとは判断しない。
+
+同じコミットの [native検証](https://github.com/qwertyuiop1229/Covo/actions/runs/40049977100/job/120740283614)は、Rustテスト・NSISビルド・独自セットアップ生成まで成功済み。web-and-rulesも成功済み。
+
+修正: Releaseから `mozilla-actions/sccache-action` と `SCCACHE_GHA_ENABLED` / `RUSTC_WRAPPER=sccache` の設定を削除した。Cargo成果物用の `Swatinem/rust-cache` は維持する。コンパイラの各起動を外部キャッシュサービスの可用性へ依存させず、native検証と同じ直接コンパイル方式に揃える。テスト失敗を無視する設定は追加していない。
+
+修正はまだローカルのみ。現在のローカル版1.1.283から次に `npm run deploy` を実行すると1.1.284になる。1.1.283の失敗ジョブを再実行しても古いsccache設定は残る。Release失敗により、この試行でのFirebase/Worker本番反映は開始されていない。正式な署名付きRelease全体の成功は、修正版CIで引き続き確認する必要がある。
+
+## 1.1.284成功後の最適化（2026-10-24）
+
+[1.1.284のRelease](https://github.com/qwertyuiop1229/Covo/actions/runs/40052612781)は成功。ワークフロー全体は11:04:14〜11:22:30 JST（18分16秒）。最適化コンパイル自体は4分47秒。Firebase CLIのグローバルインストールは11:06:08〜11:11:35 JST（約5分27秒）を占め、Rustキャッシュは `No cache found` だった。今回の黄色の警告は未使用 `tauri::Manager` importで、コンパイルエラーではない。
+
+次回向けの変更:
+
+- Firebase CLIはバージョン・OS・CPU・Node 22で区切った専用フォルダにインストールして再利用。エミュレーターJARも再利用する。初回キャッシュ未作成時は通常どおりインストールする。認証情報やユーザーデータはキャッシュしない。
+- native/ReleaseでRustキャッシュの共有キーを揃え、後段の失敗でも完了済み依存ビルドを保存する。`Cargo.lock` 固定で依存解決を実施する。sccacheは再導入しない。テスト・署名・配布物確認は維持。
+- 未使用importを削除。
+- 完了確認は両ワークフローの一覧1要求へ集約。通常間隔は未認証30秒、認証あり10秒。ステップ詳細は未認証5分・認証あり1分ごとで、ワークフロー状態変更・再実行・完了時には即座に取り直す。完了済み詳細は繰り返し取得しない。
+- `GITHUB_TOKEN` がなければ、既にログイン済みのGitHub CLIの認証も利用する。新規ログインは強制せず、トークンをログやファイルへ出力しない。
+- ETagを送って変更のない応答を再利用。認証付き304応答はGitHubのprimary rate limitを消費しない。[GitHub公式説明](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api)
+- 応答の `X-RateLimit-Remaining` と `X-RateLimit-Reset` を確認。未認証で残量12以下なら間隔を延ばし、8以下ではリセットまで待つ。自プロセスの未認証要求にも50回/直近1時間の上限を設け、`Retry-After` も尊重する。他のプロセスの突発利用まで保証はできないが、取得済み残量を無視して連打しない。
+
+30秒/10秒は通常の確認周期であり、完了検知の保証時間ではない。残量不足・GitHub応答遅延・通信障害時は待機が長くなる。ビルド高速化の削減時間は次のCIの実測で判断する。初回キャッシュ未ヒットでは効果が小さい場合がある。
+
+検証: 関連Jest 51件成功。Windows PowerShell 5.1/7で43項目を検証（304再利用・残量・Retry-After・一部成功/別コミットの拒否・詳細取得の間引き・完了時の即時再確認を含む）。HTTP処理はローカルHTTPサーバーに対するWindows PowerShell実行でも検証。3つのYAML、Rust構文/書式、Cargo固定メタデータを確認。最適化後のWindows正式ビルド・キャッシュヒット時間は未計測。変更は元の作業フォルダに適用済みで、まだpush/本番公開していない。既存の `public/css/styles.css` の変更は保持した。
+</file>
+
 <file path="firebase.json">
 {
   "database": {
@@ -10039,6 +10612,97 @@ src-tauri/windows/bin/
     ]
   }
 }
+</file>
+
+<file path=".github/workflows/release.yml">
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      # Cache Cargo artifacts without making rustc depend on the sccache service.
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri'
+          shared-key: 'tauri-build'
+          cache-on-failure: true
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - name: install frontend dependencies
+        run: npm ci
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: ./.github/actions/setup-firebase
+      - name: Validate rules and regressions before publishing
+        env:
+          JAVA_TOOL_OPTIONS: '-Djdk.net.unixdomain.tmpdir=C:\CovoUnavailableUnixSocketDirectory'
+        run: |
+          npm run build:firebase
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:security
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chrome
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: build Tailwind CSS
+        run: node scripts/build_tailwind.mjs
+      - name: build tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'App v__VERSION__'
+          releaseBody: 'Windows: download CovoSetup.exe. Signed updater artifacts are also attached for in-app updates.'
+          releaseDraft: true
+          prerelease: false
+          args: --bundles nsis -- --locked
+      - name: Build Covo setup shell
+        shell: pwsh
+        run: ./scripts/build_windows_setup.ps1 -Bootstrap
+      - name: Upload Covo setup shell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          gh release upload "v$($config.version)" src-tauri/windows/bin/CovoSetup.exe --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit "v$($config.version)" --draft=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 </file>
 
 <file path="browser-tests/timeline.spec.cjs">
@@ -14669,374 +15333,34 @@ if (typeof window !== 'undefined') {
 </file>
 
 <file path="public/recovery.html">
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Covo - リカバリーパネル</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/font-awesome.min.css">
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #1e1f22; }
-    /* カスタムスクロールバー */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
-    .material-card {
-      background: #2b2d31;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .material-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-    }
-    .bg-dark-800 { background-color: #2b2d31; }
-    .bg-dark-700 { background-color: #313338; }
-    .hover\:bg-dark-700:hover { background-color: #313338; }
-    .hover\:bg-dark-900:hover { background-color: #1e1f22; }
-    .active\:bg-dark-900:active { background-color: #1e1f22; }
-    .bg-brand-500 { background-color: #5865F2; }
-    .text-brand-500 { color: #5865F2; }
-    .hover\:bg-brand-600:hover { background-color: #4752C4; }
-    .active\:bg-brand-600:active { background-color: #4752C4; }
-    ::selection { background-color: #5865F2; color: #ffffff; }
-  </style>
+  <link rel="stylesheet" href="css/main.css">
+  <script src="js/viewport_runtime.js" async></script>
 </head>
-<body class="text-gray-200 min-h-screen flex flex-col items-center justify-center p-6 selection:bg-brand-500 selection:text-white">
-  <div class="max-w-3xl w-full flex flex-col gap-6">
-    <!-- ヘッダー -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg border border-white/5">
-          <i class="fa-solid fa-wrench text-xl text-brand-500"></i>
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white tracking-wide">リカバリーパネル</h1>
-          <p class="text-sm text-gray-400 mt-0.5">アプリのトラブル修復とバージョン管理</p>
-        </div>
-      </div>
-      <button onclick="checkNormalMode()" class="px-4 py-2.5 bg-dark-800 hover:bg-dark-700 active:scale-95 text-gray-200 font-medium text-sm rounded-xl shadow-md border border-white/5 transition-all flex items-center gap-2">
-        <i class="fa-solid fa-arrow-left"></i> 通常モードへ戻る
-      </button>
-    </div>
-    <!-- クイックアクションパネル (Steam / Discord 準拠 3カラム) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- アップデート -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-cloud-arrow-up text-xl text-brand-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">最新アップデート適用</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">最新バージョンを自動検知して安全に修復適用します。</p>
-        </div>
-        <button onclick="triggerUpdateCheck(false)" id="btnUpdateCheck" class="w-full py-2 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-600 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2">
-          実行する
-        </button>
-      </div>
-      <!-- 整合性チェックと修復 (Steam / Discord 準拠) -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-shield-halved text-xl text-indigo-400 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">整合性チェックと自己修復</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">ファイル・DB・通信状態をスキャンし破損を自動修復します。</p>
-        </div>
-        <button onclick="triggerIntegrityCheckAndRepair()" id="btnIntegrityRepair" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-      <!-- キャッシュクリア -->
-      <div class="material-card p-5 flex flex-col justify-between group cursor-default">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <i class="fa-solid fa-broom text-xl text-emerald-500 group-hover:scale-110 transition-transform"></i>
-            <h2 class="text-base font-bold text-gray-100">キャッシュのクリア</h2>
-          </div>
-          <p class="text-xs text-gray-400 mb-4">設定や一時データをリセットして再起動します。</p>
-        </div>
-        <button onclick="triggerCacheClearAndRestart()" id="btnCacheClear" class="w-full py-2 px-4 bg-dark-700 hover:bg-dark-900 active:bg-dark-900 text-white font-medium text-sm rounded-lg shadow transition-colors flex items-center justify-center gap-2 border border-white/5">
-          実行する
-        </button>
-      </div>
-    </div>
-    <!-- 過去バージョン -->
-    <div class="material-card p-5 flex flex-col">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock-rotate-left text-amber-500"></i>
-          <h2 class="text-sm font-bold text-gray-200">過去のバージョンへ戻す</h2>
-        </div>
-        <button onclick="togglePastReleases()" id="toggleReleasesBtn" class="px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 text-gray-200 text-xs font-bold rounded-md shadow transition-colors flex items-center gap-1.5">
-          <i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する
-        </button>
-      </div>
-      <div id="releasesPanel" class="hidden flex-col h-72 mt-4 pt-3 border-t border-white/5 relative">
-        <div id="releasesContainer" class="flex-1 overflow-y-auto pr-2 space-y-2">
-          <!-- Items will be injected here -->
-        </div>
-        <div id="releasesLoading" class="hidden flex-col items-center justify-center text-gray-500 text-xs py-3">
-          <i class="fa-solid fa-spinner fa-spin text-lg mb-2 text-brand-500"></i>
-          読み込み中...
-        </div>
-      </div>
-    </div>
-    <!-- コンソールログ -->
-    <div class="bg-black/40 rounded-xl p-3 font-mono text-xs text-gray-400 h-28 flex flex-col border border-white/5 shadow-inner">
-      <div class="flex items-center justify-between border-b border-white/5 pb-1 mb-1">
-        <span class="font-bold">System Log</span>
-        <span id="consoleStatus" class="text-emerald-500">Standby</span>
-      </div>
-      <div id="logConsole" class="flex-1 overflow-y-auto space-y-0.5 break-all select-all">
-        <div class="text-brand-500">Recovery panel initialized.</div>
-      </div>
-    </div>
-    <!-- フッター -->
-    <div class="flex items-center justify-between text-xs text-gray-500 px-1">
-      <span>Covo Recovery Engine</span>
-      <div class="flex items-center gap-4">
-        <button onclick="openLogFolder()" class="hover:text-gray-300 transition-colors">ログフォルダ</button>
-        <button onclick="forceQuitApp()" class="text-rose-500 hover:text-rose-400 transition-colors">強制終了</button>
-      </div>
-    </div>
-  </div>
-  <script>
-    const invoke = window.__TAURI__?.core?.invoke;
-    const listen = window.__TAURI__?.event?.listen;
-    function logMessage(text, isError = false) {
-      const consoleElem = document.getElementById("logConsole");
-      const div = document.createElement("div");
-      div.className = isError ? "text-rose-400" : "text-gray-300";
-      div.innerText = `> ${text}`;
-      consoleElem.appendChild(div);
-      consoleElem.scrollTop = consoleElem.scrollHeight;
-      document.getElementById("consoleStatus").innerText = isError ? "Error" : "Active";
-      }
-      function isSemverNewer(remoteVersion, localVersion) {
-      if (!remoteVersion || !localVersion) return false;
-      const r = String(remoteVersion).replace(/^v/i, '').trim();
-      const l = String(localVersion).replace(/^v/i, '').trim();
-      const rBase = r.split('-')[0].split('+')[0];
-      const lBase = l.split('-')[0].split('+')[0];
-      const rParts = rBase.split('.').map(p => parseInt(p, 10) || 0);
-      const lParts = lBase.split('.').map(p => parseInt(p, 10) || 0);
-      while (rParts.length < 3) rParts.push(0);
-      while (lParts.length < 3) lParts.push(0);
-      for (let i = 0; i < 3; i++) {
-        if (rParts[i] > lParts[i]) return true;
-        if (rParts[i] < lParts[i]) return false;
-      }
-      if (l.includes('-') && !r.includes('-')) {
-        return true;
-      }
-      return false;
-      }
-      let _isUpdateCheckingNow = false;
-    async function triggerUpdateCheck(isAuto=false) { if(isAuto)return; const event=window.__TAURI__?.event; if(event?.emitTo) { await event.emitTo('main','request-update-check',{}); await invoke('show_main_window'); logMessage('メイン画面で署名付き更新を確認します。'); } }
-      // Steam / Discord 準拠: プログラムとデータの整合性チェック & 自己修復機能
-    async function triggerIntegrityCheckAndRepair() { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); }
-      async function triggerCacheClearAndRestart() { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); }
-    async function checkNormalMode() {
-      logMessage("Returning to normal mode...");
-      try {
-        if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-          const currentWin = window.__TAURI__.window.getCurrentWindow();
-          const label = currentWin.label;
-          if (label === "main") {
-            // もしメインウィンドウ自身でリカバリーパネルが開かれている場合は、URLを元に戻す
-            window.location.href = "./index.html";
-          } else {
-            // 別ウィンドウ（recovery-engine等）の場合は、メインウィンドウを表示して自分自身を非表示にする
-            if (invoke) await invoke('show_main_window');
-            await currentWin.hide();
-          }
-        } else if (invoke) {
-          // fallback
-          await invoke('show_main_window');
-          window.location.href = "./index.html";
-        } else {
-          window.location.href = "./index.html";
-        }
-      } catch (err) {
-        logMessage("Error returning to normal mode: " + err, true);
-        window.location.href = "./index.html";
-      }
-    }
-    function openLogFolder() {
-      if (invoke) invoke('open_log_dir').catch(e => logMessage(`Error: ${e}`, true));
-    }
-    function forceQuitApp() {
-      if (invoke) {
-        invoke('exit_app').catch(() => invoke('plugin:process|exit', { code: 0 }));
-      }
-    }
-    let releasesPage = 1;
-    let releasesLoading = false;
-    let releasesHasMore = true;
-    function togglePastReleases() {
-      const panel = document.getElementById("releasesPanel");
-      const icon = document.getElementById("toggleReleasesIcon");
-      const btn = document.getElementById("toggleReleasesBtn");
-      if (panel.classList.contains("hidden")) {
-        panel.classList.remove("hidden");
-        panel.classList.add("flex");
-        icon.classList.remove("fa-chevron-down");
-        icon.classList.add("fa-chevron-up");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-up" id="toggleReleasesIcon"></i> 閉じる`;
-        // 初回ロード
-        if (document.getElementById("releasesContainer").children.length === 0) {
-          loadPastReleases();
-          setupInfiniteScroll();
-        }
-      } else {
-        panel.classList.add("hidden");
-        panel.classList.remove("flex");
-        icon.classList.remove("fa-chevron-up");
-        icon.classList.add("fa-chevron-down");
-        btn.innerHTML = `<i class="fa-solid fa-chevron-down" id="toggleReleasesIcon"></i> 展開する`;
-      }
-    }
-    function setupInfiniteScroll() {
-      const container = document.getElementById("releasesContainer");
-      container.addEventListener("scroll", () => {
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
-          if (!releasesLoading && releasesHasMore) {
-            releasesPage++;
-            loadPastReleases();
-          }
-        }
-      });
-    }
-    async function loadPastReleases() {
-      if (releasesLoading || !releasesHasMore) return;
-      releasesLoading = true;
-      const container = document.getElementById("releasesContainer");
-      const loader = document.getElementById("releasesLoading");
-      loader.classList.remove("hidden");
-      loader.classList.add("flex");
-      logMessage(`Fetching past releases (page ${releasesPage})...`);
-      try {
-        const res = await fetch(`https://api.github.com/repos/qwertyuiop1229/Covo/releases?per_page=10&page=${releasesPage}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const releases = await res.json();
-        if (!releases || releases.length === 0) {
-          releasesHasMore = false;
-          if (releasesPage === 1) {
-            container.innerHTML = `<div class="p-4 text-center text-gray-500 text-xs">リリースが見つかりません。</div>`;
-          }
-          loader.classList.add("hidden");
-          loader.classList.remove("flex");
-          releasesLoading = false;
-          return;
-        }
-        if (releases.length < 10) releasesHasMore = false;
-        function escapeHtml(s) {
-          if (s == null) return "";
-          return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-        releases.forEach((rel) => {
-          const exeAsset = rel.assets?.find(a => a.name?.endsWith(".exe"));
-          const downloadUrl = exeAsset ? exeAsset.browser_download_url : null;
-          const pubDate = rel.published_at ? new Date(rel.published_at).toLocaleDateString("ja-JP") : '';
-          const isSafeUrl = typeof downloadUrl === 'string' && /^https:\/\/(?:github\.com|objects\.githubusercontent\.com)\//i.test(downloadUrl);
-          const div = document.createElement("div");
-          div.className = "bg-dark-800 border border-white/5 rounded-lg p-2.5 flex items-center justify-between";
-          div.innerHTML = `
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-gray-200">${escapeHtml(rel.tag_name)}</span>
-                ${rel.prerelease ? `<span class="px-1 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] rounded">Pre</span>` : ''}
-              </div>
-              <p class="text-[10px] text-gray-500 mt-0.5">${escapeHtml(pubDate)} ${exeAsset ? `• ${(exeAsset.size / (1024*1024)).toFixed(1)}MB` : ''}</p>
-            </div>
-            <button ${!isSafeUrl ? 'disabled' : ''} id="btn-install-${escapeHtml(rel.tag_name)}" class="past-rel-btn px-3 py-1.5 bg-dark-700 hover:bg-dark-900 border border-white/5 disabled:opacity-50 text-gray-200 text-xs rounded-md shadow transition-colors flex items-center gap-1.5 flex-shrink-0">
-              インストール
-            </button>
-          `;
-          if (isSafeUrl) {
-            const btn = div.querySelector('.past-rel-btn');
-            if (btn) {
-              btn.addEventListener('click', () => installPastVersion(downloadUrl, rel.tag_name));
-            }
-          }
-          container.appendChild(div);
-        });
-      } catch (e) {
-        logMessage(`Fetch error: ${e.message || e}`, true);
-        if (releasesPage === 1) {
-          container.innerHTML = `<div class="p-4 text-center text-rose-400 text-xs">取得失敗</div>`;
-        }
-      } finally {
-        loader.classList.add("hidden");
-        loader.classList.remove("flex");
-        releasesLoading = false;
-      }
-    }
-    async function installPastVersion(url, tag) {
-      if (!url || url === 'null') return;
-      localStorage.setItem('covo_ignore_force_update', '1');
-      const btn = document.getElementById(`btn-install-${tag}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
-      }
-      logMessage(`Downloading ${tag}... (バージョンロック有効化)`);
-      try {
-        if (!invoke) throw new Error("Tauri API missing.");
-        await invoke('silent_install_past_version', { url: url, tag: tag });
-        logMessage(`Installing ${tag}...`);
-        if (btn) btn.innerHTML = `復旧中...`;
-      } catch (err) {
-        logMessage(`Install error: ${err.message || err}`, true);
-        if (btn) {
-          btn.innerHTML = `失敗`;
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = `インストール`;
-          }, 3000);
-        }
-      }
-      }
-      if (listen) {
-      listen('download-progress', (event) => {
-        const data = event.payload;
-        if (data) {
-          const rowBtn = document.getElementById(`btn-install-${data.tag}`);
-          if (rowBtn) rowBtn.innerHTML = `${data.progress}%`;
-          const topBtn = document.getElementById("btnUpdateCheck");
-          if (topBtn && topBtn.disabled) {
-            topBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ダウンロード中... ${data.progress}%`;
-          }
-          logMessage(`[${data.tag}] 進捗: ${data.progress}% (${data.downloaded ? (data.downloaded / (1024 * 1024)).toFixed(1) + 'MB' : ''})`);
-        }
-      });
-    }
-    // 起動時に自動で裏で最新アップデートを照合・ダウンロード（操作不能時の自動救済）
-    let _recoveryAutoCheckRan = false;
-    window.addEventListener("DOMContentLoaded", () => {
-      if (_recoveryAutoCheckRan) return;
-      _recoveryAutoCheckRan = true;
-      setTimeout(() => {
-        triggerUpdateCheck(true);
-      }, 1200);
-    });
-    // 🌟 グローバル公開 (HTML onclick 属性からの呼び出し保証)
-    window.triggerUpdateCheck = triggerUpdateCheck;
-    window.triggerIntegrityCheckAndRepair = triggerIntegrityCheckAndRepair;
-    window.triggerCacheClearAndRestart = triggerCacheClearAndRestart;
-    window.checkNormalMode = checkNormalMode;
-    window.togglePastReleases = togglePastReleases;
-    window.loadPastReleases = loadPastReleases;
-    window.installPastVersion = installPastVersion;
-    window.openLogFolder = openLogFolder;
-    window.forceQuitApp = forceQuitApp;
-    </script>
+<body class="covo-recovery-page">
+  <script>try { const theme=localStorage.getItem('covo_app_theme')||(localStorage.getItem('covo_dark_server')==='true'?'dark-navy':'light'); if(['dark-navy','dark','discord-dark'].includes(theme))document.body.classList.add('dark-server-theme'); } catch(_) {}</script>
+  <main class="covo-recovery-shell">
+    <header><p class="covo-recovery-eyebrow">Covo サポート</p><h1>リカバリーパネル</h1><p>状況を確認して、必要な操作だけを実行できます。暗号鍵・メッセージ履歴・送信待ちは削除しません。</p></header>
+    <div id="recoveryStatus" class="covo-recovery-status" role="status" aria-live="polite">診断を開始するか、修復する操作を選んでください。</div>
+    <section class="covo-recovery-actions" aria-label="復旧操作">
+      <article><h2>端末の状態を確認</h2><p>保存領域と画面のサイズを端末内で確認します。サーバーへのテスト通信は行いません。</p><button class="covo-button covo-button-secondary" data-action="inspect">診断する</button></article>
+      <article><h2>表示・接続を修復</h2><p>一時的な読み込み失敗の記録を解除し、開いている会話を履歴を保持して再接続します。</p><button class="covo-button covo-button-secondary" data-action="repair">修復を実行</button></article>
+      <article><h2>最新版を確認</h2><p>Windows版はメイン画面で署名付き更新を確認します。適用の前に通話や送信待ちを確認できます。</p><button class="covo-button covo-button-secondary" data-action="update">更新を確認</button></article>
+      <article><h2>診断結果を共有</h2><p>表示した診断結果をコピーできます。本文・暗号鍵・アカウントIDは含みません。</p><button class="covo-button covo-button-secondary" data-action="copy">診断をコピー</button></article>
+    </section>
+    <section class="covo-recovery-results"><h2>診断結果</h2><pre id="recoveryReport" tabindex="0">まだ診断していません。</pre></section>
+    <section class="covo-recovery-results"><h2>対応しているWindows版</h2><p>正式公開版の署名付きインストーラーだけを選択できます。旧通信方式のバージョンには戻せません。</p><div id="recoveryReleases"></div><button class="covo-button covo-button-secondary" data-action="releases">バージョン一覧を表示</button></section>
+    <footer><button class="covo-button" data-action="return">アプリへ戻る</button><button class="covo-button covo-button-secondary" data-action="logs">ログフォルダ</button><button class="covo-button covo-button-secondary" data-action="quit">アプリを終了</button></footer>
+  </main>
+  <script type="module" src="js/recovery_panel.js"></script>
 </body>
 </html>
 </file>
@@ -29557,9 +29881,10 @@ async function handleSetOffline(request, env) {
 </file>
 
 <file path="public/js/main.js">
-import { installNavigationUI } from './navigation_ui.js?v=1.1.284';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.284';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.284';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.285';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.285';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.285';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.285';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -29567,7 +29892,7 @@ import { createMediaPlaceholder } from './media_placeholder.js';
 import { createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.284';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.285';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -29662,13 +29987,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.284';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.285';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.284';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.284';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.284';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.284';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.284';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.285';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.285';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.285';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.285';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.285';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -43697,39 +44022,9 @@ window.renderDiscordServerNav = function () {
     // 🌟 2. ディスカバリー探索画面 (homeGrid) の描画
     if (homeGrid) {
       homeGrid.innerHTML = "";
-      const renderHomeCard = (server) => {
-        const card = document.createElement("div");
-        card.className = "discord-server-card p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition-all shadow-md group";
-        const cardIcon = document.createElement("div");
-        cardIcon.className = "discord-card-icon w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl flex-shrink-0 overflow-hidden transition-all duration-300 group-hover:rounded-2xl";
-        if (server.iconUrl) {
-          cardIcon.innerHTML = `<img src="${escapeHtml(server.iconUrl)}" class="w-full h-full object-cover" />`;
-        } else {
-          cardIcon.textContent = (server.name || server.id).charAt(0).toUpperCase();
-        }
-        card.appendChild(cardIcon);
-        const cardInfo = document.createElement("div");
-        cardInfo.className = "flex-1 min-w-0";
-        cardInfo.innerHTML = `
-              <div class="font-bold text-base truncate mb-1">${escapeHtml(server.name || server.id)}</div>
-              <div class="text-xs text-gray-400 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                <span>${(server.joinedUsers || []).length} 名のメンバー</span>
-              </div>
-            `;
-        card.appendChild(cardInfo);
-        const enterBtn = document.createElement("button");
-        enterBtn.className = "discord-card-btn font-bold px-5 py-2 rounded-xl text-sm shadow transition-all opacity-90 group-hover:opacity-100";
-        enterBtn.textContent = "開く";
-        card.appendChild(enterBtn);
-        card.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (currentServerId !== server.id) {
-            enterServer(server.id, server);
-          }
-        });
-        homeGrid.appendChild(card);
-      };
+      const renderHomeCard = server => homeGrid.appendChild(createDiscoveryCard(server, target => {
+        if (currentServerId !== target.id) enterServer(target.id, target);
+      }));
       joinedServers.forEach(server => renderHomeCard(server));
       if (isAdmin && unjoinedServers.length > 0) {
         const homeSep = document.createElement("div");
@@ -43742,6 +44037,7 @@ window.renderDiscordServerNav = function () {
         homeGrid.innerHTML = `<div class="text-gray-400 font-medium col-span-full py-8 text-center">サーバーがありません。上のボタンから参加しましょう。</div>`;
       }
     }
+    installDiscoveryFilter(homeGrid, document.getElementById('covoDiscoverySearch'), document.getElementById('covoDiscoveryResultCount'));
     // ホーム画面右側の全体メンバーリスト描画
     const homeMembersSidebar = document.getElementById("discordHomeMembers");
     if (homeMembersSidebar && typeof cachedUsers !== 'undefined' && cachedUsers && cachedUsers.length > 0) {
@@ -56362,7 +56658,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.284').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.285').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -57107,6 +57403,15 @@ const retryPushRegistration = () => {
 };
 window.addEventListener('online', retryPushRegistration);
 document.addEventListener('visibilitychange', retryPushRegistration);
+// Recovery is explicit, scoped to the active account/channel, and preserves loaded history.
+window.covoRepairLoading = async () => {
+  if (_callId || window._voiceEngine?.isActive || _isVoiceRecording || isSendingMessage || activeMigrationSession || _migrationSendBusy || _fsRole || _fsId) throw new Error('通話・録音・ファイル転送を終了してから再試行してください。');
+  _invalidAvatars.clear(); _avatarFailCounts.clear(); _missingFilesSet.clear();
+  window.covoViewport?.refresh();
+  if (userId && (currentDmId || (currentServerId && currentRoomId))) { ++_activeChannelSessionId; subscribeToMessages({ preserve: true }); }
+  renderMessagesWithReadReceipts();
+};
+window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepairLoading().then(() => alertMessage('接続を再確認しています。端末の履歴は保持しています。', 'info')).catch(error => alertMessage(error.message, 'error'))).catch(() => {});
 </file>
 
 <file path="public/index.html">
@@ -57141,17 +57446,18 @@ document.addEventListener('visibilitychange', retryPushRegistration);
   <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png?v=6" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <script src="js/viewport_runtime.js?v=1.1.285" async></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.284" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.285" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.284" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.285" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -57528,7 +57834,13 @@ document.addEventListener('visibilitychange', retryPushRegistration);
     async function emergencyAutoCheckUpdateAndRepair() { const title=document.getElementById('emergencyAutoCheckTitle'); if(title)title.textContent='接続を確認してから操作を選択してください'; }
     // 手動操作アクション群 (Windows / Web)
     window.emergencyApplyLatestUpdate = async () => { await import('./js/desktop_runtime.js'); try { await window.covoCheckUpdate?.(true); } catch(error) { (await import('./js/recovery_runtime.js')).recoveryNotice(error.message); } };
-    window.emergencyRunIntegrityRepair = async () => { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); };
+    window.emergencyRunIntegrityRepair = async button => {
+      const status = document.getElementById('emergencyAutoCheckTitle');
+      if (button) button.disabled = true;
+      try { await (await import('./js/recovery_runtime.js')).repairPresentation(); if (status) status.textContent = '修復操作を実行しました。履歴と暗号鍵は保持しています。'; }
+      catch(error) { if (status) status.textContent = error.message || '復旧ツールを読み込めませんでした。接続を確認して再試行してください。'; }
+      finally { if (button) button.disabled = false; }
+    };
     window.emergencyOpenRecoveryEngine = function() {
       const invoke = window.__TAURI__?.core?.invoke;
       if (invoke) {
@@ -57559,7 +57871,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
     window.emergencyReloadWeb = function() {
       window.location.reload();
     };
-    window.emergencyClearCacheWeb = async () => { await (await import('./js/recovery_runtime.js')).runRecoveryInspection(); };
+    window.emergencyClearCacheWeb = window.emergencyRunIntegrityRepair;
     // リカバリーボタン用先行フォールバック定義 (ReferenceError防止)
     if (typeof window.openPastVersionsModal !== 'function') {
       window.openPastVersionsModal = function() {
@@ -57975,8 +58287,8 @@ document.addEventListener('visibilitychange', retryPushRegistration);
                 <i class="fas fa-shield-halved"></i>
               </div>
               <div class="min-w-0 flex-1">
-                <div class="text-xs font-bold text-white truncate">整合性チェック & 修復</div>
-                <div class="text-[10px] text-gray-400 truncate">破損データを自己修復</div>
+                <div class="text-xs font-bold text-white truncate">表示・接続の修復</div>
+                <div class="text-[10px] text-gray-400 truncate">履歴と暗号鍵を保持して再試行</div>
               </div>
             </button>
             <button onclick="emergencyOpenRecoveryEngine()" class="p-3 bg-[#2b2d31] hover:bg-[#35373c] border border-white/10 rounded-2xl text-left transition flex items-center gap-3 group cursor-pointer shadow-sm">
@@ -58153,7 +58465,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
     <button class="pwa-banner-close" id="pwaInstallClose"><i class="fas fa-times"></i></button>
   </div>
   <!-- 初期起動スプラッシュ画面（LINE / Discord風の洗練された単色スプラッシュ演出） -->
-  <div id="appLoadingSplash" class="fixed inset-0 flex flex-col items-center justify-center z-[99999] transition-opacity duration-300 ease-out select-none pointer-events-none" style="background-color: #232B38; height: 100dvh;">
+  <div id="appLoadingSplash" class="fixed inset-0 flex flex-col items-center justify-center z-[99999] transition-opacity duration-300 ease-out select-none pointer-events-none" style="background-color: #232B38;">
     <div class="flex items-center justify-center splash-icon-container">
       <img src="img/icon-512x512 transparent.png" alt="Covo" class="object-contain select-none" style="width: 150px; height: 150px;" onerror="this.src='img/icon-512x512.png?v=6'" />
     </div>
@@ -60662,7 +60974,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
         <!-- Discord風探索ビュー (コンパスマーク押下時に表示) -->
         <div id="discordDiscoverView" class="flex-1 hidden md:flex flex-col overflow-hidden select-none relative min-w-0">
           <!-- 探索上部ヘッダーバー (Discord完全準拠・ツールバー統合) -->
-          <div id="discordDiscoverHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none" style="padding-top: var(--safe-top, 0px);">
+          <div id="discordDiscoverHeader" class="h-12 border-b border-gray-200 dark:border-[#202225] px-4 flex items-center justify-between flex-shrink-0 bg-white dark:bg-[#313338] select-none">
             <div class="flex-1 min-w-0 flex items-center gap-2 text-sm font-bold text-gray-800 dark:text-gray-100">
               <button class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-2 md:hidden flex-shrink-0" onclick="leaveServerView()"><i class="fas fa-arrow-left"></i></button>
               <i class="fas fa-compass text-indigo-500 mr-1 text-base flex-shrink-0"></i>
@@ -60697,6 +61009,8 @@ document.addEventListener('visibilitychange', retryPushRegistration);
             <div class="flex justify-between items-center mb-6">
               <h2 class="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">参加中のサーバー</h2>
             </div>
+            <div class="covo-discovery-tools"><label for="covoDiscoverySearch">サーバーを絞り込む</label><input id="covoDiscoverySearch" class="covo-discovery-search" type="search" placeholder="参加中のサーバー名で検索" autocomplete="off"></div>
+            <div id="covoDiscoveryResultCount" class="covo-discovery-result-count" role="status" aria-live="polite"></div>
             <div id="discordHomeServerGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div class="text-gray-400 font-medium col-span-full">サーバーがありません。上のボタンから参加しましょう。</div>
             </div>
@@ -61284,7 +61598,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.284"></script>
+  <script type="module" src="js/main.js?v=1.1.285"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -62786,7 +63100,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
 
 <file path="public/version.json">
 {
-    "version":  "1.1.284",
+    "version":  "1.1.285",
     "force":  true,
     "dataProtocol":  2,
     "minimumWindowsVersion":  "1.1.282"
@@ -62797,7 +63111,7 @@ document.addEventListener('visibilitychange', retryPushRegistration);
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.284",
+  "version": "1.1.285",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

@@ -40,6 +40,7 @@ jobs:
         with:
           workspaces: 'src-tauri'
           shared-key: 'tauri-build'
+          cache-on-failure: true
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -53,12 +54,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - uses: ./.github/actions/setup-firebase
+
       - name: Validate rules and regressions before publishing
         env:
           JAVA_TOOL_OPTIONS: '-Djdk.net.unixdomain.tmpdir=C:\CovoUnavailableUnixSocketDirectory'
         run: |
-          npm install --global firebase-tools@15.9.1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build:firebase
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:security
@@ -67,7 +68,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npx playwright test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/Cargo.toml --lib
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: build Tailwind CSS
@@ -85,7 +86,7 @@ jobs:
           releaseBody: 'Windows: download CovoSetup.exe. Signed updater artifacts are also attached for in-app updates.'
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: --bundles nsis -- --locked
 
       - name: Build Covo setup shell
         shell: pwsh

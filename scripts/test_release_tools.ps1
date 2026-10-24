@@ -67,6 +67,56 @@ foreach ($change in @('valid', 'draft', 'prerelease', 'wrong-tag', 'missing-inst
     Assert-Test ($accepted -eq ($change -eq 'valid')) ('Release asset guard: ' + $change)
 }
 
+# Test quota calculations and conditional reads without reaching GitHub.
+$testNow = [DateTime]::UtcNow
+Assert-Test ((Get-CovoPollSeconds $false $null $testNow) -eq 30) 'Anonymous completion checks should normally use 30 seconds.'
+Assert-Test ((Get-CovoPollSeconds $true $null $testNow) -eq 10) 'Authenticated completion checks should normally use 10 seconds.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 8; Reset = $testNow.AddSeconds(90) } $testNow) -eq 92) 'Reserve eight requests until reset.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 12; Reset = $testNow.AddSeconds(400) } $testNow) -eq 100) 'Low anonymous quota must slow polling.'
+Assert-Test ((Get-CovoPollSeconds $false @{ Remaining = 0; Reset = $testNow.AddSeconds(-1) } $testNow) -eq 30) 'Expired quota windows must not block.'
+$script:CovoApiRequests = New-Object 'System.Collections.Generic.List[datetime]'
+$script:CovoApiCache = @{}
+$script:CovoApiBudget = $null
+$script:httpCalls = @()
+$script:httpResponses = @(
+    @{ Status = 200; Headers = @{ ETag = '"etag"'; 'X-RateLimit-Remaining' = '100'; 'X-RateLimit-Reset' = [DateTimeOffset]::UtcNow.AddHours(1).ToUnixTimeSeconds() }; Content = '{"value":42}' },
+    @{ Status = 304; Headers = @{}; Content = '' }
+)
+function Invoke-CovoHttpGet {
+    param([string]$Uri, [hashtable]$Headers)
+    $script:httpCalls += @{ Uri = $Uri; Headers = $Headers.Clone() }
+    return $script:httpResponses[$script:httpCalls.Count - 1]
+}
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/probe' 'test-token').value -eq 42) 'First API response must be decoded.'
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/probe' 'test-token').value -eq 42) 'A 304 must reuse the exact cached body.'
+Assert-Test ($httpCalls[1].Headers['If-None-Match'] -eq '"etag"') 'Conditional reads must send the stored ETag.'
+Assert-Test ($httpCalls[1].Headers.Authorization -eq 'Bearer test-token') 'Conditional reads must retain authorization.'
+Assert-Test ($script:CovoApiBudget.Remaining -eq 100) 'API quota must be read from response headers.'
+
+# Exhausting the local anonymous request budget must wait before making HTTP requests.
+$script:CovoApiRequests.Clear()
+for ($index = 0; $index -lt 50; $index++) { $script:CovoApiRequests.Add([DateTime]::UtcNow) }
+$script:CovoApiBudget = $null
+$script:httpCalls = @()
+$script:backoffs = 0
+function Start-Sleep {
+    param([int]$Seconds)
+    $script:backoffs++
+    $script:CovoApiRequests.Clear()
+    $script:CovoApiNotBefore = [DateTime]::MinValue
+}
+[void](Invoke-CovoGitHubApi 'test/repo' '/budget' '')
+Assert-Test ($backoffs -eq 1 -and $httpCalls.Count -eq 1) 'An exhausted anonymous budget must delay before sending.'
+
+$script:httpCalls = @()
+$script:httpResponses = @(
+    @{ Status = 429; Headers = @{ 'Retry-After' = '2' }; Content = '' },
+    @{ Status = 200; Headers = @{}; Content = '{"value":43}' }
+)
+Assert-Test ((Invoke-CovoGitHubApi 'test/repo' '/retry' '').value -eq 43) 'Retry-After must allow a later successful read.'
+Assert-Test ($backoffs -eq 2 -and $httpCalls.Count -eq 2) 'A rate-limited response must back off before retrying.'
+$script:CovoApiBudget = $null
+
 # Exercise the actual polling entry point without networking, sleeping, or deploying.
 New-Fixture
 function Invoke-CovoGitHubApi {
@@ -84,6 +134,29 @@ Assert-Test $blocked 'The monitor must throw on failed native validation.'
 $blocked = $false
 try { Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token '' -TimeoutSeconds 0 } catch { $blocked = $true }
 Assert-Test $blocked 'The monitor must throw on timeout.'
+
+# Step details are cached, but a summary transition must trigger immediate final verification.
+New-Fixture
+$script:summaryReads = 0; $script:detailReads = 0
+function Invoke-CovoGitHubApi {
+    param([string]$Repo, [string]$Path, [string]$Token)
+    if ($Path.StartsWith('/actions/runs?')) {
+        $script:summaryReads++
+        $ciRuns[1].status = if ($script:summaryReads -ge 3) { 'completed' } else { 'in_progress' }
+        $ciRuns[1].conclusion = if ($script:summaryReads -ge 3) { 'success' } else { $null }
+        return @{ workflow_runs = $ciRuns }
+    }
+    $script:detailReads++
+    if ($Path.Contains('/11/jobs')) { return @{ jobs = $ciJobs['11'] } }
+    if ($Path.Contains('/12/jobs')) {
+        $ciJobs['12'][0].status = $ciRuns[1].status
+        $ciJobs['12'][0].conclusion = $ciRuns[1].conclusion
+        return @{ jobs = $ciJobs['12'] }
+    }
+    throw 'Unexpected request.'
+}
+Wait-CovoReleaseChecks -Repo 'test/repo' -Commit abc -Tag v1.1.283 -Branch master -Token ''
+Assert-Test ($summaryReads -eq 3 -and $detailReads -eq 3) 'Three polls must use three summaries and only three detail reads, including immediate completion.'
 
 # Parse using Windows PowerShell itself, not just pwsh or a UTF-8 string parser.
 $root = Split-Path -Parent $PSScriptRoot

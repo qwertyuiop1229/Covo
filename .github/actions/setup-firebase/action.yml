@@ -1,0 +1,30 @@
+name: Setup cached Firebase tools
+description: Reuse the pinned Firebase CLI installation and emulator downloads.
+inputs:
+  version:
+    description: Firebase CLI version
+    default: '15.9.1'
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/covo-ci/firebase-${{ inputs.version }}
+        key: firebase-cli-v1-${{ runner.os }}-${{ runner.arch }}-node22-${{ inputs.version }}
+    - shell: pwsh
+      env:
+        COVO_FIREBASE_VERSION: ${{ inputs.version }}
+      run: |
+        $toolRoot = Join-Path $env:RUNNER_TEMP "covo-ci/firebase-$env:COVO_FIREBASE_VERSION"
+        $cli = Join-Path $toolRoot 'node_modules/.bin/firebase.cmd'
+        if (-not (Test-Path -LiteralPath $cli)) {
+          npm install --prefix $toolRoot --no-save --package-lock=false --no-audit --no-fund "firebase-tools@$env:COVO_FIREBASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        & $cli --version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        (Split-Path -Parent $cli) | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/firebase/emulators
+        key: firebase-emulators-v1-${{ runner.os }}-${{ inputs.version }}

@@ -1,0 +1,63 @@
+/* Use the opaque OS status bar and keep the browser's actual safe-area values. */
+html.covo-ios-standalone { background: var(--covo-shell-background, #f2f3f5); }
+html.covo-ios-standalone body { position: relative; height: 100%; min-height: 0; }
+html.covo-ios-standalone .container { position: absolute; inset: 0; height: 100%; min-height: 0; }
+#appLoadingSplash { height: 100%; background: #232b38; }
+html:has(#appLoadingSplash), html:has(#appLoadingSplash) body { background: #232b38 !important; }
+html.covo-keyboard-open .container {
+  top: var(--covo-keyboard-top); bottom: auto; height: var(--covo-keyboard-height);
+}
+html.covo-keyboard-open { --safe-bottom: 0px; }
+/* The global titlebar, then the content header, consume the top safe area once. */
+#discordTitleBar { --titlebar-safe-top: var(--safe-top); padding-top: var(--titlebar-safe-top); height: calc(30px + var(--titlebar-safe-top)); min-height: calc(30px + var(--titlebar-safe-top)); }
+#discordTitleBar .titlebar-center-context { top: calc(50% + var(--titlebar-safe-top) / 2); }
+#discordDiscoverHeader { padding-top: 0; min-height: 48px; height: 48px; }
+#discordDiscoverHeader > div:first-child { color: var(--covo-text); }
+#discordDiscoverHeader > div:first-child > span:last-child:not(:first-of-type) { color: var(--covo-text-muted); }
+@media (min-width: 769px) {
+  #discordTitleBar > .titlebar-center-context { max-width: calc(100% - 300px); }
+}
+@media (max-width: 768px) {
+  body.discord-ui-mode :is(#serverHeader,#discordDiscoverHeader,#discordDmHeader), #currentRoomHeader {
+    padding-top: var(--safe-top) !important;
+    height: calc(48px + var(--safe-top)) !important; min-height: calc(48px + var(--safe-top)) !important;
+  }
+}
+html.covo-ios-standalone :is(#mobileProfileScreen,#mobileNotifScreen,.mobile-settings-detail) { height: 100% !important; min-height: 0 !important; }
+html.covo-ios-standalone :is(#authContainer,#nicknameContainer) { min-height: 0 !important; }
+
+/* Discovery cards adapt to their actual available column width, not the entire iPad. */
+#discordHomeServerGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; }
+#discordHomeServerGrid .discord-server-card { display: grid; grid-template-columns: 48px minmax(0,1fr); align-items: center; gap: 12px; padding: 18px; min-width: 0; border-radius: 12px; }
+#discordHomeServerGrid .discord-card-icon { width: 48px; height: 48px; }
+#discordHomeServerGrid .discord-card-btn { grid-column: 1 / -1; width: 100%; min-height: 40px; white-space: nowrap; padding: 8px 12px; border-radius: 8px; font-weight: 600; }
+#discordHomeServerGrid .discord-card-info { min-width: 0; }
+#discordHomeServerGrid .discord-card-members { color: var(--covo-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.covo-discovery-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.covo-discovery-search { flex: 1 1 220px; min-width: 0; border: 1px solid var(--covo-border); border-radius: 8px; background: var(--covo-surface); color: var(--covo-text); padding: 10px 12px; }
+.covo-discovery-search:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 2px; }
+.covo-discovery-empty { grid-column: 1 / -1; padding: 24px; color: var(--covo-text-muted); text-align: center; }
+#discordHomeServerGrid [hidden] { display: none !important; }
+.covo-discovery-result-count { color: var(--covo-text-muted); margin-bottom: 12px; font-size: 12px; }
+.discord-server-card:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
+#discordDiscoverView > div:last-child { min-height: 0; padding-bottom: calc(24px + var(--safe-bottom)); }
+@media (max-width: 1100px) { body.discord-ui-mode.discord-discover-view #discordHomeMembers { display: none !important; } }
+@media (prefers-reduced-motion: reduce) { #appLoadingSplash { transition: none; } }
+
+body.covo-recovery-page { height: 100%; overflow-y: auto; background: var(--covo-surface-muted) !important; color: var(--covo-text); padding: max(20px,var(--safe-top)) max(16px,var(--safe-right)) max(24px,var(--safe-bottom)) max(16px,var(--safe-left)); user-select: text; }
+.covo-recovery-shell { max-width: 840px; margin: 0 auto; padding: 16px 0; }
+.covo-recovery-shell h1 { font-size: 28px; font-weight: 700; margin: 4px 0 12px; }
+.covo-recovery-shell h2 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.covo-recovery-shell p { color: var(--covo-text-muted); line-height: 1.6; margin-bottom: 12px; }
+.covo-recovery-eyebrow { font-size: 13px; }
+.covo-recovery-actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 16px; margin: 20px 0; }
+.covo-recovery-actions article, .covo-recovery-results { padding: 20px; background: var(--covo-surface); border: 1px solid var(--covo-border); border-radius: 12px; }
+.covo-recovery-actions article { display: flex; flex-direction: column; align-items: flex-start; }
+.covo-recovery-actions article button { margin-top: auto; min-height: 44px; }
+.covo-recovery-status { padding: 12px 16px; margin-top: 16px; border-radius: 8px; background: var(--covo-selected); line-height: 1.6; }
+.covo-recovery-results { margin-bottom: 16px; }
+.covo-recovery-results pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; user-select: text; }
+.covo-recovery-shell footer { display: flex; flex-wrap: wrap; gap: 12px; }
+.covo-recovery-release { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--covo-border); }
+.covo-recovery-release span { min-width: 0; overflow-wrap: anywhere; }
+#covoRecoveryNotice { position: fixed; z-index: 1000001; top: auto; height: auto; left: 16px; right: 16px; bottom: max(16px,var(--safe-bottom)); max-width: 520px; max-height: 40svh; overflow-y: auto; margin: 0 auto; }

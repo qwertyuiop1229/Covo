@@ -49,37 +49,119 @@ function Get-CovoCiSnapshot {
     return [pscustomobject]@{ Rows = @($rows); Failed = $failed; Succeeded = ($allSucceeded -and -not $failed) }
 }
 
+function Invoke-CovoHttpGet {
+    param([string]$Uri, [hashtable]$Headers)
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromSeconds(30)
+    $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $Uri)
+    $response = $null
+    try {
+        foreach ($name in $Headers.Keys) { [void]$request.Headers.TryAddWithoutValidation($name, [string]$Headers[$name]) }
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        $responseHeaders = @{}
+        foreach ($header in $response.Headers) { $responseHeaders[$header.Key] = $header.Value -join ',' }
+        return [pscustomobject]@{ Status = [int]$response.StatusCode; Headers = $responseHeaders; Content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() }
+    } finally {
+        if ($response) { $response.Dispose() }
+        $request.Dispose(); $client.Dispose()
+    }
+}
+
+function Get-CovoPollSeconds {
+    param([bool]$Authenticated, $Budget, [datetime]$Now = [DateTime]::UtcNow)
+    $delay = if ($Authenticated) { 10 } else { 30 }
+    if ($Budget -and $Budget.Reset -gt $Now) {
+        if ($Budget.Remaining -le 8) { return [int][Math]::Ceiling(($Budget.Reset - $Now).TotalSeconds + 2) }
+        if (-not $Authenticated -and $Budget.Remaining -le 12) {
+            $delay = [Math]::Max($delay, [Math]::Ceiling(($Budget.Reset - $Now).TotalSeconds / ($Budget.Remaining - 8)))
+        }
+    }
+    return [int]$delay
+}
+
 function Invoke-CovoGitHubApi {
-    param([string]$Repo, [string]$Path, [string]$Token)
+    param([string]$Repo, [string]$Path, [string]$Token, [datetime]$Deadline = [DateTime]::MaxValue)
+    if (-not $script:CovoApiRequests) { $script:CovoApiRequests = New-Object 'System.Collections.Generic.List[datetime]' }
+    if (-not $script:CovoApiCache) { $script:CovoApiCache = @{} }
     $headers = @{ 'User-Agent' = 'covo-deploy'; Accept = 'application/vnd.github+json' }
     if ($Token) { $headers.Authorization = 'Bearer ' + $Token }
-    try {
-        return Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $Repo + $Path) -Headers $headers -TimeoutSec 30 -ErrorAction Stop
-    } catch {
-        throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message)
+    $cacheKey = $Repo + $Path + [bool]$Token
+    $cached = $script:CovoApiCache[$cacheKey]
+    if ($cached -and $cached.ETag) { $headers['If-None-Match'] = $cached.ETag }
+    for ($attempt = 0; $attempt -lt 4; $attempt++) {
+        # Reserve quota for publication verification and other tools sharing this IP.
+        while ($true) {
+            $now = [DateTime]::UtcNow
+            if ($now -ge $Deadline) { throw 'GitHub verification timed out before production deployment.' }
+            $recent = @($script:CovoApiRequests | Where-Object { $_ -gt $now.AddHours(-1) })
+            $delay = 0
+            if ($script:CovoApiBudget -and $script:CovoApiBudget.Reset -gt $now -and $script:CovoApiBudget.Remaining -le 8) {
+                $delay = [Math]::Ceiling(($script:CovoApiBudget.Reset - $now).TotalSeconds + 2)
+            }
+            if (-not $Token -and $recent.Count -ge 50) { $delay = [Math]::Max($delay, [Math]::Ceiling(($recent[0].AddHours(1) - $now).TotalSeconds + 2)) }
+            if ($script:CovoApiNotBefore -gt $now) { $delay = [Math]::Max($delay, [Math]::Ceiling(($script:CovoApiNotBefore - $now).TotalSeconds)) }
+            if ($delay -le 0) { break }
+            Write-Host ('GitHub quota/backoff: waiting up to ' + [int]$delay + 's before the next request.') -ForegroundColor Yellow
+            Start-Sleep -Seconds ([int][Math]::Min(30.0, [Math]::Min([double]$delay, [Math]::Max(1.0, ($Deadline - $now).TotalSeconds))))
+        }
+        $script:CovoApiRequests.Add([DateTime]::UtcNow)
+        try { $response = Invoke-CovoHttpGet ('https://api.github.com/repos/' + $Repo + $Path) $headers }
+        catch { throw ('GitHub verification unavailable. Production was NOT deployed. Check https://github.com/' + $Repo + '/actions . ' + $_.Exception.Message) }
+        $remaining = 0; $reset = [long]0
+        if ([int]::TryParse([string]$response.Headers['X-RateLimit-Remaining'], [ref]$remaining) -and
+            [long]::TryParse([string]$response.Headers['X-RateLimit-Reset'], [ref]$reset)) {
+            $script:CovoApiBudget = @{ Remaining = $remaining; Reset = [DateTimeOffset]::FromUnixTimeSeconds($reset).UtcDateTime }
+        }
+        if ($response.Status -eq 304 -and $cached) { return $cached.Body }
+        if ($response.Status -eq 200) {
+            $body = $response.Content | ConvertFrom-Json
+            if ($script:CovoApiCache.Count -ge 16) { $script:CovoApiCache.Clear() }
+            $script:CovoApiCache[$cacheKey] = @{ ETag = $response.Headers['ETag']; Body = $body }
+            return $body
+        }
+        if ($response.Status -in @(403, 429) -and ($response.Headers['Retry-After'] -or $response.Headers['X-RateLimit-Remaining'] -eq '0')) {
+            $retry = 60; $parsedRetry = 0
+            if ([int]::TryParse([string]$response.Headers['Retry-After'], [ref]$parsedRetry)) { $retry = [Math]::Max(1, $parsedRetry) }
+            $script:CovoApiNotBefore = [DateTime]::UtcNow.AddSeconds($retry)
+            continue
+        }
+        throw ('GitHub verification failed (HTTP ' + $response.Status + '). Production was NOT deployed. https://github.com/' + $Repo + '/actions')
     }
+    throw 'GitHub kept rejecting verification requests. Production was NOT deployed.'
 }
 
 function Wait-CovoReleaseChecks {
     param([string]$Repo, [string]$Commit, [string]$Tag, [string]$Branch, [string]$Token, [int]$TimeoutSeconds = 3600)
-    # At most three requests per poll: runs + validation jobs + release jobs.
-    # Anonymous: 240s keeps normal monitoring below 60 requests/hour.
-    $pollSeconds = if ($Token) { 20 } else { 240 }
+    $pollSeconds = Get-CovoPollSeconds ([bool]$Token) $script:CovoApiBudget
     Write-Host ('Monitoring web-and-rules, native, release for commit ' + $Commit) -ForegroundColor Cyan
     Write-Host ('GitHub polling interval: ' + $pollSeconds + 's. Keep this terminal open; Firebase deployment runs here after all checks pass.') -ForegroundColor Yellow
     $clock = [Diagnostics.Stopwatch]::StartNew()
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $jobsByRun = @{}
+    $jobRefreshes = @{}
+    $jobRunStates = @{}
     while ($clock.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token
+        # One summary request detects completion of both workflows.
+        $response = Invoke-CovoGitHubApi $Repo ('/actions/runs?head_sha=' + $Commit + '&event=push&per_page=100') $Token $deadline
         $runs = @($response.workflow_runs)
-        $jobsByRun = @{}
         $selected = @(
             (Select-CovoWorkflowRun $runs $Commit 'validate.yml' $Branch),
             (Select-CovoWorkflowRun $runs $Commit 'release.yml' $Tag)
         )
         foreach ($run in $selected) {
             if ($run) {
-                $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token
-                $jobsByRun[[string]$run.id] = @($jobs.jobs)
+                $key = [string]$run.id
+                $state = [string]$run.status + ':' + [string]$run.conclusion + ':' + [string]$run.run_attempt
+                $detailInterval = if ($Token) { 60 } else { 300 }
+                # Completed jobs are fetched once. Refresh immediately on terminal state or rerun.
+                if (-not $jobsByRun.ContainsKey($key) -or $jobRunStates[$key] -ne $state -or
+                    ($run.status -ne 'completed' -and ($clock.Elapsed.TotalSeconds - $jobRefreshes[$key]) -ge $detailInterval)) {
+                    $jobs = Invoke-CovoGitHubApi $Repo ('/actions/runs/' + $run.id + '/jobs?filter=latest&per_page=100') $Token $deadline
+                    $jobsByRun[$key] = @($jobs.jobs)
+                    $jobRefreshes[$key] = $clock.Elapsed.TotalSeconds
+                    $jobRunStates[$key] = $state
+                }
             }
         }
         $snapshot = Get-CovoCiSnapshot $runs $jobsByRun $Commit $Tag $Branch
@@ -90,6 +172,8 @@ function Wait-CovoReleaseChecks {
         }
         if ($snapshot.Failed) { throw 'A required CI check failed or was cancelled. Firebase/Worker production deployment was stopped.' }
         if ($snapshot.Succeeded) { return }
+        $pollSeconds = Get-CovoPollSeconds ([bool]$Token) $script:CovoApiBudget
+        Write-Host ('Next completion check in ' + $pollSeconds + 's; job step details refresh less often.') -ForegroundColor DarkGray
         # Short sleeps keep Ctrl+C responsive; no background deployment is created.
         for ($second = 0; $second -lt $pollSeconds -and $clock.Elapsed.TotalSeconds -lt $TimeoutSeconds; $second++) { Start-Sleep -Seconds 1 }
     }

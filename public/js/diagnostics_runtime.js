@@ -32,6 +32,7 @@ export function createDiagnostics(now = () => Date.now(), initialStartedAt = now
         notifications: { permission: String(context.permission || 'unknown'), serviceWorkerControlled: Boolean(context.serviceWorkerControlled),
           pushTokenRegistered: Boolean(context.pushTokenRegistered), standalone: Boolean(context.standalone), paused: Boolean(context.paused),
           delivery: 'OS delivery and closed-process Windows delivery are not guaranteed or measured here.' },
+        viewport: typeof window !== 'undefined' && window.covoViewport ? window.covoViewport.snapshot() : null,
         privacy: 'Local aggregates only. No message text, filenames, URLs, account IDs, tokens or automatic uploads.' };
     },
     reset() { startedAt = now(); transferBytes = unknownTransfers = resources = longTasks = longTaskMs = layoutShift = 0; timings.clear(); for (const key of Object.keys(failures)) delete failures[key]; traffic.reset(); }

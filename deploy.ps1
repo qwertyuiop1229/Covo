@@ -150,6 +150,13 @@ $repo = 'qwertyuiop1229/Covo'
 $githubToken = $env:GITHUB_TOKEN
 if (-not $githubToken) { $githubToken = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'User') }
 if (-not $githubToken) { $githubToken = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'Machine') }
+if (-not $githubToken -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+    # Reuse an existing GitHub CLI login without prompting or logging credentials.
+    try {
+        $cliToken = & gh auth token --hostname github.com 2>$null
+        if ($LASTEXITCODE -eq 0 -and $cliToken) { $githubToken = ([string]$cliToken).Trim() }
+    } catch { $cliToken = $null }
+}
 Wait-CovoReleaseChecks -Repo $repo -Commit $releaseCommit -Tag $tagName -Branch $releaseBranch -Token $githubToken
 
 # Publish the compatible Windows installer BEFORE withdrawing the old protocol.
