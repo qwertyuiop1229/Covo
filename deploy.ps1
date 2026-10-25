@@ -9,6 +9,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Refuse an existing index lock before changing versions or running builds.
+# Never steal a lock: another Git client may still own it.
+$indexLock = git -C $PSScriptRoot rev-parse --git-path index.lock
+if ($LASTEXITCODE -ne 0) { throw 'Cannot locate the Git index lock.' }
+if (-not [System.IO.Path]::IsPathRooted($indexLock)) { $indexLock = Join-Path $PSScriptRoot $indexLock }
+if (Test-Path -LiteralPath $indexLock) {
+    throw "Git index is locked: $indexLock . Close running Git operations and verify the lock is stale before removing it. No version files have been changed."
+}
+
 Write-Host ''
 Write-Host '====================================' -ForegroundColor Cyan
 Write-Host '  Covo Deploy Script' -ForegroundColor Cyan
@@ -122,6 +131,8 @@ try {
 Write-Host ''
 
 # [2/6] git commit
+node (Join-Path $PSScriptRoot 'scripts/check_secret_safety.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Secret safety check failed; Git staging and publication were stopped.' }
 Write-Host '[2/6] Committing changes...' -ForegroundColor Green
 git add -A
 if ($LASTEXITCODE -ne 0) { throw 'Git staging failed.' }

@@ -72,6 +72,21 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
 }
 
 
+test('native development skips production updater checks and reinstall while retaining desktop controls', async ({ page }) => {
+  await fixture(page);
+  let checks=0;
+  await page.route('https://covo.test/vendor/desktop-updater.js',route=>{checks++;return route.abort();});
+  await page.evaluate(async()=>{
+    window.covoNativeDevelopment=true;window.covoDesktopBusy=()=>false;window.notices=[];
+    window.alertMessage=message=>window.notices.push(message);
+    window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>()=>{}}};
+    await import('/js/desktop_runtime.js');await window.covoCheckUpdate(true);
+  });
+  expect(checks).toBe(0);expect(await page.evaluate(()=>window.notices.some(text=>text.includes('開発実行中')))).toBe(true);
+  await expect(page.locator('#covoMicrophoneShortcut')).toBeVisible();
+  await expect(page.locator('.covo-reinstall-card')).toHaveCount(0);
+});
+
 test('complete anonymous application boots with external services offline and no uncaught module errors', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -87,6 +102,27 @@ test('complete anonymous application boots with external services offline and no
   await expect.poll(() => page.evaluate(() => typeof window.covoDesktopBusy), { timeout: 15000 }).toBe('function');
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
+});
+
+test('maintenance preflight precedes Firebase data access and blocked startup never reads application data', async ({ page }) => {
+  const dataRequests = []; let release;
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (/firestore\.googleapis\.com|firebasedatabase\.app/.test(url.hostname)) dataRequests.push(url.hostname);
+    if (url.pathname === '/api/maintenance') {
+      await new Promise(resolve => { release = resolve; });
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: true, adminAllowed: false, revision: 1 }) });
+    }
+    if (url.origin !== 'https://covo.test') return route.abort();
+    const file = path.resolve('public', '.' + (url.pathname === '/' ? '/index.html' : url.pathname));
+    if (!file.startsWith(path.resolve('public') + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return route.fulfill({ status: 404 });
+    return route.fulfill({ path: file, contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.html') ? 'text/html' : undefined });
+  });
+  await page.goto('https://covo.test/', { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => Boolean(release)).toBe(true); expect(dataRequests).toEqual([]);
+  release(); await expect(page.locator('#covoMaintenancePanel')).toBeVisible();
+  await page.waitForTimeout(400); expect(dataRequests).toEqual([]);
+  expect(await page.evaluate(() => window.covoMaintenanceBlocked)).toBe(true);
 });
 
 

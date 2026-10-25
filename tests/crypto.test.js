@@ -21,6 +21,18 @@ function loadCrypto() {
   return { ctx, api: ctx.api, writes };
 }
 
+for (const kind of ['room','dm']) test(`a ${kind} batch finishing decryption after account change cannot mutate or persist the old message`, async () => {
+  const {ctx,api}=loadCrypto();let owner='alice',finish;
+  api.initCryptoContext({getUserId:()=>owner});api.setCryptoAccount(owner);
+  ctx.LocalStore.putMessage=jest.fn(async()=>{});
+  ctx.waitDecrypt=()=>new Promise(resolve=>{finish=resolve;});
+  vm.runInContext(`_getOrCreateRoomKey=async()=>({});_getDmKeyWithWait=async()=>({});_decryptText=waitDecrypt;_decryptDmText=waitDecrypt;`,ctx);
+  const record={id:'private',text:'enc::v1::iv::cipher'};
+  const work=kind==='room' ? ctx._decryptMessagesInPlace([record],'server','room',['alice']) : ctx._decryptDmMessagesInPlace([record],'alice_bob',['alice','bob']);
+  await new Promise(setImmediate);owner='bob';api.setCryptoAccount(owner);finish('private plaintext');await work;
+  expect(record.text).toBe('enc::v1::iv::cipher');expect(ctx.LocalStore.putMessage).not.toHaveBeenCalled();
+});
+
 async function encryptedRoomFixture(versions = ['1', '2']) {
   const loaded = loadCrypto(), { api, ctx } = loaded;
   const pair = await webcrypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['encrypt', 'decrypt']);

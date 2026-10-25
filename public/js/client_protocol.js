@@ -30,6 +30,9 @@ export function createProtocolFetch(fetcher, onRejected = requireClientUpdate) {
     const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url,
       typeof location !== 'undefined' ? location.href : WORKER_ORIGIN);
     const method = String(options?.method || input?.method || 'GET').toUpperCase();
+    if (typeof window !== 'undefined' && window.covoMaintenanceBlocked && url.origin === WORKER_ORIGIN && url.pathname.startsWith('/api/') && url.pathname !== '/api/maintenance') {
+      const error = new Error('ただいまメンテナンス中です。'); error.code = 'covo/maintenance'; throw error;
+    }
     const mutation = url.origin === WORKER_ORIGIN && url.pathname.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(method);
     if (!mutation) return fetcher(input, options);
     assertSupportedClient();

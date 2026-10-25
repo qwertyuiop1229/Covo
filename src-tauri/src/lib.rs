@@ -1000,7 +1000,19 @@ fn is_official_installer_url(input: &str, tag: &str) -> bool {
 
 #[cfg(test)]
 mod installer_url_tests {
-    use super::is_official_installer_url;
+    use super::{is_official_installer_url, is_trusted_installer_caller};
+
+    #[test]
+    fn installer_commands_reject_browser_and_notification_windows() {
+        let local = url::Url::parse("http://tauri.localhost/index.html").unwrap();
+        assert!(is_trusted_installer_caller("main", &local, false));
+        assert!(is_trusted_installer_caller("recovery-engine", &local, true));
+        assert!(!is_trusted_installer_caller("recovery-engine", &local, false));
+        assert!(!is_trusted_installer_caller("notif_container", &local, true));
+        for address in ["https://evil.test/", "https://tauri.localhost.evil.test/", "http://tauri.localhost:9999/", "data:text/html,test"] {
+            assert!(!is_trusted_installer_caller("main", &url::Url::parse(address).unwrap(), true));
+        }
+    }
 
     #[test]
     fn restrict_installer_to_the_selected_official_release() {
@@ -1025,18 +1037,63 @@ fn set_desktop_busy(window: tauri::WebviewWindow, state: tauri::State<'_, Notifi
 }
 
 #[tauri::command]
-async fn silent_install_past_version(app_handle: tauri::AppHandle, url: String, tag: String) -> Result<(), String> {
-    use tauri_plugin_updater::UpdaterExt;
-    if app_handle.state::<NotificationState>().desktop_busy.lock().map_err(|e| e.to_string())?.unwrap_or(true) { return Err("通話・録音・転送・送信が終わってから更新してください".into()); }
+async fn silent_install_past_version(app_handle: tauri::AppHandle, window: tauri::WebviewWindow, url: String, tag: String) -> Result<(), String> {
+    require_trusted_installer_window(&window, true)?;
     if !is_official_installer_url(&url, &tag) { return Err("公式リリースのみ選択できます".into()); }
+    install_signed_version(app_handle, tag, false).await
+}
+
+#[tauri::command]
+async fn reinstall_app(app_handle: tauri::AppHandle, window: tauri::WebviewWindow, erase_data: bool) -> Result<(), String> {
+    require_trusted_installer_window(&window, false)?;
+    let version = app_handle.package_info().version.to_string();
+    install_signed_version(app_handle, version, erase_data).await
+}
+
+#[tauri::command]
+fn set_installer_theme(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
+    require_trusted_installer_window(&window, false)?;
+    if !["light", "dark-navy", "dark-discord"].contains(&theme.as_str()) { return Err("Invalid theme".into()); }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let status = std::process::Command::new("reg.exe").args(["add", "HKCU\\Software\\Covo", "/v", "AppTheme", "/t", "REG_SZ", "/d", &theme, "/f"]).creation_flags(0x08000000).status().map_err(|e| e.to_string())?;
+        if !status.success() { return Err("テーマを保存できませんでした".into()); }
+    }
+    Ok(())
+}
+fn is_trusted_installer_caller(label: &str, current: &url::Url, allow_recovery: bool) -> bool {
+    let local = ((current.scheme() == "tauri" && current.host_str() == Some("localhost")) ||
+      (["http", "https"].contains(&current.scheme()) && current.host_str() == Some("tauri.localhost"))) &&
+      current.port().is_none() && current.username().is_empty() && current.password().is_none();
+    (label == "main" || (allow_recovery && label == "recovery-engine")) && local
+}
+fn require_trusted_installer_window(window: &tauri::WebviewWindow, allow_recovery: bool) -> Result<(), String> {
+    let current = window.url().map_err(|e| e.to_string())?;
+    if !is_trusted_installer_caller(window.label(), &current, allow_recovery) { return Err("メイン画面から操作してください".into()); }
+    Ok(())
+}
+
+static INSTALLATION_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+struct InstallationOperation;
+impl Drop for InstallationOperation {
+    fn drop(&mut self) { INSTALLATION_BUSY.store(false, std::sync::atomic::Ordering::SeqCst); }
+}
+async fn install_signed_version(app_handle: tauri::AppHandle, tag: String, erase_data: bool) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    if INSTALLATION_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) { return Err("インストール処理が実行中です".into()); }
+    let _operation = InstallationOperation;
+    if app_handle.state::<NotificationState>().desktop_busy.lock().map_err(|e| e.to_string())?.unwrap_or(true) { return Err("通話・録音・転送・送信が終わってから更新してください".into()); }
     let selected = tag.trim_start_matches('v').to_string();
     let parts: Vec<u64> = selected.split('.').map(str::parse::<u64>).collect::<Result<_, _>>().map_err(|_| "バージョンの形式が不正です")?;
     if parts.len() != 3 || parts.as_slice() < [1_u64, 1, 282].as_slice() {
         return Err("このバージョンはサーバーに対応していません。1.1.282以降を選択してください".into());
     }
+    if erase_data && parts.as_slice() < [1_u64, 1, 287].as_slice() { return Err("端末データを削除する再インストールは1.1.287以降に対応しています。先にアプリを更新してください".into()); }
     let endpoint = url::Url::parse(&format!("https://github.com/qwertyuiop1229/Covo/releases/download/v{}/latest.json", selected)).map_err(|e| e.to_string())?;
-    let updater = app_handle.updater_builder().endpoints(vec![endpoint]).map_err(|e| e.to_string())?
-        .version_comparator(|_, _| true).build().map_err(|e| e.to_string())?;
+    let mut builder = app_handle.updater_builder().endpoints(vec![endpoint]).map_err(|e| e.to_string())?.version_comparator(|_, _| true);
+    if erase_data { builder = builder.installer_arg("/COVORESETDATA"); }
+    let updater = builder.build().map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?.ok_or("署名付きの更新情報がありません")?;
     if update.version != selected { return Err("選択したバージョンと署名付き更新情報が一致しません".into()); }
     let mut downloaded: u64 = 0;
@@ -1295,6 +1352,8 @@ pub fn run() {
             set_badge,
             send_desktop_notification,
             silent_install_past_version,
+            reinstall_app,
+            set_installer_theme,
             notify_app_loaded,
             start_desktop_google_auth,
             open_in_app_browser_window,

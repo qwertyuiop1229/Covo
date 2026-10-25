@@ -20,6 +20,24 @@ beforeEach(async () => {
   });
 });
 
+test('maintenance blocks every user data path including atomic bypass attempts, while global admins can repair', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), 'maintenance'), { enabled: true, appId: 'testApp' });
+    await set(ref(context.database(), `${app}/settings/adminList/admins`), { global: true, intruder: false });
+  });
+  for (const uid of ['alice','owner','mod','intruder']) {
+    await assertFails(get(ref(db(uid), message)));
+    await assertFails(update(ref(db(uid), message), { text: 'enc::v1::changed' }));
+    await assertFails(set(ref(db(uid), `status/${uid}`), { state: 'online' }));
+    await assertFails(update(ref(db(uid)), { 'maintenance/enabled': false, [`${message}/text`]: 'bypass' }));
+  }
+  await assertSucceeds(get(ref(env.unauthenticatedContext().database(), 'maintenance')));
+  await assertFails(set(ref(db('global'), 'maintenance/enabled'), false));
+  await assertFails(set(ref(db('global'), `${app}/settings/adminList/admins/outsider`), true));
+  await assertSucceeds(get(ref(db('global'), message)));
+  await assertSucceeds(remove(ref(db('global'), message)));
+}, 30000);
+
 describe.each([['server', message], ['DM', dmMessage]])('%s message boundaries', (_, path) => {
   test('new single-store records cannot have their storage version changed or removed', async () => {
     await assertSucceeds(remove(ref(db('alice'), path)));

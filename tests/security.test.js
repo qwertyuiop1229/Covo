@@ -31,6 +31,38 @@ const getDb = (auth) => {
   return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
 };
 
+test('maintenance blocks normal accounts at Firestore while authoritative global admins retain access', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'covoControl/maintenance'), { enabled: true, appId: APP_ID });
+    await setDoc(doc(database, `artifacts/${APP_ID}/settings/adminList`), { admins: ['global'], emails: [] });
+    await setDoc(doc(database, `artifacts/${APP_ID}/users/alice`), { nickname: 'Alice' });
+    await setDoc(doc(database, `artifacts/${APP_ID}/servers/maintenance`), { createdBy: 'owner', joinedUsers: ['alice'], serverAdmins: ['mod'] });
+  });
+  for (const uid of ['alice','owner','mod','outsider']) {
+    const database = getDb({ uid });
+    await assertFails(getDoc(doc(database, `artifacts/${APP_ID}/users/alice`)));
+    await assertFails(setDoc(doc(database, `artifacts/${APP_ID}/users/${uid}`), { nickname: 'blocked' }));
+    await assertFails(updateDoc(doc(database, `artifacts/${APP_ID}/servers/maintenance`), { name: 'blocked' }));
+  }
+  const global = getDb({ uid: 'global' });
+  await assertSucceeds(getDoc(doc(global, `artifacts/${APP_ID}/users/alice`)));
+  await assertSucceeds(updateDoc(doc(global, `artifacts/${APP_ID}/users/alice`), { nickname: 'Admin repair' }));
+  await assertFails(updateDoc(doc(global, 'covoControl/maintenance'), { enabled: false }));
+  await assertFails(updateDoc(doc(global, `artifacts/${APP_ID}/settings/adminList`), { admins: ['global','outsider'] }));
+  await testEnv.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), 'covoControl/maintenance'), { enabled: false }));
+  await assertSucceeds(getDoc(doc(getDb({ uid: 'alice' }), `artifacts/${APP_ID}/users/alice`)));
+}, 30000);
+
+test('a false map entry cannot grant global admin maintenance bypass', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'covoControl/maintenance'), { enabled: true, appId: APP_ID });
+    await setDoc(doc(context.firestore(), `artifacts/${APP_ID}/settings/adminList`), { admins: { intruder: false } });
+    await setDoc(doc(context.firestore(), `artifacts/${APP_ID}/users/intruder`), { nickname: 'intruder' });
+  });
+  await assertFails(getDoc(doc(getDb({ uid: 'intruder' }), `artifacts/${APP_ID}/users/intruder`)));
+});
+
 test('server names require authoritative owner/admin rights and bounded nonempty strings', async () => {
   const path = `artifacts/${APP_ID}/servers/rename`;
   await testEnv.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), path), { name: 'Before', createdBy: 'alice', serverAdmins: ['bob'], joinedUsers: ['alice', 'bob', 'member'] }));

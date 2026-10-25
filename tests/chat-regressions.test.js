@@ -95,7 +95,7 @@ test('P2P responder cannot send another account history after a delayed local re
 });
 test('an unacknowledged write releases the composer while the optimistic message stays visible', async () => {
   const attempt = jest.fn(() => new Promise(() => {})), render = jest.fn();
-  const ctx = vm.createContext({ CLIENT_PROTOCOL: 2, userId: 'alice', crypto: { randomUUID: () => 'fixed-id' }, Date,
+  const ctx = vm.createContext({ CLIENT_PROTOCOL: 2, userId: 'alice', window:{}, crypto: { randomUUID: () => 'fixed-id' }, Date,
     currentDmId: 'alice_bob', currentServerId: null, currentRoomId: null, allLoadedMessages: [],
     mergeChannelRecords: (old, incoming) => [...old, ...incoming], compareHistoryMessages: (a,b) => a.timestamp - b.timestamp,
     renderMessagesWithReadReceipts: render, LocalStore: { putMessage: async () => {} }, _outbox: { attempt }, alertMessage: jest.fn(),
@@ -212,7 +212,7 @@ test('notification batches respect the API recipient limit and preserve mentions
 });
 test('late message ACK cannot move channel metadata behind a newer message', async () => {
   const transaction = { get: async () => ({ exists: () => true, data: () => ({ lastMessageAt: 200 }) }), set: jest.fn() };
-  const ctx = vm.createContext({ userId: 'alice', db: {}, appId: 'test', doc: () => ({}), Timestamp: { fromMillis: n => n }, parseTimestampToMs: n => n,
+  const ctx = vm.createContext({ userId: 'alice', auth:{currentUser:{uid:'alice'}}, window:{}, db: {}, appId: 'test', doc: () => ({}), Timestamp: { fromMillis: n => n }, parseTimestampToMs: n => n,
     firestore: async () => ({ runTransaction: async (_, work) => work(transaction) }) });
   vm.runInContext(declaration('updateAcknowledgedMetadata').replace(/import\('[^']+'\)/, 'firestore()') + '\nglobalThis.update = updateAcknowledgedMetadata;', ctx);
   const entry = { ownerId: 'alice', ack: { rtdb: true }, destination: { serverId: 's', roomId: 'r' }, data: { timestamp: 100 } };
@@ -462,7 +462,7 @@ test('jump to old cached history needs no network and never replaces the current
     LocalStore: { getMessage: async () => target, getMessages: async () => [], getMessagesAfter: async () => [] },
     withReadDeadline: promise => promise, getMsgTimestamp: time, compareHistoryMessages: runtime().compareHistoryMessages,
     setChannelLoadStatus: jest.fn(), renderMessagesWithReadReceipts: jest.fn(),
-    _virtualTimeline: { reset() {} }, _jumpOlderGate: { reset() {} }, _jumpNewerGate: { reset() {} },
+    _virtualTimeline: { reset() {}, offsetOf:()=>null }, _jumpOlderGate: { reset() {} }, _jumpNewerGate: { reset() {} },
     requestAnimationFrame: callback => callback(), doJumpHighlight: jest.fn(), get: jest.fn(),
   });
   vm.runInContext(declaration('jumpToUnloadedMessage'), ctx);

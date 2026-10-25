@@ -13,6 +13,7 @@ test.each([
 ])('attachment encryption unavailable (%s, %s) stops before upload', async (supported, key) => {
   const upload = jest.fn();
   const context = vm.createContext({
+    auth:{currentUser:{uid:'alice'}},window:{},document:{getElementById:()=>null},
     currentDmId: 'bob_mallory', currentRoomId: null, currentServerId: null,
     currentDmParticipants: ['bob', 'mallory'], currentServerData: null, currentServerNickname: null,
     userId: 'alice', _subtleOK: supported, getRoomKeyWithWait: async () => key,
@@ -30,15 +31,29 @@ test('upload timeout and token errors reject instead of leaving the caller pendi
   const code = fs.readFileSync('public/js/file_uploader.js', 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '');
   let xhr;
   const context = vm.createContext({ CLIENT_PROTOCOL: 2, assertSupportedClient() {}, requireClientUpdate() {}, FormData, XMLHttpRequest: class {
-    constructor() { xhr = this; this.events = {}; this.upload = { addEventListener() {} }; }
+    constructor() { xhr = this; this.events = {}; this.headers = {}; this.upload = { addEventListener() {} }; }
     open() {}
-    setRequestHeader() {}
+    setRequestHeader(name, value) { this.headers[name] = value; }
     addEventListener(name, callback) { this.events[name] = callback; }
     send() { this.events.timeout(); }
   } });
   vm.runInContext(code, context);
-  const auth = { currentUser: { getIdToken: async () => 'test' } };
+  const auth = { currentUser: { uid: 'alice', getIdToken: async () => 'test' } };
   await expect(context._uploadToExternalService(new File(['secret'], 'file.bin'), auth, 'alice', 'https://api.test')).rejects.toThrow('タイムアウト');
   expect(xhr.timeout).toBe(120000);
-  await expect(context._uploadToExternalService(null, { currentUser: { getIdToken: async () => { throw new Error('offline'); } } })).rejects.toThrow('認証トークン');
+  expect(xhr.headers.Authorization).toBe('Bearer test');
+  await expect(context._uploadToExternalService(null, { currentUser: { uid: 'alice', getIdToken: async () => { throw new Error('offline'); } } }, 'alice')).rejects.toThrow('認証トークン');
+});
+
+test('uploads never start after an account switch or during maintenance', async () => {
+  const code = fs.readFileSync('public/js/file_uploader.js', 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '');
+  const XMLHttpRequest = jest.fn(); let finish;
+  const context = vm.createContext({ CLIENT_PROTOCOL: 2, assertSupportedClient() {}, requireClientUpdate() {}, window: { covoMaintenanceBlocked: false }, XMLHttpRequest });
+  vm.runInContext(code, context);
+  const auth = { currentUser: { uid: 'alice', getIdToken: () => new Promise(resolve => { finish = resolve; }) } };
+  const pending = context._uploadToExternalService(null, auth, 'alice', 'https://api.test');
+  auth.currentUser = { uid: 'bob' }; finish('old-token'); await expect(pending).rejects.toThrow('アカウント');
+  context.window.covoMaintenanceBlocked = true;
+  await expect(context._uploadToExternalService(null, auth, 'bob', 'https://api.test')).rejects.toThrow('メンテナンス');
+  expect(XMLHttpRequest).not.toHaveBeenCalled();
 });

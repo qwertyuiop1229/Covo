@@ -19,6 +19,15 @@
   WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" '$\"$INSTDIR\CovoMaintenance.exe$\"'
   WriteRegStr SHCTX "${UNINSTKEY}" "QuietUninstallString" '$\"$INSTDIR\uninstall.exe$\" /S'
   WriteRegStr SHCTX "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
+  ClearErrors
+  ${GetOptions} $CMDLINE "/COVORESETDATA" $0
+  ${IfNot} ${Errors}
+    ExecWait '$\"$INSTDIR\CovoMaintenance.exe$\" --reset-data' $0
+    ${If} $0 != 0
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  ${EndIf}
 !macroend
 !macro NSIS_HOOK_PREUNINSTALL
   Delete "$INSTDIR\CovoMaintenance.exe"

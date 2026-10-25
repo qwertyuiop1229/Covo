@@ -18,6 +18,14 @@
     ],
     "ignore": [
       "firebase.json",
+      "**/*.{pem,key,p8,p12,pfx,jwk,jks,keystore}",
+      "**/*serviceAccount*.json",
+      "**/*service-account*.json",
+      "**/client_secret*.json",
+      "**/credentials*.json",
+      "**/id_rsa",
+      "**/id_ed25519",
+      "**/id_ecdsa",
       "**/.*",
       "**/node_modules/**"
     ],

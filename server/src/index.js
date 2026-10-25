@@ -288,6 +288,15 @@ export default {
           status: 426, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
         });
       }
+      if (url.pathname === '/api/maintenance') return handleMaintenanceStatus(request, env);
+      if (url.pathname === '/api/setMaintenance' && request.method === 'POST') return handleSetMaintenance(request, env);
+      if (url.pathname.startsWith('/api/') && url.pathname !== '/api/health') {
+        const maintenance = await readMaintenanceState(env);
+        if (maintenance.enabled) {
+          const identity = await maintenanceIdentity(request, env);
+          if (!identity || !await isAppAdmin(env.FIREBASE_APP_ID, identity, env)) return new Response(JSON.stringify({ code: 'MAINTENANCE', error: 'ただいまメンテナンス中です。' }), { status: 503, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+        }
+      }
       const response = await (async () => {
         if (url.pathname === "/api/signup" && request.method === "POST") {
           return await handleSignup(request, env);
@@ -387,6 +396,103 @@ export default {
       }
       },
       };
+
+const _maintenanceTables = new WeakMap();
+async function maintenanceTable(env) {
+  if (!env.DB) throw new Error('Maintenance control database unavailable');
+  if (!_maintenanceTables.has(env.DB)) {
+    const promise = env.DB.prepare('CREATE TABLE IF NOT EXISTS app_control (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0)').run().catch(error => { _maintenanceTables.delete(env.DB); throw error; });
+    _maintenanceTables.set(env.DB, promise);
+  }
+  await _maintenanceTables.get(env.DB);
+}
+async function readMaintenanceState(env) {
+  await maintenanceTable(env);
+  const state = await env.DB.prepare('SELECT enabled, revision FROM app_control WHERE id = ?').bind(env.FIREBASE_APP_ID).first();
+  return { enabled: state?.enabled === 1, revision: state?.revision || 0 };
+}
+async function maintenanceIdentity(request, env) {
+  let token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token && request.method !== 'GET' && request.method !== 'HEAD' && !(request.headers.get('Content-Type') || '').includes('multipart/form-data')) token = (await request.clone().json().catch(() => ({}))).idToken;
+  if (!token) { const params = new URL(request.url).searchParams; token = params.get('token') || params.get('idToken'); }
+  return token ? verifyFirebaseIdToken(token, env) : null;
+}
+async function handleMaintenanceStatus(request, env) {
+  const cors = { ...getCorsHeaders(request), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  try {
+    const state = await readMaintenanceState(env);
+    const identity = state.enabled ? await maintenanceIdentity(request, env) : null;
+    const adminAllowed = Boolean(identity && await isAppAdmin(env.FIREBASE_APP_ID, identity, env));
+    if (adminAllowed) await ensureMaintenanceAdmin(env, identity.uid);
+    return new Response(JSON.stringify({ ...state, adminAllowed }), { headers: cors });
+  } catch (_) { return new Response(JSON.stringify({ code: 'MAINTENANCE_CHECK_UNAVAILABLE' }), { status: 503, headers: cors }); }
+}
+async function ensureMaintenanceAdmin(env, uid) {
+  const token = await getRTDBToken(env.SERVICE_ACCOUNT_JSON);
+  const path = `https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${env.FIREBASE_APP_ID}/settings/adminList/admins/${encodeURIComponent(uid)}.json`;
+  const response = await fetch(path, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
+  if (response.ok && await response.json() === true) return;
+  const write = await fetch(path, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: 'true', signal: AbortSignal.timeout(8000) });
+  if (!write.ok) throw new Error('Administrator authorization synchronization failed');
+}
+async function writeMaintenanceMirrors(env, enabled) {
+  const deadline = Date.now() + 30000;
+  const upstream = (url, options) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('Maintenance synchronization timed out');
+    return fetch(url, { ...options, signal: AbortSignal.timeout(Math.min(8000, remaining)) });
+  };
+  const [token, rtdbToken] = await Promise.all([getAdminTokenForFirestore(env), getRTDBToken(env.SERVICE_ACCOUNT_JSON)]);
+  if (!token || !rtdbToken) throw new Error('Maintenance credentials unavailable');
+  if (enabled) {
+    const response = await upstream(`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${env.FIREBASE_APP_ID}/settings/adminList`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error('Administrator list unavailable');
+    const fields = (await response.json()).fields || {};
+    const admins = new Set((fields.admins?.arrayValue?.values || []).map(value => value.stringValue).filter(Boolean));
+    const emails = (fields.emails?.arrayValue?.values || []).map(value => value.stringValue).filter(Boolean);
+    for (let offset = 0; offset < emails.length; offset += 100) {
+      const lookup = await upstream(`https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/accounts:lookup`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emails.slice(offset, offset + 100) }) });
+      if (!lookup.ok) throw new Error('Administrator identities unavailable');
+      for (const user of (await lookup.json()).users || []) if (user.localId) admins.add(user.localId);
+    }
+    if (!admins.size) throw new Error('No administrator identities');
+    const mirror = await upstream(`https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/artifacts/${env.FIREBASE_APP_ID}/settings/adminList/admins.json`, { method: 'PUT', headers: { Authorization: `Bearer ${rtdbToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries([...admins].map(uid => [uid, true]))) });
+    if (!mirror.ok) throw new Error('Administrator mirror unavailable');
+  }
+  const firestore = await upstream(`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/covoControl/maintenance`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { enabled: { booleanValue: enabled }, appId: { stringValue: env.FIREBASE_APP_ID } } })
+  });
+  if (!firestore.ok) throw new Error('Firestore maintenance synchronization failed');
+  const database = await upstream(`https://${env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json`, {
+    method: 'PUT', headers: { Authorization: `Bearer ${rtdbToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, appId: env.FIREBASE_APP_ID, changedAt: Date.now() })
+  });
+  if (!database.ok) throw new Error('RTDB maintenance synchronization failed');
+}
+async function handleSetMaintenance(request, env) {
+  const headers = { ...getCorsHeaders(request), 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  const identity = await maintenanceIdentity(request, env);
+  if (!identity || !await isAppAdmin(env.FIREBASE_APP_ID, identity, env)) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers });
+  const body = await request.json().catch(() => ({}));
+  if (typeof body.enabled !== 'boolean' || !Number.isSafeInteger(body.revision)) return new Response(JSON.stringify({ error: 'Invalid state' }), { status: 400, headers });
+  await maintenanceTable(env);
+  await env.DB.prepare('INSERT OR IGNORE INTO app_control (id) VALUES (?)').bind(env.FIREBASE_APP_ID).run();
+  const locked = await env.DB.prepare('UPDATE app_control SET locked_until = ? WHERE id = ? AND revision = ? AND locked_until < ? RETURNING revision').bind(Date.now() + 60000, env.FIREBASE_APP_ID, body.revision, Date.now()).first();
+  if (!locked) return new Response(JSON.stringify({ error: '別の管理者が変更しました。状態を再確認してください。' }), { status: 409, headers });
+  try {
+    await ensureMaintenanceAdmin(env, identity.uid);
+    await env.DB.prepare('UPDATE app_control SET enabled = ? WHERE id = ?').bind(body.enabled ? 1 : 0, env.FIREBASE_APP_ID).run();
+    await writeMaintenanceMirrors(env, body.enabled);
+    await env.DB.prepare('UPDATE app_control SET enabled = ?, revision = revision + 1, locked_until = 0 WHERE id = ?').bind(body.enabled ? 1 : 0, env.FIREBASE_APP_ID).run();
+    return new Response(JSON.stringify({ enabled: body.enabled, revision: body.revision + 1 }), { headers });
+  } catch (_) {
+    // A failed multi-service change is never reported as an enabled/disabled success.
+    await env.DB.prepare('UPDATE app_control SET enabled = 1, revision = revision + 1, locked_until = ? WHERE id = ?').bind(Date.now() + 60000, env.FIREBASE_APP_ID).run();
+    await writeMaintenanceMirrors(env, true).catch(() => {});
+    await env.DB.prepare('UPDATE app_control SET locked_until = 0 WHERE id = ?').bind(env.FIREBASE_APP_ID).run();
+    return new Response(JSON.stringify({ error: '設定の同期に失敗しました。メンテナンス状態を維持して再試行してください。' }), { status: 503, headers });
+  }
+}
 
 // -------------------------------------------------------------
 // 🌐 Discord準拠 高速・安全な OpenGraph (OGP) メタデータ取得処理 (SSRF保護付き)
@@ -963,10 +1069,26 @@ async function handleSignup(request, env) {
 }
 
 // Worker専用のFirebaseアカウントでログインし、IDトークンを取得
+const _workerIdentityTokens = new Map();
 async function getWorkerAuthToken(env) {
+  if (!env.WORKER_AUTH_EMAIL || !env.WORKER_AUTH_PASSWORD) return null;
+  const key = `${env.FIREBASE_PROJECT_ID}:${env.WORKER_AUTH_EMAIL}`;
+  const cached = _workerIdentityTokens.get(key);
+  if (cached && cached.expires > Date.now()) return cached.promise;
+  const entry = { expires: Date.now() + 15000 };
+  entry.promise = requestWorkerIdentityToken(env).then(data => {
+    if (!data?.idToken) { if (_workerIdentityTokens.get(key) === entry) _workerIdentityTokens.delete(key); return null; }
+    entry.expires = Date.now() + Math.max(0, Math.min(Number(data.expiresIn) || 3600, 3600) - 60) * 1000;
+    return data.idToken;
+  }).catch(error => { if (_workerIdentityTokens.get(key) === entry) _workerIdentityTokens.delete(key); throw error; });
+  if (_workerIdentityTokens.size >= 8) _workerIdentityTokens.delete(_workerIdentityTokens.keys().next().value);
+  _workerIdentityTokens.set(key, entry); return entry.promise;
+}
+async function requestWorkerIdentityToken(env) {
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.FIREBASE_API_KEY}`;
   const res = await fetch(url, {
     method: "POST",
+    signal: AbortSignal.timeout(8000),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email: env.WORKER_AUTH_EMAIL,
@@ -975,7 +1097,7 @@ async function getWorkerAuthToken(env) {
     })
   });
   const data = await res.json();
-  return data.idToken || null;
+  return res.ok ? data : null;
 }
 
 // Firestore REST APIを使って allowedEmails を取得（設定ドキュメントおよびサブコレクション両対応）
@@ -1981,12 +2103,14 @@ async function handleSendNotification(request, env) {
                     });
 
                     const fcmResult = await fcmRes.json();
-                    if (fcmResult.error) {
-                        results.push({ receiverId: rid, success: false, error: 'fcm-rejected' });
-                        console.error("FCM Send Error:", fcmResult.error);
+                    if (!fcmRes.ok || fcmResult.error) {
+                        const detailCode = fcmResult.error?.details?.find(detail => typeof detail.errorCode === 'string')?.errorCode;
+                        const code = ['UNREGISTERED','SENDER_ID_MISMATCH','QUOTA_EXCEEDED','UNAVAILABLE','INTERNAL','THIRD_PARTY_AUTH_ERROR','PROJECT_NOT_FOUND','INVALID_ARGUMENT','UNAUTHENTICATED','PERMISSION_DENIED','NOT_FOUND'].includes(detailCode) ? detailCode :
+                          ['UNAVAILABLE','INTERNAL','INVALID_ARGUMENT','UNAUTHENTICATED','PERMISSION_DENIED','NOT_FOUND'].includes(fcmResult.error?.status) ? fcmResult.error.status : 'UNKNOWN';
+                        results.push({ receiverId: rid, success: false, error: code === 'UNREGISTERED' ? 'expired-token' : 'fcm-rejected', code });
+                        console.warn('FCM rejection:', code, fcmRes.status);
                         // 無効なトークン（UNREGISTERED / NOT_FOUND）は削除対象に追加
-                        const errorCode = fcmResult.error.details?.[0]?.errorCode || fcmResult.error.code;
-                        if (errorCode === 'UNREGISTERED') {
+                        if (code === 'UNREGISTERED') {
                             invalidTokens.push(tokenStr);
                         }
                     } else {
@@ -2030,9 +2154,10 @@ async function handleSendNotification(request, env) {
 
     const acceptedTokens = results.filter(result => result.success).length;
     const failedTokens = results.filter(result => result.error === 'fcm-rejected').length;
+    const expiredTokens = results.filter(result => result.error === 'expired-token').length;
     const failedRecipients = results.filter(result => result.error === 'preferences-unavailable').length;
     const failed = failedTokens + failedRecipients > 0;
-    return new Response(JSON.stringify({ success: !failed || acceptedTokens > 0, acceptedTokens, failedTokens, failedRecipients, delivery: 'accepted-by-fcm-not-os-delivery', results }), { status: failed && acceptedTokens === 0 ? 502 : 200, headers: dynamicCors });
+    return new Response(JSON.stringify({ success: !failed || acceptedTokens > 0, acceptedTokens, failedTokens, expiredTokens, failedRecipients, delivery: 'accepted-by-fcm-not-os-delivery', results }), { status: failed && acceptedTokens === 0 ? 502 : 200, headers: { ...dynamicCors, 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error(error);
     return new Response(JSON.stringify({ success: false, error: 'Notification delivery failed' }), { status: 500, headers: dynamicCors });
@@ -2050,7 +2175,22 @@ async function getRTDBToken(serviceAccountJsonStr) {
 }
 
 // 共通: サービスアカウントJWTからGoogle OAuth2トークンを取得
+const _googleOAuthTokens = new Map();
 async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
+  const account = JSON.parse(serviceAccountJsonStr);
+  const key = `${account.client_email}:${scope}`;
+  const existing = _googleOAuthTokens.get(key);
+  if (existing && existing.expires > Date.now()) return existing.promise;
+  const entry = { expires: Date.now() + 30000 };
+  entry.promise = _requestGoogleOAuthToken(serviceAccountJsonStr, scope).then(data => {
+    entry.expires = Date.now() + Math.max(0, Math.min(Number(data.expires_in) || 3600, 3600) - 60) * 1000;
+    return data.access_token;
+  }).catch(error => { if (_googleOAuthTokens.get(key) === entry) _googleOAuthTokens.delete(key); throw error; });
+  if (_googleOAuthTokens.size >= 16) _googleOAuthTokens.delete(_googleOAuthTokens.keys().next().value);
+  _googleOAuthTokens.set(key, entry);
+  return entry.promise;
+}
+async function _requestGoogleOAuthToken(serviceAccountJsonStr, scope) {
   const serviceAccount = JSON.parse(serviceAccountJsonStr);
   const header = { alg: 'RS256', typ: 'JWT' };
   const iat = Math.floor(Date.now() / 1000);
@@ -2093,12 +2233,14 @@ async function _getGoogleOAuthToken(serviceAccountJsonStr, scope) {
 
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
+    signal: AbortSignal.timeout(8000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
   });
 
   const data = await response.json();
-  return data.access_token;
+  if (!response.ok || typeof data.access_token !== 'string' || !data.access_token) throw new Error(`Google OAuth failed: HTTP ${response.status}`);
+  return data;
 }
 
 

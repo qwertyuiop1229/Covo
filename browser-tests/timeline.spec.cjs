@@ -18,6 +18,7 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     .date-divider { height:24px; transform:scaleY(-1); }
   </style><div id="searchContainer"></div><div id="messagesDisplay"></div>`);
   await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
+  await page.addScriptTag({ content: fs.readFileSync('public/js/chat_scroll.js', 'utf8').replace(/\bexport /g, '') });
   await page.addScriptTag({ content: `
     const messagesDisplay = document.getElementById('messagesDisplay'), searchContainer = document.getElementById('searchContainer');
     let currentDmId = null, currentServerId = 'server', currentRoomId = 'room', currentDmParticipant = null;
@@ -25,6 +26,7 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     let allLoadedMessages = Array.from({length:10000}, (_,i)=>({id:'m'+i,text:'message '+i,senderId:'alice',timestamp:1700000000000+i}));
     let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
     const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
+    const _chatScroller=createChatScroller(messagesDisplay);let _activeChannelSessionId=1;
     const getMsgTimestamp = message => message.timestamp;
     const parseTimestampToMs = value => Number(value || 0);
     const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
@@ -45,6 +47,9 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     ${codeFor('virtualSpacer')}
     ${codeFor('patchMessageHtml')}
     ${codeFor('renderMessagesWithReadReceipts')}
+    ${codeFor('doJumpHighlight')}
+    window.testJump=doJumpHighlight;
+    let pendingRender=null;messagesDisplay.addEventListener('scroll',()=>{if(pendingRender==null)pendingRender=requestAnimationFrame(()=>{pendingRender=null;renderMessagesWithReadReceipts();});});
     window.testRender = renderMessagesWithReadReceipts;
     window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
     window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
@@ -93,6 +98,11 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
   fs.mkdirSync('scratch', { recursive: true });
   fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
+  await page.evaluate(()=>window.testJump('m1250'));
+  await expect.poll(()=>page.evaluate(()=>{const row=document.querySelector('[data-message-id="m1250"]').closest('.message-row'),r=row.getBoundingClientRect(),c=messagesDisplay.getBoundingClientRect();return Math.abs((r.top+r.bottom-c.top-c.bottom)/2);})).toBeLessThanOrEqual(1);
+  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+  await page.evaluate(()=>_chatScroller.to(()=>0));
+  expect(await page.evaluate(()=>messagesDisplay.scrollTop)).toBe(0);
 });
 
 for (const channel of ['server', 'dm']) {

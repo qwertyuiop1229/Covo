@@ -1,5 +1,8 @@
 import { assertSupportedClient } from './client_protocol.js';
-export function assertDatabaseWriteAllowed() { assertSupportedClient(); }
+export function assertDatabaseWriteAllowed() {
+  assertSupportedClient();
+  if (typeof window !== 'undefined' && window.covoMaintenanceBlocked) { const error = new Error('ただいまメンテナンス中です。'); error.code = 'covo/maintenance'; throw error; }
+}
 // No payloads or credentials are recorded here. Counters stay on this device.
 export const traffic = {
   startedAt: Date.now(), counters: Object.create(null), listeners: Object.create(null),

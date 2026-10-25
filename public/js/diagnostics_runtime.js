@@ -70,14 +70,14 @@ export function installDiagnostics({ context = () => ({}), notify = () => {} } =
   for (const parent of [document.getElementById('appinfoSection'), document.querySelector('#mobileDetailAppInfo > div:last-child'), document.querySelector('[data-covo-diagnostics-host]')]) {
     if (!parent) continue;
     const section = document.createElement('section'); section.className = 'covo-diagnostics';
-    const title = document.createElement('strong'); title.textContent = '通信・安定性の診断';
+    const title = document.createElement('strong'); title.textContent = '通信・表示の診断';
     const description = document.createElement('p'); description.textContent = '通常の利用を端末内で集計します。テスト通信や自動送信は行いません。通信量は観測できたHTTP分で、Firebaseの請求量とは異なります。';
     const output = document.createElement('pre'); output.setAttribute('aria-live', 'polite'); output.textContent = '「結果を表示」で現在の計測を確認できます。';
     const buttons = document.createElement('div'); buttons.className = 'covo-diagnostics-actions';
     const show = document.createElement('button'), copy = document.createElement('button'), reset = document.createElement('button');
     for (const button of [show, copy, reset]) { button.type = 'button'; button.className = 'covo-button covo-button-secondary covo-button-small'; }
     show.textContent = '結果を表示'; copy.textContent = 'レポートを丸ごとコピー'; reset.textContent = '端末内の計測をリセット';
-    const render = () => { const report = diagnostics.report(context()); output.textContent = JSON.stringify(report, null, 2); return output.textContent; };
+    const render = () => { let details = {}; try { details = context(); } catch (_) { diagnostics.failure('diagnostic.context'); } const report = diagnostics.report(details); output.textContent = JSON.stringify(report, null, 2); return output.textContent; };
     show.onclick = render;
     copy.onclick = async () => { const text = render(); try { await navigator.clipboard.writeText(text); notify('診断レポートをコピーしました。', 'success'); } catch (_) { output.tabIndex = 0; output.focus(); const range = document.createRange(); range.selectNodeContents(output); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); notify('結果を選択しました。端末のコピー操作でコピーしてください。', 'info'); } };
     reset.onclick = () => { diagnostics.reset(); render(); };

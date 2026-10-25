@@ -1,6 +1,16 @@
 import { build } from 'esbuild';
 import { mkdir, writeFile } from 'node:fs/promises';
+import {cacheMatches,recordCache} from './dev_build_cache.mjs';
+import {assertSecretSafety} from './check_secret_safety.mjs';
+await assertSecretSafety();
+const cacheFile='.cache/firebase/build-state.json';
+const required=['scripts/build_firebase.mjs','scripts/dev_build_cache.mjs','scripts/firebase-entry.mjs','scripts/database-entry.mjs','package.json','package-lock.json'];
 await mkdir('.cache/firebase', { recursive: true });
+if(process.argv.includes('--if-needed') && await cacheMatches(cacheFile,required)) {
+  await (await import('./build_css_modules.mjs')).stampCssImports();
+  console.log('[dev] Firebase/updater bundles unchanged; reused verified output.');
+  process.exit(0);
+}
 for (const name of ['app', 'auth', 'storage', 'messaging']) {
   await writeFile(`.cache/firebase/firebase-${name}.js`, `export * from 'firebase-runtime/${name}';\n`);
 }
@@ -22,4 +32,6 @@ const firebaseBuild = await build({
 });
 await writeFile('.cache/firebase/metafile.json', JSON.stringify(firebaseBuild.metafile, null, 2));
 
-await build({ entryPoints: ['node_modules/@tauri-apps/plugin-updater/dist-js/index.js'], outfile: 'public/vendor/desktop-updater.js', bundle: true, format: 'esm', minify: true });
+const desktopBuild=await build({ entryPoints: ['node_modules/@tauri-apps/plugin-updater/dist-js/index.js'], outfile: 'public/vendor/desktop-updater.js', bundle: true, format: 'esm', minify: true, metafile:true });
+await (await import('./build_css_modules.mjs')).stampCssImports();
+await recordCache(cacheFile,[...required,...Object.keys(firebaseBuild.metafile.inputs),...Object.keys(firebaseBuild.metafile.outputs),...Object.keys(desktopBuild.metafile.inputs),...Object.keys(desktopBuild.metafile.outputs)]);

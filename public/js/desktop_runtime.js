@@ -1,5 +1,6 @@
 import { createUpdateController } from './update_controller.js';
 import { assertSupportedClient } from './client_protocol.js';
+import { installReinstallUI } from './reinstall_ui.js';
 
 if (window.__TAURI__?.core?.invoke) {
   const invoke = window.__TAURI__.core.invoke;
@@ -18,7 +19,7 @@ if (window.__TAURI__?.core?.invoke) {
   dismiss.onclick = () => { panel.hidden = true; };
   panel.append(status, progress, button, dismiss); document.body.append(panel);
   const controller = createUpdateController({
-    check: async options => (await import('../vendor/desktop-updater.js')).check(options), busy,
+    check: async options => (await import('../vendor/desktop-updater.js')).check(options), busy: () => busy() || Boolean(window.covoReinstalling) || Boolean(window.covoMaintenanceBlocked) || Boolean(window.covoNativeDevelopment),
     changed(state) {
       window.__bgDownloading = state.phase === 'downloading'; window.__bgDownloaded = state.phase === 'ready';
       if (['available', 'ready', 'error'].includes(state.phase)) panel.hidden = false;
@@ -31,7 +32,10 @@ if (window.__TAURI__?.core?.invoke) {
     }
   });
   window.covoUpdater = controller;
+  installReinstallUI({ invoke, listen: window.__TAURI__.event?.listen, busy: () => busy() || ['downloading','installing'].includes(controller.state.phase), notify });
   window.covoCheckUpdate = async (manual = false) => {
+    if (window.covoNativeDevelopment) { if (manual) notify('開発実行中は本番版への更新を停止しています。'); return false; }
+    if (window.covoReinstalling || window.covoMaintenanceBlocked) return false;
     let required = false;
     try { assertSupportedClient(); } catch (_) { required = true; }
     if (!manual && (navigator.onLine === false || (!required && localStorage.getItem('covo_ignore_force_update') === '1'))) return false;
@@ -41,6 +45,7 @@ if (window.__TAURI__?.core?.invoke) {
     return found;
   };
   const resume = async () => {
+    if (window.covoNativeDevelopment) return;
     if (controller.state.phase === 'available' && !busy() && navigator.onLine !== false) await controller.download();
   };
   setInterval(() => resume().catch(() => {}), 30000);

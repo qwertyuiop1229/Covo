@@ -10,6 +10,31 @@ const main = fs.readFileSync('public/js/main.js', 'utf8');
 const ast = parser.parse(main, { sourceType: 'module' });
 function declaration(name) { const node = ast.program.body.find(n => n.type === 'FunctionDeclaration' && n.id.name === name); return main.slice(node.start, node.end); }
 
+test('maintenance closes all history peers and rejects newly created peers without retaining them', () => {
+  const peers = new Set(), unsubscribe = jest.fn();
+  const ctx = vm.createContext({ window: { covoMaintenanceBlocked: false }, _p2pHistoryConnections: peers, _p2pLogSyncUnsub: unsubscribe });
+  vm.runInContext(declaration('trackP2PHistoryConnection') + declaration('stopP2PHistoryConnections'), ctx);
+  const firstClose = jest.fn(), secondClose = jest.fn();
+  const first = { close: firstClose }, second = { close: secondClose };
+  ctx.trackP2PHistoryConnection(first); ctx.trackP2PHistoryConnection(second); expect(peers.size).toBe(2);
+  ctx.stopP2PHistoryConnections(); expect(peers.size).toBe(0); expect(firstClose).toHaveBeenCalledTimes(1); expect(secondClose).toHaveBeenCalledTimes(1); expect(unsubscribe).toHaveBeenCalledTimes(1);
+  ctx.window.covoMaintenanceBlocked = true; const rejected = { close: jest.fn() };
+  expect(() => ctx.trackP2PHistoryConnection(rejected)).toThrow(); expect(rejected.close).toHaveBeenCalledTimes(1); expect(peers.size).toBe(0);
+});
+
+test('offline pruning coalesces bounded work and never submits a token from the previous account', async () => {
+  const fetcher = jest.fn(), queue = new Map(); let finishToken;
+  const ctx = vm.createContext({ window: {}, navigator: { onLine: false }, userId: 'alice', _pruneRetryQueue: queue, _pruneThrottleMap: new Map(), _prunePendingTimers: new Map(), Date, setTimeout, clearTimeout,
+    auth: { currentUser: { getIdToken: () => new Promise(resolve => { finishToken = resolve; }) } }, fetch: fetcher });
+  vm.runInContext(declaration('queuePruneRetry') + declaration('pruneExcessMessages'), ctx);
+  await ctx.pruneExcessMessages('server','room',null); await ctx.pruneExcessMessages('server','room',null);
+  expect(queue.size).toBe(1); expect(fetcher).not.toHaveBeenCalled();
+  for (let index = 0; index < 40; index++) await ctx.pruneExcessMessages('server',String(index),null);
+  expect(queue.size).toBe(32);
+  ctx.navigator.onLine = true; const task = ctx.pruneExcessMessages('server','online',null);
+  ctx.userId = 'bob'; finishToken('old-token'); await task; expect(fetcher).not.toHaveBeenCalled();
+});
+
 test('presence coalesces repeated focus events, drains real changes, and retries failed writes', async () => {
   const { createStatePublisher } = api('communication_runtime', 'createStatePublisher');
   let finish;
@@ -74,7 +99,7 @@ test('actual send adapter saves one RTDB body and no Firestore body for new mess
   const variable = ast.program.body.find(n => n.type === 'VariableDeclaration' && n.declarations.some(d => d.id.name === '_outbox'));
   const adapter = variable.declarations[0].init.arguments[0].properties.find(p => p.key.name === 'write').value;
   const set = jest.fn(), setDoc = jest.fn(), acknowledged = jest.fn();
-  const context = vm.createContext({ auth: { currentUser: { uid: 'alice' } }, CLIENT_PROTOCOL: 2, assertSupportedClient() {}, reconcileLegacyOutbox: async entry => { entry.data.storageVersion = 2; entry.data.clientProtocol = 2; }, requiredMessageBackends, usesRealtimeOnly,
+  const context = vm.createContext({ userId:'alice',window:{},auth: { currentUser: { uid: 'alice' } }, CLIENT_PROTOCOL: 2, assertSupportedClient() {}, reconcileLegacyOutbox: async entry => { entry.data.storageVersion = 2; entry.data.clientProtocol = 2; }, requiredMessageBackends, usesRealtimeOnly,
     _getOrInitRTDB: async () => ({}), ref: (_, path) => path, appId: 'testApp', set, setDoc,
     doc: (_, path, id) => path + '/' + id, db: {}, Timestamp: { fromMillis: value => value },
     LocalStore: { putSetting: async () => {} }, withReadDeadline: value => value, Promise });
@@ -180,7 +205,7 @@ test('device migration send blocks updater while connecting and releases after a
   const button = { disabled: false }, input = { value: 'COVO-AAAA-BBBB' };
   const context = vm.createContext({
     window: {}, document: { getElementById: id => id === 'migrationSendCodeInput' ? input : id === 'startSendMigrationBtn' ? button : null },
-    _migrationSendBusy: false, activeMigrationSession: null, _fsRole: null, _fsId: null, _callId: null, _isVoiceRecording: false, isSendingMessage: false, _outboxEntries: new Map(),
+    authTransition: { busy: false }, _migrationSendBusy: false, activeMigrationSession: null, _fsRole: null, _fsId: null, _callId: null, _isVoiceRecording: false, isSendingMessage: false, _outboxEntries: new Map(),
     db: {}, appId: 'testApp', userId: 'alice', doc: () => ({}), alertMessage: jest.fn(), clearTimeout,
     getDoc: () => new Promise(resolve => { resolveSession = resolve; })
   });
@@ -430,6 +455,18 @@ test('an old account cannot apply a queued push preference to the new account', 
   vm.runInContext(declaration('queueFcmLifecycle')+'\n'+declaration('setBrowserPushEnabled'),context);
   const blocker=context.queueFcmLifecycle(()=>new Promise(resolve=>{finish=resolve;}));await new Promise(setImmediate);
   const queued=context.setBrowserPushEnabled(false);context.userId='bob';finish();await blocker;await queued;expect(changed).not.toHaveBeenCalled();
+});
+
+test('maintenance admission initializes local UI once and never starts a delayed listener after blocking', () => {
+  const initialize = jest.fn(), listen = jest.fn(), timers = [];
+  const context = vm.createContext({ _admittedUIInitialized:false, window:{covoMaintenanceBlocked:true},
+    initSettings:initialize, initPinLockSystem:jest.fn(), initializeResizer:jest.fn(), setDiscordUIMode:jest.fn(),
+    localStorage:{getItem:()=>null}, setTimeout:fn=>timers.push(fn), setupGlobalAnnouncementListener:listen });
+  vm.runInContext(declaration('initializeAdmittedUI'),context);
+  context.initializeAdmittedUI(); expect(initialize).not.toHaveBeenCalled();
+  context.window.covoMaintenanceBlocked=false; context.initializeAdmittedUI(); context.initializeAdmittedUI();
+  expect(initialize).toHaveBeenCalledTimes(1); expect(timers).toHaveLength(1);
+  context.window.covoMaintenanceBlocked=true; timers[0](); expect(listen).not.toHaveBeenCalled();
 });
 
 test('temporary missing-file cache expires and is bounded, with an explicit manual retry escape', () => {

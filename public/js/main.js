@@ -1,16 +1,19 @@
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.286';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.286';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.286';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.286';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.286';
+import { createAuthTransition } from './auth_transition.js?v=1.1.288';
+import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.288';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.288';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.288';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.288';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.288';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.288';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
 import { createMediaPlaceholder } from './media_placeholder.js';
 import { createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
 import { VirtualTimeline } from './virtual_timeline.js';
+import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.286';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.288';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -73,7 +76,8 @@ import {
   collectionGroup,
   deleteField,
   addDoc,
-  runTransaction
+  runTransaction,
+  disableNetwork, enableNetwork
 } from "../vendor/firebase/firebase-firestore.js";
 import {
   getMessaging,
@@ -84,6 +88,7 @@ import {
 } from "../vendor/firebase/firebase-messaging.js";
 import {
   getDatabase,
+  goOffline, goOnline,
   ref,
   set,
   get,
@@ -106,13 +111,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.286';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.288';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.286';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.286';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.286';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.286';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.286';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.288';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.288';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.288';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.288';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.288';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -787,6 +792,53 @@ const authContainer = document.getElementById("authContainer");
 const nicknameContainer = document.getElementById("nicknameContainer");
 const appContainer = document.getElementById("appContainer");
 const loadingOverlay = document.getElementById("loadingOverlay");
+const authTransition = createAuthTransition();
+let _maintenanceUnsub = null, _maintenanceInitialized = false, _maintenanceHadSession = false;
+const maintenanceGate = createMaintenanceGate({ endpoint: WORKER_BASE_URL + '/api/maintenance',
+  getOwner: () => auth?.currentUser?.uid,
+  stopped: async () => {
+    if (isAuthReady) _maintenanceHadSession = true;
+    _lastAuthUserId = null; isAuthReady = false;
+    invalidateComposerOperation();
+    authTransition.fail();
+    document.querySelector('.container').inert = true;
+    window.dispatchEvent(new Event('covo-maintenance-blocked'));
+    window.cleanupAllActiveFirestoreListeners?.();
+    _maintenanceUnsub?.(); _maintenanceUnsub = null;
+    if (_rtdb) goOffline(_rtdb);
+    _rtdbConnected = false;
+    if (db) disableNetwork(db).catch(() => {});
+    stopPresenceSystem();
+    userId = null;
+    window.userId = null; setCryptoAccount(null); LocalStore.setAccountScope(null);
+    endCall(true).catch(() => {});
+    if (window._voiceEngine?.isActive) Promise.resolve(window._voiceEngine.leave()).catch(() => {});
+    window.cancelFileShare?.(); window.cancelMigrationReceive?.(); window.cancelMigrationSend?.();
+    stopP2PHistoryConnections();
+    window.cancelVoiceRecording?.();
+  },
+  resume: async () => {
+    if (!await maintenanceGate.check(auth?.currentUser)) return;
+    if (_maintenanceHadSession) { location.reload(); return; }
+    if (!_maintenanceInitialized) { _maintenanceInitialized = true; initializeFirebase(); }
+    else window.retryAuthInitialization?.();
+  }
+});
+function ensureMaintenanceWatch() {
+  if (_maintenanceUnsub || window.covoMaintenanceBlocked) return;
+  _getOrInitRTDB().then(database => {
+    if (!database || window.covoMaintenanceBlocked || _maintenanceUnsub) return;
+    _maintenanceUnsub = onValue(ref(database, 'maintenance'), snapshot => {
+      const active = snapshot.val()?.enabled === true;
+      if (active === maintenanceGate.state?.enabled) return;
+      if (active && !isAdmin) { window.covoMaintenanceBlocked = true; document.querySelector('.container').inert = true; }
+      maintenanceGate.changed(auth.currentUser).then(() => {
+        const toggle = document.getElementById('adminMaintenanceToggle');
+        if (toggle && isAdmin && maintenanceGate.state) toggle.checked = maintenanceGate.state.enabled;
+      });
+    }, () => {});
+  }).catch(() => {});
+}
 const nicknameInput = document.getElementById("nicknameInput");
 const allowedEmailsList = document.getElementById("allowedEmailsList");
 const adminEmailsList = document.getElementById("adminEmailsList");
@@ -828,6 +880,7 @@ let pendingRoomDelete = null;
 let lastMessagesData = [];
 let attachedFile = null;
 let attachedFiles = [];
+let _attachmentSelectionGeneration = 0;
 let attachedKvFile = null;
 let replyingToMessage = null;
 let currentPdfUrl = "";
@@ -1012,6 +1065,10 @@ function scheduleMediaLoad(element, load) {
 
 // DOM クリーンアップ関数
 function clearMessagesDOM() {
+  selectedMessageForContext = null;
+  window._reactionTargetMessageId = null;
+  document.getElementById('messageContextMenu')?.classList.add('hidden');
+  document.getElementById('stickerPicker')?.classList.remove('show');
   clearTimeout(_resyncFallbackTimer);
   if (typeof _virtualTimeline !== 'undefined') _virtualTimeline.reset();
   _virtualRowObserver?.disconnect();
@@ -1092,6 +1149,7 @@ function initializeFirebase() {
       });
     }
     onIdTokenChanged(auth, cacheCurrentIdToken);
+    ensureMaintenanceWatch();
 
     function cleanupGlobalNotificationListeners() {
       if (typeof globalNotifListeners === 'object' && globalNotifListeners) {
@@ -1135,11 +1193,19 @@ function initializeFirebase() {
       // 再入防止: 前回の処理が終わっていない場合はスキップ
       if (_authHandlerBusy) { pendingAuth = true; return; }
       _authHandlerBusy = true;
-      loadingOverlay.classList.add("hidden");
       const splash = document.getElementById("appLoadingSplash");
       try {
+        if (!await maintenanceGate.authorize(user)) return;
+        if (auth.currentUser?.uid !== user?.uid) return;
+        if (_maintenanceHadSession) { location.reload(); return; }
+        if (db) await enableNetwork(db);
+        if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user?.uid) return;
+        if (_rtdb) goOnline(_rtdb);
+        ensureMaintenanceWatch();
+        initializeAdmittedUI();
 
         if (user) {
+          authTransition.initializing(user.uid);
           // 同一ユーザーIDで既に初期化済みならスキップ（FCM再登録等の無駄な処理を防止）
           if (_lastAuthUserId === user.uid && userNickname) {
             _authHandlerBusy = false;
@@ -1147,6 +1213,7 @@ function initializeFirebase() {
             return;
           }
           if (window.__covoCacheOwner !== user.uid) {
+            invalidateComposerOperation();
             window.__covoCacheOwner = user.uid;
             cleanupAllActiveFirestoreListeners();
             allServersCache = []; cachedUsers = [];
@@ -1157,7 +1224,7 @@ function initializeFirebase() {
             _outboxEntries.clear(); _searchPreloadedAt.clear();
             window._subscribeVcSidebarStates?.(null);
             for (const timer of _prunePendingTimers.values()) clearTimeout(timer);
-            _prunePendingTimers.clear(); _pruneThrottleMap.clear();
+            _prunePendingTimers.clear(); _pruneThrottleMap.clear(); _pruneRetryQueue.clear();
             window._covoDrafts = new Map();
             try { const drafts = JSON.parse(sessionStorage.getItem(`covo_channel_drafts:${user.uid}`) || '{}'); for (const [key, value] of Object.entries(drafts)) window._covoDrafts.set(key, value); } catch (_) {}
           }
@@ -1209,7 +1276,7 @@ function initializeFirebase() {
 
           // Firestoreに認証トークンが伝播するまで待つ（レースコンディション対策・一時的通信切断時のエラー抑止）
           await withReadDeadline(user.getIdToken(), 3000).catch(() => {});
-          if (auth.currentUser?.uid !== user.uid) return;
+          if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
           const rawEmail = user.email || "";
           const cleanEmail = rawEmail.toLowerCase().trim();
 
@@ -1229,6 +1296,7 @@ function initializeFirebase() {
                 withReadDeadline(getDoc(pRef), 3000).catch(() => null),
                 withReadDeadline(getDoc(uRef), 3000).catch(() => null)
               ]);
+              if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
               const isExplicitlyLinked = Boolean(pDocSnap?.data()?.googleLinked || uDocSnap?.data()?.googleLinked);
               // 🔒 Firestoreの読み取りに失敗した場合（通信断・認証伝播待ち等）は「未連携」と断定できないため、正規ユーザーの連携を解除・ログアウトしない
               const linkStateVerified = pDocSnap !== null && uDocSnap !== null;
@@ -1306,8 +1374,9 @@ function initializeFirebase() {
             3000,
             [null, null, null, null]
           );
+          if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
 
-          if (auth.currentUser?.uid !== user.uid) return;
+          if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
           // アカウントに紐づくすべてのメールアドレス（Google連携メール・元の登録メール両方）を網羅的に収集
           const candidateEmails = new Set();
           if (user.email) candidateEmails.add(user.email.toLowerCase().trim());
@@ -1470,7 +1539,7 @@ function initializeFirebase() {
               initialNickname = savedNick;
             }
           }
-          if (auth.currentUser?.uid !== user.uid) return;
+          if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
           if (initialNickname) {
             try {
               localStorage.setItem('covo_cached_nick_' + userId, initialNickname);
@@ -1499,9 +1568,9 @@ function initializeFirebase() {
             // already update both public profile documents at their mutation boundary.
             if (confirmedRootProfile && userProfileSnap && !userProfileSnap.metadata.fromCache && Object.keys(missingProfileFields(confirmedRootProfile, rootProfile)).length) {
               runTransaction(db, async transaction => {
-                if (auth.currentUser?.uid !== user.uid) return;
+                if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
                 const current = await transaction.get(userRef);
-                if (auth.currentUser?.uid !== user.uid) return;
+                if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user.uid) return;
                 const repair = missingProfileFields(current.exists() ? current.data() : {}, rootProfile);
                 if (Object.keys(repair).length) transaction.set(userRef, repair, { merge: true });
               }).catch(console.error);
@@ -1641,9 +1710,10 @@ function initializeFirebase() {
           window._currentUserBannerAvatarUrl = undefined;
           _afterMessageAck.clear();
           _outboxEntries.clear();
+          invalidateComposerOperation();
           window._subscribeVcSidebarStates?.(null);
           for (const timer of _prunePendingTimers.values()) clearTimeout(timer);
-          _prunePendingTimers.clear(); _pruneThrottleMap.clear();
+          _prunePendingTimers.clear(); _pruneThrottleMap.clear(); _pruneRetryQueue.clear();
           _searchPreloadedAt.clear();
           _localArchivesUI?.close(false);
           window.closeChatBackupViewerModal?.();
@@ -1681,10 +1751,13 @@ function initializeFirebase() {
           if (membersSidebar) membersSidebar.classList.add("hidden");
         }
       } catch (authErr) {
+        authTransition.fail();
         console.error('[Auth] onAuthStateChanged handler error:', authErr);
         if (typeof showEmergencyRecoveryPanel === 'function') showEmergencyRecoveryPanel(authErr.message || '認証初期化エラー', authErr);
       } finally {
         _authHandlerBusy = false;
+        if (!user) authTransition.signedOut();
+        else if (!pendingAuth && auth.currentUser?.uid === user.uid && (document.body.classList.contains('logged-in') || document.body.classList.contains('needs-nickname'))) authTransition.ready(user.uid);
         if (pendingAuth) { pendingAuth = false; queueMicrotask(() => handleAuthState(auth.currentUser)); }
         window.__app_fully_loaded__ = true;
         const _invoke = window.__TAURI__?.core?.invoke;
@@ -1729,6 +1802,11 @@ function updateUserPanelUI() {
 function getJapaneseAuthErrorMessage(err) {
   const code = err?.code || (err?.message === 'auth/wrong-password' ? 'auth/wrong-password' : '');
   const msg = String(err?.message || '');
+  if (code === 'auth/unauthorized-domain') {
+    return window.covoLocalPreview
+      ? 'PCは localhost で開いてください。スマホのLAN IPはFirebase Consoleに登録できないため、Googleログインは npm run test:web:google のプレビューURLで検証してください。LANではメール・パスワードでログインできます。'
+      : 'この接続先ではGoogleログインが許可されていません。公式のアプリURLから開き直してください。';
+  }
   if (code === 'auth/wrong-password') {
     return 'パスワードが正しくありません。';
   }
@@ -1776,6 +1854,7 @@ function getJapaneseAuthErrorMessage(err) {
 
 // 統合スマート認証ハンドラー (自前ロック撤廃・Firebaseレート制限時のみ案内・絵文字なし)
 window.handleUnifiedAuthSubmit = async function () {
+  if (authTransition.busy) return;
   const emailInp = document.getElementById("emailInput");
   const pwdInp = document.getElementById("passwordInput");
   const authMsg = document.getElementById("authMessage");
@@ -1797,8 +1876,8 @@ window.handleUnifiedAuthSubmit = async function () {
     return;
   }
 
-  if (loading) loading.classList.remove("hidden");
-  if (btn) btn.disabled = true;
+  const attempt = authTransition.begin();
+  if (attempt === null) return;
 
   try {
     // 1. まず既存アカウントとしてのサインインを試みる
@@ -1810,6 +1889,7 @@ window.handleUnifiedAuthSubmit = async function () {
 
       // 既存アカウントが存在しない、または未登録の場合 → 自動で安全に新規アカウント作成を試行
       if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+        if (window.covoMaintenanceBlocked) throw signInErr;
         try {
           console.log("[Auth] 既存アカウントが見つからないため、Worker API経由で新規作成を試行します...");
           // 🔒 セキュリティ: Worker API経由でアカウント作成（招待許可リスト検証を実施）
@@ -1905,9 +1985,7 @@ window.handleUnifiedAuthSubmit = async function () {
     }
 
     if (authMsg) authMsg.innerHTML = msgHtml;
-  } finally {
-    if (loading) loading.classList.add("hidden");
-    if (btn) btn.disabled = false;
+    authTransition.fail(attempt);
   }
 };
 
@@ -1915,10 +1993,12 @@ window.handleUnifiedAuthSubmit = async function () {
 const googleAuthBtn = document.getElementById("googleAuthButton");
 if (googleAuthBtn) {
   googleAuthBtn.addEventListener("click", async () => {
+    const attempt = authTransition.begin();
+    if (attempt === null) return;
+    let accepted = false;
     const authMsg = document.getElementById("authMessage");
     const loading = document.getElementById("loadingOverlay");
     if (authMsg) authMsg.textContent = "";
-    if (loading) loading.classList.remove("hidden");
 
     try {
       sessionStorage.setItem('covo_auth_via_google_btn', '1');
@@ -1947,11 +2027,13 @@ if (googleAuthBtn) {
           if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/cancelled-popup-request") {
             console.log("[Auth] ポップアップ制限を検知。リダイレクト方式で再試行します...");
             await signInWithRedirect(auth, provider);
+            accepted = true;
             return;
           }
           throw popupErr;
         }
       }
+      accepted = true;
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
         console.log("[Auth] Googleログインがキャンセルされました");
@@ -1965,7 +2047,7 @@ if (googleAuthBtn) {
       const msg = getJapaneseAuthErrorMessage(err);
       if (authMsg) authMsg.textContent = msg;
     } finally {
-      if (loading) loading.classList.add("hidden");
+      if (!accepted) authTransition.fail(attempt);
     }
   });
 }
@@ -3109,6 +3191,7 @@ function switchAdminTab(tab) {
     const btn = document.getElementById(t.id);
     const cnt = document.getElementById(t.content);
     if (!btn || !cnt) return;
+    const adminOnly = btn.classList.contains('admin-only-tab');
     if (t.key === tab) {
       btn.className = "flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-gray-700 dark:text-white shadow-xs";
       cnt.classList.remove("hidden");
@@ -3116,12 +3199,35 @@ function switchAdminTab(tab) {
       btn.className = "flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
       cnt.classList.add("hidden");
     }
+    btn.classList.toggle('admin-only-tab', adminOnly);
   });
 }
 document.getElementById("adminTabAllowedBtn")?.addEventListener("click", () => switchAdminTab("allowed"));
 document.getElementById("adminTabAdminsBtn")?.addEventListener("click", () => switchAdminTab("admins"));
 document.getElementById("adminTabListAdminsBtn")?.addEventListener("click", () => switchAdminTab("listAdmins"));
-document.getElementById("adminTabFeaturesBtn")?.addEventListener("click", () => switchAdminTab("features"));
+document.getElementById("adminTabFeaturesBtn")?.addEventListener("click", () => { switchAdminTab("features"); refreshMaintenanceControl(); });
+async function refreshMaintenanceControl() {
+  if (!isAdmin) return;
+  const toggle = document.getElementById('adminMaintenanceToggle'); if (toggle) toggle.disabled = true;
+  await maintenanceGate.check(auth.currentUser);
+  if (toggle) { toggle.checked = maintenanceGate.state?.enabled === true; toggle.disabled = maintenanceGate.state === null || maintenanceGate.state?.previewLegacyBackend === true; }
+  const compatibility = document.getElementById('adminMaintenanceCompatibility');
+  if (compatibility) compatibility.hidden = !maintenanceGate.state?.previewLegacyBackend;
+}
+window.toggleMaintenanceMode = async function (event) {
+  const toggle = event.target, previous = maintenanceGate.state?.enabled === true;
+  if (!isAdmin || toggle.disabled || maintenanceGate.state?.previewLegacyBackend) { toggle.checked = previous; return; }
+  const enabled = toggle.checked; toggle.checked = previous; toggle.disabled = true;
+  try {
+    if (!await showCustomConfirm(enabled ? 'メンテナンスを開始しますか？' : 'メンテナンスを終了しますか？', enabled ? '開始する' : '終了する', 'キャンセル', 'アプリ全体管理者以外の接続を停止します。端末の暗号鍵・履歴・送信待ちは削除しません。')) return;
+    const token = await auth.currentUser.getIdToken();
+    const response = await fetch(WORKER_BASE_URL + '/api/setMaintenance', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, revision: maintenanceGate.state?.revision ?? 0 }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || '設定を保存できませんでした。');
+    await refreshMaintenanceControl(); alertMessage(enabled ? 'メンテナンスを開始しました。' : 'メンテナンスを終了しました。', 'success');
+  } catch (error) { alertMessage(error.message, 'error'); await refreshMaintenanceControl(); }
+  finally { toggle.disabled = maintenanceGate.state === null || maintenanceGate.state?.previewLegacyBackend === true; }
+};
 document.getElementById("adminTabAnnouncementsBtn")?.addEventListener("click", () => switchAdminTab("announcements"));
 document.getElementById("adminTabRecoveryBtn")?.addEventListener("click", () => switchAdminTab("recovery"));
 
@@ -5054,6 +5160,7 @@ function setupGlobalAdminRoleListener() {
 
     isAdmin = newIsAdmin;
     isListAdmin = newListAdmin;
+    if (adminChanged && !isAdmin && maintenanceGate.state?.enabled) maintenanceGate.changed(auth.currentUser);
 
     if (adminPanelContainer) {
       adminPanelContainer.classList.toggle("hidden", !(isAdmin || isListAdmin));
@@ -8664,7 +8771,7 @@ function clearAppBadgeFull() {
 let _lastResyncAt = 0;
 let _resyncFallbackTimer = null;
 async function resyncActiveRoomMessages(expectedTimestamp = null) {
-  if ((!currentRoomId && !currentDmId) || !userId) return;
+  if ((!currentRoomId && !currentDmId) || !userId || window.covoMaintenanceBlocked) return;
   if (!window.rtdbMessagesUnsub) { subscribeToMessages({ preserve: true }); return; }
   // Focus/visibility/online events reuse the existing live stream. A metadata/data mismatch alone
   // triggers a bounded Firestore fallback, after allowing the RTDB event to catch up.
@@ -8672,8 +8779,10 @@ async function resyncActiveRoomMessages(expectedTimestamp = null) {
 
   clearTimeout(_resyncFallbackTimer);
   const serverId = currentServerId, roomId = currentRoomId, session = _activeChannelSessionId;
+  const owner = userId;
+  const active = () => owner === userId && !window.covoMaintenanceBlocked && session === _activeChannelSessionId && serverId === currentServerId && roomId === currentRoomId;
   _resyncFallbackTimer = setTimeout(async () => {
-    if (session !== _activeChannelSessionId || serverId !== currentServerId || roomId !== currentRoomId) return;
+    if (!active()) return;
     if (allLoadedMessages.some(message => getMsgTimestamp(message) >= expectedTimestamp)) return;
     const metadata = window.__globalRoomsCache?.[serverId]?.[roomId];
     if (Number(metadata?.lastMessageStorageVersion) >= 2 && Number(metadata?.lastMessageStorageTimestamp) === expectedTimestamp) {
@@ -8684,13 +8793,13 @@ async function resyncActiveRoomMessages(expectedTimestamp = null) {
     _lastResyncAt = Date.now();
     try {
       const snapshot = await withReadDeadline(getDocs(query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}/messages`), orderBy('timestamp', 'desc'), limit(20))));
-      if (session !== _activeChannelSessionId || serverId !== currentServerId || roomId !== currentRoomId) return;
+      if (!active()) return;
       const records = snapshot.docs.map(document => ({ ...document.data(), id: document.id, channelId: `${serverId}_${roomId}` }));
       allLoadedMessages = mergeChannelRecords(allLoadedMessages, records).sort(compareHistoryMessages);
       renderMessagesWithReadReceipts();
       await decryptMessagesInPlace(records, serverId, roomId, currentServerData?.joinedUsers || []);
-      if (session === _activeChannelSessionId) renderMessagesWithReadReceipts();
-    } catch (_) { if (session === _activeChannelSessionId) setChannelLoadStatus('履歴の同期を確認中です。接続が復帰すると受信を続けます。', true); }
+      if (active()) renderMessagesWithReadReceipts();
+    } catch (_) { if (active()) setChannelLoadStatus('履歴の同期を確認中です。接続が復帰すると受信を続けます。', true); }
   }, 750);
 }
 
@@ -11730,6 +11839,7 @@ window.initiateMigrationSend = async function() {
   let pc = null;
   let migrationSendTimer = null;
   const cleanupSend = () => {
+    if (window.cancelMigrationSend === cleanupSend) window.cancelMigrationSend = null;
     _migrationSendBusy = false;
     clearTimeout(migrationSendTimer);
     if (unsubTransfer) { unsubTransfer(); unsubTransfer = null; }
@@ -11737,6 +11847,7 @@ window.initiateMigrationSend = async function() {
     if (pc) { try { pc.close(); } catch (_) {} }
     btn.disabled = false;
   };
+  window.cancelMigrationSend = cleanupSend;
   try {
     const transferRef = doc(db, `artifacts/${appId}/device_transfers/${code}`);
     const snap = await getDoc(transferRef);
@@ -14664,6 +14775,8 @@ window.executeManualServerPrune = async function () {
 };
 
 let isSendingMessage = false;
+let _composerOperationGeneration = 0;
+function invalidateComposerOperation() { ++_composerOperationGeneration; isSendingMessage = false; }
 // ===== サーバーカードコンテキストメニュー =====
 let serverCtxData = null;
 
@@ -15773,12 +15886,14 @@ async function loadOlderMessages() {
   if (allLoadedMessages.length === 0) return;
   isLoadingOlderMessages = true;
   const session = _activeChannelSessionId;
+  const targetOwner = userId;
   const targetServerId = currentServerId;
   const targetRoomId = currentRoomId;
   const targetDmId = currentDmId;
   const targetDmParticipants = currentDmParticipants ? [...currentDmParticipants] : [];
   const targetServerData = currentServerData;
   const isStillActive = () => (
+    userId === targetOwner && !window.covoMaintenanceBlocked &&
     session === _activeChannelSessionId &&
     currentServerId === targetServerId &&
     currentRoomId === targetRoomId &&
@@ -15946,7 +16061,13 @@ function subscribeToMessages({ preserve = false } = {}) {
   hideTerminalBanner();
   const spinner = document.getElementById('topLoadingSpinner');
   if (spinner) spinner.style.display = 'none';
-  subscribeToMessagesRTDB(_activeChannelSessionId);
+  const operation = subscribeToMessagesRTDB(_activeChannelSessionId);
+  const subscription = window.rtdbMessagesUnsub, owner = userId;
+  operation.catch(() => {
+    if (window.rtdbMessagesUnsub !== subscription || owner !== userId || window.covoMaintenanceBlocked) return;
+    globalThis.covoDiagnostics?.failure('channel.initialize');
+    setChannelLoadStatus('接続の準備を完了できませんでした。再試行してください。', true);
+  });
 }
 function setChannelLoadStatus(text, retry = false) {
   let element = document.getElementById('channelLoadStatus');
@@ -16079,6 +16200,7 @@ async function subscribeToMessagesRTDB(session) {
           if (isStillActive() && records?.length) apply(records, 'local');
         }).catch(() => {});
       }, err => {
+        if (isStillActive()) globalThis.covoDiagnostics?.failure(/permission|denied/i.test(String(err?.code || err)) ? 'channel.permission-denied' : 'channel.listen-interrupted');
         if (isStillActive()) _channelPermissionDenied = /permission|denied/i.test(String(err?.code || err));
         if (isStillActive()) setChannelLoadStatus(/permission|denied/i.test(String(err?.code || err)) ? 'この会話へのアクセス権限を確認できません。' : '受信が中断しました。接続を確認してください。', true);
       });
@@ -16088,6 +16210,7 @@ async function subscribeToMessagesRTDB(session) {
   const rtdb = await _getOrInitRTDB();
   if (!isStillActive()) return;
   const connectedUnsub = onValue(ref(rtdb, '.info/connected'), snapshot => {
+    if (!isStillActive()) return;
     _rtdbConnected = Boolean(snapshot.val());
     if (isStillActive() && !snapshot.val()) setChannelLoadStatus('接続中です。保存済みの履歴を表示しています。', true);
     else if (isStillActive() && received) setChannelLoadStatus('');
@@ -16111,6 +16234,7 @@ async function subscribeToMessagesRTDB(session) {
       : `artifacts/${appId}/dm_typing/${activeDmId}`;
       const typingRef = ref(rtdb, typingPath);
   const onTyping = onValue(typingRef, (snap) => {
+    if (!isStillActive()) return;
     // 登録時のルーム/サーバー/DMと現在のアクティブ状態が完全一致しない場合は無視してインジケータを隠す
     if (currentServerId !== activeServerId || currentRoomId !== activeRoomId || currentDmId !== activeDmId) {
       const curInd = document.getElementById('typingIndicator');
@@ -16419,6 +16543,7 @@ function selectRoom(roomId, roomName) {
 const _historyLoadGate = new HistoryLoadGate();
 let floatingDateTimer = null;
 messagesDisplay.addEventListener("scroll", async () => {
+  if (_chatScroller.running) return;
   if (!allowPagination) return;
 
   const floatingContainer = document.getElementById('floatingDateContainer');
@@ -16553,18 +16678,18 @@ async function loadJumpNewerMessages() { return loadJumpPage('newer'); }
 
 window.exitJumpMode = function () {
   ++_jumpGeneration;
+  const wasJumpView=isJumpView;
   isJumpView = false;
   jumpViewMessages = [];
   isLoadingJumpOlder = false; isLoadingJumpNewer = false;
-  _virtualTimeline.reset();
+  if(wasJumpView)_virtualTimeline.reset();
   lastMessagesData = [...allLoadedMessages];
-  messagesDisplay.scrollTop = 0;
   renderMessagesWithReadReceipts();
-  messagesDisplay.scrollTop = 0;
+  const owner=userId,session=_activeChannelSessionId;
+  _chatScroller.to(()=>0,{active:()=>owner===userId&&session===_activeChannelSessionId}).then(arrived=>{if(arrived)updateReadReceiptForCurrentUser();});
   window._covoUnreadScrolledCount = 0;
   document.getElementById('jumpModeUnreadBadge')?.classList.add('hidden');
   document.getElementById('jumpModeExitBtn')?.classList.add('opacity-0', 'pointer-events-none');
-  updateReadReceiptForCurrentUser();
 };
 
 // PCでのマウスホイールによるスクロール方向逆転の修正
@@ -17534,14 +17659,8 @@ if (messageInpEl) {
       if (items[i].kind === 'file') {
         let f = items[i].getAsFile();
         if (!f) return;
-        f = await processHeicFile(f);
-        if (!checkFileAllowed(f)) return;
-        // 上限を統一（KVストレージ仕様に準拠: 最大25MB）
-        const MAX = 25 * 1024 * 1024;
-        if (f.size > MAX) { alertMessage("ファイルは25MBまでです", "error"); return; }
-        attachedFile = { file: f, name: f.name || `paste_${Date.now()}`, type: f.type || 'application/octet-stream', size: f.size };
-        updateFilePreview();
         e.preventDefault();
+        await handleFilesSelected([f]);
         return;
       }
     }
@@ -17782,16 +17901,31 @@ async function cacheLocalMediaFile(url, fileOrBlob) {
 // === メッセージ自動プルーニング（最新1,000件超過分の自動削除 & KV添付ファイル完全消去） ===
 let _pruneThrottleMap = new Map();
 const _prunePendingTimers = new Map();
+const _pruneRetryQueue = new Map();
+function queuePruneRetry(key, scope) {
+  if (_pruneRetryQueue.size >= 32 && !_pruneRetryQueue.has(key)) _pruneRetryQueue.delete(_pruneRetryQueue.keys().next().value);
+  _pruneRetryQueue.set(key, scope);
+}
+window.addEventListener('online', async () => {
+  if (window.covoMaintenanceBlocked) return;
+  for (const [key, scope] of [..._pruneRetryQueue]) {
+    _pruneRetryQueue.delete(key);
+    if (scope.owner === userId) await pruneExcessMessages(scope.serverId, scope.roomId, scope.dmId);
+  }
+});
 async function pruneExcessMessages(serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId) {
+  if (window.covoMaintenanceBlocked) return;
   if ((!serverId || !roomId) && !dmId) return;
   const channelKey = dmId ? `dm_${dmId}` : `${serverId}_${roomId}`;
+  const owner = userId, scope = { owner, serverId, roomId, dmId };
+  if (navigator.onLine === false) { queuePruneRetry(channelKey, scope); return; }
   const now = Date.now();
   const elapsed = now - (_pruneThrottleMap.get(channelKey) || 0);
   if (elapsed < 5000) {
     if (!_prunePendingTimers.has(channelKey)) {
       _prunePendingTimers.set(channelKey, setTimeout(() => {
         _prunePendingTimers.delete(channelKey);
-        pruneExcessMessages(serverId, roomId, dmId);
+        if (owner === userId) pruneExcessMessages(serverId, roomId, dmId);
       }, 5020 - elapsed));
     }
     return;
@@ -17804,9 +17938,9 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
 
   try {
     const idToken = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => "") : "";
-    if (!idToken) return;
+    if (!idToken || userId !== owner) return;
 
-    fetch(`${WORKER_BASE_URL}/api/pruneChannelMessages`, {
+    return fetch(`${WORKER_BASE_URL}/api/pruneChannelMessages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -17821,9 +17955,11 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
       }),
       keepalive: true
     }).then(async res => {
+      if (userId !== owner) return;
       if (res.ok) {
+        _pruneRetryQueue.delete(channelKey);
         const d = await res.json().catch(() => ({}));
-        if (d.remainingExcess > 0 && auth.currentUser?.uid === userId) pruneExcessMessages(serverId, roomId, dmId);
+        if (d.remainingExcess > 0 && auth.currentUser?.uid === owner && userId === owner) pruneExcessMessages(serverId, roomId, dmId);
         if (d.prunedCount > 0) {
           const now = Date.now();
           if (!window._lastPruneLogTime || now - window._lastPruneLogTime > 30000) {
@@ -17831,9 +17967,12 @@ async function pruneExcessMessages(serverId = currentServerId, roomId = currentR
             console.log(`[Prune] サーバーから超過メッセージ ${d.prunedCount} 件、KVファイル ${d.deletedFiles} 件を自動削除しました`);
           }
         }
-      }
+      } else if ((res.status >= 500 || res.status === 429) && userId === owner) queuePruneRetry(channelKey, scope);
     }).catch(err => {
-      console.warn('[Prune] background prune notice:', err);
+      if (userId === owner) queuePruneRetry(channelKey, scope);
+      window.covoDiagnostics?.failure('prune.network');
+      if (navigator.onLine === false) console.debug('[Prune] 接続復帰時に整理を再確認します。');
+      else console.warn('[Prune] 整理を完了できませんでした。接続復帰時に再確認します:', String(err?.message || 'network error'));
     });
   } catch (_) {}
 }
@@ -17873,18 +18012,21 @@ const _outbox = createOutbox({
   },
   write: async (entry, acknowledged) => {
     assertSupportedClient();
-    if (entry.ownerId !== auth.currentUser?.uid) throw new Error('送信者が変更されました');
+    const owned = () => entry.ownerId === userId && entry.ownerId === auth.currentUser?.uid && !window.covoMaintenanceBlocked;
+    if (!owned()) throw new Error('送信者が変更されました');
     const dest = entry.destination;
     const retry = Boolean(entry.attempted);
     entry.attempted = true;
     await withReadDeadline(LocalStore.putSetting(`outbox:${entry.id}`, entry), 2000).catch(() => {});
-    if (entry.ownerId !== auth.currentUser?.uid) throw new Error('送信者が変更されました');
+    if (!owned()) throw new Error('送信者が変更されました');
     const rtdb = await _getOrInitRTDB();
+    if (!owned()) throw new Error('送信者が変更されました');
     const path = dest.dmId ? `artifacts/${appId}/dm_messages/${dest.dmId}/${entry.id}` : `artifacts/${appId}/servers/${dest.serverId}/rooms/${dest.roomId}/messages/${entry.id}`;
     if (entry.data.clientProtocol !== CLIENT_PROTOCOL) {
       await reconcileLegacyOutbox(entry, path, acknowledged);
       if (entry.ack.rtdb || entry.ack.firestore) return;
     }
+    if (!owned()) throw new Error('送信者が変更されました');
     // RTDB already carries the ID as its key. Keep it in the local envelope,
     // but avoid transmitting a second UUID in every new message and snapshot.
     const { id: redundantId, ...compactData } = entry.data;
@@ -17893,7 +18035,8 @@ const _outbox = createOutbox({
     if (!entry.ack.rtdb) writes.push((async () => {
       if (retry) {
         const { runTransaction } = await import('../vendor/firebase/firebase-database.js');
-        const result = await runTransaction(ref(rtdb, path), current => current == null ? wireData : undefined);
+        if (!owned()) throw new Error('送信者が変更されました');
+        const result = await runTransaction(ref(rtdb, path), current => owned() && current == null ? wireData : undefined);
         if (!result.committed && result.snapshot.val()?.senderId !== entry.ownerId) throw new Error('既存メッセージの所有者が異なります');
       } else await set(ref(rtdb, path), wireData);
       acknowledged('rtdb');
@@ -17934,10 +18077,11 @@ async function reconcileLegacyOutbox(entry, path, acknowledged) {
 async function commitChatMessage(data, destination, previewText = null, mentionedUserIds = []) {
   const id = `msg_${crypto.randomUUID().replace(/-/g, '')}`;
   const ownerId = userId;
+  if (!ownerId || window.covoMaintenanceBlocked || (data.senderId && data.senderId !== ownerId)) throw new Error('送信者または接続状態が変更されました');
   if (typeof data.text === 'string' && data.text && !data.text.startsWith('enc::')) throw new Error('平文メッセージは送信できません');
   if (typeof data.replyTo?.text === 'string' && data.replyTo.text && !data.replyTo.text.startsWith('enc::')) {
     data = await encryptOutgoingReply(data, destination);
-    if (ownerId !== userId) throw new Error('送信者が変更されました');
+    if (ownerId !== userId || window.covoMaintenanceBlocked) throw new Error('送信者が変更されました');
   }
   const message = { ...data, id, timestamp: Date.now(), storageVersion: 2, clientProtocol: CLIENT_PROTOCOL };
   const channelId = destination.dmId ? `dm_${destination.dmId}` : `${destination.serverId}_${destination.roomId}`;
@@ -17974,6 +18118,8 @@ async function restoreOutboxForChannel(channelId) {
   for (const setting of saved || []) {
     if (!setting.key.startsWith('outbox:') || setting.value?.ownerId !== owner || setting.value.state === 'sent' && setting.value.sideEffectsDone) continue;
     const entry = setting.value;
+    // A persisted copy may lag the live acknowledgement; never replace its object.
+    if (_outbox.running.has(entry.id) || _outboxEntries.has(entry.id)) continue;
     if (!entry.sideEffectsDone) onMessageAcknowledged(entry, () => finalizeRestoredMessage(entry));
     if (entry.state === 'sent') continue;
     const destination = entry.destination;
@@ -18038,10 +18184,13 @@ async function sendMessage() {
   }
 
   isSendingMessage = true;
+  const operation = ++_composerOperationGeneration;
+  const snapSpoiler = Boolean(document.getElementById('spoilerCheckbox')?.checked);
   sendMessageButton.disabled = true;
   // Optimistic input clearing (LINE style)
   const previousInputText = text;
-  const isSameDestination = () => currentDmId === snapDmId && currentServerId === snapServerId && currentRoomId === snapRoomId;
+  const isSameDestination = () => operation === _composerOperationGeneration && userId === snapOwnerUid && currentDmId === snapDmId && currentServerId === snapServerId && currentRoomId === snapRoomId;
+  const isCurrentSend = () => operation === _composerOperationGeneration && userId === snapOwnerUid && auth.currentUser?.uid === snapOwnerUid && !window.covoMaintenanceBlocked;
   const restoreDraft = () => { if (isSameDestination() && !messageInput.value) messageInput.value = previousInputText; };
   messageInput.value = "";
   messageInput.style.height = "auto";
@@ -18080,6 +18229,7 @@ async function sendMessage() {
         try {
           if (snapDmId) {
             let dmKey = await _getDmKeyWithWait(snapDmId, snapDmParticipants, 2000);
+            if (!isCurrentSend()) return;
             if (!dmKey) {
               console.log('[E2EE] 相手鍵の到着を待機しましたが不在のため、送信継続のために新鍵バージョンを自律生成します');
               dmKey = await _getOrCreateDmKey(snapDmId, snapDmParticipants, true);
@@ -18105,6 +18255,7 @@ async function sendMessage() {
               loadingOverlay.classList.remove("hidden");
             }
             const roomKey = await getRoomKeyWithWait(snapServerId, snapRoomId, members, 2000);
+            if (!isCurrentSend()) return;
             if (!roomKey) {
               restoreDraft();
               console.warn(`[E2EE] ルーム鍵の取得に失敗 (server=${snapServerId}, room=${snapRoomId})`);
@@ -18126,6 +18277,7 @@ async function sendMessage() {
             }
           }
         } catch (e) {
+          if (!isCurrentSend()) return;
           restoreDraft();
           console.error("[E2EE] 暗号化処理で例外が発生したため送信を遮断:", e);
           loadingOverlay.classList.add("hidden");
@@ -18134,7 +18286,7 @@ async function sendMessage() {
         }
       }
     }
-    if (auth.currentUser?.uid !== snapOwnerUid) throw new Error('送信者が変更されました');
+    if (!isCurrentSend()) throw new Error('送信者が変更されました');
     const data = { 
       text: textToStore, 
       senderId: userId, 
@@ -18175,16 +18327,18 @@ async function sendMessage() {
           }
         }
         if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
+        if (!isCurrentSend()) throw new Error('送信者が変更されました');
         const fileUrl = await uploadToExternalService(
           fileToUpload,
           (pct) => {
+            if (!isCurrentSend()) return;
             if (progressFill) progressFill.style.width = pct + "%";
             if (progressText) progressText.textContent = pct >= 100 ? "送信中..." : `アップロード中... ${pct}%`;
           },
           "simplechat/messages",
           snapDmId ? null : snapServerId
         );
-        const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || currentFileName.startsWith('SPOILER_'));
+        const isSpoiler = Boolean(snapSpoiler || currentFileName.startsWith('SPOILER_'));
         const finalFileName = (isSpoiler && !currentFileName.startsWith('SPOILER_')) ? `SPOILER_${currentFileName}` : currentFileName;
         Object.assign(data, {
           fileData: fileUrl,
@@ -18195,10 +18349,10 @@ async function sendMessage() {
           isSpoiler: isSpoiler
         });
       } finally {
-        if (progressBar) progressBar.classList.add("hidden");
-        if (progressFill) progressFill.style.width = "0%";
-        const spInp = document.getElementById("spoilerCheckbox");
-        if (spInp) spInp.checked = false;
+        if (operation === _composerOperationGeneration) {
+          if (progressBar) progressBar.classList.add("hidden");
+          if (progressFill) progressFill.style.width = "0%";
+        }
       }
     }
     if (snapReplyTo) {
@@ -18209,6 +18363,7 @@ async function sendMessage() {
         text: replyText
       };
     }
+    if (!isCurrentSend()) throw new Error('送信者が変更されました');
     const committed = await commitChatMessage(data, { dmId: snapDmId, serverId: snapServerId, roomId: snapRoomId }, text, snapMentionedUserIds);
     const newMessageId = committed.id;
     const rtdbData = { ...data, id: newMessageId, timestamp: Date.now() };
@@ -18352,6 +18507,8 @@ async function sendMessage() {
     if (remainingFiles.length > 0) {
       (async () => {
         const destSnapshot = {
+          snapOwnerUid,
+          snapSpoiler,
           snapDmId,
           snapRoomId,
           snapServerId,
@@ -18361,6 +18518,7 @@ async function sendMessage() {
           snapServerNickname
         };
         for (const nextF of remainingFiles) {
+          if (userId !== snapOwnerUid || auth.currentUser?.uid !== snapOwnerUid || window.covoMaintenanceBlocked) break;
           try {
             await sendSingleAttachmentMessage(nextF, destSnapshot);
           } catch (err) {
@@ -18370,6 +18528,7 @@ async function sendMessage() {
       })();
     }
     } catch (e) {
+    if (operation !== _composerOperationGeneration) return;
     console.error(e);
     if (typeof text !== 'undefined' && text) {
       const mi = document.getElementById("messageInput");
@@ -18377,6 +18536,7 @@ async function sendMessage() {
     }
     alertMessage("送信に失敗しました", "error");
     } finally {
+    if (operation !== _composerOperationGeneration) return;
     loadingOverlay.classList.add("hidden");
     if (progressBar) progressBar.classList.add("hidden");
     if (progressFill) progressFill.style.width = "0%";
@@ -18384,7 +18544,7 @@ async function sendMessage() {
     sendMessageButton.disabled = false;
     isSendingMessage = false;
     toggleSendButtonState();
-    if (isSameDestination()) setTimeout(() => messageInput.focus(), 10);
+    if (isSameDestination()) setTimeout(() => { if (isSameDestination() && !window.covoMaintenanceBlocked) messageInput.focus(); }, 10);
     }
     }
     const clearFileBtn = document.getElementById("clearFileButton");
@@ -18392,6 +18552,7 @@ async function sendMessage() {
     clearFileBtn.addEventListener("click", clearAttachedFile);
     }
     function clearAttachedFile() {
+      ++_attachmentSelectionGeneration;
       attachedFile = null;
       attachedFiles = [];
       attachedKvFile = null;
@@ -18400,7 +18561,8 @@ async function sendMessage() {
       updateFilePreview();
     }
     async function sendSingleAttachmentMessage(fileObj, destSnapshot = null) {
-  const snapOwnerUid = userId;
+  const snapOwnerUid = destSnapshot?.snapOwnerUid ?? userId;
+  if (!snapOwnerUid || userId !== snapOwnerUid || auth.currentUser?.uid !== snapOwnerUid || window.covoMaintenanceBlocked) throw new Error('送信者が変更されました');
     const snapDmId = destSnapshot ? destSnapshot.snapDmId : currentDmId;
     const snapRoomId = destSnapshot ? destSnapshot.snapRoomId : currentRoomId;
     const snapServerId = destSnapshot ? destSnapshot.snapServerId : currentServerId;
@@ -18415,6 +18577,7 @@ async function sendMessage() {
     const snapMembers = destSnapshot?.snapMembers ?? ((currentServerData && currentServerData.joinedUsers) ? [...currentServerData.joinedUsers] : []);
     const snapServerData = destSnapshot?.snapServerData ?? currentServerData;
     const snapServerNickname = destSnapshot?.snapServerNickname ?? currentServerNickname;
+    const snapSpoiler = destSnapshot?.snapSpoiler ?? Boolean(document.getElementById('spoilerCheckbox')?.checked);
     const { ref, set } = await import('../vendor/firebase/firebase-database.js');
     const rtdb = await _getOrInitRTDB();
     let fileToUpload = fileObj.file;
@@ -18441,9 +18604,10 @@ async function sendMessage() {
     }
     }
     if (!isFileEncrypted) throw new Error("暗号化鍵を取得できないため添付ファイルの送信を中断しました");
+    if (userId !== snapOwnerUid || auth.currentUser?.uid !== snapOwnerUid || window.covoMaintenanceBlocked) throw new Error('送信者が変更されました');
     const fileUrl = await uploadToExternalService(fileToUpload, null, "simplechat/messages", snapDmId ? null : snapServerId);
     cacheLocalMediaFile(fileUrl, fileToUpload);
-    const isSpoiler = Boolean(document.getElementById("spoilerCheckbox")?.checked || fileObj.isSpoiler || fileObj.name.startsWith('SPOILER_'));
+    const isSpoiler = Boolean(snapSpoiler || fileObj.isSpoiler || fileObj.name.startsWith('SPOILER_'));
     const finalFileName = (isSpoiler && !fileObj.name.startsWith('SPOILER_')) ? `SPOILER_${fileObj.name}` : fileObj.name;
     if (auth.currentUser?.uid !== snapOwnerUid) throw new Error('送信者が変更されました');
     const data = {
@@ -18543,9 +18707,15 @@ async function sendMessage() {
     }
 async function handleFilesSelected(filesList) {
   if (!filesList || filesList.length === 0) return;
+  const selection = ++_attachmentSelectionGeneration;
+  const owner = userId, session = _activeChannelSessionId;
+  const serverId = currentServerId, roomId = currentRoomId, dmId = currentDmId;
+  const active = () => selection === _attachmentSelectionGeneration && owner === userId && session === _activeChannelSessionId &&
+    serverId === currentServerId && roomId === currentRoomId && dmId === currentDmId && !window.covoMaintenanceBlocked;
   const processed = [];
   for (let rawFile of Array.from(filesList)) {
     let f = await processHeicFile(rawFile);
+    if (!active()) return;
     if (!checkFileAllowed(f)) continue;
     const MAX = 25 * 1024 * 1024;
     if (f.size > MAX) {
@@ -18554,7 +18724,7 @@ async function handleFilesSelected(filesList) {
     }
     processed.push({ file: f, name: f.name, type: f.type || 'application/octet-stream', size: f.size });
   }
-  if (processed.length === 0) return;
+  if (processed.length === 0 || !active()) return;
   attachedFiles = processed;
   attachedFile = attachedFiles[0];
   updateFilePreview();
@@ -18581,12 +18751,14 @@ if (fileAttachBtn && fileAttachInp) {
 
 fileAttachInput.addEventListener("change", async (e) => {
   const btnIcon = fileAttachButton?.querySelector("i");
-  if (btnIcon) btnIcon.className = "fas fa-spinner fa-spin";
+  if (btnIcon) btnIcon.className = "fas fa-paperclip";
+  fileAttachButton?.setAttribute('aria-busy', 'true');
   try {
     await handleFilesSelected(e.target.files);
   } finally {
     fileAttachInput.value = "";
-    if (btnIcon) btnIcon.className = "fas fa-plus";
+    fileAttachButton?.removeAttribute('aria-busy');
+    if (btnIcon) btnIcon.className = "fas fa-paperclip";
   }
 });
 
@@ -20258,6 +20430,7 @@ window.attachDiscordOgEmbed = async function(container, targetUrl) {
 };
 
 function createMessageElement(message, messageId, readByCount = 0) {
+  const snapOwner = userId;
   const snapDmId = currentDmId;
   const snapServerId = currentServerId;
   const snapRoomId = currentRoomId;
@@ -20404,6 +20577,7 @@ function createMessageElement(message, messageId, readByCount = 0) {
             } else if (snapServerId && snapRoomId) {
               dec = await _decryptText(rawEnc, snapServerId, snapRoomId, snapMembers);
             }
+            if (snapOwner !== userId || window.covoMaintenanceBlocked) return;
             if (dec && !dec.startsWith('（復号化エラー：')) {
               message._originalText = rawEnc;
               message.text = dec;
@@ -20829,12 +21003,11 @@ function createMessageElement(message, messageId, readByCount = 0) {
   window.jumpToUnloadedMessage = jumpToUnloadedMessage;
 async function jumpToUnloadedMessage(msgId) {
   if (!/^[A-Za-z0-9_-]{1,160}$/.test(msgId || '')) return;
-  document.getElementById('messagePreviewModal')?.classList.add('hidden');
-  window.revealVirtualMessage?.(msgId);
-  const existing = messagesDisplay.querySelector('[data-message-id="' + msgId + '"]');
-  if (existing) { doJumpHighlight(existing); return; }
-  const scope = captureJumpScope();
   const generation = ++_jumpGeneration;
+  document.getElementById('messagePreviewModal')?.classList.add('hidden');
+  const existing = messagesDisplay.querySelector('[data-message-id="' + msgId + '"]');
+  if (existing || _virtualTimeline.offsetOf(msgId)!=null) { doJumpHighlight(existing || msgId); return; }
+  const scope = captureJumpScope();
   const active = () => scope.active() && generation === _jumpGeneration;
   setChannelLoadStatus('履歴を確認中…');
   try {
@@ -20868,9 +21041,7 @@ async function jumpToUnloadedMessage(msgId) {
     setChannelLoadStatus('');
     requestAnimationFrame(() => {
       if (!active()) return;
-      window.revealVirtualMessage(msgId);
-      const bubble = messagesDisplay.querySelector('[data-message-id="' + msgId + '"]');
-      if (bubble) doJumpHighlight(bubble, true);
+      doJumpHighlight(msgId);
       requestAnimationFrame(() => { if (active()) allowPagination = true; });
     });
     await scope.decrypt(jumpViewMessages);
@@ -20880,6 +21051,7 @@ async function jumpToUnloadedMessage(msgId) {
 
 messagesDisplay.style.overflowAnchor = 'none';
 const _virtualTimeline = new VirtualTimeline();
+const _chatScroller = createChatScroller(messagesDisplay);
 let _virtualRenderFrame = null;
 const _virtualRowObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => scheduleTimelineRender()) : null;
 function scheduleTimelineRender() {
@@ -21798,41 +21970,37 @@ messagesDisplay.addEventListener("click", (e) => {
   const q = e.target.closest(".reply-quote");
   if (q) {
     const replyId = q.dataset.replyToId;
-    const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${replyId}"]`);
-    if (el) {
-      doJumpHighlight(el);
-    } else {
-      jumpToUnloadedMessage(replyId);
-    }
+    jumpToUnloadedMessage(replyId);
   }
 });
 
 async function showUnloadedMessagePreview(msgId) {
+  const scope = captureJumpScope();
+  if (!scope.active() || (!scope.dmId && (!scope.serverId || !scope.roomId))) return;
   let msgData = lastMessagesData.find(m => m.id === msgId);
   if (!msgData) {
-    const chId = currentServerId ? `${currentServerId}_${currentRoomId}` : `dm_${currentDmId}`;
     try {
       // 1. LocalStore から探索
-      const localMsgs = await LocalStore.getMessages(chId, null, 200);
-      msgData = localMsgs.find(m => m.id === msgId);
+      msgData = await withReadDeadline(LocalStore.getMessage(scope.channelId, msgId), 3000);
+      if (!scope.active()) return;
 
       // 2. RTDB から取得
       if (!msgData) {
         const { ref, get } = await import('../vendor/firebase/firebase-database.js');
         const rtdb = await _getOrInitRTDB();
-        const basePath = currentServerId
-          ? `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`
-          : `artifacts/${appId}/dm_messages/${currentDmId}/${msgId}`;
-        const snap = await get(ref(rtdb, basePath));
+        if (!scope.active()) return;
+        const snap = await withReadDeadline(get(ref(rtdb, scope.path + '/' + msgId)));
+        if (!scope.active()) return;
         if (snap.exists()) {
           msgData = { id: snap.key, ...snap.val() };
         }
       }
 
       // 3. Firestore (サーバーメッセージの場合のみ)
-      if (!msgData && currentServerId && currentRoomId) {
-        const docRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-        const docSnap = await getDoc(docRef);
+      if (!msgData && scope.serverId && scope.roomId) {
+        const docRef = doc(db, scope.path, msgId);
+        const docSnap = await withReadDeadline(getDoc(docRef));
+        if (!scope.active()) return;
         if (docSnap.exists()) {
           msgData = { id: docSnap.id, ...docSnap.data() };
         }
@@ -21843,25 +22011,23 @@ async function showUnloadedMessagePreview(msgId) {
         return;
       }
     } catch (e) {
+      if (!scope.active()) return;
       console.error(e);
       alertMessage("メッセージの読み込みに失敗しました。", "error");
       return;
     }
   }
 
+  // Keep preview decryption separate from the live row and preserve its ciphertext.
+  msgData = { ...msgData, channelId: scope.channelId, replyTo: msgData.replyTo ? { ...msgData.replyTo } : undefined };
   if (msgData.text && isEncrypted(msgData.text)) {
     try {
-      if (currentServerId) {
-        const _members = (currentServerData && currentServerData.joinedUsers) || [];
-        msgData.text = await decryptText(msgData.text, currentServerId, currentRoomId, _members);
-      } else if (currentDmId) {
-        const dmKey = await _getDmKeyWithWait(currentDmId, currentDmParticipants, 1500);
-        msgData.text = await _decryptDmText(msgData.text, dmKey);
-      }
+      await scope.decrypt([msgData]);
     } catch (e) {
       console.error("Preview decryption error:", e);
     }
   }
+  if (!scope.active()) return;
 
   let pTextHtml = "";
   if (msgData.sticker) {
@@ -21869,7 +22035,7 @@ async function showUnloadedMessagePreview(msgId) {
   } else if (msgData.fileName) {
     pTextHtml = `<div class="flex items-center gap-2 mt-1"><i class="fas fa-file text-gray-400 text-lg"></i><span class="text-xs text-gray-500">${escapeHtml(msgData.fileName)}</span></div>`;
   } else {
-    pTextHtml = escapeHtml(msgData.text || "...");
+    pTextHtml = escapeHtml(isEncrypted(msgData.text) ? '暗号鍵を確認中です。しばらくしてから再試行してください。' : (msgData.text || "..."));
   }
 
   const pName = msgData.senderNickname || "ユーザー";
@@ -21894,38 +22060,20 @@ async function showUnloadedMessagePreview(msgId) {
 
 
 
-function doJumpHighlight(el, isInstant = false) {
-  if (!el) return;
+async function doJumpHighlight(el, isInstant = false) {
+  const id=typeof el==='string'?el:el?.dataset?.messageId || el?.querySelector?.('[data-message-id]')?.dataset.messageId;
+  if(!/^[A-Za-z0-9_-]{1,160}$/.test(id || ''))return;
   const container = document.getElementById("messagesDisplay") || messagesDisplay;
-  let didScroll = false;
-  if (container) {
-    const row = el.closest('.message-row') || el;
-    const cRect = container.getBoundingClientRect();
-    const rRect = row.getBoundingClientRect();
-    const containerCenterY = (cRect.top + cRect.bottom) / 2;
-    const rowCenterY = (rRect.top + rRect.bottom) / 2;
-    // CSS scaleY(-1) 反転スクロール空間における数学的精密スクロール計算
-    // 視覚的中心のズレ (containerCenterY - rowCenterY) を直接 scrollTop に加算し、
-    // 範囲外スクロールによるバウンド・ズレを防ぐため 0 〜 maxScroll に確実にクランプ
-    const deltaY = containerCenterY - rowCenterY;
-    if (Math.abs(deltaY) > 8) {
-      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-      const targetScrollTop = Math.max(0, Math.min(maxScroll, container.scrollTop + deltaY));
-      container.scrollTo({ top: targetScrollTop, behavior: isInstant ? 'auto' : 'smooth' });
-      didScroll = true;
-    }
-    // 🔒 画像・メディア遅延ロードによるCLS（レイアウトシフト・位置ズレ）吸収アライメント
-    const imgs = row.querySelectorAll('img');
-    imgs.forEach(img => {
-      if (!img.complete && !img._jumpTracked) {
-        img._jumpTracked = true;
-        img.addEventListener('load', () => {
-          doJumpHighlight(el, true);
-        }, { once: true });
-      }
-    });
-  }
-  if (isInstant) return;
+  const owner=userId,session=_activeChannelSessionId;
+  const arrived=await _chatScroller.to(()=>{
+    const bubble=container.querySelector('[data-message-id="'+id+'"]');
+    if(bubble){const row=bubble.closest('.message-row')||bubble,c=container.getBoundingClientRect(),r=row.getBoundingClientRect();return container.scrollTop+(c.top+c.bottom-r.top-r.bottom)/2;}
+    const offset=_virtualTimeline.offsetOf(id);
+    return offset==null?NaN:offset+(_virtualTimeline.heights.get(id)||_virtualTimeline.estimate)/2-container.clientHeight/2;
+  },{instant:isInstant,active:()=>owner===userId&&session===_activeChannelSessionId});
+  if(!arrived||isInstant)return;
+  el=container.querySelector('[data-message-id="'+id+'"]');
+  if(!el)return;
   // アニメーション発火
   setTimeout(() => {
     el.classList.remove('message-jump-anim', 'message-highlight', 'stamp-jump-anim');
@@ -21947,7 +22095,7 @@ function doJumpHighlight(el, isInstant = false) {
         el.classList.remove('message-highlight');
       }, 1600);
     }
-  }, didScroll ? 350 : 20);
+  }, 0);
 }
 
 // iOS/Safari 判定
@@ -23111,10 +23259,43 @@ function subscribeToPinnedMessages(serverId, roomId, dmId) {
   }).catch(() => {});
 }
 
+async function persistMessagePin(message, isPinned, scope, owner) {
+  const owned = () => owner === userId && auth.currentUser?.uid === owner && !window.covoMaintenanceBlocked;
+  if (!owned()) throw new Error('アカウントが変更されました');
+  const { ref, update, get } = await import('../vendor/firebase/firebase-database.js');
+  const rtdb = await _getOrInitRTDB();
+  if (!owned()) throw new Error('アカウントが変更されました');
+  const reference = ref(rtdb, scope.path + '/' + message.id);
+  if (!scope.dmId && !usesRealtimeOnly(message)) {
+    await updateDoc(doc(db, scope.path, message.id), { isPinned });
+    if (!owned()) return;
+    // Old Firestore-only messages may have no RTDB mirror. Never create a pin-only message.
+    const mirror = await get(reference);
+    if (!owned()) return;
+    if (mirror.exists()) await update(reference, { isPinned });
+  } else {
+    await update(reference, { isPinned });
+  }
+  if (!owned()) return;
+  await LocalStore.putMessage({ ...message, isPinned, channelId: scope.channelId });
+  if (!scope.active()) return;
+  const loaded = allLoadedMessages.find(record => record.id === message.id);
+  if (loaded) loaded.isPinned = isPinned;
+  if (isPinned) {
+    if (!currentPinnedMessages.some(record => record.id === message.id)) currentPinnedMessages.push({ ...message, isPinned });
+    currentPinnedMessages.sort(compareHistoryMessages);
+    localStorage.removeItem('covo_minimized_pins_' + scope.channelId);
+    localStorage.removeItem('covo_minimized_pins_' + (scope.roomId || scope.dmId));
+  } else currentPinnedMessages = currentPinnedMessages.filter(record => record.id !== message.id);
+  renderPinnedMessages();
+}
+
 window.unpinMessage = async function(msgId) {
   if ((!currentServerId || !currentRoomId) && !currentDmId) return;
   if (!msgId) return;
   const msgObj = currentPinnedMessages.find(m => m.id === msgId) || allLoadedMessages.find(m => m.id === msgId);
+  if (!msgObj || !userId) return;
+  const scope = captureJumpScope(), owner = userId;
   const isSvOwner = Boolean(currentServerData?.createdBy === userId);
   const isSvAdmin = Boolean(currentServerData?.serverAdmins && currentServerData.serverAdmins.includes(userId));
   const canUnpin = isAdmin || isSvAdmin || isSvOwner || (msgObj && msgObj.senderId === userId) || Boolean(currentDmId);
@@ -23123,35 +23304,14 @@ window.unpinMessage = async function(msgId) {
     return;
   }
   const confirmed = await showCustomConfirm("このメッセージのピン留め（アナウンス）を解除しますか？", "解除する", "キャンセル");
-  if (!confirmed) return;
+  if (!confirmed || owner !== userId || auth.currentUser?.uid !== owner || !scope.active()) return;
 
   try {
-    if (currentDmId) {
-      const { ref, update } = await import('../vendor/firebase/firebase-database.js');
-      const rtdb = await _getOrInitRTDB();
-      await update(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${msgId}`), { isPinned: false });
-      LocalStore.putMessage({ ...(msgObj || {}), isPinned: false, id: msgId, channelId: `dm_${currentDmId}` }).catch(() => {});
-    } else {
-      const { doc, updateDoc } = await import('../vendor/firebase/firebase-firestore.js');
-      const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, msgId);
-      if (!usesRealtimeOnly(msgObj)) await updateDoc(msgRef, { isPinned: false });
-      try {
-        const { ref, update } = await import('../vendor/firebase/firebase-database.js');
-        const rtdb = await _getOrInitRTDB();
-        await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${msgId}`), { isPinned: false });
-      } catch (e) {}
-      LocalStore.putMessage({ ...(msgObj || {}), isPinned: false, id: msgId, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
-    }
-
-    currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== msgId);
-    const mInLoaded = allLoadedMessages.find(m => m.id === msgId);
-    if (mInLoaded) mInLoaded.isPinned = false;
-
-    renderPinnedMessages();
-    alertMessage("ピン留めを解除しました", "success");
+    await persistMessagePin(msgObj, false, scope, owner);
+    if (scope.active()) alertMessage("ピン留めを解除しました", "success");
   } catch (e) {
     console.error("unpinMessage error:", e);
-    alertMessage("ピン留め解除に失敗しました", "error");
+    if (scope.active()) alertMessage("ピン留め解除に失敗しました", "error");
   }
 };
 
@@ -23200,45 +23360,16 @@ if (pinMessageBtn) {
         if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
         return;
       }
-      const targetId = selectedMessageForContext.id;
-      const isPinned = !selectedMessageForContext.isPinned;
-      selectedMessageForContext.isPinned = isPinned;
-
-      // ローカル状態を即時更新して画面に瞬時反映
-      const mObj = allLoadedMessages.find(m => m.id === targetId);
-      if (mObj) mObj.isPinned = isPinned;
-      const pinKey = currentServerId ? `${currentServerId}_${currentRoomId}` : (currentDmId ? `dm_${currentDmId}` : (currentRoomId || ''));
-      const oldPinKey = currentRoomId || currentDmId;
-      if (isPinned) {
-        if (!currentPinnedMessages.some(m => m.id === targetId)) {
-          currentPinnedMessages.push({ ...selectedMessageForContext });
-          currentPinnedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
-        }
-        localStorage.removeItem(`covo_minimized_pins_${pinKey}`);
-        if (oldPinKey) localStorage.removeItem(`covo_minimized_pins_${oldPinKey}`);
-      } else {
-        currentPinnedMessages = currentPinnedMessages.filter(m => m.id !== targetId);
-      }
-      renderPinnedMessages();
-
-      if (currentDmId) {
-        try {
-          const { ref, update } = await import('../vendor/firebase/firebase-database.js');
-          const rtdb = await _getOrInitRTDB();
-          await update(ref(rtdb, `artifacts/${appId}/dm_messages/${currentDmId}/${targetId}`), { isPinned: isPinned });
-          LocalStore.putMessage({ ...selectedMessageForContext, isPinned, id: targetId, channelId: `dm_${currentDmId}` }).catch(() => {});
-        } catch (e) { console.error("RTDB DM Pin Failed", e); }
-      } else {
-        const msgRef = doc(db, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages`, targetId);
-        if (!usesRealtimeOnly(selectedMessageForContext)) await updateDoc(msgRef, { isPinned: isPinned });
-        try {
-          const { ref, update } = await import('../vendor/firebase/firebase-database.js');
-          const rtdb = await _getOrInitRTDB();
-          await update(ref(rtdb, `artifacts/${appId}/servers/${currentServerId}/rooms/${currentRoomId}/messages/${targetId}`), { isPinned: isPinned });
-        } catch (e) { console.error("RTDB Pin Failed", e); }
-        LocalStore.putMessage({ ...selectedMessageForContext, isPinned, id: targetId, channelId: `${currentServerId}_${currentRoomId}` }).catch(() => {});
-      }
-      alertMessage(isPinned ? "アナウンスに固定しました" : "ピン留めを解除しました", "success");
+      const message = selectedMessageForContext, owner = userId, scope = captureJumpScope();
+      const isPinned = !message.isPinned;
+      pinMessageBtn.disabled = true;
+      messageCtxMenu?.classList.add('hidden');
+      try {
+        await persistMessagePin(message, isPinned, scope, owner);
+        if (scope.active()) alertMessage(isPinned ? "アナウンスに固定しました" : "ピン留めを解除しました", "success");
+      } catch (_) {
+        if (scope.active()) alertMessage('ピン留めを変更できませんでした。接続と権限を確認してください。', 'warning');
+      } finally { pinMessageBtn.disabled = false; }
     }
     if (messageCtxMenu) messageCtxMenu.classList.add("hidden");
   });
@@ -23469,12 +23600,7 @@ function renderPinnedMessages() {
 }
 
 function jumpToMsg(id) {
-  const el = messagesDisplay.querySelector(`.message-bubble[data-message-id="${id}"]`);
-  if (el) {
-    doJumpHighlight(el);
-  } else {
-    jumpToUnloadedMessage(id);
-  }
+  jumpToUnloadedMessage(id);
 }
 
 // ================= MODULE: voice_call.js ================
@@ -24106,6 +24232,19 @@ window.openDmFileSharePicker = function () {
    - 相手不在や接続失敗時は5秒タイムアウトで静かに終了（フェイルセーフ）
    ===================================================================== */
 let _p2pLogSyncUnsub = null;
+const _p2pHistoryConnections = new Set();
+function stopP2PHistoryConnections() {
+  _p2pLogSyncUnsub?.(); _p2pLogSyncUnsub = null;
+  for (const peer of _p2pHistoryConnections) { try { peer.close(); } catch (_) {} }
+  _p2pHistoryConnections.clear();
+}
+function trackP2PHistoryConnection(peer) {
+  if (window.covoMaintenanceBlocked) { peer.close(); throw new Error('メンテナンス中です。'); }
+  _p2pHistoryConnections.add(peer);
+  const close = peer.close.bind(peer);
+  peer.close = () => { _p2pHistoryConnections.delete(peer); close(); };
+  return peer;
+}
 const _p2pLogSyncThrottle = new Map();
 
 function initP2PLogSyncListener() {
@@ -24161,7 +24300,7 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
   let unsubRequesterCands = null;
   let pc = null;
   try {
-    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
+    pc = trackP2PHistoryConnection(new RTCPeerConnection({ iceServers: VC_ICE_SERVERS }));
     let dc = null;
     const pendingCandidates = [];
     pc.ondatachannel = (ev) => {
@@ -24247,6 +24386,40 @@ async function _handleIncomingP2PLogRequest(syncId, reqData) {
     }
 }
 
+async function preparePeerHistoryPage(messages, channelId, oldestTimestamp, active) {
+  if (!active()) return [];
+  const visible = new Set(allLoadedMessages.map(message => message.id));
+  const candidates = new Map();
+  for (const message of messages.slice(0, 100)) {
+    if (!message || typeof message !== 'object') continue;
+    const timestamp = getMsgTimestamp(message);
+    if (typeof message.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(message.id) ||
+        message.channelId !== channelId || !Number.isFinite(timestamp) || timestamp <= 0 ||
+        (oldestTimestamp != null && timestamp > oldestTimestamp) || visible.has(message.id)) continue;
+    // Peers provide stored records, never authoritative local decryption/cache state.
+    const clean = Object.fromEntries(Object.entries(message).filter(([key]) => !key.startsWith('_')));
+    if (clean.replyTo && typeof clean.replyTo === 'object') clean.replyTo = Object.fromEntries(Object.entries(clean.replyTo).filter(([key]) => !key.startsWith('_')));
+    candidates.set(clean.id, clean);
+  }
+  const records = [...candidates.values()];
+  const existing = await Promise.all(records.map(message => LocalStore.getMessage(channelId, message.id)));
+  if (!active()) return [];
+  const current = new Set(allLoadedMessages.map(message => message.id));
+  return records.filter((message, index) => !existing[index] && !current.has(message.id));
+}
+
+function appendPeerHistoryPage(records) {
+  const ids = new Set(allLoadedMessages.map(message => message.id));
+  const oldest = [...allLoadedMessages].sort(compareHistoryMessages)[0];
+  const added = records.filter(message => !ids.has(message.id));
+  allLoadedMessages = [...allLoadedMessages, ...added].sort(compareHistoryMessages);
+  if (added.some(message => !oldest || compareHistoryMessages(message, oldest) < 0)) {
+    hasMoreOlderMessages = true;
+    hideTerminalBanner();
+    // Keep the scroll-intent gate disarmed: asynchronous arrivals must not cascade loads.
+  }
+}
+
 async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
   if (!userId) return;
   const owner = userId, serverId = currentServerId;
@@ -24295,16 +24468,18 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
   };
 
   try {
-    pc = new RTCPeerConnection({ iceServers: VC_ICE_SERVERS });
+    pc = trackP2PHistoryConnection(new RTCPeerConnection({ iceServers: VC_ICE_SERVERS }));
     const dc = pc.createDataChannel('logSync', { ordered: true });
     dc.onmessage = async (ev) => {
       try {
         if (!active()) { cleanupP2P(); return; }
+        if (typeof ev.data !== 'string' || ev.data.length > 8 * 1024 * 1024) return;
         const res = JSON.parse(ev.data);
         if (res && res.type === 'LOG_RESP' && Array.isArray(res.messages) && res.messages.length > 0) {
           // 届いたメッセージが安全なデータか検証（要求した過去日時より古い、または新規追加分のみ安全に合流）
           if (res.channelId !== channelKey) return;
-          const filteredIncoming = res.messages.filter(m => m && typeof m.id === 'string' && m.channelId === channelKey && (oldestLocalTs == null || getMsgTimestamp(m) <= oldestLocalTs));
+          const filteredIncoming = await preparePeerHistoryPage(res.messages, channelKey, oldestLocalTs, active);
+          if (!active() || !filteredIncoming.length) return;
           console.log(`[P2P LogSync] Received ${filteredIncoming.length} backfilled messages for ${res.channelId}`);
           await LocalStore.upsertMessagesBatch(filteredIncoming);
           if (!active()) return;
@@ -24321,12 +24496,7 @@ async function requestP2PLogBackfill(channelType, targetId, oldestLocalTs) {
             };
             await decryptInPlace(filteredIncoming);
             if (!active()) return;
-            filteredIncoming.forEach(msg => {
-              const idx = allLoadedMessages.findIndex(m => m.id === msg.id);
-              if (idx >= 0) allLoadedMessages[idx] = msg;
-              else allLoadedMessages.push(msg);
-            });
-            allLoadedMessages.sort((a, b) => getMsgTimestamp(a) - getMsgTimestamp(b));
+            appendPeerHistoryPage(filteredIncoming);
             lastMessagesData = [...allLoadedMessages];
             messagesIndexMap = {};
             lastMessagesData.forEach((m, i) => messagesIndexMap[m.id] = i);
@@ -26000,6 +26170,7 @@ window.__bgProgressText = '';
 window.performBackgroundUpdateRestart = async () => { try { await window.covoUpdater?.apply(); } catch(error) { alertMessage(error.message, 'warning'); } };
 
 function blockingUpdateCheck() {
+  if (window.covoNativeDevelopment) return Promise.resolve(false);
   try { assertSupportedClient(); return false; } catch (_) { return true; }
 }
 window.addEventListener('covo-update-required', () => {
@@ -28732,7 +28903,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.286').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.288').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -28745,10 +28916,28 @@ window.clearViewerSearch = (...args) => loadBackupFeature().then(() => window.cl
 window.filterViewerMessages = (...args) => loadBackupFeature().then(() => window.filterViewerMessages(...args)).catch(error => alertMessage(error.message, 'warning'));
 window.saveViewerMessagesAsTxt = (...args) => loadBackupFeature().then(() => window.saveViewerMessagesAsTxt(...args)).catch(error => alertMessage(error.message, 'warning'));
 
+// Authentication-only maintenance startup must initialize the same UI after admission.
+let _admittedUIInitialized = false;
+function initializeAdmittedUI() {
+  if (_admittedUIInitialized || window.covoMaintenanceBlocked) return;
+  _admittedUIInitialized = true;
+  initSettings();
+  if (typeof initPinLockSystem === 'function') initPinLockSystem();
+  if (typeof initializeResizer === 'function') initializeResizer();
+  if (typeof setDiscordUIMode === 'function') setDiscordUIMode(localStorage.getItem('covo_discord_ui_mode') !== 'false');
+  setTimeout(() => {
+    if (window.covoMaintenanceBlocked) return;
+    if (typeof setupGlobalAnnouncementListener === 'function') setupGlobalAnnouncementListener();
+    else if (typeof checkLatestAnnouncement === 'function') checkLatestAnnouncement();
+  }, 1500);
+}
 // アプリ起動エントリーポイント (Boot Sequence)
 // =========================================================================
 (async function bootstrapApp() {
   try {
+    const permitted = await maintenanceGate.check();
+    if (!permitted && maintenanceGate.state === null) return;
+    if (!permitted) { _maintenanceInitialized = true; initializeFirebase(); return; }
     // 招待URL (?invite=CODE) パラメータの自動検知
     try {
       const initParams = new URLSearchParams(window.location.search);
@@ -28763,13 +28952,7 @@ window.saveViewerMessagesAsTxt = (...args) => loadBackupFeature().then(() => win
         }, 300);
       }
     } catch (_) {}
-    // 0. 設定の初期化 (通知設定などの状態復元)
-    if (typeof initSettings === 'function') {
-      initSettings();
-    }
-    if (typeof initPinLockSystem === 'function') {
-      initPinLockSystem();
-    }
+    initializeAdmittedUI();
 
     // 1. Tauri環境の場合: アップデートチェック
     if (isTauri && typeof blockingUpdateCheck === 'function') {
@@ -28782,30 +28965,10 @@ window.saveViewerMessagesAsTxt = (...args) => loadBackupFeature().then(() => win
 
     // 2. Firebase初期化
     if (typeof initializeFirebase === 'function') {
+      _maintenanceInitialized = true;
       initializeFirebase();
     }
 
-    // Notification permission is requested only by the explicit settings toggle.
-
-    // 4. リサイザー初期化
-    if (typeof initializeResizer === 'function') {
-      initializeResizer();
-    }
-
-    // 5. Discord風UIモードの初期適用
-    const isDiscordMode = localStorage.getItem('covo_discord_ui_mode') !== 'false';
-    if (typeof setDiscordUIMode === 'function') {
-      setDiscordUIMode(isDiscordMode);
-    }
-
-    // 6. 全体お知らせ (What's New) のリアルタイムリスナー＆初期チェック起動
-    setTimeout(() => {
-      if (typeof setupGlobalAnnouncementListener === 'function') {
-        setupGlobalAnnouncementListener();
-      } else if (typeof checkLatestAnnouncement === 'function') {
-        checkLatestAnnouncement();
-      }
-    }, 1500);
   } catch (err) {
     console.error('App bootstrap error:', err);
     if (typeof showEmergencyRecoveryPanel === 'function') {
@@ -29346,6 +29509,7 @@ if (searchContainer) {
 }
 
 function showAuthConnectionRetry() {
+  authTransition.fail();
   let panel = document.getElementById('authConnectionRetry');
   if (!panel) { panel = document.createElement('div'); panel.id = 'authConnectionRetry'; panel.className = 'covo-settings-popover'; document.body.appendChild(panel); }
   panel.replaceChildren();
@@ -29376,7 +29540,7 @@ function captureJumpScope() {
  const participants = [...(currentDmParticipants || [])], members = [...(currentServerData?.joinedUsers || [])];
  return { serverId, roomId, dmId, channelId: dmId ? 'dm_' + dmId : serverId + '_' + roomId,
  path: dmId ? 'artifacts/' + appId + '/dm_messages/' + dmId : 'artifacts/' + appId + '/servers/' + serverId + '/rooms/' + roomId + '/messages',
- active: () => owner === userId && session === _activeChannelSessionId && currentServerId === serverId && currentRoomId === roomId && currentDmId === dmId,
+ active: () => owner === userId && !window.covoMaintenanceBlocked && session === _activeChannelSessionId && currentServerId === serverId && currentRoomId === roomId && currentDmId === dmId,
  decrypt: records => dmId ? _decryptDmMessagesInPlace(records, dmId, participants) : decryptMessagesInPlace(records, serverId, roomId, members) };
 }
 async function loadJumpPage(direction) {
@@ -29447,7 +29611,11 @@ async function dispatchMessageNotification(url, options) {
  for (let offset = 0; offset < payload.receiverIds.length; offset += 50) {
   if (payload.senderId !== userId) return;
   const response = await fetch(url, { ...options, body: JSON.stringify({ ...payload, receiverIds: payload.receiverIds.slice(offset, offset + 50) }) });
-  if (!response.ok) throw new Error('通知の送信に失敗しました: HTTP ' + response.status);
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    const codes = [...new Set((Array.isArray(result.results) ? result.results : []).map(item => item.code || item.error).filter(code => /^[A-Z_a-z-]{1,40}$/.test(code)))].slice(0, 8);
+    throw new Error('通知の送信に失敗しました: HTTP ' + response.status + (codes.length ? ' [' + codes.join(', ') + ']' : ''));
+  }
  }
 }
 function queueMessageNotification(url, blob) {
@@ -29455,13 +29623,13 @@ function queueMessageNotification(url, blob) {
  return true;
 }
 async function updateAcknowledgedMetadata(entry, fields) {
- if (entry.ownerId !== userId || (!entry.ack.rtdb && !entry.ack.firestore)) return;
+ if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked || (!entry.ack.rtdb && !entry.ack.firestore)) return;
  const destination = entry.destination;
  const reference = doc(db, destination.dmId ? `artifacts/${appId}/dm_channels/${destination.dmId}` : `artifacts/${appId}/servers/${destination.serverId}/rooms/${destination.roomId}`);
  const { runTransaction } = await import('../vendor/firebase/firebase-firestore.js');
  await runTransaction(db, async transaction => {
   const snapshot = await transaction.get(reference);
-  if (entry.ownerId !== userId) return;
+  if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
   if (snapshot.exists() && ((entry.id && snapshot.data().lastMessageId === entry.id) || parseTimestampToMs(snapshot.data().lastMessageAt) > entry.data.timestamp)) return;
   transaction.set(reference, { ...fields, lastMessageId: entry.id, lastMessageStorageVersion: entry.data.storageVersion || 1, lastMessageStorageTimestamp: entry.data.timestamp, lastMessageAt: Timestamp.fromMillis(entry.data.timestamp), lastMessageSender: entry.ownerId }, { merge: true });
  });
@@ -29492,12 +29660,15 @@ async function finalizeRestoredMessage(entry) {
  const reference = doc(db, destination.dmId ? 'artifacts/' + appId + '/dm_channels/' + destination.dmId : 'artifacts/' + appId + '/servers/' + destination.serverId + '/rooms/' + destination.roomId);
  let recipients = [];
  await runTransaction(db, async transaction => {
+  if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
   const snapshot = await transaction.get(reference);
+  if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
   const metadata = snapshot.exists() ? snapshot.data() : {};
  if ((entry.id && metadata.lastMessageId === entry.id) || parseTimestampToMs(metadata.lastMessageAt) > entry.data.timestamp) return;
   const update = {lastMessageId:entry.id,lastMessageStorageVersion:entry.data.storageVersion || 1,lastMessageStorageTimestamp:entry.data.timestamp,lastMessageAt:Timestamp.fromMillis(entry.data.timestamp),lastMessageSender:entry.ownerId,lastMessageSenderNickname:entry.data.senderNickname || 'ユーザー',lastMessageText:entry.data.text || (entry.data.sticker ? 'スタンプ' : '（ファイル）')};
   if (destination.dmId) { update.participants = destination.dmId.split('_'); recipients = update.participants.filter(uid => uid !== entry.ownerId); }
   else { const server = await transaction.get(doc(db, 'artifacts/' + appId + '/servers/' + destination.serverId)); recipients = (server.data()?.joinedUsers || []).filter(uid => uid !== entry.ownerId); }
+  if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
   transaction.set(reference, update, {merge:true});
  });
  const token = await tokenForMessageOwner(entry.ownerId);
@@ -29505,17 +29676,17 @@ async function finalizeRestoredMessage(entry) {
  await dispatchMessageNotification(WORKER_BASE_URL + '/api/sendNotification', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receiverIds:recipients,mentionedUserIds:entry.mentionedUserIds || [],title:entry.data.senderNickname || 'Covo',body:'新着メッセージがあります',roomId:destination.roomId || destination.dmId,serverId:destination.serverId,messageId:entry.id,appId,senderId:entry.ownerId,idToken:token})});
 }
 
-window.covoDesktopBusy = () => Boolean(_callId || window._voiceEngine?.isActive || _isVoiceRecording || isSendingMessage || activeMigrationSession || _migrationSendBusy || _fsRole || _fsId || [..._outboxEntries.values()].some(entry => ['sending', 'waiting'].includes(entry.state)));
+window.covoDesktopBusy = () => Boolean(authTransition.busy || _callId || window._voiceEngine?.isActive || _isVoiceRecording || isSendingMessage || activeMigrationSession || _migrationSendBusy || _fsRole || _fsId || [..._outboxEntries.values()].some(entry => ['sending', 'waiting'].includes(entry.state)));
 window.covoToggleMicrophone = () => window.toggleUserPanelMic?.();
 
 window.addEventListener('covo-system-resume', () => { if (!document.hidden && document.hasFocus()) handleWindowFocus(); });
 
 window.addEventListener('covo-emoji-ready', () => { _twemojiParse(messagesDisplay); _twemojiParse(document.getElementById('stickerPicker')); });
-let _diagnosticsLoading = false;
+let _diagnosticsLoading = null;
 function loadLocalDiagnostics() {
-  if (_diagnosticsLoading || window.covoDiagnostics) return;
-  _diagnosticsLoading = true;
-  import('./diagnostics_runtime.js').then(({ installDiagnostics }) => installDiagnostics({
+  if (window.covoDiagnostics) return Promise.resolve(window.covoDiagnostics);
+  if (_diagnosticsLoading) return _diagnosticsLoading;
+  _diagnosticsLoading = import('./diagnostics_runtime.js').then(({ installDiagnostics }) => installDiagnostics({
   context: () => ({ version: _appVersion, nativeVersion: window.covoNativeVersion, desktop: _isDesktopClient,
     permission: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable',
     serviceWorkerControlled: Boolean(navigator.serviceWorker?.controller), pushTokenRegistered: Boolean(currentFcmToken) && localStorage.getItem('covo_fcm_registered_owner') === userId && localStorage.getItem('simplechat_browser_notif') !== 'false',
@@ -29528,9 +29699,14 @@ function loadLocalDiagnostics() {
     document.querySelectorAll('[data-covo-diagnostics-status] span').forEach(element => {
       element.textContent = '診断の読み込みに失敗しました。接続を確認して再試行してください。';
     });
-  }).finally(() => { _diagnosticsLoading = false; });
+  }).finally(() => { _diagnosticsLoading = null; });
+  return _diagnosticsLoading;
 }
 window.covoEnsureDiagnostics = loadLocalDiagnostics;
+window.openCovoDiagnostics = async function () {
+  await switchDiscordSettingsTab('appinfo'); await loadLocalDiagnostics();
+  requestAnimationFrame(() => { const section = document.getElementById('appinfoSection'); if (section?.classList.contains('active')) (section.querySelector('.covo-diagnostics') || section.querySelector('[data-covo-diagnostics-status]'))?.scrollIntoView({ block: 'center' }); });
+};
 loadLocalDiagnostics();
 window.addEventListener('online', loadLocalDiagnostics);
 const retryPushRegistration = () => {

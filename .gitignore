@@ -25,6 +25,24 @@ bower_components/
 keys/
 .claude/
 serviceAccountKey.json
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jwk
+*.jks
+*.keystore
+*serviceAccount*.json
+*service-account*.json
+client_secret*.json
+credentials.json
+credentials.*.json
+id_rsa
+id_ed25519
+id_ecdsa
 
 # Build & Test outputs
 build/Release/
@@ -55,4 +73,5 @@ scratch/
 
 ai-context/
 .cache/firebase/
+.cache/dev-preview/
 src-tauri/windows/bin/

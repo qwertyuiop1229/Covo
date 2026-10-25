@@ -54,6 +54,9 @@ export function checkFileAllowed(file) {
  */
 export async function _uploadToExternalService(file, auth, userId, workerBaseUrl, onProgress, _folder, _serverId) {
     assertSupportedClient();
+    if (typeof window !== 'undefined' && window.covoMaintenanceBlocked) throw new Error('メンテナンス中です。');
+    const owner = auth?.currentUser?.uid;
+    if (!owner || owner !== userId) throw new Error('アカウントを確認して再試行してください。');
     let idToken = "";
     try {
       if (auth && auth.currentUser) {
@@ -62,6 +65,8 @@ export async function _uploadToExternalService(file, auth, userId, workerBaseUrl
     } catch (tokenErr) {
       throw new Error("認証トークンの取得に失敗しました: " + tokenErr.message);
     }
+    if (auth.currentUser?.uid !== owner) throw new Error('アカウントが変更されました。');
+    if (typeof window !== 'undefined' && window.covoMaintenanceBlocked) throw new Error('メンテナンス中です。');
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('file', file);
@@ -75,8 +80,14 @@ export async function _uploadToExternalService(file, auth, userId, workerBaseUrl
     }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${workerBaseUrl}/api/uploadFile`);
+    xhr.setRequestHeader('Authorization', `Bearer ${idToken}`);
     xhr.setRequestHeader('X-Covo-Protocol', String(CLIENT_PROTOCOL));
     xhr.timeout = 120000;
+    if (typeof window !== 'undefined') {
+      const abort = () => xhr.abort();
+      window.addEventListener('covo-maintenance-blocked', abort, { once: true });
+      xhr.addEventListener('loadend', () => window.removeEventListener('covo-maintenance-blocked', abort), { once: true });
+    }
     xhr.addEventListener('timeout', () => reject(new Error('アップロードがタイムアウトしました。接続を確認して再試行してください')));
     xhr.upload.addEventListener('progress', e => {
       if (e.lengthComputable && onProgress) onProgress(Math.round(e.loaded / e.total * 100));

@@ -90,6 +90,93 @@ test('keyboard dismissal restores only document scrolling and cancels on refocus
   expect(await page.evaluate(() => window.rootResets)).toBe(0);
 });
 
+test('login remains blocked after the authentication API resolves until the destination frame is ready', async ({ page }) => {
+  await routeApp(page);
+  const main = fs.readFileSync('public/js/main.js', 'utf8');
+  const node = parser.parse(main, { sourceType: 'module' }).program.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'handleUnifiedAuthSubmit');
+  await page.evaluate(async source => {
+    document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready';
+    document.getElementById('authContainer').classList.remove('hidden');
+    window.authTransition = (await import('/js/auth_transition.js')).createAuthTransition();
+    window.calls = 0; window.auth = {}; window.signInWithEmailAndPassword = async () => { window.calls++; if (window.loginFailure) throw { code: 'auth/wrong-password' }; };
+    window.escapeHtml = String; window.getJapaneseAuthErrorMessage = () => 'failed';
+    window.eval(source);
+  }, main.slice(node.start, node.end));
+  await page.locator('#emailInput').fill('test@example.test'); await page.locator('#passwordInput').fill('password123');
+  await page.locator('#authButton').click(); await expect(page.locator('#authTransitionOverlay')).toBeVisible();
+  await expect(page.locator('#googleAuthButton')).toBeDisabled();
+  await page.evaluate(() => handleUnifiedAuthSubmit()); expect(await page.evaluate(() => calls)).toBe(1);
+  await page.evaluate(() => { document.body.classList.add('logged-in'); document.getElementById('appContainer').classList.remove('hidden'); authTransition.initializing('alice'); authTransition.ready('alice'); });
+  await expect(page.locator('#authTransitionOverlay')).toBeHidden();
+  await page.evaluate(() => { document.body.classList.remove('logged-in'); window.loginFailure = true; });
+  await page.locator('#authButton').click(); await expect(page.locator('#authTransitionOverlay')).toBeHidden(); await expect(page.locator('#authButton')).toBeEnabled();
+  expect(await page.locator('#authContainer').evaluate(el => el.inert)).toBe(false);
+});
+
+for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
+  test(`composer ${theme || 'light'} keeps the attachment icon, moves recording to plus and gives send a legible brand color`, async ({ page }) => {
+    await page.setViewportSize({ width: 402, height: 874 }); await routeApp(page);
+    const main = fs.readFileSync('public/js/main.js', 'utf8');
+    const handler = parser.parse(main, { sourceType: 'module' }).program.body.find(node => node.type === 'ExpressionStatement' && main.slice(node.start, node.end).startsWith('fileAttachInput.addEventListener("change"'));
+    await page.evaluate(({ theme, handler }) => {
+      document.getElementById('appLoadingSplash').remove(); document.body.className = `auth-ready logged-in discord-ui-mode in-chat-view ${theme}`;
+      const area = document.getElementById('messageInputArea'); document.body.append(area); area.classList.remove('hidden'); area.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;z-index:9999;display:block';
+      document.getElementById('sendMessageButton').disabled = false;
+      window.fileAttachInput = document.getElementById('fileAttachInput'); window.fileAttachButton = document.getElementById('fileAttachButton');
+      window.handleFilesSelected = async () => {}; window.eval(handler);
+    }, { theme, handler: main.slice(handler.start, handler.end) });
+    await expect(page.locator('#voiceRecordButton')).toBeHidden();
+    expect(await page.locator('#menuVoiceRecordBtn').count()).toBe(1);
+    expect(await page.locator('#sendMessageButton').evaluate(el => getComputedStyle(el).color)).toBe('rgb(255, 255, 255)');
+    expect(await page.locator('#sendMessageButton').evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme ? 'rgb(88, 101, 242)' : 'rgb(71, 82, 196)');
+    await page.locator('#fileAttachInput').setInputFiles({ name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('test') });
+    await expect(page.locator('#fileAttachButton i')).toHaveClass('fas fa-paperclip');
+    await page.screenshot({ path: `scratch/composer-${theme || 'light'}.png` });
+  });
+}
+
+for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
+  test(`maintenance and reinstall controls ${theme || 'light'}: block data, preserve by default and require confirmation`, async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 1000 }); await routeApp(page);
+    await page.evaluate(async theme => {
+      document.getElementById('appLoadingSplash').remove(); document.body.className = `auth-ready ${theme}`;
+      const { createMaintenanceGate } = await import('/js/maintenance_runtime.js');
+      window.stopCount = 0; window.statusRequests = []; window.authorized = false;
+      window.fetch = async (_, options) => { window.statusRequests.push(options); return new Response(JSON.stringify({ enabled: true, revision: 1, adminAllowed: window.authorized })); };
+      window.gate = createMaintenanceGate({ endpoint: '/api/maintenance', stopped: async () => { window.stopCount++; }, resume: () => gate.check() });
+      await gate.check();
+    }, theme);
+    await expect(page.locator('#covoMaintenancePanel')).toBeVisible(); expect(await page.evaluate(() => window.covoMaintenanceBlocked)).toBe(true);
+    expect(await page.locator('.container').evaluate(el => el.inert)).toBe(true);
+    await page.screenshot({ path: `scratch/maintenance-${theme || 'light'}.png` });
+    await page.evaluate(async () => { window.authorized = true; await gate.check({ getIdToken: async () => 'ADMIN_TOKEN' }); });
+    await expect(page.locator('#covoMaintenancePanel')).toBeHidden(); expect(await page.evaluate(() => window.covoMaintenanceBlocked)).toBe(false);
+    await page.evaluate(async () => {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.querySelectorAll('#settingsModal .settings-content-section').forEach(el => el.classList.add('hidden'));
+      document.getElementById('appinfoSection').classList.remove('hidden');
+      document.getElementById('appinfoSection').classList.add('active');
+      const { installReinstallUI } = await import('/js/reinstall_ui.js');
+      window.nativeCalls = []; window.confirmed = false; window.showCustomConfirm = async () => window.confirmed;
+      installReinstallUI({ invoke: async (command, args) => { window.nativeCalls.push({ command, args }); if (command === 'reinstall_app') await new Promise(resolve => { window.finishReinstall = resolve; }); }, listen: async (_, handler) => { window.downloadEvent = handler; return () => {}; }, busy: () => false, notify: () => {} });
+    });
+    const panel = page.locator('#appinfoSection .covo-reinstall-card');
+    const button = panel.getByRole('button', { name: '再インストール', exact: true });
+    await expect(panel.locator('input')).toBeChecked(); await button.click();
+    expect(await page.evaluate(() => nativeCalls.filter(call => call.command === 'reinstall_app').length)).toBe(0);
+    await panel.locator('.covo-reinstall-preserve').click(); await expect(panel.locator('input')).not.toBeChecked(); await expect(panel.locator('.covo-reinstall-warning')).toBeVisible();
+    await page.evaluate(() => { window.confirmed = true; }); await button.click();
+    await expect(button).toBeDisabled();
+    expect(await page.evaluate(() => nativeCalls.find(call => call.command === 'reinstall_app').args)).toEqual({ eraseData: true });
+    await page.evaluate(() => window.downloadEvent({ payload: { total: 100, downloaded: 50 } }));
+    await expect(panel.locator('progress')).toHaveJSProperty('value', 50);
+    await page.evaluate(() => window.finishReinstall()); await expect(button).toBeEnabled();
+    await panel.locator('.covo-reinstall-preserve').click(); await expect(panel.locator('input')).toBeChecked(); await button.click();
+    expect(await page.evaluate(() => nativeCalls.filter(call => call.command === 'reinstall_app').at(-1).args)).toEqual({ eraseData: false });
+    await page.evaluate(() => window.finishReinstall()); await expect(button).toBeEnabled();
+  });
+}
+
 test('installed mobile server panel has no gradient shadow and chrome follows navigation in all themes', async ({ page }) => {
   await page.setViewportSize({ width: 402, height: 874 });
   await routeApp(page, { standalone: true, ios: true });
@@ -118,10 +205,39 @@ test('mobile diagnostics has a direct settings entry, back navigation and a view
   await page.locator('#mobileDetailDiagnostics').getByRole('button', { name: '結果を表示', exact: true }).click();
   const report = JSON.parse(await page.locator('#mobileDetailDiagnostics pre').textContent());
   expect(report.viewport.standalone).toBe(true); expect(report.viewport.ios).toBe(true);
-  await expect(page.locator('[data-covo-diagnostics-status]')).toBeHidden();
+  for (const status of await page.locator('[data-covo-diagnostics-status]').all()) await expect(status).toBeHidden();
   await page.getByRole('button', { name: '設定に戻る', exact: true }).click();
   await expect(page.locator('#mobileDetailDiagnostics')).toBeHidden();
 });
+
+for (const [name, width, ios] of [['ipad',1180,true],['desktop',1440,false]]) {
+  test(`${name}: diagnostic entry waits for lazy settings and scrolls to the report controls`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 }); await routeApp(page, { ios, standalone: ios });
+    const main = fs.readFileSync('public/js/main.js','utf8');
+    const node = parser.parse(main,{sourceType:'module'}).program.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'openCovoDiagnostics');
+    await page.evaluate(async source => {
+      document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready logged-in discord-ui-mode';
+      document.getElementById('settingsModal').classList.remove('hidden'); window.scrollChecks = [];
+      window.switchDiscordSettingsTab = async tab => {
+        await new Promise(resolve => setTimeout(resolve,30));
+        (await import('/js/settings_feature.js')).installSettingsFeature({ _appVersion:'1.1.286', updateE2EEStatusUI(){}, updateLayoutDebugUI(){} });
+        window.switchDiscordSettingsTab(tab);
+      };
+      window.loadLocalDiagnostics = async () => {
+        await new Promise(resolve => setTimeout(resolve,20));
+        (await import('/js/diagnostics_runtime.js')).installDiagnostics();
+        const section = document.querySelector('#appinfoSection .covo-diagnostics'), scroll = section.scrollIntoView.bind(section);
+        section.scrollIntoView = options => { window.scrollChecks.push(document.getElementById('appinfoSection').classList.contains('active')); scroll(options); };
+      };
+      window.eval(source);
+    }, main.slice(node.start,node.end));
+    await page.locator('#settingsModal').getByRole('button',{name:'通信・表示の診断',exact:true}).click();
+    await expect.poll(() => page.evaluate(() => scrollChecks)).toEqual([true]);
+    const report = page.locator('#appinfoSection .covo-diagnostics'); await expect(report.getByRole('button',{name:'レポートを丸ごとコピー',exact:true})).toBeInViewport();
+    await report.getByRole('button',{name:'結果を表示',exact:true}).click();
+    expect(JSON.parse(await report.locator('pre').textContent()).viewport.ios).toBe(ios);
+  });
+}
 
 for (const [theme, width] of [['', 1180], ['dark-server-theme', 402], ['discord-dark-theme', 820]]) {
   test(`server settings ${theme || 'light'} ${width}: real navigation, safe rename, cancel and retry`, async ({ page }) => {

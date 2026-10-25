@@ -927,10 +927,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 
     export async function _decryptMessagesInPlace(messages, serverId, roomId, memberIds) {
       if (!_subtleOK || !Array.isArray(messages) || messages.length === 0) return;
+      const owner = _getUserId(), epoch = _cryptoEpoch;
+      const active = () => epoch === _cryptoEpoch && owner === _getUserId();
       // 部屋の暗号化鍵をあらかじめ一括取得してキャッシュを引き当て、全メッセージの復号を並行高速化
       const rKey = await _getOrCreateRoomKey(serverId, roomId, memberIds || [], true).catch(() => null);
+      if (!active()) return;
       await Promise.all(messages.map(async (m) => {
-        if (!m) return;
+        if (!m || !active()) return;
         // リプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
           if (!m.replyTo._originalText) {
@@ -938,6 +941,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
           try {
             const decReply = await _decryptText(m.replyTo.text, serverId, roomId, memberIds);
+            if (!active()) return;
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
               m.replyTo.text = decReply;
             }
@@ -958,6 +962,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         }
         try {
           const decrypted = await _decryptText(textToDecrypt, serverId, roomId, memberIds);
+          if (!active()) return;
           if (!decrypted) {
             // 鍵待機中のためエラー化せず維持
             m._decrypted = false;
@@ -1569,10 +1574,13 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
      */
     export async function _decryptDmMessagesInPlace(messages, dmId, participants) {
       if (!_subtleOK || !Array.isArray(messages)) return;
+      const owner = _getUserId(), epoch = _cryptoEpoch;
+      const active = () => epoch === _cryptoEpoch && owner === _getUserId();
       const dmKeyObj = await _getDmKeyWithWait(dmId, participants, 2500);
+      if (!active()) return;
       if (dmKeyObj && dmId) dmKeyObj._dmId = dmId;
       await Promise.all(messages.map(async (m) => {
-        if (!m) return;
+        if (!m || !active()) return;
         // DMリプライ引用先テキストが暗号化されていた場合の安全な復号
         if (m.replyTo && typeof m.replyTo.text === "string" && _isEncrypted(m.replyTo.text)) {
           if (!m.replyTo._originalText) {
@@ -1580,6 +1588,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           }
           try {
             const decReply = await _decryptDmText(m.replyTo.text, dmKeyObj || dmId, participants);
+            if (!active()) return;
             if (decReply && !decReply.startsWith("（復号化エラー：")) {
               m.replyTo.text = decReply;
             }
@@ -1594,6 +1603,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         if (!_isEncrypted(textToDecrypt)) { m._decrypted = true; return; }
         try {
           const decrypted = await _decryptDmText(textToDecrypt, dmKeyObj || dmId, participants);
+          if (!active()) return;
           if (!decrypted) {
             // 鍵待機中のためエラー化せず維持
             m._decrypted = false;

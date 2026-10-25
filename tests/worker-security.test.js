@@ -7,6 +7,7 @@ const { TextEncoder, TextDecoder } = require('util');
 function loadWorker(fetchImpl = jest.fn()) {
   const context = vm.createContext({ Request, Response, Headers, URL, URLSearchParams, FormData, File, Blob, AbortSignal, AbortController, TextEncoder, TextDecoder, crypto: webcrypto, fetch: fetchImpl, console, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync('server/src/index.js', 'utf8').replace('export default {', 'const worker = {') + '\nglobalThis.worker = worker;', context);
+  context.readMaintenanceState = async () => ({ enabled: false, revision: 0 });
   return context;
 }
 
@@ -439,7 +440,8 @@ test.each(['accepted','project-not-found','unregistered'])('notification %s repo
   ctx.getWorkerAuthToken=async()=> 'worker';ctx.getFCMToken=async()=> 'fcm';ctx.getRTDBToken=async()=> 'rtdb';
   const response=await ctx.worker.fetch(currentClientRequest('https://api.test/api/sendNotification',{method:'POST',body:JSON.stringify({appId:'testApp',senderId:'alice',receiverIds:['bob'],title:'new',body:'message',serverId:'server',roomId:'room',idToken:'valid'})}),{FIREBASE_APP_ID:'testApp',FIREBASE_PROJECT_ID:'test',SERVICE_ACCOUNT_JSON:'{}'},{});
   const result=await response.json();expect(JSON.stringify(result)).not.toContain('PRIVATE_FCM_TOKEN');
-  expect(response.status).toBe(scenario==='accepted'?200:502);expect(result.acceptedTokens).toBe(scenario==='accepted'?1:0);
+  expect(response.status).toBe(scenario==='project-not-found'?502:200);expect(result.acceptedTokens).toBe(scenario==='accepted'?1:0);
+  expect(result.expiredTokens).toBe(scenario==='unregistered'?1:0);
   const fcm=JSON.parse(calls.find(([url])=>url.includes('fcm.googleapis.com'))[1].body).message;
   expect(fcm.webpush.headers.TTL).toBe('86400');expect(new URL(fcm.webpush.fcm_options.link).searchParams.get('ownerId')).toBe('bob');
   expect(calls.some(([url])=>url.endsWith('/documents:commit'))).toBe(scenario==='unregistered');
@@ -461,4 +463,77 @@ test('a failed FCM network request becomes a bounded rejection without a retry o
   const response=await ctx.sendFcmRequest('https://fcm.googleapis.com/test',{method:'POST',body:'{}'});
   expect(response.status).toBe(503);expect((await response.json()).error.status).toBe('UNAVAILABLE');expect(fetcher).toHaveBeenCalledTimes(1);
   expect(fetcher.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+});
+
+test('maintenance rejects normal API users before privileged work and does not expose admin identities', async () => {
+  const fetcher = jest.fn(), ctx = loadWorker(fetcher);
+  ctx.readMaintenanceState = async () => ({ enabled: true, revision: 3 });
+  ctx.verifyFirebaseIdToken = async () => ({ uid: 'member' }); ctx.isAppAdmin = async () => false;
+  const env = { FIREBASE_APP_ID: 'testApp' };
+  const response = await ctx.worker.fetch(currentClientRequest('https://api.test/api/syncRtdb', { method: 'POST', body: JSON.stringify({ idToken: 'valid' }) }), env, {});
+  expect(response.status).toBe(503); expect((await response.json()).code).toBe('MAINTENANCE'); expect(fetcher).not.toHaveBeenCalled();
+  const metadata = await ctx.handleMaintenanceStatus(new Request('https://api.test/api/maintenance'), env);
+  expect(await metadata.json()).toEqual({ enabled: true, revision: 3, adminAllowed: false });
+  expect(metadata.headers.get('Cache-Control')).toBe('no-store'); expect(fetcher).not.toHaveBeenCalled();
+});
+
+test('maintenance setting is restricted to global admins, including while the app is closed', async () => {
+  const ctx = loadWorker(); ctx.verifyFirebaseIdToken = async () => ({ uid: 'server-owner' }); ctx.isAppAdmin = async () => false;
+  const prepare = jest.fn();
+  const response = await ctx.handleSetMaintenance(new Request('https://api.test/api/setMaintenance', { method: 'POST', headers: { Authorization: 'Bearer valid' }, body: JSON.stringify({ enabled: false, revision: 0 }) }), { DB: { prepare }, FIREBASE_APP_ID: 'testApp' });
+  expect(response.status).toBe(403); expect(prepare).not.toHaveBeenCalled();
+});
+
+function maintenanceDatabase() {
+  const state = { enabled: 0, revision: 0, lock: 0 };
+  return { state, prepare(sql) {
+    let values = [];
+    return { bind(...args) { values = args; return this; }, async first() {
+      if (sql.startsWith('SELECT')) return { ...state };
+      if (sql.includes('RETURNING')) {
+        if (values[2] !== state.revision || state.lock >= values[3]) return null;
+        state.lock = values[0]; return { revision: state.revision };
+      }
+      throw Error('Unexpected SQL');
+    }, async run() {
+      if (sql.includes('SET enabled = ?, revision')) { state.enabled = values[0]; state.revision++; state.lock = 0; }
+      else if (sql.includes('SET enabled = 1, revision')) { state.enabled = 1; state.revision++; state.lock = values[0]; }
+      else if (sql.includes('SET enabled = ?')) state.enabled = values[0];
+      else if (sql.includes('SET locked_until = 0')) state.lock = 0;
+      return { success: true };
+    } };
+  } };
+}
+test.each([false,true])('maintenance mirrors must complete before success; mirror failure=%s', async failure => {
+  const ctx = loadWorker(), DB = maintenanceDatabase();
+  ctx.verifyFirebaseIdToken = async () => ({ uid: 'global' }); ctx.isAppAdmin = async () => true;
+  ctx.ensureMaintenanceAdmin = jest.fn(async () => {});
+  ctx.writeMaintenanceMirrors = jest.fn(async (_, enabled) => { if (failure) throw Error('mirror unavailable'); });
+  const env = { DB, FIREBASE_APP_ID: 'testApp' };
+  const request = revision => new Request('https://api.test/api/setMaintenance', { method: 'POST', headers: { Authorization: 'Bearer valid' }, body: JSON.stringify({ enabled: false, revision }) });
+  const response = await ctx.handleSetMaintenance(request(0), env);
+  expect(response.status).toBe(failure ? 503 : 200); expect(DB.state.enabled).toBe(failure ? 1 : 0); expect(DB.state.revision).toBe(1);
+  const duplicate = await ctx.handleSetMaintenance(request(0), env); expect(duplicate.status).toBe(409);
+  expect(ctx.writeMaintenanceMirrors.mock.calls.length).toBe(failure ? 2 : 1);
+});
+
+test('worker identity tokens are shared by concurrent requests and failed credentials are not cached', async () => {
+  const fetcher = jest.fn(async () => new Response(JSON.stringify({ idToken: 'INTERNAL_TOKEN', expiresIn: '3600' })));
+  const ctx = loadWorker(fetcher), env = { FIREBASE_PROJECT_ID: 'test', WORKER_AUTH_EMAIL: 'worker@test.invalid', WORKER_AUTH_PASSWORD: 'test-password', FIREBASE_API_KEY: 'test' };
+  expect(await Promise.all([ctx.getWorkerAuthToken(env), ctx.getWorkerAuthToken(env)])).toEqual(['INTERNAL_TOKEN','INTERNAL_TOKEN']);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  const rejected = loadWorker(jest.fn(async () => new Response('{}', { status: 400 })));
+  expect(await rejected.getWorkerAuthToken(env)).toBeNull(); expect(await rejected.getWorkerAuthToken(env)).toBeNull();
+});
+
+test('OAuth token cache is scoped by account and scope and removes a failed request', async () => {
+  const ctx = loadWorker(); ctx._requestGoogleOAuthToken = jest.fn(async () => ({ access_token: 'INTERNAL_OAUTH', expires_in: 3600 }));
+  const account = JSON.stringify({ client_email: 'service@test.invalid' });
+  await Promise.all([ctx._getGoogleOAuthToken(account, 'scope-a'), ctx._getGoogleOAuthToken(account, 'scope-a')]);
+  expect(ctx._requestGoogleOAuthToken).toHaveBeenCalledTimes(1);
+  await ctx._getGoogleOAuthToken(account, 'scope-b'); expect(ctx._requestGoogleOAuthToken).toHaveBeenCalledTimes(2);
+  ctx._requestGoogleOAuthToken.mockRejectedValueOnce(new Error('unavailable'));
+  await expect(ctx._getGoogleOAuthToken(account, 'scope-c')).rejects.toThrow();
+  await ctx._getGoogleOAuthToken(account, 'scope-c'); expect(ctx._requestGoogleOAuthToken).toHaveBeenCalledTimes(4);
 });

@@ -1,0 +1,32 @@
+#voiceRecordButton[hidden] { display: none !important; }
+body { --covo-send-background: #4752c4; }
+body:is(.dark-server-theme,.discord-dark-theme) { --covo-send-background: #5865f2; }
+.covo-button-primary { background: var(--covo-send-background); color: #fff; }
+.covo-button-primary:hover:not(:disabled) { filter: brightness(1.1); }
+#messageInputArea #sendMessageButton, #messageInputArea #voiceRecordSendBtn { background: var(--covo-send-background) !important; color: #fff !important; border-radius: 12px !important; box-shadow: none !important; }
+#messageInputArea #sendMessageButton:not(:disabled):hover { filter: brightness(1.1); }
+#messageInputArea #sendMessageButton:disabled { background: var(--covo-hover) !important; color: var(--covo-text-muted) !important; opacity: .6; }
+#messageInputArea #sendMessageButton:focus-visible { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
+.covo-maintenance-panel[hidden] { display: none !important; }
+.covo-maintenance-panel { position: fixed; inset: 0; z-index: 99997; display: grid; place-items: center; overflow: auto; padding: max(24px,var(--safe-top)) max(20px,var(--safe-right)) max(24px,var(--safe-bottom)) max(20px,var(--safe-left)); background: var(--covo-surface-muted); color: var(--covo-text); }
+.covo-maintenance-card { width: min(100%,480px); padding: 32px; background: var(--covo-surface); border: 1px solid var(--covo-border); border-radius: 24px; box-shadow: var(--covo-shadow); text-align: center; }
+.covo-maintenance-symbol { display: inline-grid; place-items: center; width: 64px; height: 64px; border-radius: 20px; background: var(--covo-selected); color: var(--covo-accent); font-size: 24px; margin-bottom: 20px; }
+.covo-maintenance-eyebrow { color: var(--covo-text-muted); font-weight: 700; margin-bottom: 8px; }
+.covo-maintenance-card h1 { font-size: 24px; font-weight: 700; margin-bottom: 16px; }
+.covo-maintenance-card [data-maintenance-message] { font-size: 14px; line-height: 1.8; color: var(--covo-text-muted); }
+.covo-maintenance-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.covo-maintenance-actions button { min-height: 44px; }
+.covo-maintenance-control { display: flex; align-items: center; gap: 24px; border: 1px solid var(--covo-border); border-radius: 16px; padding: 20px; background: var(--covo-surface-muted); color: var(--covo-text); }
+.covo-maintenance-control > div { flex: 1; }
+.covo-maintenance-control p { font-size: 13px; line-height: 1.6; margin-top: 8px; color: var(--covo-text-muted); }
+.covo-reinstall-card { padding: 20px; margin: 20px 0; border: 1px solid var(--covo-border); border-radius: 16px; background: var(--covo-surface); color: var(--covo-text); }
+.covo-reinstall-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.covo-reinstall-card p { font-size: 13px; color: var(--covo-text-muted); line-height: 1.7; margin-bottom: 12px; }
+.covo-reinstall-preserve { display: flex; align-items: center; gap: 12px; margin: 16px 0; font-size: 13px; }
+.covo-reinstall-preserve { min-height: 44px; cursor: pointer; }
+.covo-reinstall-preserve > span:first-child { flex: 1; }
+.covo-reinstall-preserve .toggle-switch { flex-shrink: 0; }
+.covo-reinstall-preserve .toggle-switch:has(input:focus-visible) .toggle-slider { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
+.covo-reinstall-card .covo-reinstall-warning { color: var(--covo-error); }
+.covo-reinstall-card progress { width: 100%; margin-top: 12px; accent-color: var(--covo-accent); }
+.covo-reinstall-card [hidden] { display: none !important; }

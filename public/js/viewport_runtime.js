@@ -33,6 +33,10 @@
       visualHeight: vv?.height ?? null, visualOffsetTop: vv?.offsetTop ?? null, scale: vv?.scale ?? 1,
       safeTop: css ? parseFloat(css.paddingTop) : null, safeBottom: css ? parseFloat(css.paddingBottom) : null,
       shellTop: box?.top ?? null, shellBottom: box?.bottom ?? null,
+      bodyTop: document.body?.getBoundingClientRect().top ?? null, bodyBottom: document.body?.getBoundingClientRect().bottom ?? null,
+      rootScrollTop: document.scrollingElement?.scrollTop ?? 0,
+      rootBackground: getComputedStyle(root).backgroundColor,
+      userPanelShadow: document.getElementById('userPanel') ? getComputedStyle(document.getElementById('userPanel')).boxShadow : null,
       keyboard: root.classList.contains('covo-keyboard-open') };
   }
   function update() {
@@ -54,6 +58,9 @@
       root.style.setProperty('--covo-shell-background', color);
       const theme = document.querySelector('meta[name="theme-color"]');
       if (theme && theme.content !== color && !document.getElementById('appLoadingSplash')) theme.content = color;
+    }
+    if (ios && standalone && document.getElementById('appLoadingSplash')) {
+      const theme = document.querySelector('meta[name="theme-color"]'); if (theme) theme.content = '#232b38';
     }
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };

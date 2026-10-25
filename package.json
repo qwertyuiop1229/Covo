@@ -4,14 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "check:secrets": "node scripts/check_secret_safety.mjs",
     "test": "jest --runInBand",
     "tauri": "tauri",
     "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -y",
     "build:css": "node scripts/build_tailwind.mjs",
     "build:css:regen": "node scripts/build_tailwind.mjs --regen",
-    "test:web": "firebase serve --only hosting",
-    "test:win": "tauri dev",
-    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/dependency-loader.test.js tests/runtime-stability.test.js tests/communication.test.js",
+    "test:web": "node scripts/build_firebase.mjs --if-needed && node scripts/serve_web_preview.mjs",
+    "test:web:google": "node scripts/build_firebase.mjs --if-needed && npx --yes firebase-tools hosting:channel:deploy mobile-test --expires 1d --project simplechat-65a0d --config firebase.preview.json",
+    "test:win": "node scripts/test_windows.mjs",
+    "test:win:native": "node scripts/test_windows.mjs --native",
+    "test:unit": "jest --runInBand tests/worker-security.test.js tests/crypto.test.js tests/client-security.test.js tests/chat-regressions.test.js tests/chat-lifecycle-audit.test.js tests/dependency-loader.test.js tests/runtime-stability.test.js tests/communication.test.js",
     "test:security": "firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore,database \"jest --runInBand --silent\"",
     "build:firebase": "node scripts/build_firebase.mjs"
   },
@@ -30,11 +33,14 @@
   "devDependencies": {
     "@babel/parser": "^7.29.7",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@peculiar/x509": "^2.2.0",
     "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.10.1",
     "fake-indexeddb": "^6.2.6",
     "firebase": "^12.14.0",
     "jest": "^30.4.2",
+    "qrcode": "^1.5.4",
+    "reflect-metadata": "^0.2.2",
     "tailwindcss": "^3.4.19"
   },
   "dependencies": {
