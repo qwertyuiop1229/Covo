@@ -29,4 +29,13 @@ body:is(.dark-server-theme,.discord-dark-theme) { --covo-send-background: #5865f
 .covo-reinstall-preserve .toggle-switch:has(input:focus-visible) .toggle-slider { outline: 2px solid var(--covo-accent); outline-offset: 3px; }
 .covo-reinstall-card .covo-reinstall-warning { color: var(--covo-error); }
 .covo-reinstall-card progress { width: 100%; margin-top: 12px; accent-color: var(--covo-accent); }
+.covo-reinstall-heading { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.covo-reinstall-heading h3 { margin:0; }
+.covo-reinstall-symbol { display:grid; place-items:center; width:36px; height:36px; border-radius:12px; background:var(--covo-selected); color:var(--covo-accent); font-size:24px; }
+.covo-reinstall-preserve { padding:14px; border-radius:12px; border:1px solid var(--covo-border); background:var(--covo-surface-muted); }
+.covo-reinstall-preserve strong { display:block; font-weight:600; }
+.covo-reinstall-preserve small { display:block; margin-top:4px; color:var(--covo-text-muted); line-height:1.6; }
+.covo-reinstall-actions { display:flex; justify-content:flex-end; }
+.covo-reinstall-card .covo-reinstall-status { margin:10px 0 0; font-size:12px; }
+.covo-reinstall-status:empty { display:none; }
 .covo-reinstall-card [hidden] { display: none !important; }

@@ -1,10 +1,10 @@
-import { createAuthTransition } from './auth_transition.js?v=1.1.290';
-import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.290';
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.290';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.290';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.290';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.290';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.290';
+import { createAuthTransition } from './auth_transition.js?v=1.1.291';
+import { createMaintenanceGate, createMaintenanceSignalHandler } from './maintenance_runtime.js?v=1.1.291';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.291';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.291';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.291';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.291';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.291';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -13,7 +13,7 @@ import { createStatePublisher, createSubscriptionRegistry, requiredMessageBacken
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.290';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.291';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -111,13 +111,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.290';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.291';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.290';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.290';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.290';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.290';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.290';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.291';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.291';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.291';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.291';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.291';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -793,7 +793,7 @@ const nicknameContainer = document.getElementById("nicknameContainer");
 const appContainer = document.getElementById("appContainer");
 const loadingOverlay = document.getElementById("loadingOverlay");
 const authTransition = createAuthTransition();
-let _maintenanceUnsub = null, _maintenanceInitialized = false, _maintenanceHadSession = false;
+let _maintenanceUnsub = null, _maintenanceControlDb=null, _maintenanceWatchingControl=false, _maintenanceWatchPending=false, _maintenanceWatchGeneration=0, _maintenanceInitialized = false, _maintenanceHadSession = false;
 const maintenanceGate = createMaintenanceGate({ endpoint: WORKER_BASE_URL + '/api/maintenance',
   getOwner: () => auth?.currentUser?.uid,
   stopped: async () => {
@@ -804,8 +804,10 @@ const maintenanceGate = createMaintenanceGate({ endpoint: WORKER_BASE_URL + '/ap
     document.querySelector('.container').inert = true;
     window.dispatchEvent(new Event('covo-maintenance-blocked'));
     window.cleanupAllActiveFirestoreListeners?.();
-    _maintenanceUnsub?.(); _maintenanceUnsub = null;
+    _maintenanceUnsub?.();_maintenanceUnsub=null;
+    ++_maintenanceWatchGeneration;_maintenanceWatchPending=false;
     if (_rtdb) goOffline(_rtdb);
+    ensureMaintenanceWatch();
     _rtdbConnected = false;
     if (db) disableNetwork(db).catch(() => {});
     stopPresenceSystem();
@@ -825,19 +827,38 @@ const maintenanceGate = createMaintenanceGate({ endpoint: WORKER_BASE_URL + '/ap
   }
 });
 function ensureMaintenanceWatch() {
-  if (_maintenanceUnsub || window.covoMaintenanceBlocked) return;
-  _getOrInitRTDB().then(database => {
-    if (!database || window.covoMaintenanceBlocked || _maintenanceUnsub) return;
-    _maintenanceUnsub = onValue(ref(database, 'maintenance'), snapshot => {
-      const active = snapshot.val()?.enabled === true;
-      if (active === maintenanceGate.state?.enabled) return;
-      if (active && !isAdmin) { window.covoMaintenanceBlocked = true; document.querySelector('.container').inert = true; }
-      maintenanceGate.changed(auth.currentUser).then(() => {
+  if(_maintenanceUnsub&&_maintenanceWatchingControl&&!window.covoMaintenanceBlocked){
+    _maintenanceUnsub();_maintenanceUnsub=null;++_maintenanceWatchGeneration;_maintenanceWatchPending=false;
+    goOffline(_maintenanceControlDb);
+  }
+  if (_maintenanceUnsub||_maintenanceWatchPending) return;
+  _maintenanceWatchPending=true;const generation=++_maintenanceWatchGeneration;
+  const attach=database=>{
+    if(generation!==_maintenanceWatchGeneration)return;
+    _maintenanceWatchPending=false;
+    _maintenanceWatchingControl=database===_maintenanceControlDb;
+    const signal=createMaintenanceSignalHandler({
+      enabled:()=>maintenanceGate.state?.enabled,blocked:()=>window.covoMaintenanceBlocked,
+      block:()=>{if(!isAdmin){window.covoMaintenanceBlocked=true;document.querySelector('.container').inert=true;}},
+      refresh:async()=>{const allowed=await maintenanceGate.changed(auth.currentUser);
         const toggle = document.getElementById('adminMaintenanceToggle');
         if (toggle && isAdmin && maintenanceGate.state) toggle.checked = maintenanceGate.state.enabled;
-      });
-    }, () => {});
-  }).catch(() => {});
+        if(allowed&&isAuthReady&&_maintenanceWatchingControl)ensureMaintenanceWatch();
+        return allowed;
+      },
+      recovered:async()=>{if(_maintenanceHadSession){location.reload();return;}window.retryAuthInitialization?.();},
+      error:()=>globalThis.covoDiagnostics?.failure('maintenance.signal')
+    });
+    _maintenanceUnsub=onValue(ref(database,'maintenance/enabled'),snapshot=>{const value=snapshot.val();if(value===true||value===false)signal(value);},()=>globalThis.covoDiagnostics?.failure('maintenance.listen'));
+  };
+  const failed=()=>{if(generation===_maintenanceWatchGeneration)_maintenanceWatchPending=false;globalThis.covoDiagnostics?.failure('maintenance.listen');};
+  try{
+    if(window.covoMaintenanceBlocked){
+      if(!_maintenanceControlDb)_maintenanceControlDb=getDatabase(initializeApp(firebaseConfig,'covo-maintenance-control'),firebaseConfig.databaseURL);
+      goOnline(_maintenanceControlDb);
+      attach(_maintenanceControlDb);
+    }else _getOrInitRTDB().then(attach).catch(failed);
+  }catch(_){failed();}
 }
 const nicknameInput = document.getElementById("nicknameInput");
 const allowedEmailsList = document.getElementById("allowedEmailsList");
@@ -20395,7 +20416,7 @@ window.attachDiscordOgEmbed = async function(container, targetUrl) {
     return;
   }
   const card = document.createElement('div');
-  card.className = 'covo-og-embed-card mt-2.5 p-3 rounded-xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs max-w-sm sm:max-w-md w-full select-none transition-all flex flex-col gap-1.5 border-l-4 animate-fadeIn';
+  card.className = 'covo-og-embed-card mt-2.5 p-3 rounded-xl border border-gray-200/90 dark:border-[#1e1f22] bg-[#f2f3f5] dark:bg-[#2b2d31] text-gray-800 dark:text-[#dbdee1] shadow-xs w-full select-none flex flex-col gap-1.5 border-l-4 animate-fadeIn';
   card.dataset.ogUrl = targetUrl;
   const leftColor = ogData.themeColor && /^#[0-9a-fA-F]{6}$/.test(ogData.themeColor) ? ogData.themeColor : '#5865F2';
   card.style.borderLeftColor = leftColor;
@@ -20416,8 +20437,8 @@ window.attachDiscordOgEmbed = async function(container, targetUrl) {
     </div>
   ` : '';
   const imgHtml = ogData.image ? `
-    <div class="mt-1.5 rounded-lg overflow-hidden max-h-48 bg-black/5 dark:bg-black/20 flex items-center justify-center">
-      <img src="${escapeHtml(ogData.image)}" alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto max-h-48 object-cover rounded-lg" loading="lazy" onerror="this.parentElement.remove()" />
+    <div class="covo-og-image mt-1.5 rounded-lg overflow-hidden bg-black/5 dark:bg-black/20 flex items-center justify-center">
+      <img src="${escapeHtml(ogData.image)}" alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto object-cover rounded-lg" loading="lazy" onerror="this.parentElement.remove()" />
     </div>
   ` : '';
   card.innerHTML = `${siteNameHtml}${titleHtml}${descHtml}${imgHtml}`;
@@ -26214,6 +26235,7 @@ window.updateForceOverrideUI = function () {
   const cb = document.getElementById('toggleForceOverrideCheckbox');
   if (!cb) return;
   cb.checked = localStorage.getItem('covo_ignore_force_update') === '1';
+  const container=document.getElementById('versionLockContainer');if(container)container.style.display=isTauri?'':'none';
 };
 
 window.handleForceOverrideToggle = function (event) {
@@ -26229,12 +26251,14 @@ window.handleForceOverrideToggle = function (event) {
   } else {
     // オフにする → そのまま保存
     localStorage.setItem('covo_ignore_force_update', '0');
+    window.dispatchEvent(new Event('covo-update-policy-changed'));
     updateForceOverrideUI();
   }
 };
 
 window.confirmForceOverrideToggle = function () {
   localStorage.setItem('covo_ignore_force_update', '1');
+  window.dispatchEvent(new Event('covo-update-policy-changed'));
   updateForceOverrideUI();
   const modal = document.getElementById('forceOverrideConfirmModal');
   if (modal) {
@@ -28917,7 +28941,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.290').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.291').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));

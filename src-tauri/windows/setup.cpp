@@ -214,9 +214,9 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     actionButton = control(L"BUTTON", L"アンインストール", BS_OWNERDRAW | WS_TABSTOP, 322, 316, 210, 42, 1);
     if (progressOnly) ShowWindow(actionButton, SW_HIDE);
 #else
-    control(L"STATIC", L"セットアップ  " COVO_SETUP_VERSION, 0, 36, 90, 490, 30, 0);
+    control(L"STATIC", L"Windows版のセットアップ  ·  " COVO_SETUP_VERSION, 0, 36, 90, 490, 30, 0);
     statusText = control(L"STATIC", L"会話を、いつでもすぐそばに。\n既存の設定・暗号鍵・履歴を保持してインストールします。", 0, 36, 136, 490, 84, 0);
-    actionButton = control(L"BUTTON", L"インストール / 修復", BS_OWNERDRAW | WS_TABSTOP, 322, 316, 210, 42, 1);
+    actionButton = control(L"BUTTON", L"インストールする", BS_OWNERDRAW | WS_TABSTOP, 322, 316, 210, 42, 1);
 #endif
     progress = control(L"CovoSetupProgress", L"", 0, 36, 260, 496, 8, 0);
     ShowWindow(progress, SW_HIDE);
@@ -244,6 +244,7 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
   case WM_PAINT: {
     PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);
     if(brandIcon)DrawIconEx(dc,36,28,brandIcon,52,52,0,nullptr,DI_NORMAL);
+    HPEN headerLine=CreatePen(PS_SOLID,1,lightTheme?RGB(225,228,234):navyTheme?RGB(59,73,96):RGB(56,58,64));auto headerPen=SelectObject(dc,headerLine);MoveToEx(dc,36,116,nullptr);LineTo(dc,532,116);SelectObject(dc,headerPen);DeleteObject(headerLine);
     HPEN line=CreatePen(PS_SOLID,1,lightTheme?RGB(225,228,234):navyTheme?RGB(59,73,96):RGB(56,58,64));auto pen=SelectObject(dc,line);MoveToEx(dc,36,296,nullptr);LineTo(dc,532,296);SelectObject(dc,pen);DeleteObject(line);
     EndPaint(window,&paint);return 0;
   }

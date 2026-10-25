@@ -1,4 +1,21 @@
 /* Shared tokens for the newer controls, matching Covo's light, navy and Discord themes. */
+.covo-og-embed-card { box-sizing:border-box; width: min(100%,340px); padding: 10px !important; }
+.covo-og-image, .covo-og-image img { max-height: 128px; }
+.covo-og-image img { width: 100%; object-fit: cover; }
+.covo-admin-tabs { min-width: 0; max-width: 100%; overscroll-behavior-x: contain; touch-action: pan-x pan-y; }
+.titlebar-action-btn.covo-update-shortcut { color:var(--covo-success,#18733b); background:var(--covo-surface-muted,#f2f3f5); border-radius:10px; }
+.titlebar-action-btn.covo-update-shortcut:hover { background:var(--covo-hover,#e9ebf0); }
+.covo-update-shortcut[hidden] { display:none !important; }
+.covo-update-shortcut:focus-visible { outline:2px solid var(--covo-success,#18733b); outline-offset:2px; }
+.covo-progress { display: block; width: 100%; height: 7px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; -webkit-appearance: none; background-color: var(--covo-hover,#e2e8f0); accent-color: var(--covo-accent,#4752c4); }
+.covo-progress::-webkit-progress-bar { background: var(--covo-hover,#e2e8f0); border-radius: 999px; }
+.covo-progress::-webkit-progress-value { background: var(--covo-accent,#4752c4); border-radius: 999px; }
+.covo-progress::-moz-progress-bar { background: var(--covo-accent,#4752c4); border-radius: 999px; }
+.covo-progress:indeterminate { background-image: linear-gradient(90deg,transparent,var(--covo-accent,#4752c4) 30%,var(--covo-accent,#4752c4) 70%,transparent); background-size: 35% 100%; background-repeat: no-repeat; animation: covo-progress-travel 1.6s ease-in-out infinite; }
+.covo-progress:indeterminate::-webkit-progress-bar { background: transparent; }
+.covo-progress[hidden] { display: none; }
+@keyframes covo-progress-travel { from { background-position: -60% 0; } to { background-position: 160% 0; } }
+@media (prefers-reduced-motion: reduce) { .covo-progress:indeterminate { animation: none; background-position: center; } }
 :root {
   --covo-surface: #ffffff;
   --covo-surface-muted: #f2f3f5;

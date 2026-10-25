@@ -1515,7 +1515,7 @@
 
     /* 3. OpenGraph (OGP) リンクプレビュー埋め込みカード */
     .covo-og-embed-card {
-      max-width: 480px;
+      max-width: 340px;
       border-radius: 8px;
       border-left-width: 4px;
       border-left-style: solid;

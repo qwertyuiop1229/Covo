@@ -1,4 +1,16 @@
 export function installNavigationUI({ conversations, openConversation, openSearch, moveChannel, cancelRecording, closeOverlay }) {
+  if(!document.documentElement.dataset.covoAdminWheel){
+    document.documentElement.dataset.covoAdminWheel='true';
+    document.addEventListener('wheel',event=>{
+      const tabs=event.target.closest?.('.covo-admin-tabs');
+      if(!tabs||event.ctrlKey||Math.abs(event.deltaX)>Math.abs(event.deltaY)||!event.deltaY)return;
+      const max=tabs.scrollWidth-tabs.clientWidth;if(max<=0)return;
+      const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?tabs.clientWidth:1);
+      const next=Math.max(0,Math.min(max,tabs.scrollLeft+delta));
+      if(next===tabs.scrollLeft)return;
+      event.preventDefault();tabs.scrollLeft=next;
+    },{passive:false});
+  }
   let returnFocus = null;
   const showSwitcher = () => {
     const existing = document.getElementById('quickConversationSwitcher');

@@ -9,7 +9,7 @@ export function installReinstallUI({ invoke, listen, busy, notify }) {
   for (const parent of [document.getElementById('appinfoSection'), document.querySelector('#mobileDetailAppInfo > div:last-child')]) {
     if (!parent) continue;
     const section = document.createElement('section'); section.className = 'covo-reinstall-card';
-    section.innerHTML = '<h3>アプリを再インストール</h3><p>公式の署名付きパッケージで、このバージョンのアプリを入れ直します。</p><label class="covo-reinstall-preserve"><span>端末の暗号鍵・履歴・ログイン状態を保持する</span><span class="toggle-switch"><input type="checkbox" checked aria-label="端末データを保持する"><span class="toggle-slider"></span></span></label><p class="covo-reinstall-warning" hidden>保持をオフにすると、端末の暗号鍵・保存履歴・送信待ち・設定を削除します。復旧用のバックアップを先に確認してください。</p><button type="button" class="covo-button covo-button-secondary">再インストール</button><progress hidden aria-label="再インストールのダウンロード"></progress><p role="status" aria-live="polite"></p>';
+    section.innerHTML = '<div class="covo-reinstall-heading"><span class="covo-reinstall-symbol" aria-hidden="true">↻</span><h3>アプリの再インストール</h3></div><p>動作が不安定なときに、署名を確認した公式パッケージでCovo本体を入れ直します。</p><label class="covo-reinstall-preserve"><span><strong>端末のデータを保持</strong><small>暗号鍵・保存履歴・ログイン状態を引き継ぎます。</small></span><span class="toggle-switch"><input type="checkbox" checked aria-label="端末データを保持する"><span class="toggle-slider"></span></span></label><p class="covo-reinstall-warning" hidden>保持をオフにすると、端末の暗号鍵・保存履歴・送信待ち・設定を削除します。復旧用のバックアップを先に確認してください。</p><div class="covo-reinstall-actions"><button type="button" class="covo-button covo-button-secondary">再インストール</button></div><progress class="covo-progress" hidden aria-label="再インストールのダウンロード"></progress><p class="covo-reinstall-status" role="status" aria-live="polite"></p>';
     const preserve = section.querySelector('input'), warning = section.querySelector('.covo-reinstall-warning'), button = section.querySelector('button'), progress = section.querySelector('progress'), status = section.querySelector('[role=status]');
     const view = { button, preserve, progress, status }; views.push(view);
     preserve.onchange = () => { warning.hidden = preserve.checked; };
@@ -29,7 +29,8 @@ export function installReinstallUI({ invoke, listen, busy, notify }) {
           for (const item of views) {
             if (Number.isFinite(data.total) && data.total > 0) { item.progress.max = data.total; item.progress.value = Math.max(0, Math.min(data.downloaded || 0, data.total)); }
             else item.progress.removeAttribute('value');
-            item.status.textContent = 'ダウンロード中… 完了後に署名を検証して適用します。';
+            const percent=Number.isFinite(data.total)&&data.total>0?Math.min(100,Math.floor((data.downloaded||0)/data.total*100)):null;
+            item.status.textContent = percent===null?'公式パッケージをダウンロードしています…':`ダウンロード中（${percent}%）・完了後に署名を確認します。`;
           }
         });
         await invoke('set_installer_theme', { theme: theme() });
@@ -39,7 +40,7 @@ export function installReinstallUI({ invoke, listen, busy, notify }) {
         for (const item of views) item.status.textContent = '再インストールを開始できませんでした。端末データは保持しています。';
         notify(String(error?.message || error), 'warning');
       } finally {
-        unlisten?.(); running = false; window.covoReinstalling = false;
+        try{unlisten?.();}catch(_){} running = false; window.covoReinstalling = false;
         for (const item of views) { item.button.disabled = false; item.preserve.disabled = false; item.progress.hidden = true; }
       }
     };

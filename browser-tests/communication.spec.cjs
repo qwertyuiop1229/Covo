@@ -2,9 +2,10 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 async function fixture(page, theme = '') {
+  await page.routeWebSocket(/firebasedatabase\.app/,ws=>ws.close());
   await page.route('https://covo.test/**', route => {
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><div id="desktopSettingsContainer"></div><button id="pcCheckUpdateBtn">更新を確認</button><span id="pcCheckUpdateStatus"></span></body></html>' });
+    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><button id="titlebarInboxBtn">受信ボックス</button><div id="desktopSettingsContainer"></div><button id="pcCheckUpdateBtn">更新を確認</button><span id="pcCheckUpdateStatus"></span></body></html>' });
     const file = path.resolve('public', '.' + pathname);
     if (!file.startsWith(path.resolve('public') + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404 });
     return route.fulfill({ path: file, contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : undefined });
@@ -80,14 +81,30 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
 
 test('download progress can be reopened without checking or downloading twice',async({page})=>{
   await fixture(page,'discord-dark-theme');
-  await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){window.checks++;return {version:'2.0.0',download:async callback=>{window.downloads++;callback({event:'Started',data:{contentLength:100}});callback({event:'Progress',data:{chunkLength:40}});await new Promise(resolve=>window.finishDownload=resolve);},install:async()=>{},close:async()=>{}};}`}));
-  await page.evaluate(async()=>{window.checks=0;window.downloads=0;window.covoDesktopBusy=()=>false;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');window.pending=window.covoCheckUpdate(true);});
+  await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){window.checks++;return {version:'2.0.0',download:async callback=>{window.downloads++;callback({event:'Started',data:{contentLength:100}});callback({event:'Progress',data:{chunkLength:40}});await new Promise(resolve=>window.finishDownload=resolve);},install:async()=>{window.installs++;},close:async()=>{}};}`}));
+  await page.evaluate(async()=>{window.checks=0;window.downloads=0;window.installs=0;window.covoDesktopBusy=()=>false;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');window.pending=window.covoCheckUpdate(true);});
   const panel=page.locator('.covo-desktop-update');await expect(panel.locator('progress')).toHaveAttribute('value','40');await expect(panel.getByRole('status')).toContainText('40%');
   await page.screenshot({path:'scratch/desktop-update-progress.png'});
   await panel.getByRole('button',{name:'あとで',exact:true}).click();await expect(panel).toBeHidden();
   await page.evaluate(()=>window.covoCheckUpdate(true));await expect(panel).toBeVisible();
   expect(await page.evaluate(()=>({checks,downloads}))).toEqual({checks:1,downloads:1});
   await page.evaluate(async()=>{finishDownload();await pending;});await expect(panel.getByRole('button',{name:'再起動して更新',exact:true})).toBeEnabled();
+  await panel.getByRole('button',{name:'あとで',exact:true}).click();
+  const shortcut=page.locator('.covo-update-shortcut');await expect(shortcut).toBeVisible();await expect(shortcut).toHaveAttribute('data-phase','ready');
+  expect(await shortcut.evaluate(node=>node.previousElementSibling?.id)).not.toBe('titlebarInboxBtn');
+  expect(await shortcut.evaluate(node=>node.nextElementSibling.id)).toBe('titlebarInboxBtn');
+  await page.evaluate(()=>{localStorage.setItem('covo_ignore_force_update','1');window.covoDesktopBusy=()=>true;});
+  await shortcut.click();expect(await page.evaluate(()=>installs)).toBe(0);
+  await page.evaluate(()=>window.covoDesktopBusy=()=>false);
+  await shortcut.click();await expect(panel.getByRole('status')).toContainText('更新を適用');expect(await page.evaluate(()=>installs)).toBe(1);
+});
+
+test('version lock pauses background downloads but retains explicit manual update',async({page})=>{
+  await fixture(page);await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
+  await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){window.checks++;return {version:'2',download:async()=>{window.downloads++;},install:async()=>{},close:async()=>{}};}`}));
+  await page.evaluate(async()=>{window.checks=0;window.downloads=0;window.busy=true;window.covoDesktopBusy=()=>busy;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');await window.covoCheckUpdate();localStorage.setItem('covo_ignore_force_update','1');window.busy=false;});
+  await page.clock.runFor(31000);expect(await page.evaluate(()=>downloads)).toBe(0);expect(await page.evaluate(()=>checks)).toBe(1);
+  await page.evaluate(()=>window.covoCheckUpdate(true));expect(await page.evaluate(()=>downloads)).toBe(1);expect(await page.evaluate(()=>checks)).toBe(1);
 });
 
 test('native development skips production updater checks and reinstall while retaining desktop controls', async ({ page }) => {
@@ -103,6 +120,14 @@ test('native development skips production updater checks and reinstall while ret
   expect(checks).toBe(0);expect(await page.evaluate(()=>window.notices.some(text=>text.includes('開発実行中')))).toBe(true);
   await expect(page.locator('#covoMicrophoneShortcut')).toBeVisible();
   await expect(page.locator('.covo-reinstall-card')).toHaveCount(0);
+});
+
+test('enabling version lock during an in-flight check prevents a new background download',async({page})=>{
+  await fixture(page);await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){await new Promise(resolve=>window.finishCheck=resolve);return {version:'2',download:async()=>window.downloads++,install:async()=>{},close:async()=>{}};}`}));
+  await page.evaluate(async()=>{window.downloads=0;window.covoDesktopBusy=()=>false;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');window.pendingCheck=window.covoCheckUpdate();});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishCheck)).toBe('function');
+  await page.evaluate(async()=>{localStorage.setItem('covo_ignore_force_update','1');finishCheck();await pendingCheck;});
+  expect(await page.evaluate(()=>downloads)).toBe(0);await page.evaluate(()=>window.covoCheckUpdate(true));expect(await page.evaluate(()=>downloads)).toBe(1);
 });
 
 test('complete anonymous application boots with external services offline and no uncaught module errors', async ({ page }) => {

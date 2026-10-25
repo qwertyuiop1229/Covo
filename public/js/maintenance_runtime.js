@@ -9,6 +9,30 @@ export function maintenanceStatusEndpoint(endpoint, pageUrl = typeof location ==
     ? new URL('/__covo_dev__/maintenance',page.origin).href : endpoint;
 }
 
+// A public boolean is a change signal, never an authorization decision. Fetch
+// authoritative state only on transitions and drain rapid toggles in order.
+export function createMaintenanceSignalHandler({enabled,blocked,block,refresh,recovered,error=()=>{}}) {
+  let latest,revision=0,running=null;
+  return value=>{
+    if(typeof value!=='boolean'||value===latest)return running||Promise.resolve();
+    latest=value;
+    if(value===enabled()&&!running)return Promise.resolve();
+    revision++;
+    if(value)block();
+    if(!running)running=Promise.resolve().then(async()=>{
+      try{
+        let observed;
+        do{
+          observed=revision;const wasBlocked=blocked();
+          const allowed=await refresh();
+          if(observed===revision&&allowed&&wasBlocked&&enabled()===false)await recovered();
+        }while(observed!==revision);
+      }catch(reason){error(reason);}finally{running=null;}
+    });
+    return running;
+  };
+}
+
 export function createMaintenanceGate({ endpoint, stopped = async () => {}, resume = () => {}, getOwner }) {
   const statusEndpoint = maintenanceStatusEndpoint(endpoint);
   const panel = document.getElementById('covoMaintenancePanel');
@@ -70,5 +94,5 @@ export function createMaintenanceGate({ endpoint, stopped = async () => {}, resu
       if (state?.enabled && !user) return false;
       return state?.enabled === false && !window.covoMaintenanceBlocked ? true : check(user);
     },
-    async changed(user) { state = null; return check(user); } };
+    async changed(user) { if(pending)await pending;state = null; return check(user); } };
 }

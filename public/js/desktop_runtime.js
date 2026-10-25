@@ -11,17 +11,22 @@ if (window.__TAURI__?.core?.invoke) {
     else { const status = document.getElementById('desktopUpdateStatus'); if (status) status.textContent = message; }
   };
   const panel = document.createElement('aside');
+  let deferred=false, manualDownloadRequested=false;
+  const shortcut=document.createElement('button');shortcut.type='button';shortcut.hidden=true;shortcut.className='titlebar-action-btn covo-update-shortcut';shortcut.innerHTML='<i class="fas fa-download" aria-hidden="true"></i>';
+  document.getElementById('titlebarInboxBtn')?.before(shortcut);
   panel.className = 'covo-desktop-update'; panel.hidden = true; panel.setAttribute('aria-label', 'Covoの更新');
   const heading=document.createElement('strong');heading.className='covo-update-heading';heading.textContent='Covoのアップデート';
   const status = document.createElement('span'); status.id = 'desktopUpdateStatus'; status.setAttribute('role', 'status');
   const detail=document.createElement('p');detail.className='covo-update-detail';
-  const progress = document.createElement('progress'); progress.setAttribute('aria-label', '更新のダウンロード');
+  const progress = document.createElement('progress'); progress.className='covo-progress';progress.setAttribute('aria-label', '更新のダウンロード');
   const button = document.createElement('button'); button.type = 'button'; button.className = 'covo-button covo-button-small covo-update-primary';
   const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'covo-button covo-button-secondary covo-button-small'; dismiss.textContent = 'あとで';
-  dismiss.onclick = () => { panel.hidden = true; notify('更新は「設定 → アプリ情報 → 更新画面を開く」から再開できます。'); };
+  dismiss.onclick = () => { deferred=true;panel.hidden=true;renderUpdate(controller.state);notify('受信ボックス横の緑の更新ボタン、またはアプリ情報から再開できます。'); };
   const actions=document.createElement('div');actions.className='covo-update-actions';actions.append(button,dismiss);
   panel.append(heading,status,detail,progress,actions); document.body.append(panel);
   function renderUpdate(state) {
+    shortcut.hidden=!deferred||!['available','downloading','ready'].includes(state.phase);
+    shortcut.title=state.phase==='ready'?`v${state.version} に再起動して更新`:'更新のダウンロード状況を開く';shortcut.setAttribute('aria-label',shortcut.title);shortcut.dataset.phase=state.phase;
     const percent=state.total>0?Math.min(100,Math.floor(state.downloaded/state.total*100)):null;
     const label=({idle:'更新を確認',checking:'更新を確認しています…',current:'最新バージョンです',available:`v${state.version} の更新があります`,downloading:`v${state.version} をダウンロード中${percent===null?'…':`（${percent}%）`}`,ready:`v${state.version} の準備ができました。再起動して適用できます`,installing:'更新を適用しています。完了までお待ちください。',error:'更新を完了できませんでした。もう一度お試しください。'})[state.phase]||'';
     status.textContent=label;
@@ -40,34 +45,46 @@ if (window.__TAURI__?.core?.invoke) {
     check: async options => (await import('../vendor/desktop-updater.js')).check(options), busy: () => busy() || Boolean(window.covoReinstalling) || Boolean(window.covoMaintenanceBlocked) || Boolean(window.covoNativeDevelopment),
     changed(state) {
       window.__bgDownloading = state.phase === 'downloading'; window.__bgDownloaded = state.phase === 'ready';
-      if (['available', 'ready', 'error'].includes(state.phase)) panel.hidden = false;
+      if(state.phase==='ready')manualDownloadRequested=false;
+      if ((!deferred&&['available','ready'].includes(state.phase))||state.phase==='error') panel.hidden = false;
       renderUpdate(state);
     }
   });
   window.covoUpdater = controller;
+  shortcut.onclick=async()=>{
+    try{
+      if(controller.state.phase==='ready'){panel.hidden=false;await controller.apply();}
+      else await window.covoCheckUpdate(true);
+    }catch(error){notify(error.message,'warning');}
+  };
+  const backgroundPaused=()=>{try{assertSupportedClient();return localStorage.getItem('covo_ignore_force_update')==='1';}catch(_){return false;}};
   installReinstallUI({ invoke, listen: window.__TAURI__.event?.listen, busy: () => busy() || ['downloading','installing'].includes(controller.state.phase), notify });
   window.covoCheckUpdate = async (manual = false) => {
     if (window.covoNativeDevelopment) { if (manual) notify('開発実行中は本番版への更新を停止しています。'); return false; }
     if (window.covoReinstalling || window.covoMaintenanceBlocked) return false;
-    if(manual){panel.hidden=false;renderUpdate(controller.state);}
+    if(manual){deferred=false;panel.hidden=false;renderUpdate(controller.state);}
     if(['ready','downloading','installing'].includes(controller.state.phase))return true;
+    if(manual&&controller.state.phase==='available'){manualDownloadRequested=true;if(!busy())await controller.download();renderUpdate(controller.state);return true;}
     let required = false;
     try { assertSupportedClient(); } catch (_) { required = true; }
     if (!manual && (navigator.onLine === false || (!required && localStorage.getItem('covo_ignore_force_update') === '1'))) return false;
     const found = await controller.check();
-    if (found && !busy()) await controller.download();
+    if(manual&&found)manualDownloadRequested=true;
+    if (found && !busy() && (manual || !backgroundPaused())) await controller.download();
     if(manual){panel.hidden=false;renderUpdate(controller.state);}
     if (manual && !found) notify('現在提供されている最新バージョンです。');
     return found;
   };
   const resume = async () => {
     if (window.covoNativeDevelopment) return;
+    if(!manualDownloadRequested&&backgroundPaused())return;
     if (controller.state.phase === 'available' && !busy() && navigator.onLine !== false) await controller.download();
   };
   setInterval(() => resume().catch(() => {}), 30000);
   setInterval(() => window.covoCheckUpdate().catch(() => {}), 6 * 60 * 60 * 1000);
   setTimeout(() => window.covoCheckUpdate().catch(() => {}), 10000);
   window.addEventListener('online', () => resume().catch(() => {}));
+  window.addEventListener('covo-update-policy-changed',()=>{if(!backgroundPaused())window.covoCheckUpdate().catch(()=>{});});
   // This proves the local shell booted, independently of Firebase/auth/network.
   invoke('notify_app_loaded').catch(() => {});
   window.__TAURI__.event?.listen('desktop-action', event => {

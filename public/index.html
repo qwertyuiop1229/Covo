@@ -31,17 +31,17 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <script src="js/viewport_runtime.js?v=1.1.290" async></script>
+  <script src="js/viewport_runtime.js?v=1.1.291" async></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.290" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.291" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.290" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.291" />
 
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
@@ -86,7 +86,7 @@
       window.gtag = function() {};
     }
   </script>
-  <link rel="stylesheet" href="css/desktop.css">
+  <link rel="stylesheet" href="css/desktop.css?v=1.1.291">
   <script type="module" src="js/desktop_runtime.js"></script>
 </head>
 
@@ -1032,10 +1032,10 @@
         </div>
       </div>
       <div class="space-y-4 text-xs text-gray-300 leading-relaxed">
-        <p>「バージョンロック」は、お気に入りの安定バージョンを維持したい場合や、最新アップデートをすぐには適用したくない場合に、<strong>起動時の自動アップデートをスキップする保護機能</strong>です。</p>
+        <p>Windows版の<strong>自動の更新確認・ダウンロードを一時停止</strong>します。ダウンロード済みの更新は保持され、適用にはあなたの操作が必要です。</p>
         <p class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl text-yellow-400">
           <i class="fas fa-exclamation-triangle mr-1.5"></i><strong>有効化中のご注意</strong><br>
-          ロック中は自動更新が行われなくなりますが、設定画面の「アップデートを確認」ボタンからいつでも手動で最新バージョンへ更新できます。
+          アプリ情報からの手動更新と、緑の更新ボタンは引き続き利用できます。互換性のために必須となった更新は、この設定で回避できません。進行中のダウンロードは完了まで続きます。
         </p>
       </div>
       <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
@@ -1834,7 +1834,7 @@
                 <div id="versionLockContainer" class="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl flex items-center justify-between shadow-sm">
                   <div>
                     <div class="text-sm font-bold text-yellow-500 dark:text-yellow-400"><i class="fas fa-shield-halved mr-2"></i>バージョンロック</div>
-                    <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">現在の安定バージョンを保護し、アプリ起動時の自動アップデートを一時的にストップします。</div>
+                    <div class="text-xs text-gray-600 dark:text-gray-300 mt-1">自動の更新確認・ダウンロードを一時停止します。手動更新は利用できます。</div>
                   </div>
                   <label class="toggle-switch flex-shrink-0 cursor-pointer">
                     <input type="checkbox" id="toggleForceOverrideCheckbox" onchange="handleForceOverrideToggle(event)">
@@ -2177,7 +2177,7 @@
   <!-- 共有管理者コンテンツ -->
   <div id="adminPanelSharedContent" class="hidden">
     <!-- 洗練されたセグメントピル型タブ（モバイル横スクロール・ダークモード完全対応） -->
-    <div class="flex gap-1 p-1 bg-gray-100/90 dark:bg-slate-800/60 rounded-2xl mb-4 overflow-x-auto no-scrollbar border border-gray-200/80 dark:border-transparent flex-nowrap">
+    <div class="covo-admin-tabs flex gap-1 p-1 bg-gray-100/90 dark:bg-slate-800/60 rounded-2xl mb-4 overflow-x-auto no-scrollbar border border-gray-200/80 dark:border-transparent flex-nowrap" aria-label="ユーザー管理の項目">
       <button id="adminTabAllowedBtn" class="flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-900 bg-white dark:bg-slate-700 dark:text-white shadow-xs"><i class="fas fa-envelope text-xs"></i>許可リスト</button>
       <button id="adminTabAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-user-shield text-xs"></i>管理者</button>
       <button id="adminTabListAdminsBtn" class="admin-only-tab flex-shrink-0 py-2 px-3.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"><i class="fas fa-list-check text-xs"></i>リスト管理者</button>
@@ -4407,7 +4407,7 @@
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.290"></script>
+  <script type="module" src="js/main.js?v=1.1.291"></script>
 
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">

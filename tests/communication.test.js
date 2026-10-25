@@ -22,6 +22,42 @@ test('maintenance closes all history peers and rejects newly created peers witho
   expect(() => ctx.trackP2PHistoryConnection(rejected)).toThrow(); expect(rejected.close).toHaveBeenCalledTimes(1); expect(peers.size).toBe(0);
 });
 
+test('maintenance signals deduplicate snapshots, serialize rapid changes, and resume only after authoritative release',async()=>{
+  const {createMaintenanceSignalHandler}=api('maintenance_runtime','createMaintenanceSignalHandler');
+  let enabled=false,blocked=false,release;
+  const recovered=jest.fn(),block=jest.fn(()=>{blocked=true;});let count=0;
+  const refresh=jest.fn(async()=>{if(++count===1)await new Promise(resolve=>release=resolve);enabled=count===1;blocked=enabled;return !enabled;});
+  const signal=createMaintenanceSignalHandler({enabled:()=>enabled,blocked:()=>blocked,block,refresh,recovered});
+  await signal(false);expect(refresh).not.toHaveBeenCalled();
+  const pending=signal(true);await Promise.resolve();signal(true);signal(false);release();await pending;
+  expect(refresh).toHaveBeenCalledTimes(2);expect(recovered).toHaveBeenCalledTimes(1);expect(enabled).toBe(false);
+  await signal(false);expect(refresh).toHaveBeenCalledTimes(2);
+});
+
+test('maintenance keeps only its public boolean watcher separate, then returns to the shared connection on admission',async()=>{
+  const paths=[],subscribe=jest.fn(()=>()=>{}),database={control:true},shared={shared:true},offline=jest.fn();
+  const ctx=vm.createContext({_maintenanceUnsub:null,_maintenanceControlDb:null,_maintenanceWatchingControl:false,_maintenanceWatchPending:false,_maintenanceWatchGeneration:0,goOnline:jest.fn(),goOffline:offline,_getOrInitRTDB:async()=>shared,firebaseConfig:{databaseURL:'https://test'},
+    initializeApp:jest.fn(()=>({})),getDatabase:()=>database,createMaintenanceSignalHandler:()=>jest.fn(),
+    maintenanceGate:{state:{enabled:false}},window:{covoMaintenanceBlocked:true},auth:{currentUser:null},isAdmin:false,
+    ref:(db,path)=>{paths.push({db,path});return path;},onValue:subscribe});
+  vm.runInContext(declaration('ensureMaintenanceWatch'),ctx);ctx.ensureMaintenanceWatch();ctx.ensureMaintenanceWatch();
+  expect(paths).toEqual([{db:database,path:'maintenance/enabled'}]);expect(subscribe).toHaveBeenCalledTimes(1);
+  ctx.window.covoMaintenanceBlocked=false;ctx.ensureMaintenanceWatch();await Promise.resolve();await Promise.resolve();
+  expect(offline).toHaveBeenCalledWith(database);expect(paths[1]).toEqual({db:shared,path:'maintenance/enabled'});
+});
+
+test('normal maintenance signals share the data connection and a late attachment cannot replace the blocked control watcher',async()=>{
+  let release;const normal={normal:true},control={control:true},paths=[];
+  const initializeApp=jest.fn(()=>({}));
+  const ctx=vm.createContext({_maintenanceUnsub:null,_maintenanceControlDb:null,_maintenanceWatchingControl:false,_maintenanceWatchPending:false,_maintenanceWatchGeneration:0,goOnline:jest.fn(),
+    firebaseConfig:{databaseURL:'https://test'},initializeApp,getDatabase:()=>control,
+    _getOrInitRTDB:()=>new Promise(resolve=>release=resolve),createMaintenanceSignalHandler:()=>jest.fn(),maintenanceGate:{state:{enabled:false}},
+    window:{covoMaintenanceBlocked:false},auth:{currentUser:null},isAdmin:false,ref:(db,path)=>{paths.push({db,path});return path;},onValue:()=>()=>{}});
+  vm.runInContext(declaration('ensureMaintenanceWatch'),ctx);ctx.ensureMaintenanceWatch();ctx.ensureMaintenanceWatch();expect(initializeApp).not.toHaveBeenCalled();
+  ctx._maintenanceWatchGeneration++;ctx._maintenanceWatchPending=false;ctx.window.covoMaintenanceBlocked=true;ctx.ensureMaintenanceWatch();
+  release(normal);await Promise.resolve();await Promise.resolve();expect(paths).toEqual([{db:control,path:'maintenance/enabled'}]);
+});
+
 test('offline pruning coalesces bounded work and never submits a token from the previous account', async () => {
   const fetcher = jest.fn(), queue = new Map(); let finishToken;
   const ctx = vm.createContext({ window: {}, navigator: { onLine: false }, userId: 'alice', _pruneRetryQueue: queue, _pruneThrottleMap: new Map(), _prunePendingTimers: new Map(), Date, setTimeout, clearTimeout,
