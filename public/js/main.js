@@ -1,10 +1,10 @@
-import { createAuthTransition } from './auth_transition.js?v=1.1.288';
-import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.288';
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.288';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.288';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.288';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.288';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.288';
+import { createAuthTransition } from './auth_transition.js?v=1.1.289';
+import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.289';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.289';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.289';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.289';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.289';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.289';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -13,7 +13,7 @@ import { createStatePublisher, createSubscriptionRegistry, requiredMessageBacken
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.288';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.289';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -111,13 +111,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.288';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.289';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.288';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.288';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.288';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.288';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.288';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.289';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.289';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.289';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.289';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.289';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -16541,8 +16541,25 @@ function selectRoom(roomId, roomName) {
 }
 
 const _historyLoadGate = new HistoryLoadGate();
+function updateJumpToLatestButton() {
+  const visible=isJumpView || messagesDisplay.scrollTop>20;
+  const button=document.getElementById('jumpModeExitBtn');
+  if(button){
+    for(const name of ['opacity-0','pointer-events-none','translate-y-3'])button.classList.toggle(name,!visible);
+    for(const name of ['opacity-100','pointer-events-auto','translate-y-0'])button.classList.toggle(name,visible);
+    button.setAttribute('aria-hidden',String(!visible));button.tabIndex=visible?0:-1;
+  }
+  if(!visible){
+    window._covoUnreadScrolledCount=0;
+    const badge=document.getElementById('jumpModeUnreadBadge');
+    if(badge){badge.classList.add('hidden');badge.textContent='0';}
+  }
+}
+window.updateJumpToLatestButton=updateJumpToLatestButton;
+messagesDisplay.addEventListener('covo-scroll-settled',updateJumpToLatestButton);
 let floatingDateTimer = null;
 messagesDisplay.addEventListener("scroll", async () => {
+  updateJumpToLatestButton();
   if (_chatScroller.running) return;
   if (!allowPagination) return;
 
@@ -16631,29 +16648,7 @@ messagesDisplay.addEventListener("scroll", async () => {
     }
   }
 
-  const jumpModeExitBtn = document.getElementById("jumpModeExitBtn");
-  const jumpUnreadBadge = document.getElementById("jumpModeUnreadBadge");
-  if (messagesDisplay.scrollTop <= 20) {
-    if (jumpModeExitBtn) {
-      jumpModeExitBtn.classList.add("opacity-0", "pointer-events-none", "translate-y-3");
-      jumpModeExitBtn.classList.remove("opacity-100", "pointer-events-auto", "translate-y-0");
-    }
-    window._covoUnreadScrolledCount = 0;
-    if (jumpUnreadBadge) {
-      jumpUnreadBadge.classList.add("hidden");
-      jumpUnreadBadge.textContent = "0";
-    }
-
-    // ジャンプ中かつ未来の追加ログがない（自力で最新部までスクロール到達した）場合は自動で通常ビューに切り替え
-    if (isJumpView && !hasMoreJumpNewer) {
-      window.exitJumpMode();
-    }
-  } else if (isJumpView || messagesDisplay.scrollTop > 180) {
-    if (jumpModeExitBtn) {
-      jumpModeExitBtn.classList.remove("opacity-0", "pointer-events-none", "translate-y-3");
-      jumpModeExitBtn.classList.add("opacity-100", "pointer-events-auto", "translate-y-0");
-    }
-  }
+  if(messagesDisplay.scrollTop<=20 && isJumpView && !hasMoreJumpNewer){window.exitJumpMode();return;}
 
   const scrollDistanceToTop = messagesDisplay.scrollHeight - messagesDisplay.clientHeight - messagesDisplay.scrollTop;
 
@@ -16686,10 +16681,10 @@ window.exitJumpMode = function () {
   lastMessagesData = [...allLoadedMessages];
   renderMessagesWithReadReceipts();
   const owner=userId,session=_activeChannelSessionId;
-  _chatScroller.to(()=>0,{active:()=>owner===userId&&session===_activeChannelSessionId}).then(arrived=>{if(arrived)updateReadReceiptForCurrentUser();});
+  _chatScroller.to(()=>0,{active:()=>owner===userId&&session===_activeChannelSessionId,maxDistance:messagesDisplay.clientHeight*1.5,prepare:()=>{renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();}}).then(arrived=>{if(arrived)updateReadReceiptForCurrentUser();});
   window._covoUnreadScrolledCount = 0;
   document.getElementById('jumpModeUnreadBadge')?.classList.add('hidden');
-  document.getElementById('jumpModeExitBtn')?.classList.add('opacity-0', 'pointer-events-none');
+  updateJumpToLatestButton();
 };
 
 // PCでのマウスホイールによるスクロール方向逆転の修正
@@ -21065,7 +21060,13 @@ function virtualSpacer(id, height) {
   spacer.style.flexShrink = '0';
   return spacer;
 }
-messagesDisplay.addEventListener('scroll', scheduleTimelineRender, { passive: true });
+function scheduleTimelineScrollRender() {
+  const range=_virtualTimeline.renderedRange;
+  const first=_virtualTimeline.indexAt(messagesDisplay.scrollTop);
+  const last=_virtualTimeline.indexAt(messagesDisplay.scrollTop+messagesDisplay.clientHeight);
+  if(!range || first<range.start+8&&range.start>0 || last>=range.end-8&&range.end<_virtualTimeline.ids.length) scheduleTimelineRender();
+}
+messagesDisplay.addEventListener('scroll', scheduleTimelineScrollRender, { passive: true });
 
 function patchMessageHtml(element, html) {
   if (element._covoRenderedHtml === html) return false;
@@ -21155,11 +21156,12 @@ function renderMessagesWithReadReceipts() {
     }
   }
   _virtualTimeline.set(allReversed.map(message => message.id));
-  if (!followLatest && anchorId) {
+  if (!followLatest && anchorId && !messagesDisplay._covoProgrammaticScroll) {
     const offset = _virtualTimeline.offsetOf(anchorId);
     if (offset != null) messagesDisplay.scrollTop = Math.max(0, offset + anchorDelta);
   }
   const virtualRange = _virtualTimeline.range(messagesDisplay.scrollTop, messagesDisplay.clientHeight);
+  _virtualTimeline.renderedRange=virtualRange;
   const reversedMessages = allReversed.slice(virtualRange.start, virtualRange.end);
   const getDayString = (ts) => {
     const ms = parseTimestampToMs(ts);
@@ -21393,6 +21395,7 @@ function renderMessagesWithReadReceipts() {
     const existing = messagesDisplay.querySelector('.unread-divider');
     if (existing) existing.remove();
   }
+  window.updateJumpToLatestButton?.();
 }
 
 // 入室時に確定した未読境界(unreadBoundaryAt)を元に、最初の未読メッセージIDを返す。
@@ -22070,7 +22073,7 @@ async function doJumpHighlight(el, isInstant = false) {
     if(bubble){const row=bubble.closest('.message-row')||bubble,c=container.getBoundingClientRect(),r=row.getBoundingClientRect();return container.scrollTop+(c.top+c.bottom-r.top-r.bottom)/2;}
     const offset=_virtualTimeline.offsetOf(id);
     return offset==null?NaN:offset+(_virtualTimeline.heights.get(id)||_virtualTimeline.estimate)/2-container.clientHeight/2;
-  },{instant:isInstant,active:()=>owner===userId&&session===_activeChannelSessionId});
+  },{instant:isInstant,active:()=>owner===userId&&session===_activeChannelSessionId,maxDistance:container.clientHeight*1.5,prepare:()=>{renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();}});
   if(!arrived||isInstant)return;
   el=container.querySelector('[data-message-id="'+id+'"]');
   if(!el)return;
@@ -28903,7 +28906,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.288').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.289').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));

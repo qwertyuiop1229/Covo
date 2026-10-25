@@ -7,6 +7,7 @@ const codeFor = name => {
   const node = ast.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
   return main.slice(node.start, node.end);
 };
+const exitJumpModeNode=ast.program.body.find(node=>node.type==='ExpressionStatement'&&node.expression.type==='AssignmentExpression'&&node.expression.left.type==='MemberExpression'&&node.expression.left.object.name==='window'&&node.expression.left.property.name==='exitJumpMode');
 
 test('real chat reconciliation keeps 10,000 messages bounded and stable through scroll, arrival and resize', async ({ page }) => {
   const errors = [];
@@ -16,7 +17,7 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     .message-row { transform:scaleY(-1); min-height:64px; margin-top:8px; box-sizing:border-box; }
     .message-content { display:block; white-space:normal; }
     .date-divider { height:24px; transform:scaleY(-1); }
-  </style><div id="searchContainer"></div><div id="messagesDisplay"></div>`);
+  </style><div id="searchContainer"></div><div id="messagesDisplay"></div><button id="jumpModeExitBtn"><span id="jumpModeUnreadBadge"></span></button>`);
   await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
   await page.addScriptTag({ content: fs.readFileSync('public/js/chat_scroll.js', 'utf8').replace(/\bexport /g, '') });
   await page.addScriptTag({ content: `
@@ -27,6 +28,8 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
     const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
     const _chatScroller=createChatScroller(messagesDisplay);let _activeChannelSessionId=1;
+    let _jumpGeneration=0,isLoadingJumpOlder=false,isLoadingJumpNewer=false;
+    const updateReadReceiptForCurrentUser=()=>{};
     const getMsgTimestamp = message => message.timestamp;
     const parseTimestampToMs = value => Number(value || 0);
     const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
@@ -48,8 +51,16 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
     ${codeFor('patchMessageHtml')}
     ${codeFor('renderMessagesWithReadReceipts')}
     ${codeFor('doJumpHighlight')}
+    ${codeFor('updateJumpToLatestButton')}
+    window.updateJumpToLatestButton=updateJumpToLatestButton;
+    messagesDisplay.addEventListener('scroll',updateJumpToLatestButton);
+    messagesDisplay.addEventListener('covo-scroll-settled',updateJumpToLatestButton);
+    ${main.slice(exitJumpModeNode.start,exitJumpModeNode.end)}
     window.testJump=doJumpHighlight;
-    let pendingRender=null;messagesDisplay.addEventListener('scroll',()=>{if(pendingRender==null)pendingRender=requestAnimationFrame(()=>{pendingRender=null;renderMessagesWithReadReceipts();});});
+    let _virtualRenderFrame=null;
+    ${codeFor('scheduleTimelineRender')}
+    ${codeFor('scheduleTimelineScrollRender')}
+    messagesDisplay.addEventListener('scroll',scheduleTimelineScrollRender);
     window.testRender = renderMessagesWithReadReceipts;
     window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
     window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
@@ -98,11 +109,22 @@ test('real chat reconciliation keeps 10,000 messages bounded and stable through 
   fs.mkdirSync('scratch', { recursive: true });
   fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
+  await page.evaluate(()=>{window.renderCount=0;const render=renderMessagesWithReadReceipts;renderMessagesWithReadReceipts=function(){window.renderCount++;return render();};});
   await page.evaluate(()=>window.testJump('m1250'));
   await expect.poll(()=>page.evaluate(()=>{const row=document.querySelector('[data-message-id="m1250"]').closest('.message-row'),r=row.getBoundingClientRect(),c=messagesDisplay.getBoundingClientRect();return Math.abs((r.top+r.bottom-c.top-c.bottom)/2);})).toBeLessThanOrEqual(1);
   expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-  await page.evaluate(()=>_chatScroller.to(()=>0));
+  expect(await page.evaluate(()=>window.renderCount)).toBeLessThan(12);
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>window.exitJumpMode());
+  await expect.poll(()=>page.evaluate(()=>_chatScroller.running)).toBe(false);
   expect(await page.evaluate(()=>messagesDisplay.scrollTop)).toBe(0);
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
+  await page.evaluate(()=>{isJumpView=true;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>{isJumpView=false;messagesDisplay.scrollTop=60;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>{messagesDisplay.scrollTop=0;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
 });
 
 for (const channel of ['server', 'dm']) {

@@ -6,7 +6,7 @@ export class VirtualTimeline {
     this.heights = new Map();
     this.reset();
   }
-  reset() { this.ids = []; this.offsets = [0]; this.heights.clear(); }
+  reset() { this.ids = []; this.offsets = [0]; this.heights.clear(); this.renderedRange = null; }
   set(ids) {
     this.ids = ids;
     const keep = new Set(ids);
