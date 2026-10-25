@@ -6,6 +6,7 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <tlhelp32.h>
 #include <bcrypt.h>
 #include <dwmapi.h>
@@ -35,11 +36,40 @@ static HFONT font, headingFont;
 static bool working = false, completed = false;
 static bool lightTheme = false;
 static bool navyTheme = false;
-static COLORREF backgroundColor() { return lightTheme ? RGB(255,255,255) : navyTheme ? RGB(30,41,59) : RGB(30,31,34); }
+static COLORREF backgroundColor() { return lightTheme ? RGB(247,248,250) : navyTheme ? RGB(30,41,59) : RGB(30,31,34); }
+static COLORREF accentColor() { return lightTheme ? RGB(71,82,196) : RGB(165,180,252); }
 static bool progressOnly = false;
 static HANDLE progressProcess = nullptr;
 static std::wstring failure;
 static constexpr UINT doneMessage = WM_APP + 1;
+static HICON brandIcon;
+
+static LRESULT CALLBACK progressProcedure(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
+  switch(message) {
+  case PBM_SETMARQUEE: {
+    KillTimer(window,1);BOOL animated=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animated,0);
+    if(wparam && animated)SetTimer(window,1,16,nullptr);InvalidateRect(window,nullptr,FALSE);return TRUE;
+  }
+  case WM_TIMER: InvalidateRect(window,nullptr,FALSE);return 0;
+  case WM_SHOWWINDOW: if(!wparam)KillTimer(window,1);break;
+  case WM_ERASEBKGND: return 1;
+  case WM_PAINT: {
+    PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);RECT area;GetClientRect(window,&area);
+    FillRect(dc,&area,background);HBRUSH track=CreateSolidBrush(lightTheme?RGB(226,230,237):navyTheme?RGB(44,58,80):RGB(56,58,64));
+    auto brush=SelectObject(dc,track);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));
+    RoundRect(dc,0,0,area.right,area.bottom,8,8);SelectObject(dc,brush);DeleteObject(track);
+    BOOL animated=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animated,0);
+    const int width=area.right,segment=width/3;
+    const double phase=animated?static_cast<double>(GetTickCount64()%1600)/1600.0:0.5;
+    const int position=static_cast<int>((width+segment)*phase)-segment;
+    HRGN clip=CreateRoundRectRgn(0,0,width,area.bottom,8,8);SelectClipRgn(dc,clip);
+    HBRUSH accent=CreateSolidBrush(accentColor());brush=SelectObject(dc,accent);RoundRect(dc,position,0,position+segment,area.bottom,8,8);
+    SelectObject(dc,brush);SelectObject(dc,pen);SelectClipRgn(dc,nullptr);DeleteObject(accent);DeleteObject(clip);EndPaint(window,&paint);return 0;
+  }
+  case WM_DESTROY: KillTimer(window,1);return 0;
+  }
+  return DefWindowProcW(window,message,wparam,lparam);
+}
 
 static std::wstring readRegistry(const wchar_t* name) {
   wchar_t value[32768] = {}; DWORD bytes = sizeof(value);
@@ -175,8 +205,8 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     }
     DeleteObject(background); background = CreateSolidBrush(backgroundColor());
     font = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-    headingFont = CreateFontW(-36, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-    HWND title = control(L"STATIC", L"Covo", 0, 36, 26, 480, 56, 0); SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(headingFont), TRUE);
+    headingFont = CreateFontW(-32, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI Variable");
+    HWND title = control(L"STATIC", L"Covo", 0, 104, 31, 428, 48, 0); SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(headingFont), TRUE);
 #ifdef COVO_MAINTENANCE
     control(L"STATIC", progressOnly ? L"アップデート" : L"アンインストール", 0, 36, 90, 490, 30, 0);
     statusText = control(L"STATIC", progressOnly ? L"Covoの更新を適用しています。\n完了後にアプリが再起動します。" : L"Covoを削除します。暗号鍵と端末の履歴は標準で保持します。", 0, 36, 132, 490, 60, 0);
@@ -185,11 +215,13 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     if (progressOnly) ShowWindow(actionButton, SW_HIDE);
 #else
     control(L"STATIC", L"セットアップ  " COVO_SETUP_VERSION, 0, 36, 90, 490, 30, 0);
-    statusText = control(L"STATIC", L"Covoをインストールします。既存の設定と暗号鍵は引き継ぎます。\n必要な場合だけMicrosoft WebView2を導入します。", 0, 36, 132, 490, 84, 0);
+    statusText = control(L"STATIC", L"会話を、いつでもすぐそばに。\n既存の設定・暗号鍵・履歴を保持してインストールします。", 0, 36, 136, 490, 84, 0);
     actionButton = control(L"BUTTON", L"インストール / 修復", BS_OWNERDRAW | WS_TABSTOP, 322, 316, 210, 42, 1);
 #endif
-    progress = control(PROGRESS_CLASSW, L"", PBS_MARQUEE, 36, 260, 496, 10, 0); ShowWindow(progress, SW_HIDE);
-    closeButton = control(L"BUTTON", progressOnly ? L"閉じる" : L"キャンセル", BS_OWNERDRAW | WS_TABSTOP, 168, 316, 140, 42, 2);
+    progress = control(L"CovoSetupProgress", L"", 0, 36, 260, 496, 8, 0);
+    ShowWindow(progress, SW_HIDE);
+    closeButton = control(L"BUTTON", progressOnly ? L"終了" : L"キャンセル", BS_OWNERDRAW | WS_TABSTOP, 168, 316, 140, 42, 2);
+    if(progressOnly)ShowWindow(closeButton,SW_HIDE);
     SetFocus(progressOnly ? closeButton : actionButton); return 0;
   }
   case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
@@ -198,20 +230,28 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     auto item = reinterpret_cast<DRAWITEMSTRUCT*>(lparam);
     if (item->CtlType != ODT_BUTTON) break;
     const bool primary = item->CtlID == 1, disabled = (item->itemState & ODS_DISABLED) != 0;
-    HBRUSH fill = CreateSolidBrush(primary ? (disabled ? RGB(100, 116, 139) : lightTheme ? RGB(71, 82, 196) : RGB(88, 101, 242)) : lightTheme ? RGB(237, 239, 243) : navyTheme ? RGB(44,58,80) : RGB(49,51,56));
+    HBRUSH fill = CreateSolidBrush(primary ? (disabled ? RGB(100, 116, 139) : accentColor()) : lightTheme ? RGB(237, 239, 243) : navyTheme ? RGB(44,58,80) : RGB(49,51,56));
     auto oldBrush = SelectObject(item->hDC, fill); auto oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
-    RoundRect(item->hDC, item->rcItem.left, item->rcItem.top, item->rcItem.right, item->rcItem.bottom, 14, 14);
+    RECT buttonRect=item->rcItem;if(item->itemState & ODS_SELECTED)OffsetRect(&buttonRect,0,1);
+    RoundRect(item->hDC, buttonRect.left, buttonRect.top, buttonRect.right, buttonRect.bottom, 20, 20);
     SelectObject(item->hDC, oldPen); SelectObject(item->hDC, oldBrush); DeleteObject(fill); SetBkMode(item->hDC, TRANSPARENT);
-    SetTextColor(item->hDC, primary || !lightTheme ? RGB(255, 255, 255) : RGB(32, 35, 43)); SelectObject(item->hDC, font);
+    SetTextColor(item->hDC, primary && !disabled ? (lightTheme ? RGB(255,255,255) : backgroundColor()) : !lightTheme || primary ? RGB(255,255,255) : RGB(32,35,43)); SelectObject(item->hDC, font);
     wchar_t label[128]; GetWindowTextW(item->hwndItem, label, 128); DrawTextW(item->hDC, label, -1, &item->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    if (item->itemState & ODS_FOCUS) { RECT focus = item->rcItem; InflateRect(&focus, -4, -4); DrawFocusRect(item->hDC, &focus); }
+    if (item->itemState & ODS_FOCUS) { RECT focus = item->rcItem; InflateRect(&focus, -3, -3); HPEN ring=CreatePen(PS_SOLID,1,primary?(lightTheme?RGB(255,255,255):backgroundColor()):accentColor());auto pen=SelectObject(item->hDC,ring);auto brush=SelectObject(item->hDC,GetStockObject(NULL_BRUSH));RoundRect(item->hDC,focus.left,focus.top,focus.right,focus.bottom,16,16);SelectObject(item->hDC,brush);SelectObject(item->hDC,pen);DeleteObject(ring); }
     return TRUE;
   }
   case WM_ERASEBKGND: { RECT area; GetClientRect(window, &area); FillRect(reinterpret_cast<HDC>(wparam), &area, background); return 1; }
+  case WM_PAINT: {
+    PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);
+    if(brandIcon)DrawIconEx(dc,36,28,brandIcon,52,52,0,nullptr,DI_NORMAL);
+    HPEN line=CreatePen(PS_SOLID,1,lightTheme?RGB(225,228,234):navyTheme?RGB(59,73,96):RGB(56,58,64));auto pen=SelectObject(dc,line);MoveToEx(dc,36,296,nullptr);LineTo(dc,532,296);SelectObject(dc,pen);DeleteObject(line);
+    EndPaint(window,&paint);return 0;
+  }
   case WM_COMMAND:
     if (LOWORD(wparam) == 2 && !working) { DestroyWindow(window); return 0; }
     if (LOWORD(wparam) == 1 && !working) {
       working = true; EnableWindow(actionButton, FALSE); EnableWindow(closeButton, FALSE); if (eraseCheck) EnableWindow(eraseCheck, FALSE);
+      ShowWindow(closeButton,SW_HIDE);ShowWindow(actionButton,SW_HIDE);
       SetWindowTextW(statusText, L"処理中です。この画面を閉じずにお待ちください。\n必要な構成の導入には数分かかる場合があります。");
       ShowWindow(progress, SW_SHOW); SendMessageW(progress, PBM_SETMARQUEE, TRUE, 40);
       const bool erase = eraseCheck && SendMessageW(eraseCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -220,10 +260,14 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     break;
   case doneMessage:
     if (progressOnly && wparam == 0) { completed = true; DestroyWindow(window); return 0; }
-    working = false; completed = wparam == 0; ShowWindow(progress, SW_HIDE); EnableWindow(closeButton, TRUE); SetWindowTextW(closeButton, L"閉じる");
-    SetWindowTextW(statusText, completed ? L"完了しました。この画面を閉じてください。" : failure.c_str());
-    if (!completed) EnableWindow(actionButton, TRUE); SetFocus(closeButton); return 0;
-  case WM_CLOSE: if (!working) DestroyWindow(window); return 0;
+    working = false; completed = wparam == 0; ShowWindow(progress, SW_HIDE); EnableWindow(closeButton, TRUE); SetWindowTextW(closeButton, L"終了");
+    if(!completed)ShowWindow(closeButton,SW_SHOW);
+    SetWindowTextW(statusText, completed ? L"完了しました。この画面は自動で閉じます。" : failure.c_str());
+    if(completed){ShowWindow(closeButton,SW_HIDE);ShowWindow(actionButton,SW_HIDE);SetTimer(window,2,1600,nullptr);}
+    if (!completed && !progressOnly) {EnableWindow(actionButton, TRUE);ShowWindow(actionButton,SW_SHOW);} SetFocus(closeButton); return 0;
+  case WM_TIMER: if(wparam==2&&completed){KillTimer(window,2);DestroyWindow(window);}return 0;
+  case WM_NCHITTEST: {const LRESULT hit=DefWindowProcW(window,message,wparam,lparam);POINT point={static_cast<short>(LOWORD(lparam)),static_cast<short>(HIWORD(lparam))};ScreenToClient(window,&point);return hit==HTCLIENT&&point.y<104?HTCAPTION:hit;}
+  case WM_CLOSE: return 0;
   case WM_DESTROY: DeleteObject(font); DeleteObject(headingFont); DeleteObject(background); PostQuitMessage(0); return 0;
   }
   return DefWindowProcW(window, message, wparam, lparam);
@@ -278,8 +322,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
   if (std::wstring(arguments) == L"/S") { fs::path temp; try { const auto engine = extractEngine(temp); const auto result = runEngine(engine, L"/S"); removeOwnedDirectory(temp); return static_cast<int>(result); } catch (...) { return 1; } }
 #endif
   INITCOMMONCONTROLSEX controls = { sizeof(controls), ICC_PROGRESS_CLASS }; InitCommonControlsEx(&controls);
-  WNDCLASSW type = {}; type.lpfnWndProc = procedure; type.hInstance = instance; type.lpszClassName = L"CovoSetupWindow"; type.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&type);
-  HWND window = CreateWindowExW(WS_EX_APPWINDOW, type.lpszClassName, L"Covo", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 584, 416, nullptr, nullptr, instance, nullptr);
+  brandIcon=static_cast<HICON>(LoadImageW(instance,MAKEINTRESOURCEW(201),IMAGE_ICON,64,64,LR_SHARED));SetCurrentProcessExplicitAppUserModelID(L"app.covo.setup");
+  WNDCLASSW progressType={};progressType.lpfnWndProc=progressProcedure;progressType.hInstance=instance;progressType.lpszClassName=L"CovoSetupProgress";RegisterClassW(&progressType);
+  WNDCLASSW type = {}; type.lpfnWndProc = procedure; type.hInstance = instance; type.lpszClassName = L"CovoSetupWindow"; type.hIcon=brandIcon;type.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&type);
+  HWND window = CreateWindowExW(WS_EX_APPWINDOW, type.lpszClassName, L"Covo", WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, 568, 394, nullptr, nullptr, instance, nullptr);
+  SendMessageW(window,WM_SETICON,ICON_BIG,reinterpret_cast<LPARAM>(brandIcon));SendMessageW(window,WM_SETICON,ICON_SMALL,reinterpret_cast<LPARAM>(brandIcon));
   if (!window) return 1;
   POINT pointer; GetCursorPos(&pointer); MONITORINFO monitor = { sizeof(monitor) };
   if (GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -288,6 +335,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
       monitor.rcWork.top + ((monitor.rcWork.bottom - monitor.rcWork.top) - (rectangle.bottom - rectangle.top)) / 2, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
   }
   BOOL dark = !lightTheme; DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
+  const DWORD roundedCorners=2;DwmSetWindowAttribute(window,33,&roundedCorners,sizeof(roundedCorners));
   HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\CovoSetupMaintenance");
   if (mutex && GetLastError() == ERROR_ALREADY_EXISTS) {
     DestroyWindow(window); CloseHandle(mutex); return 1;

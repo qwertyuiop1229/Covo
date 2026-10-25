@@ -7,7 +7,9 @@ New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'Run this script in an MSVC Developer PowerShell environment.' }
 $config = Get-Content -LiteralPath (Join-Path $taskRoot 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $versionHeader = '#define COVO_SETUP_VERSION L"' + $config.version + '"'
-$resourceArgs = @()
+$iconFile = Join-Path $taskRoot 'src-tauri\icons\icon.ico'
+if (-not (Test-Path -LiteralPath $iconFile)) { throw 'Covo setup icon is missing.' }
+$resourceLines = @('201 ICON "' + $iconFile.Replace('\','\\') + '"')
 $definitions = @('/DCOVO_MAINTENANCE')
 $executableName = 'CovoMaintenance.exe'
 if ($Bootstrap) {
@@ -17,14 +19,14 @@ if ($Bootstrap) {
   $digest = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash
   $bytes = for ($index = 0; $index -lt 64; $index += 2) { '0x' + $digest.Substring($index, 2) }
   $versionHeader += "`n#define COVO_ENGINE_SHA256 " + ($bytes -join ',')
-  $resource = '101 RCDATA "' + $engine.Replace('\','\\') + '"'
-  [IO.File]::WriteAllText((Join-Path $outputRoot 'engine.rc'), $resource)
-  & rc.exe /nologo /fo (Join-Path $outputRoot 'engine.res') (Join-Path $outputRoot 'engine.rc')
-  if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
-  $resourceArgs = @((Join-Path $outputRoot 'engine.res'))
+  $resourceLines += '101 RCDATA "' + $engine.Replace('\','\\') + '"'
   $definitions = @()
   $executableName = 'CovoSetup.exe'
 }
+[IO.File]::WriteAllText((Join-Path $outputRoot 'branding.rc'), ($resourceLines -join "`r`n"))
+& rc.exe /nologo /fo (Join-Path $outputRoot 'branding.res') (Join-Path $outputRoot 'branding.rc')
+if ($LASTEXITCODE -ne 0) { throw 'Covo branding resource compilation failed.' }
+$resourceArgs = @((Join-Path $outputRoot 'branding.res'))
 [IO.File]::WriteAllText((Join-Path $outputRoot 'setup_version.h'), $versionHeader)
 & cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /MT /W4 @definitions /I $outputRoot (Join-Path $sourceRoot 'setup.cpp') @resourceArgs /Fo"$outputRoot\setup.obj" /Fe"$outputRoot\$executableName" /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'"
 if ($LASTEXITCODE -ne 0) { throw 'Covo setup compilation failed.' }

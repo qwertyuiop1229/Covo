@@ -1,9 +1,21 @@
-.covo-desktop-update { position: fixed; z-index: 12000; right: 20px; bottom: 24px; max-width: min(480px, calc(100vw - 40px)); padding: 16px; border-radius: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--covo-surface, #fff); color: var(--covo-text, #20232b); border: 1px solid var(--covo-border, #d9dce4); box-shadow: 0 8px 28px #0002; }
+.covo-desktop-update { position: fixed; z-index: 12000; right: 20px; bottom: 24px; width: 400px; max-width: calc(100vw - 40px); padding: 22px; border-radius: 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--covo-surface, #fff); color: var(--covo-text, #20232b); border: 1px solid var(--covo-border, #d9dce4); box-shadow: var(--covo-shadow,0 8px 28px #0002); }
 .covo-desktop-update[hidden] { display: none; }
 .covo-desktop-update .update-btn { width: auto; }
 .dark .covo-desktop-update { background: var(--covo-surface, #2b2d31); color: var(--covo-text, #f2f3f5); border-color: var(--covo-border, #42444a); }
 .covo-desktop-update [role=status] { flex: 1 1 100%; font-size: 13px; overflow-wrap: anywhere; }
 .covo-desktop-update progress { width: 100%; height: 6px; accent-color: var(--covo-accent, #3b82f6); }
+.covo-update-heading { width: 100%; font-size: 16px; font-weight: 750; }
+.covo-desktop-update .covo-update-detail { width: 100%; color: var(--covo-text-muted); font-size: 12px; line-height: 1.7; margin: 0; }
+.covo-update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 4px; }
+.covo-update-actions .covo-button { min-height: 36px; padding: 8px 14px; border-radius: 10px; font-size: 12px; }
+.covo-update-actions .covo-update-primary { background: var(--covo-accent); color: var(--covo-surface); }
+.covo-update-actions .covo-update-primary:hover:not(:disabled) { filter: brightness(.95); }
+.covo-desktop-update progress { height: 8px; border: 0; border-radius: 999px; overflow: hidden; background: var(--covo-hover); appearance: none; }
+.covo-desktop-update progress::-webkit-progress-bar { background: var(--covo-hover); border-radius: 999px; }
+.covo-desktop-update progress::-webkit-progress-value { background: var(--covo-accent); border-radius: 999px; }
+.covo-desktop-update progress::-moz-progress-bar { background: var(--covo-accent); border-radius: 999px; }
+.covo-desktop-update progress:indeterminate { appearance: auto; }
+.covo-desktop-update progress[hidden] { display: none; }
 #covoMicrophoneShortcut { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
 .toggle-switch:has(#covoMicrophoneShortcut:focus-visible) { outline: 2px solid var(--covo-accent, #2563eb); outline-offset: 3px; }
 .covo-diagnostics { padding:16px; border:1px solid var(--covo-border,#d9dce4); border-radius:12px; color:var(--covo-text,#20232b); background:var(--covo-surface,#fff); }

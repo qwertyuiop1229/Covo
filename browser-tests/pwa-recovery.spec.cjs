@@ -187,55 +187,19 @@ test('installed mobile server panel has no gradient shadow and chrome follows na
   }
 });
 
-test('mobile diagnostics has a direct settings entry, back navigation and a viewport report', async ({ page }) => {
-  await page.setViewportSize({ width: 402, height: 874 });
-  await routeApp(page, { standalone: true, ios: true });
-  const main = fs.readFileSync('public/js/main.js', 'utf8');
-  const navigation = parser.parse(main, { sourceType: 'module' }).program.body.filter(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && ['openMobileDetail', 'closeMobileDetail'].includes(node.expression.left.property?.name)).map(node => main.slice(node.start, node.end)).join('\n');
-  await page.evaluate(async navigation => {
-    document.getElementById('appLoadingSplash').remove();
-    document.body.className = 'auth-ready logged-in discord-ui-mode';
-    document.getElementById('mobileProfileScreen').classList.add('active');
-    window.loadLocalDiagnostics = () => {};
-    window.eval(navigation);
-    (await import('/js/diagnostics_runtime.js')).installDiagnostics();
-  }, navigation);
-  await page.locator('.covo-mobile-diagnostics-entry').click();
-  await expect(page.locator('#mobileDetailDiagnostics')).toBeVisible();
-  await page.locator('#mobileDetailDiagnostics').getByRole('button', { name: '結果を表示', exact: true }).click();
-  const report = JSON.parse(await page.locator('#mobileDetailDiagnostics pre').textContent());
-  expect(report.viewport.standalone).toBe(true); expect(report.viewport.ios).toBe(true);
-  for (const status of await page.locator('[data-covo-diagnostics-status]').all()) await expect(status).toBeHidden();
-  await page.getByRole('button', { name: '設定に戻る', exact: true }).click();
-  await expect(page.locator('#mobileDetailDiagnostics')).toBeHidden();
-});
-
-for (const [name, width, ios] of [['ipad',1180,true],['desktop',1440,false]]) {
-  test(`${name}: diagnostic entry waits for lazy settings and scrolls to the report controls`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 1000 }); await routeApp(page, { ios, standalone: ios });
-    const main = fs.readFileSync('public/js/main.js','utf8');
-    const node = parser.parse(main,{sourceType:'module'}).program.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'openCovoDiagnostics');
-    await page.evaluate(async source => {
-      document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready logged-in discord-ui-mode';
-      document.getElementById('settingsModal').classList.remove('hidden'); window.scrollChecks = [];
-      window.switchDiscordSettingsTab = async tab => {
-        await new Promise(resolve => setTimeout(resolve,30));
-        (await import('/js/settings_feature.js')).installSettingsFeature({ _appVersion:'1.1.286', updateE2EEStatusUI(){}, updateLayoutDebugUI(){} });
-        window.switchDiscordSettingsTab(tab);
-      };
-      window.loadLocalDiagnostics = async () => {
-        await new Promise(resolve => setTimeout(resolve,20));
-        (await import('/js/diagnostics_runtime.js')).installDiagnostics();
-        const section = document.querySelector('#appinfoSection .covo-diagnostics'), scroll = section.scrollIntoView.bind(section);
-        section.scrollIntoView = options => { window.scrollChecks.push(document.getElementById('appinfoSection').classList.contains('active')); scroll(options); };
-      };
-      window.eval(source);
-    }, main.slice(node.start,node.end));
-    await page.locator('#settingsModal').getByRole('button',{name:'通信・表示の診断',exact:true}).click();
-    await expect.poll(() => page.evaluate(() => scrollChecks)).toEqual([true]);
-    const report = page.locator('#appinfoSection .covo-diagnostics'); await expect(report.getByRole('button',{name:'レポートを丸ごとコピー',exact:true})).toBeInViewport();
-    await report.getByRole('button',{name:'結果を表示',exact:true}).click();
-    expect(JSON.parse(await report.locator('pre').textContent()).viewport.ios).toBe(ios);
+for (const [name,width,ios] of [['phone',402,true],['ipad',1180,true],['desktop',1440,false]]) {
+  test(name+': diagnostics remains inside app info without a duplicate settings entry',async({page})=>{
+    await page.setViewportSize({width,height:1000});await routeApp(page,{ios,standalone:ios});
+    await page.evaluate(async()=>{
+      document.getElementById('appLoadingSplash').remove();document.body.className='auth-ready logged-in discord-ui-mode';
+      if(innerWidth>=768){document.getElementById('settingsModal').classList.remove('hidden');(await import('/js/settings_feature.js')).installSettingsFeature({_appVersion:'1.1.286',updateE2EEStatusUI(){},updateLayoutDebugUI(){}});window.switchDiscordSettingsTab('appinfo');}
+      (await import('/js/diagnostics_runtime.js')).installDiagnostics();
+    });
+    expect(await page.locator('[onclick="openCovoDiagnostics()"],.covo-mobile-diagnostics-entry,#mobileDetailDiagnostics').count()).toBe(0);
+    const host=page.locator(width<768?'#mobileDetailAppInfo':'#appinfoSection');
+    await host.evaluate(node=>{node.style.display='block';node.classList.add('active');});
+    await host.getByRole('button',{name:'結果を表示',exact:true}).dispatchEvent('click');
+    expect(JSON.parse(await host.locator('.covo-diagnostics pre').textContent()).viewport.ios).toBe(ios);
   });
 }
 

@@ -60,6 +60,7 @@ browser-tests/
   css-cache.spec.cjs
   dev-workflow.spec.cjs
   local-preview.spec.cjs
+  notification-delivery.spec.cjs
   pwa-recovery.spec.cjs
   secret-safety.spec.cjs
   timeline.spec.cjs
@@ -280,10 +281,40 @@ tailwind.config.js
 tailwind.input.css
 tailwind.safelist.html
 UI_REFINEMENT_REPORT.md
+WINDOWS_UPDATE_NOTIFICATION_AUDIT.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="browser-tests/notification-delivery.spec.cjs">
+const {test,expect}=require('@playwright/test');
+const fs=require('node:fs'),parser=require('@babel/parser');
+const main=fs.readFileSync('public/js/main.js','utf8'),nodes=parser.parse(main,{sourceType:'module'}).program.body;
+const declaration=name=>{const node=nodes.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);return main.slice(node.start,node.end);};
+const assignment=name=>{const node=nodes.find(n=>n.type==='ExpressionStatement'&&n.expression.type==='AssignmentExpression'&&n.expression.left.property?.name===name);return main.slice(node.start,node.end);};
+async function setup(page){
+  await page.route('https://covo.test/',route=>route.fulfill({body:'<html><body></body></html>',contentType:'text/html'}));await page.goto('https://covo.test/');
+  await page.evaluate(()=>{
+    window.sent=[];window.notices=[];window.fail=false;window.registration=null;
+    window.Notification=class{static permission='granted';constructor(title,options){if(window.fail)throw Error('denied');sent.push({title,options});}};
+    Object.defineProperty(navigator,'serviceWorker',{value:{getRegistration:async()=>window.registration},configurable:true});
+    document.hasFocus=()=>true;localStorage.setItem('simplechat_browser_notif','false');localStorage.setItem('covo_notifications_paused_until',String(Date.now()+60000));
+    window.alertMessage=(text,type)=>notices.push({text,type});
+  });
+  await page.addScriptTag({content:`let isTauri=false,userId='alice',lastNotificationTime=0,lastNotificationKey='';const formatNotificationBody=value=>value;const playNotificationSound=()=>{};${declaration('showNotification')} ${assignment('sendTestNotification')}`});
+}
+test('focused Chrome test notification bypasses foreground suppression and only reports success after requesting OS display',async({page})=>{
+  await setup(page);await page.evaluate(()=>window.sendTestNotification());
+  expect(await page.evaluate(()=>sent.length)).toBe(1);expect(await page.evaluate(()=>notices[0].text)).toContain('OSへ通知の表示を依頼');
+});
+test('notification API failure is reported and existing SW display works without waiting for ready',async({page})=>{
+  await setup(page);await page.evaluate(()=>{fail=true;});await page.evaluate(()=>window.sendTestNotification());
+  expect(await page.evaluate(()=>notices[0].type)).toBe('warning');
+  await page.evaluate(()=>{notices=[];registration={showNotification:async(title,options)=>sent.push({title,options})};});await page.evaluate(()=>window.sendTestNotification());
+  expect(await page.evaluate(()=>sent.length)).toBe(1);expect(await page.evaluate(()=>sent[0].options.data.serverId)).toBeNull();
+});
+</file>
 
 <file path="public/css/modules/animations.css">
 /* スプラッシュ画面のスマホUI視覚的中央補正（ダイナミックアイランド・ノッチ・ステータスバー相殺） */
@@ -1133,6 +1164,39 @@ iPhone等で開発者コンソールが無くてもデバッグできるよう�
 }
 </file>
 
+<file path="WINDOWS_UPDATE_NOTIFICATION_AUDIT.md">
+# Windows update and notification changes — 2026-10-25
+
+## Notification test
+
+The test passed `true` as the fourth argument of `showNotification`, which is the server ID; the fifth `forceOs` argument remained false. A focused Chrome tab therefore suppressed its own test. The test now passes the correct arguments, awaits the result and reports an OS display request rather than claiming delivery. Browser permission denial and API failure remain visible failures. Native clients use the native API without requiring the browser Notification API.
+
+Existing Service Worker registration lookup replaces the unbounded `serviceWorker.ready` wait. Lookup has a 1.5-second bound and direct Notification fallback; no registration polling or new server request is added. This is an on-device display test, not proof of FCM delivery or Windows notification settings. Focus assist and OS policy can suppress visible banners after an API call succeeds.
+
+## Update flow and appearance
+
+Downloaded updates retain their signed updater resource. Manual checks now reopen downloading/ready state instead of hiding it or replacing the app-info text with a permanent preparing message. App info changes its action to “更新画面を開く”. Reopening does not check or download again. Installation still requires the explicit restart action, and call/transfer/send guards remain enforced.
+
+The panel uses Covo theme tokens, separate heading/status/help/actions, readable primary buttons and a rounded themed progress track. Known download lengths show actual percentages; unknown lengths remain indeterminate. The later action explains where to resume. The duplicate diagnostics settings entries and dedicated mobile detail are removed; reports remain in app info.
+
+## Native installer, updater and uninstaller
+
+- Embedded Covo icon resource in both setup and maintenance executables; window/taskbar icon and header use it.
+- Centered frameless window without title-bar close/minimize buttons. Header can be dragged.
+- Custom rounded progress track replaces the standard Windows progress control. The moving segment indicates activity, not a fabricated completion percentage. It respects the system animation preference and stops its timer on hiding/destruction. Microsoft documents the distinction between determinate and activity-only progress in its [progress control guidance](https://learn.microsoft.com/en-us/windows/win32/controls/progress-bar-control).
+- Theme colors, typography, rounded buttons and keyboard focus indicator match the web update panel.
+- Cancel remains available before installation/removal. Controls are hidden while processing and WM_CLOSE is ignored. Success closes automatically; failure leaves retry/exit available, so an error cannot trap the user.
+- Signature checking, embedded-engine hash verification, installer execution and device-data preservation/deletion logic are unchanged.
+
+## Verification and limits
+
+- Full browser suite: 83 passed. Includes focused notification request, API failure, Service Worker fallback, later/reopen without duplicate download in three themes, progress reopening, and app-info diagnostics on phone/iPad/desktop.
+- Unit suite: 228 passed. Secret guard and JavaScript/PowerShell parsing passed.
+- Light/dark update panel and download progress screenshots were generated and visually inspected.
+- Browser notification APIs and the updater package are mocked in automated tests; actual Windows notification delivery and native installation were not exercised.
+- This PC has no discoverable MSVC C++ toolchain. Native C++ compilation, resource linking and frameless-window rendering still require Windows CI/build validation. No installer was run, no data was erased, and no push/deployment was performed.
+</file>
+
 <file path=".github/actions/setup-firebase/action.yml">
 name: Setup cached Firebase tools
 description: Reuse the pinned Firebase CLI installation and emulator downloads.
@@ -1433,40 +1497,6 @@ function renderMessagesWithReadReceipts() {
     if (existing) existing.remove();
   }
 }
-</file>
-
-<file path="browser-tests/chat-scroll.spec.cjs">
-const {test,expect}=require('@playwright/test');
-const fs=require('node:fs');
-async function setup(page){
-  await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});
-  await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
-  await page.setContent('<div id="scroller" style="height:400px;width:400px;overflow:auto;overflow-anchor:none;transform:scaleY(-1)"><div id="before" style="height:900px"></div><div id="target" style="height:120px;transform:scaleY(-1)">target</div><div style="height:1200px"></div></div>');
-  await page.addScriptTag({content:fs.readFileSync('public/js/chat_scroll.js','utf8').replace(/\bexport /g,'')});
-  await page.evaluate(()=>{window.s=document.getElementById('scroller');window.controller=createChatScroller(s);window.target=()=>{const c=s.getBoundingClientRect(),r=document.getElementById('target').getBoundingClientRect();return s.scrollTop+(c.top+c.bottom-r.top-r.bottom)/2;};});
-}
-test('inverted scroll eases, tracks changing geometry and stops at the target',async({page})=>{
-  await setup(page);await page.evaluate(()=>{window.result=controller.to(target);});
-  await page.clock.runFor(100);
-  expect(await page.evaluate(()=>s.scrollTop)).toBeGreaterThan(0);expect(await page.evaluate(()=>controller.running)).toBe(true);
-  await page.evaluate(()=>{document.getElementById('before').style.height='1120px';s.style.height='350px';});
-  await page.clock.runFor(1000);expect(await page.evaluate(()=>window.result)).toBe(true);
-  expect(await page.evaluate(()=>Math.abs(target()-s.scrollTop))).toBeLessThanOrEqual(0.6);expect(await page.evaluate(()=>controller.running)).toBe(false);
-});
-test('manual input cancels alignment and later layout changes cannot pull the reader back',async({page})=>{
-  await setup(page);await page.evaluate(()=>{window.result=controller.to(target);});await page.clock.runFor(80);
-  await page.evaluate(()=>s.dispatchEvent(new Event('touchstart')));expect(await page.evaluate(()=>window.result)).toBe(false);
-  const offset=await page.evaluate(()=>s.scrollTop);await page.evaluate(()=>document.getElementById('before').style.height='1500px');await page.clock.runFor(250);
-  expect(await page.evaluate(()=>s.scrollTop)).toBe(offset);
-});
-test('a replacement jump, channel change and reduced motion release the animation',async({page})=>{
-  await setup(page);await page.evaluate(()=>{window.first=controller.to(target);window.second=controller.to(()=>0);});
-  await page.clock.runFor(1000);
-  expect(await page.evaluate(()=>window.first)).toBe(false);expect(await page.evaluate(()=>window.second)).toBe(true);
-  await page.evaluate(()=>{window.active=true;window.third=controller.to(target,{active:()=>active});active=false;});await page.clock.runFor(50);expect(await page.evaluate(()=>window.third)).toBe(false);
-  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.fourth=controller.to(target);});await page.clock.runFor(100);
-  expect(await page.evaluate(()=>Math.abs(target()-s.scrollTop))).toBeLessThanOrEqual(0.6);expect(await page.evaluate(()=>window.fourth)).toBe(true);
-});
 </file>
 
 <file path="browser-tests/css-cache.spec.cjs">
@@ -1869,12 +1899,24 @@ body:is(.dark-server-theme,.discord-dark-theme) { --covo-send-background: #5865f
 </file>
 
 <file path="public/css/desktop.css">
-.covo-desktop-update { position: fixed; z-index: 12000; right: 20px; bottom: 24px; max-width: min(480px, calc(100vw - 40px)); padding: 16px; border-radius: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--covo-surface, #fff); color: var(--covo-text, #20232b); border: 1px solid var(--covo-border, #d9dce4); box-shadow: 0 8px 28px #0002; }
+.covo-desktop-update { position: fixed; z-index: 12000; right: 20px; bottom: 24px; width: 400px; max-width: calc(100vw - 40px); padding: 22px; border-radius: 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--covo-surface, #fff); color: var(--covo-text, #20232b); border: 1px solid var(--covo-border, #d9dce4); box-shadow: var(--covo-shadow,0 8px 28px #0002); }
 .covo-desktop-update[hidden] { display: none; }
 .covo-desktop-update .update-btn { width: auto; }
 .dark .covo-desktop-update { background: var(--covo-surface, #2b2d31); color: var(--covo-text, #f2f3f5); border-color: var(--covo-border, #42444a); }
 .covo-desktop-update [role=status] { flex: 1 1 100%; font-size: 13px; overflow-wrap: anywhere; }
 .covo-desktop-update progress { width: 100%; height: 6px; accent-color: var(--covo-accent, #3b82f6); }
+.covo-update-heading { width: 100%; font-size: 16px; font-weight: 750; }
+.covo-desktop-update .covo-update-detail { width: 100%; color: var(--covo-text-muted); font-size: 12px; line-height: 1.7; margin: 0; }
+.covo-update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 4px; }
+.covo-update-actions .covo-button { min-height: 36px; padding: 8px 14px; border-radius: 10px; font-size: 12px; }
+.covo-update-actions .covo-update-primary { background: var(--covo-accent); color: var(--covo-surface); }
+.covo-update-actions .covo-update-primary:hover:not(:disabled) { filter: brightness(.95); }
+.covo-desktop-update progress { height: 8px; border: 0; border-radius: 999px; overflow: hidden; background: var(--covo-hover); appearance: none; }
+.covo-desktop-update progress::-webkit-progress-bar { background: var(--covo-hover); border-radius: 999px; }
+.covo-desktop-update progress::-webkit-progress-value { background: var(--covo-accent); border-radius: 999px; }
+.covo-desktop-update progress::-moz-progress-bar { background: var(--covo-accent); border-radius: 999px; }
+.covo-desktop-update progress:indeterminate { appearance: auto; }
+.covo-desktop-update progress[hidden] { display: none; }
 #covoMicrophoneShortcut { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
 .toggle-switch:has(#covoMicrophoneShortcut:focus-visible) { outline: 2px solid var(--covo-accent, #2563eb); outline-offset: 3px; }
 .covo-diagnostics { padding:16px; border:1px solid var(--covo-border,#d9dce4); border-radius:12px; color:var(--covo-text,#20232b); background:var(--covo-surface,#fff); }
@@ -1977,57 +2019,6 @@ export function createAuthTransition({ frame = requestAnimationFrame } = {}) {
     signedOut() { if (active?.uid) finish(); },
     get busy() { return Boolean(active); }
   };
-}
-</file>
-
-<file path="public/js/chat_scroll.js">
-// One bounded animation; no idle polling or network reads.
-export function createChatScroller(container) {
-  let operation=null;
-  const reduced=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const clamp=value=>Math.max(0,Math.min(Math.max(0,container.scrollHeight-container.clientHeight),value));
-  function cancel(){operation?.finish(false);}
-  function to(resolveTarget,{active=()=>true,instant=false,maxDistance=Infinity,prepare=()=>{}}={}){
-    cancel();
-    return new Promise(resolve=>{
-      let frame=null,settled=0,from=container.scrollTop;
-      const oldBehavior=container.style.scrollBehavior;
-      container.style.scrollBehavior='auto';
-      const interrupted=event=>{if(event.type!=='keydown'||['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key))cancel();};
-      const events=['wheel','touchstart','pointerdown','keydown'];
-      const current={finish(ok){if(operation!==current)return;operation=null;container._covoProgrammaticScroll=false;cancelAnimationFrame(frame);for(const name of events)container.removeEventListener(name,interrupted);container.style.scrollBehavior=oldBehavior;container.dispatchEvent(new Event('covo-scroll-settled'));resolve(ok);}};
-      operation=current;
-      container._covoProgrammaticScroll=true;
-      for(const name of events)container.addEventListener(name,interrupted,{passive:true});
-      let initial;
-      try{
-        if(!active()||!container.isConnected){current.finish(false);return;}
-        initial=resolveTarget();if(!Number.isFinite(initial)){current.finish(false);return;}
-        initial=clamp(initial);
-        // Distant replies need not render every intermediate history window.
-        if(Number.isFinite(maxDistance)&&maxDistance>0&&Math.abs(initial-from)>maxDistance){container.scrollTop=clamp(initial-Math.sign(initial-from)*maxDistance);prepare();from=container.scrollTop;}
-      }catch(_){current.finish(false);return;}
-      const start=performance.now(),duration=instant||reduced()?0:Math.min(520,Math.max(240,180+Math.sqrt(Math.abs(initial-from))*8));
-      const tick=now=>{
-        if(operation!==current)return;
-        if(!active()||!container.isConnected){current.finish(false);return;}
-        let target;
-        try{target=resolveTarget();}catch(_){current.finish(false);return;}
-        if(!Number.isFinite(target)){current.finish(false);return;}
-        target=clamp(target);
-        const elapsed=Math.max(0,now-start),progress=duration===0?1:Math.min(1,elapsed/duration);
-        // Time-based easing avoids accumulating rounded positions at low speeds.
-        const ease=1-Math.pow(1-progress,3);
-        container.scrollTop=progress===1?target:from+(target-from)*ease;
-        const aligned=Math.abs(container.scrollTop-target)<=0.6;
-        settled=progress===1&&aligned?settled+1:0;
-        if(settled>=3||elapsed>=duration+240){current.finish(aligned);return;}
-        frame=requestAnimationFrame(tick);
-      };
-      frame=requestAnimationFrame(tick);
-    });
-  }
-  return {to,cancel,get running(){return operation!==null;}};
 }
 </file>
 
@@ -2746,46 +2737,6 @@ export function createUpdateController({ check, busy = () => false, changed = ()
       catch (error) { emit({ phase: 'ready' }); throw error; }
     })
   };
-}
-</file>
-
-<file path="public/js/virtual_timeline.js">
-// Rows are ordered newest-first, matching the existing inverted chat scroller.
-export class VirtualTimeline {
-  constructor(estimate = 96, maxRows = 160) {
-    this.estimate = estimate;
-    this.maxRows = maxRows;
-    this.heights = new Map();
-    this.reset();
-  }
-  reset() { this.ids = []; this.offsets = [0]; this.heights.clear(); this.renderedRange = null; }
-  set(ids) {
-    this.ids = ids;
-    const keep = new Set(ids);
-    for (const id of this.heights.keys()) if (!keep.has(id)) this.heights.delete(id);
-    this.rebuild();
-  }
-  rebuild() {
-    this.offsets = [0];
-    for (const id of this.ids) this.offsets.push(this.offsets[this.offsets.length - 1] + (this.heights.get(id) || this.estimate));
-  }
-  measure(id, height) {
-    if (!(height > 0) || Math.abs((this.heights.get(id) || this.estimate) - height) < 1) return false;
-    this.heights.set(id, height);
-    return true;
-  }
-  indexAt(offset) {
-    let lo = 0, hi = this.ids.length;
-    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.offsets[mid + 1] <= offset) lo = mid + 1; else hi = mid; }
-    return Math.min(lo, Math.max(0, this.ids.length - 1));
-  }
-  range(scrollTop, viewportHeight) {
-    const visible = this.indexAt(Math.max(0, scrollTop));
-    const start = Math.max(0, visible - 30);
-    const end = Math.min(this.ids.length, start + this.maxRows);
-    return { start, end, before: this.offsets[start], after: this.offsets[this.ids.length] - this.offsets[end] };
-  }
-  offsetOf(id) { const i = this.ids.indexOf(id); return i < 0 ? null : this.offsets[i]; }
 }
 </file>
 
@@ -5020,119 +4971,6 @@ KVには存在しないキーのキャッシュと反映遅延があるため、
 プレビューは `scratch/archive-settings-light.png`、`scratch/archive-controls-light.png`、`scratch/archive-controls-mobile-discord-dark-theme.png` に保存した。
 </file>
 
-<file path="DEV_TESTING.md">
-# PC・スマホ・Windows版の開発テスト
-
-## Web / スマホ
-
-```powershell
-npm run test:web
-```
-
-- PCは **http://localhost:5000** を開く。127.0.0.1で画面を開いた場合もlocalhostへ移動する。
-- 同じWi-Fiのスマホ向けに、検出したプライベートIPv4のURLとQRをターミナルに表示する。Wi-Fi等の通常アダプターを先に表示し、仮想アダプターは後に表示する。
-- QRは初回設定ページを開く。iPhone/iPad/Androidの証明書設定を済ませ、ページ内のHTTPSリンクからCovoへ進む。
-- HTTPのLAN接続では設定ページと公開CA証明書だけを配信し、アプリやAPIの通信を通さない。アプリはHTTPSの5443番ポートを使用する。
-- Node.jsへの通信が止まる場合は、Windowsのファイアウォールを**プライベートネットワーク**で確認する。ファイアウォールの自動変更やルーターのポート開放は行わない。
-
-### HTTPS / PWA / 録音
-
-暗号化や録音等の機能を検証するため、LAN向けに開発用CAとHTTPS証明書を生成する。iPhone/iPadではプロファイルのインストールに加え「一般 → 情報 → 証明書信頼設定」での信頼が必要。[Appleの公式手順](https://support.apple.com/en-au/102390)も参照。
-
-CAは`.cache/dev-preview/tls`に保管し、IPが増減した場合も同じCAでサーバー証明書を更新する。端末へ配布するのは公開CAだけで、秘密鍵は配信しない。CAの指紋をターミナルと端末で照合する。CAの破損・鍵の欠落がある場合は勝手に入れ替えず停止する。検証終了後、不要なら端末からこのCAを削除する。
-
-このフォルダーはGit追跡対象外であり、public配信領域にも置かない。証明書の信頼設定をアプリから自動操作しない。実機の証明書インストール・PWA追加・マイク権限はユーザー側で行う。
-
-同じPCでCAの保存データを保持していれば、iPhone側の信頼設定は通常初回だけ。IP変更時のサーバー証明書の再発行でもCAを再利用する。サーバー証明書は30日、CAは生成時から約3年で、サーバー証明書は開発サーバーの起動時に期限を確認して更新する。CAを変更した場合・CAの期限切れ・別PCに移した場合は端末側の再設定が必要になる。
-
-ルートCAの信頼はCovoだけに限定されない。このCAの秘密鍵で署名したHTTPS証明書を端末が信頼するため、PC側の秘密鍵を保護する。継続して検証する間は保持して利用できるが、使わない期間は信頼をオフにするか、プロファイルを削除する。本番Covoには不要。
-
-### PWAとして検証する
-
-1. PCで`npm run test:web`を起動し、iPhoneを同じWi-Fiに接続する。
-2. SafariでHTTPSのアプリURL（例：`https://192.168.0.4:5443/`）を開く。HTTPの証明書案内ページは追加しない。
-3. 共有 →「ホーム画面に追加」→「Webアプリとして開く」をオンにし、名前を「Covoテスト」にして追加する。[Appleの手順](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/27/ios/27)参照。
-4. ホーム画面の新しいアイコンから起動する。本番用のCovoは削除しない。PCと開発サーバーを動かしておく必要がある。
-
-PWAの開始URLが`/index.html`になっても、開発用ランタイムを挿入する配信対象であることを確認する。IPが変わった場合はホーム画面のURLも確認する。コードを変更した後はテスト用PWAを終了して開き直す。
-
-2026-10-25の追加修正：HTTPのパイプライン要求では、応答側の`socket`が未割り当てになることがある。要求側の接続からポートとTLS状態を取得し、切断済みの応答へは書き込まない。遅延したAPI転送も、接続終了後は本文を破棄して終了する。開発用CAの再作成は不要。
-
-### Googleログイン
-
-今回のエラーは`auth/unauthorized-domain`。Firebaseの公開設定の読み取りで、**localhostは登録済み、127.0.0.1は未登録**であることを確認した。PCはlocalhostへ統一した。
-
-訂正：Firebase ConsoleがLAN IPを有効なドメインとして受け付けないため、以前の「IPを登録する」という案内は使わない。LANのHTTPSはメール・パスワードで検証する。スマホのGoogleログインは次のHostingプレビューを使う。[公式プレビュー手順](https://firebase.google.com/docs/hosting/test-preview-deploy)参照。
-
-```powershell
-npm run test:web:google
-```
-
-このコマンドはフロントエンドを`mobile-test`チャンネルの1日限定公開URLへアップロードする。初回はFirebase CLIへのログインが必要。表示されたURLをスマホで開く。Firebase CLIがプレビュー用ドメインを承認設定へ追加する。未承認エラーが残る場合はプレビューURLのホスト名だけを承認済みドメインへ追加する。IP/スキーム/ポート/パスは登録しない。
-
-専用の`firebase.preview.json`には本番のpredeploy/postdeploy、Workerデプロイ、バージョン更新、DBルールがない。本番Hostingを置き換えないが、アカウント・DB・Workerは本番に接続する。プレビューのHosting保存・配信量を消費するため、通常の編集確認にはLAN検証を使う。コード変更後のプレビュー確認には再実行が必要。実機PWAにもこのHTTPSのプレビューURLをホーム画面へ追加でき、開発用CAは不要。今回この公開コマンド自体は実行していない。
-
-Google SDKから未承認エラーが返った場合も、アプリに必要な設定を日本語で表示する。拡張機能の`disconnected port`等とは別の問題として扱う。
-
-### 接続先と通信
-
-2026-10-25追記：Googleログインの承認済みドメインと、会話・添付ファイルの読み込みは別の経路。承認対象はGoogleログインに使うプレビューのホスト名で、登録はFirestore/RTDBの読み取り権限を付与する操作ではない。
-
-開発ランタイムはfetch/XHRに加え、画像・動画・ダウンロードのURLプロパティ、属性、innerHTML内のWorker URLもPCの固定プロキシへ向ける。承認済みドメインの追加で画像のCORSを解除しようとしたり、Firestore/RTDBのルールを公開設定に変えたりしない。会話が空欄の原因は実機の診断なしでは断定できない。受信権限拒否/中断を診断集計に追加したため、継続時はレポートで区別する。
-
-### デプロイ前のGitロック
-
-今回の`index.lock`は、Gitプロセスがなく、10分以上前の空ファイルで、排他的に開けることを確認して削除した。デプロイスクリプトはバージョン更新・ビルドの前にロックを確認して停止する。他のGit操作のロックを自動削除しない。今回の失敗はステージング前で、コミット・タグ・プッシュは未実行。ただしローカルのバージョンファイルは1.1.287へ更新済みのため、通常の再実行では次の番号へ進む。
-
-**Firebaseのアカウント・会話・通常APIは本番環境に接続する。隔離したテスト用データベースではない。**
-
-LANのCORS制約はローカルサーバーが固定Workerへの通信を仲介して扱う。IDトークン・プロトコルヘッダー・本文を保持し、Workerの認証・認可エラーをそのまま返す。任意の外部URLへ転送するプロキシではない。メンテナンス確認の旧Workerの正確な404だけをローカル互換として扱い、実際のメンテナンスや401/403/5xxを無視しない。
-
-QR・証明書・ビルドキャッシュはPC内で生成する。外部QRサービスや公開トンネル、Firebase Hostingのテスト用デプロイは追加していない。開発サーバーの起動だけで計測・通知テスト・データ初期化は行わない。
-
-## Windows版
-
-```powershell
-npm run test:win
-```
-
-1. Firebase/updaterのバンドルを内容照合し、変更がない場合は再生成しない。
-2. 開発用の固定URL `http://localhost:5030` を起動する。
-3. ネイティブ入力・環境・実行ファイルを照合し、前回の正常な開発ビルドを再利用できればCargoを起動せずアプリを開く。
-4. 初回・Rust/設定/依存関係等の変更時はTauriでビルドする。成功ログとソースの再照合を経てキャッシュする。失敗したビルドは成功キャッシュにしない。
-
-HTML/CSS/JSの修正は、アプリを開いたまま**Ctrl+R**で確認する。Rustの変更はアプリとテストコマンドを終了して起動し直す。常時のRust監視や自動再ビルドをしない。ターミナルのCtrl+Cはこのコマンドが起動した子プロセスを終了する。
-
-強制的にビルドしたい場合：
-
-```powershell
-npm run test:win:native
-```
-
-開発中は本番アップデーターによるダウンロード/適用と再インストールUIを停止する。インストーラーや更新そのものは署名付きの配布ビルドで検証する。既に通常版が起動している場合は、通常版をトレイから終了してからテストする。
-
-通常のリリース設定は変更せず、専用の`tauri.dev.conf.json`でdevUrlを指定する。[Tauriの開発設定](https://v2.tauri.app/develop/configuration-files/)を参照。初回のコンパイル時間自体がゼロになるものではない。
-
-## 検証と限界
-
-2026-10-25追加修正（CIのchat-scroll失敗と実機のカクつき）：テストの時計を停止して明示的にフレームを進め、CIが遅いと中間状態の確認前にアニメーションが終了する競合を除去した。実装も実時間から進捗を計算する減速へ変更し、scrollTopの丸め誤差を蓄積しない。通常のスクロールでは、仮想表示の余裕領域を出た場合だけ全体を再描画する。遠い履歴は目的地付近の領域を先に準備して最終区間をアニメーションし、全ての中間行を作成しない。自動移動中は通常の履歴アンカー補正と競合させない。
-
-「一番下に戻る」は最新位置から20px超、または履歴ジャンプ表示中に出す。表示を1つの関数に集約し、通常スクロール・描画完了・アニメーション終了/中断で更新する。履歴表示の末尾は実際の最新位置とは区別する。到着後にボタンを隠すだけでなく、aria-hiddenとキーボードフォーカスも同期する。
-
-この追加修正後のブラウザ全80件、関連単体123件、秘密情報混入チェックが通過。1万件の履歴で表示160行以内、遠いリプライ移動の全体再描画12回未満、中央誤差1px以内、実際の最下部ボタン操作後のscrollTop=0を検証した。描画高さ変更・操作中断・別移動・動きを減らす設定も確認。これはChromeでの自動検証であり、後からの未確定メディアサイズ変更や全OSのあらゆる状態に対する無誤差を保証するものではない。自動移動からの履歴ページ追加通信は抑止し、常時ポーリングは追加していない。GitHubへのプッシュやデプロイは実行していない。
-
-2026-10-25スクロール修正：リプライ先への仮想行の先行テレポートをやめ、移動中に測定済み高さと描画行の中心位置を再計算する短時間のスクロール処理へ統一。最下部ボタンも同じ処理を使う。手動操作/移動の置き換え/チャンネル変更で停止し、動きを減らす設定では即時補正する。プログラム移動中は履歴ページ読み込みを発火させない。画像に永続的な再ジャンプコールバックを残さず、移動終了後に読者を引き戻さない。スクロール自体に通信を追加していない。
-
-スクロール・開発プレビューのブラウザ検証17件、チャット回帰/ライフサイクルの単体検証45件が通過。別途、1万件の実レンダラーの仮想表示/リプライ先の中央位置/最下部到達を検証した。実機iOSの操作感と、Firebase CLIによるGoogle用プレビュー公開・認証完了は未確認。
-
-- ブラウザ全体68件が通過。その後の証明書生成ライブラリの変更でも、証明書チェーン・IP変更時のCA保持・秘密鍵の非配信・APIの認可維持・キャッシュ無効化を再検証。
-- フロントエンドの内容未変更時の準備は、このPCで約0.58秒（単発測定、起動全体の時間ではない）。
-- 実際のターミナルでPC URL、LAN URL、QR、HTTPS URL、CA指紋の表示を確認。
-- Windowsの起動コマンドはTauri/Cargoまで進むが、このPCのMSVC `link.exe`不足で停止した。実際のネイティブ再利用の起動時間、実機のiOS/Androidの証明書登録、ユーザー操作を伴うGoogleログイン完了は未確認。
-- 既存の650件IndexedDBテストが複数検証を同時実行した際に15秒でタイムアウトした。負荷が落ち着いた再実行では制限を変更せず、単体テスト全228件が通過した。
-- 証明書生成をNode WebCryptoと`@peculiar/x509`へ切り替えた後、スマホ案内ページのライト/ダーク表示を含む関連ブラウザ検証11件が通過。最初に検討した既知の脆弱性がある証明書ライブラリは依存関係から除去した。
-</file>
-
 <file path="firebase.emulators.json">
 {
   "database": { "rules": "database.rules.json" },
@@ -5791,6 +5629,40 @@ jobs:
           path: src-tauri/windows/bin/CovoSetup.exe
 </file>
 
+<file path="browser-tests/chat-scroll.spec.cjs">
+const {test,expect}=require('@playwright/test');
+const fs=require('node:fs');
+async function setup(page){
+  await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});
+  await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
+  await page.setContent('<div id="scroller" style="height:400px;width:400px;overflow:auto;overflow-anchor:none;transform:scaleY(-1)"><div id="before" style="height:900px"></div><div id="target" style="height:120px;transform:scaleY(-1)">target</div><div style="height:1200px"></div></div>');
+  await page.addScriptTag({content:fs.readFileSync('public/js/chat_scroll.js','utf8').replace(/\bexport /g,'')});
+  await page.evaluate(()=>{window.s=document.getElementById('scroller');window.controller=createChatScroller(s);window.target=()=>{const c=s.getBoundingClientRect(),r=document.getElementById('target').getBoundingClientRect();return s.scrollTop+(c.top+c.bottom-r.top-r.bottom)/2;};});
+}
+test('inverted scroll eases, tracks changing geometry and stops at the target',async({page})=>{
+  await setup(page);await page.evaluate(()=>{window.result=controller.to(target);});
+  await page.clock.runFor(100);
+  expect(await page.evaluate(()=>s.scrollTop)).toBeGreaterThan(0);expect(await page.evaluate(()=>controller.running)).toBe(true);
+  await page.evaluate(()=>{document.getElementById('before').style.height='1120px';s.style.height='350px';});
+  await page.clock.runFor(1000);expect(await page.evaluate(()=>window.result)).toBe(true);
+  expect(await page.evaluate(()=>Math.abs(target()-s.scrollTop))).toBeLessThanOrEqual(0.6);expect(await page.evaluate(()=>controller.running)).toBe(false);
+});
+test('manual input cancels alignment and later layout changes cannot pull the reader back',async({page})=>{
+  await setup(page);await page.evaluate(()=>{window.result=controller.to(target);});await page.clock.runFor(80);
+  await page.evaluate(()=>s.dispatchEvent(new Event('touchstart')));expect(await page.evaluate(()=>window.result)).toBe(false);
+  const offset=await page.evaluate(()=>s.scrollTop);await page.evaluate(()=>document.getElementById('before').style.height='1500px');await page.clock.runFor(250);
+  expect(await page.evaluate(()=>s.scrollTop)).toBe(offset);
+});
+test('a replacement jump, channel change and reduced motion release the animation',async({page})=>{
+  await setup(page);await page.evaluate(()=>{window.first=controller.to(target);window.second=controller.to(()=>0);});
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(()=>window.first)).toBe(false);expect(await page.evaluate(()=>window.second)).toBe(true);
+  await page.evaluate(()=>{window.active=true;window.third=controller.to(target,{active:()=>active});active=false;});await page.clock.runFor(50);expect(await page.evaluate(()=>window.third)).toBe(false);
+  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.fourth=controller.to(target);});await page.clock.runFor(100);
+  expect(await page.evaluate(()=>Math.abs(target()-s.scrollTop))).toBeLessThanOrEqual(0.6);expect(await page.evaluate(()=>window.fourth)).toBe(true);
+});
+</file>
+
 <file path="browser-tests/communication.spec.cjs">
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
@@ -5798,7 +5670,7 @@ const path = require('path');
 async function fixture(page, theme = '') {
   await page.route('https://covo.test/**', route => {
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><div id="desktopSettingsContainer"></div></body></html>' });
+    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><div id="desktopSettingsContainer"></div><button id="pcCheckUpdateBtn">更新を確認</button><span id="pcCheckUpdateStatus"></span></body></html>' });
     const file = path.resolve('public', '.' + pathname);
     if (!file.startsWith(path.resolve('public') + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404 });
     return route.fulfill({ path: file, contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : undefined });
@@ -5845,6 +5717,12 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
     });
     const panel = page.locator('.covo-desktop-update');
     await expect(panel).toBeVisible(); await expect(panel.getByRole('status')).toContainText('再起動して適用');
+    await panel.getByRole('button',{name:'あとで',exact:true}).click();await expect(panel).toBeHidden();
+    const main=fs.readFileSync('public/js/main.js','utf8'),start=main.indexOf('window.manualCheckUpdate =');
+    await page.evaluate(source=>{window.eval(source);document.getElementById('pcCheckUpdateBtn').onclick=()=>window.manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus');},main.slice(start,main.indexOf('// デスクトップショートカット',start)));
+    await page.locator('#pcCheckUpdateBtn').click();await expect(panel).toBeVisible();
+    await expect(page.locator('#pcCheckUpdateStatus')).toContainText('再起動して適用');
+    expect(await page.evaluate(()=>window.downloads)).toBe(1);
     const colors = await panel.evaluate(element => ({ background: getComputedStyle(element).backgroundColor, expected: getComputedStyle(document.body).getPropertyValue('--covo-surface').trim() }));
     expect(colors.background).toBe(theme ? theme === 'discord-dark-theme' ? 'rgb(43, 45, 49)' : 'rgb(30, 41, 59)' : 'rgb(255, 255, 255)');
     await page.evaluate(() => { window.busy = true; });
@@ -5861,6 +5739,17 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
     expect(await page.evaluate(() => window.installs)).toBe(1);
   });
 }
+test('download progress can be reopened without checking or downloading twice',async({page})=>{
+  await fixture(page,'discord-dark-theme');
+  await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){window.checks++;return {version:'2.0.0',download:async callback=>{window.downloads++;callback({event:'Started',data:{contentLength:100}});callback({event:'Progress',data:{chunkLength:40}});await new Promise(resolve=>window.finishDownload=resolve);},install:async()=>{},close:async()=>{}};}`}));
+  await page.evaluate(async()=>{window.checks=0;window.downloads=0;window.covoDesktopBusy=()=>false;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');window.pending=window.covoCheckUpdate(true);});
+  const panel=page.locator('.covo-desktop-update');await expect(panel.locator('progress')).toHaveAttribute('value','40');await expect(panel.getByRole('status')).toContainText('40%');
+  await page.screenshot({path:'scratch/desktop-update-progress.png'});
+  await panel.getByRole('button',{name:'あとで',exact:true}).click();await expect(panel).toBeHidden();
+  await page.evaluate(()=>window.covoCheckUpdate(true));await expect(panel).toBeVisible();
+  expect(await page.evaluate(()=>({checks,downloads}))).toEqual({checks:1,downloads:1});
+  await page.evaluate(async()=>{finishDownload();await pending;});await expect(panel.getByRole('button',{name:'再起動して更新',exact:true})).toBeEnabled();
+});
 test('native development skips production updater checks and reinstall while retaining desktop controls', async ({ page }) => {
   await fixture(page);
   let checks=0;
@@ -9245,6 +9134,57 @@ export class AttachmentResources {
 }
 </file>
 
+<file path="public/js/chat_scroll.js">
+// One bounded animation; no idle polling or network reads.
+export function createChatScroller(container) {
+  let operation=null;
+  const reduced=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const clamp=value=>Math.max(0,Math.min(Math.max(0,container.scrollHeight-container.clientHeight),value));
+  function cancel(){operation?.finish(false);}
+  function to(resolveTarget,{active=()=>true,instant=false,maxDistance=Infinity,prepare=()=>{}}={}){
+    cancel();
+    return new Promise(resolve=>{
+      let frame=null,settled=0,from=container.scrollTop;
+      const oldBehavior=container.style.scrollBehavior;
+      container.style.scrollBehavior='auto';
+      const interrupted=event=>{if(event.type!=='keydown'||['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key))cancel();};
+      const events=['wheel','touchstart','pointerdown','keydown'];
+      const current={finish(ok){if(operation!==current)return;operation=null;container._covoProgrammaticScroll=false;cancelAnimationFrame(frame);for(const name of events)container.removeEventListener(name,interrupted);container.style.scrollBehavior=oldBehavior;container.dispatchEvent(new Event('covo-scroll-settled'));resolve(ok);}};
+      operation=current;
+      container._covoProgrammaticScroll=true;
+      for(const name of events)container.addEventListener(name,interrupted,{passive:true});
+      let initial;
+      try{
+        if(!active()||!container.isConnected){current.finish(false);return;}
+        initial=resolveTarget();if(!Number.isFinite(initial)){current.finish(false);return;}
+        initial=clamp(initial);
+        // Distant replies need not render every intermediate history window.
+        if(Number.isFinite(maxDistance)&&maxDistance>0&&Math.abs(initial-from)>maxDistance){container.scrollTop=clamp(initial-Math.sign(initial-from)*maxDistance);prepare();from=container.scrollTop;}
+      }catch(_){current.finish(false);return;}
+      const start=performance.now(),duration=instant||reduced()?0:Math.min(520,Math.max(240,180+Math.sqrt(Math.abs(initial-from))*8));
+      const tick=now=>{
+        if(operation!==current)return;
+        if(!active()||!container.isConnected){current.finish(false);return;}
+        let target;
+        try{target=resolveTarget();}catch(_){current.finish(false);return;}
+        if(!Number.isFinite(target)){current.finish(false);return;}
+        target=clamp(target);
+        const elapsed=Math.max(0,now-start),progress=duration===0?1:Math.min(1,elapsed/duration);
+        // Time-based easing avoids accumulating rounded positions at low speeds.
+        const ease=1-Math.pow(1-progress,3);
+        container.scrollTop=progress===1?target:from+(target-from)*ease;
+        const aligned=Math.abs(container.scrollTop-target)<=0.6;
+        settled=progress===1&&aligned?settled+1:0;
+        if(settled>=3||elapsed>=duration+240){current.finish(aligned);return;}
+        frame=requestAnimationFrame(tick);
+      };
+      frame=requestAnimationFrame(tick);
+    });
+  }
+  return {to,cancel,get running(){return operation!==null;}};
+}
+</file>
+
 <file path="public/js/client_protocol.js">
 // Compatibility is separate from authentication: this marker never grants access.
 export const CLIENT_PROTOCOL = 2;
@@ -9666,23 +9606,36 @@ if (window.__TAURI__?.core?.invoke) {
   };
   const panel = document.createElement('aside');
   panel.className = 'covo-desktop-update'; panel.hidden = true; panel.setAttribute('aria-label', 'Covoの更新');
+  const heading=document.createElement('strong');heading.className='covo-update-heading';heading.textContent='Covoのアップデート';
   const status = document.createElement('span'); status.id = 'desktopUpdateStatus'; status.setAttribute('role', 'status');
+  const detail=document.createElement('p');detail.className='covo-update-detail';
   const progress = document.createElement('progress'); progress.setAttribute('aria-label', '更新のダウンロード');
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'update-btn covo-button covo-button-small';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'covo-button covo-button-small covo-update-primary';
   const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'covo-button covo-button-secondary covo-button-small'; dismiss.textContent = 'あとで';
-  dismiss.onclick = () => { panel.hidden = true; };
-  panel.append(status, progress, button, dismiss); document.body.append(panel);
+  dismiss.onclick = () => { panel.hidden = true; notify('更新は「設定 → アプリ情報 → 更新画面を開く」から再開できます。'); };
+  const actions=document.createElement('div');actions.className='covo-update-actions';actions.append(button,dismiss);
+  panel.append(heading,status,detail,progress,actions); document.body.append(panel);
+  function renderUpdate(state) {
+    const percent=state.total>0?Math.min(100,Math.floor(state.downloaded/state.total*100)):null;
+    const label=({idle:'更新を確認',checking:'更新を確認しています…',current:'最新バージョンです',available:`v${state.version} の更新があります`,downloading:`v${state.version} をダウンロード中${percent===null?'…':`（${percent}%）`}`,ready:`v${state.version} の準備ができました。再起動して適用できます`,installing:'更新を適用しています。完了までお待ちください。',error:'更新を完了できませんでした。もう一度お試しください。'})[state.phase]||'';
+    status.textContent=label;
+    detail.textContent=state.phase==='ready'?'「再起動して更新」を押すとアプリを終了し、更新を適用します。後で行う場合はアプリ情報からこの画面を開けます。':state.phase==='downloading'?'このままアプリを使えます。ダウンロード後に更新するタイミングを選べます。':state.phase==='available'?'通話・録音・転送・送信が終わるとダウンロードを開始します。':state.phase==='error'?String(state.error||'接続を確認してください。'):'';
+    progress.hidden=state.phase!=='downloading';
+    if(state.total>0){progress.max=state.total;progress.value=Math.min(state.downloaded,state.total);}else progress.removeAttribute('value');
+    button.textContent=state.phase==='ready'?'再起動して更新':state.phase==='error'?'もう一度確認':'ダウンロード';
+    button.hidden=['idle','current'].includes(state.phase);button.disabled=['checking','downloading','installing'].includes(state.phase);
+    dismiss.disabled=state.phase==='installing';
+    button.onclick=()=> (state.phase==='ready'?controller.apply():state.phase==='error'?controller.check():controller.download()).catch(error=>notify(error.message,'warning'));
+    for(const id of ['pcCheckUpdateStatus','mobileCheckUpdateStatus']){const node=document.getElementById(id);if(node)node.textContent=label;}
+    const checkButton=document.getElementById('pcCheckUpdateBtn');if(checkButton){checkButton.textContent=['available','downloading','ready','installing'].includes(state.phase)?'更新画面を開く':'更新を確認';checkButton.disabled=state.phase==='checking';}
+    window.dispatchEvent(new CustomEvent('covo-update-state',{detail:state}));
+  }
   const controller = createUpdateController({
     check: async options => (await import('../vendor/desktop-updater.js')).check(options), busy: () => busy() || Boolean(window.covoReinstalling) || Boolean(window.covoMaintenanceBlocked) || Boolean(window.covoNativeDevelopment),
     changed(state) {
       window.__bgDownloading = state.phase === 'downloading'; window.__bgDownloaded = state.phase === 'ready';
       if (['available', 'ready', 'error'].includes(state.phase)) panel.hidden = false;
-      status.textContent = ({ checking: '更新を確認中…', current: '最新バージョンです', available: `v${state.version} をダウンロードできます`, downloading: `v${state.version} をダウンロード中…`, ready: `v${state.version} を再起動して適用できます`, installing: '更新を適用中…', error: state.error })[state.phase] || '';
-      progress.hidden = state.phase !== 'downloading';
-      if (state.total) { progress.max = state.total; progress.value = state.downloaded; } else progress.removeAttribute('value');
-      button.textContent = state.phase === 'ready' ? '再起動して更新' : state.phase === 'error' ? '再確認' : 'ダウンロード';
-      button.disabled = ['checking', 'downloading', 'installing'].includes(state.phase);
-      button.onclick = () => (state.phase === 'ready' ? controller.apply() : state.phase === 'error' ? controller.check() : controller.download()).catch(error => notify(error.message, 'warning'));
+      renderUpdate(state);
     }
   });
   window.covoUpdater = controller;
@@ -9690,11 +9643,14 @@ if (window.__TAURI__?.core?.invoke) {
   window.covoCheckUpdate = async (manual = false) => {
     if (window.covoNativeDevelopment) { if (manual) notify('開発実行中は本番版への更新を停止しています。'); return false; }
     if (window.covoReinstalling || window.covoMaintenanceBlocked) return false;
+    if(manual){panel.hidden=false;renderUpdate(controller.state);}
+    if(['ready','downloading','installing'].includes(controller.state.phase))return true;
     let required = false;
     try { assertSupportedClient(); } catch (_) { required = true; }
     if (!manual && (navigator.onLine === false || (!required && localStorage.getItem('covo_ignore_force_update') === '1'))) return false;
     const found = await controller.check();
     if (found && !busy()) await controller.download();
+    if(manual){panel.hidden=false;renderUpdate(controller.state);}
     if (manual && !found) notify('現在提供されている最新バージョンです。');
     return found;
   };
@@ -10160,6 +10116,46 @@ if (typeof window !== 'undefined') {
   window.alertMessage = alertMessage;
   window.openAvatarLightbox = openAvatarLightbox;
   window.playNotificationSound = playNotificationSound;
+}
+</file>
+
+<file path="public/js/virtual_timeline.js">
+// Rows are ordered newest-first, matching the existing inverted chat scroller.
+export class VirtualTimeline {
+  constructor(estimate = 96, maxRows = 160) {
+    this.estimate = estimate;
+    this.maxRows = maxRows;
+    this.heights = new Map();
+    this.reset();
+  }
+  reset() { this.ids = []; this.offsets = [0]; this.heights.clear(); this.renderedRange = null; }
+  set(ids) {
+    this.ids = ids;
+    const keep = new Set(ids);
+    for (const id of this.heights.keys()) if (!keep.has(id)) this.heights.delete(id);
+    this.rebuild();
+  }
+  rebuild() {
+    this.offsets = [0];
+    for (const id of this.ids) this.offsets.push(this.offsets[this.offsets.length - 1] + (this.heights.get(id) || this.estimate));
+  }
+  measure(id, height) {
+    if (!(height > 0) || Math.abs((this.heights.get(id) || this.estimate) - height) < 1) return false;
+    this.heights.set(id, height);
+    return true;
+  }
+  indexAt(offset) {
+    let lo = 0, hi = this.ids.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.offsets[mid + 1] <= offset) lo = mid + 1; else hi = mid; }
+    return Math.min(lo, Math.max(0, this.ids.length - 1));
+  }
+  range(scrollTop, viewportHeight) {
+    const visible = this.indexAt(Math.max(0, scrollTop));
+    const start = Math.max(0, visible - 30);
+    const end = Math.min(this.ids.length, start + this.maxRows);
+    return { start, end, before: this.offsets[start], after: this.offsets[this.ids.length] - this.offsets[end] };
+  }
+  offsetOf(id) { const i = this.ids.indexOf(id); return i < 0 ? null : this.offsets[i]; }
 }
 </file>
 
@@ -10827,7 +10823,9 @@ New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'Run this script in an MSVC Developer PowerShell environment.' }
 $config = Get-Content -LiteralPath (Join-Path $taskRoot 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $versionHeader = '#define COVO_SETUP_VERSION L"' + $config.version + '"'
-$resourceArgs = @()
+$iconFile = Join-Path $taskRoot 'src-tauri\icons\icon.ico'
+if (-not (Test-Path -LiteralPath $iconFile)) { throw 'Covo setup icon is missing.' }
+$resourceLines = @('201 ICON "' + $iconFile.Replace('\','\\') + '"')
 $definitions = @('/DCOVO_MAINTENANCE')
 $executableName = 'CovoMaintenance.exe'
 if ($Bootstrap) {
@@ -10837,14 +10835,14 @@ if ($Bootstrap) {
   $digest = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash
   $bytes = for ($index = 0; $index -lt 64; $index += 2) { '0x' + $digest.Substring($index, 2) }
   $versionHeader += "`n#define COVO_ENGINE_SHA256 " + ($bytes -join ',')
-  $resource = '101 RCDATA "' + $engine.Replace('\','\\') + '"'
-  [IO.File]::WriteAllText((Join-Path $outputRoot 'engine.rc'), $resource)
-  & rc.exe /nologo /fo (Join-Path $outputRoot 'engine.res') (Join-Path $outputRoot 'engine.rc')
-  if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
-  $resourceArgs = @((Join-Path $outputRoot 'engine.res'))
+  $resourceLines += '101 RCDATA "' + $engine.Replace('\','\\') + '"'
   $definitions = @()
   $executableName = 'CovoSetup.exe'
 }
+[IO.File]::WriteAllText((Join-Path $outputRoot 'branding.rc'), ($resourceLines -join "`r`n"))
+& rc.exe /nologo /fo (Join-Path $outputRoot 'branding.res') (Join-Path $outputRoot 'branding.rc')
+if ($LASTEXITCODE -ne 0) { throw 'Covo branding resource compilation failed.' }
+$resourceArgs = @((Join-Path $outputRoot 'branding.res'))
 [IO.File]::WriteAllText((Join-Path $outputRoot 'setup_version.h'), $versionHeader)
 & cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /MT /W4 @definitions /I $outputRoot (Join-Path $sourceRoot 'setup.cpp') @resourceArgs /Fo"$outputRoot\setup.obj" /Fe"$outputRoot\$executableName" /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'"
 if ($LASTEXITCODE -ne 0) { throw 'Covo setup compilation failed.' }
@@ -11366,6 +11364,7 @@ mod tests {
 #include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <shobjidl.h>
 #include <tlhelp32.h>
 #include <bcrypt.h>
 #include <dwmapi.h>
@@ -11395,11 +11394,39 @@ static HFONT font, headingFont;
 static bool working = false, completed = false;
 static bool lightTheme = false;
 static bool navyTheme = false;
-static COLORREF backgroundColor() { return lightTheme ? RGB(255,255,255) : navyTheme ? RGB(30,41,59) : RGB(30,31,34); }
+static COLORREF backgroundColor() { return lightTheme ? RGB(247,248,250) : navyTheme ? RGB(30,41,59) : RGB(30,31,34); }
+static COLORREF accentColor() { return lightTheme ? RGB(71,82,196) : RGB(165,180,252); }
 static bool progressOnly = false;
 static HANDLE progressProcess = nullptr;
 static std::wstring failure;
 static constexpr UINT doneMessage = WM_APP + 1;
+static HICON brandIcon;
+static LRESULT CALLBACK progressProcedure(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
+  switch(message) {
+  case PBM_SETMARQUEE: {
+    KillTimer(window,1);BOOL animated=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animated,0);
+    if(wparam && animated)SetTimer(window,1,16,nullptr);InvalidateRect(window,nullptr,FALSE);return TRUE;
+  }
+  case WM_TIMER: InvalidateRect(window,nullptr,FALSE);return 0;
+  case WM_SHOWWINDOW: if(!wparam)KillTimer(window,1);break;
+  case WM_ERASEBKGND: return 1;
+  case WM_PAINT: {
+    PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);RECT area;GetClientRect(window,&area);
+    FillRect(dc,&area,background);HBRUSH track=CreateSolidBrush(lightTheme?RGB(226,230,237):navyTheme?RGB(44,58,80):RGB(56,58,64));
+    auto brush=SelectObject(dc,track);auto pen=SelectObject(dc,GetStockObject(NULL_PEN));
+    RoundRect(dc,0,0,area.right,area.bottom,8,8);SelectObject(dc,brush);DeleteObject(track);
+    BOOL animated=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animated,0);
+    const int width=area.right,segment=width/3;
+    const double phase=animated?static_cast<double>(GetTickCount64()%1600)/1600.0:0.5;
+    const int position=static_cast<int>((width+segment)*phase)-segment;
+    HRGN clip=CreateRoundRectRgn(0,0,width,area.bottom,8,8);SelectClipRgn(dc,clip);
+    HBRUSH accent=CreateSolidBrush(accentColor());brush=SelectObject(dc,accent);RoundRect(dc,position,0,position+segment,area.bottom,8,8);
+    SelectObject(dc,brush);SelectObject(dc,pen);SelectClipRgn(dc,nullptr);DeleteObject(accent);DeleteObject(clip);EndPaint(window,&paint);return 0;
+  }
+  case WM_DESTROY: KillTimer(window,1);return 0;
+  }
+  return DefWindowProcW(window,message,wparam,lparam);
+}
 static std::wstring readRegistry(const wchar_t* name) {
   wchar_t value[32768] = {}; DWORD bytes = sizeof(value);
   if (RegGetValueW(HKEY_CURRENT_USER, registryKey, name, RRF_RT_REG_SZ, nullptr, value, &bytes) != ERROR_SUCCESS) return {};
@@ -11534,8 +11561,8 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     }
     DeleteObject(background); background = CreateSolidBrush(backgroundColor());
     font = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-    headingFont = CreateFontW(-36, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-    HWND title = control(L"STATIC", L"Covo", 0, 36, 26, 480, 56, 0); SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(headingFont), TRUE);
+    headingFont = CreateFontW(-32, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI Variable");
+    HWND title = control(L"STATIC", L"Covo", 0, 104, 31, 428, 48, 0); SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(headingFont), TRUE);
 #ifdef COVO_MAINTENANCE
     control(L"STATIC", progressOnly ? L"アップデート" : L"アンインストール", 0, 36, 90, 490, 30, 0);
     statusText = control(L"STATIC", progressOnly ? L"Covoの更新を適用しています。\n完了後にアプリが再起動します。" : L"Covoを削除します。暗号鍵と端末の履歴は標準で保持します。", 0, 36, 132, 490, 60, 0);
@@ -11544,11 +11571,13 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     if (progressOnly) ShowWindow(actionButton, SW_HIDE);
 #else
     control(L"STATIC", L"セットアップ  " COVO_SETUP_VERSION, 0, 36, 90, 490, 30, 0);
-    statusText = control(L"STATIC", L"Covoをインストールします。既存の設定と暗号鍵は引き継ぎます。\n必要な場合だけMicrosoft WebView2を導入します。", 0, 36, 132, 490, 84, 0);
+    statusText = control(L"STATIC", L"会話を、いつでもすぐそばに。\n既存の設定・暗号鍵・履歴を保持してインストールします。", 0, 36, 136, 490, 84, 0);
     actionButton = control(L"BUTTON", L"インストール / 修復", BS_OWNERDRAW | WS_TABSTOP, 322, 316, 210, 42, 1);
 #endif
-    progress = control(PROGRESS_CLASSW, L"", PBS_MARQUEE, 36, 260, 496, 10, 0); ShowWindow(progress, SW_HIDE);
-    closeButton = control(L"BUTTON", progressOnly ? L"閉じる" : L"キャンセル", BS_OWNERDRAW | WS_TABSTOP, 168, 316, 140, 42, 2);
+    progress = control(L"CovoSetupProgress", L"", 0, 36, 260, 496, 8, 0);
+    ShowWindow(progress, SW_HIDE);
+    closeButton = control(L"BUTTON", progressOnly ? L"終了" : L"キャンセル", BS_OWNERDRAW | WS_TABSTOP, 168, 316, 140, 42, 2);
+    if(progressOnly)ShowWindow(closeButton,SW_HIDE);
     SetFocus(progressOnly ? closeButton : actionButton); return 0;
   }
   case WM_CTLCOLORSTATIC: case WM_CTLCOLORBTN:
@@ -11557,20 +11586,28 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     auto item = reinterpret_cast<DRAWITEMSTRUCT*>(lparam);
     if (item->CtlType != ODT_BUTTON) break;
     const bool primary = item->CtlID == 1, disabled = (item->itemState & ODS_DISABLED) != 0;
-    HBRUSH fill = CreateSolidBrush(primary ? (disabled ? RGB(100, 116, 139) : lightTheme ? RGB(71, 82, 196) : RGB(88, 101, 242)) : lightTheme ? RGB(237, 239, 243) : navyTheme ? RGB(44,58,80) : RGB(49,51,56));
+    HBRUSH fill = CreateSolidBrush(primary ? (disabled ? RGB(100, 116, 139) : accentColor()) : lightTheme ? RGB(237, 239, 243) : navyTheme ? RGB(44,58,80) : RGB(49,51,56));
     auto oldBrush = SelectObject(item->hDC, fill); auto oldPen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
-    RoundRect(item->hDC, item->rcItem.left, item->rcItem.top, item->rcItem.right, item->rcItem.bottom, 14, 14);
+    RECT buttonRect=item->rcItem;if(item->itemState & ODS_SELECTED)OffsetRect(&buttonRect,0,1);
+    RoundRect(item->hDC, buttonRect.left, buttonRect.top, buttonRect.right, buttonRect.bottom, 20, 20);
     SelectObject(item->hDC, oldPen); SelectObject(item->hDC, oldBrush); DeleteObject(fill); SetBkMode(item->hDC, TRANSPARENT);
-    SetTextColor(item->hDC, primary || !lightTheme ? RGB(255, 255, 255) : RGB(32, 35, 43)); SelectObject(item->hDC, font);
+    SetTextColor(item->hDC, primary && !disabled ? (lightTheme ? RGB(255,255,255) : backgroundColor()) : !lightTheme || primary ? RGB(255,255,255) : RGB(32,35,43)); SelectObject(item->hDC, font);
     wchar_t label[128]; GetWindowTextW(item->hwndItem, label, 128); DrawTextW(item->hDC, label, -1, &item->rcItem, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    if (item->itemState & ODS_FOCUS) { RECT focus = item->rcItem; InflateRect(&focus, -4, -4); DrawFocusRect(item->hDC, &focus); }
+    if (item->itemState & ODS_FOCUS) { RECT focus = item->rcItem; InflateRect(&focus, -3, -3); HPEN ring=CreatePen(PS_SOLID,1,primary?(lightTheme?RGB(255,255,255):backgroundColor()):accentColor());auto pen=SelectObject(item->hDC,ring);auto brush=SelectObject(item->hDC,GetStockObject(NULL_BRUSH));RoundRect(item->hDC,focus.left,focus.top,focus.right,focus.bottom,16,16);SelectObject(item->hDC,brush);SelectObject(item->hDC,pen);DeleteObject(ring); }
     return TRUE;
   }
   case WM_ERASEBKGND: { RECT area; GetClientRect(window, &area); FillRect(reinterpret_cast<HDC>(wparam), &area, background); return 1; }
+  case WM_PAINT: {
+    PAINTSTRUCT paint;HDC dc=BeginPaint(window,&paint);
+    if(brandIcon)DrawIconEx(dc,36,28,brandIcon,52,52,0,nullptr,DI_NORMAL);
+    HPEN line=CreatePen(PS_SOLID,1,lightTheme?RGB(225,228,234):navyTheme?RGB(59,73,96):RGB(56,58,64));auto pen=SelectObject(dc,line);MoveToEx(dc,36,296,nullptr);LineTo(dc,532,296);SelectObject(dc,pen);DeleteObject(line);
+    EndPaint(window,&paint);return 0;
+  }
   case WM_COMMAND:
     if (LOWORD(wparam) == 2 && !working) { DestroyWindow(window); return 0; }
     if (LOWORD(wparam) == 1 && !working) {
       working = true; EnableWindow(actionButton, FALSE); EnableWindow(closeButton, FALSE); if (eraseCheck) EnableWindow(eraseCheck, FALSE);
+      ShowWindow(closeButton,SW_HIDE);ShowWindow(actionButton,SW_HIDE);
       SetWindowTextW(statusText, L"処理中です。この画面を閉じずにお待ちください。\n必要な構成の導入には数分かかる場合があります。");
       ShowWindow(progress, SW_SHOW); SendMessageW(progress, PBM_SETMARQUEE, TRUE, 40);
       const bool erase = eraseCheck && SendMessageW(eraseCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -11579,10 +11616,14 @@ static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPAR
     break;
   case doneMessage:
     if (progressOnly && wparam == 0) { completed = true; DestroyWindow(window); return 0; }
-    working = false; completed = wparam == 0; ShowWindow(progress, SW_HIDE); EnableWindow(closeButton, TRUE); SetWindowTextW(closeButton, L"閉じる");
-    SetWindowTextW(statusText, completed ? L"完了しました。この画面を閉じてください。" : failure.c_str());
-    if (!completed) EnableWindow(actionButton, TRUE); SetFocus(closeButton); return 0;
-  case WM_CLOSE: if (!working) DestroyWindow(window); return 0;
+    working = false; completed = wparam == 0; ShowWindow(progress, SW_HIDE); EnableWindow(closeButton, TRUE); SetWindowTextW(closeButton, L"終了");
+    if(!completed)ShowWindow(closeButton,SW_SHOW);
+    SetWindowTextW(statusText, completed ? L"完了しました。この画面は自動で閉じます。" : failure.c_str());
+    if(completed){ShowWindow(closeButton,SW_HIDE);ShowWindow(actionButton,SW_HIDE);SetTimer(window,2,1600,nullptr);}
+    if (!completed && !progressOnly) {EnableWindow(actionButton, TRUE);ShowWindow(actionButton,SW_SHOW);} SetFocus(closeButton); return 0;
+  case WM_TIMER: if(wparam==2&&completed){KillTimer(window,2);DestroyWindow(window);}return 0;
+  case WM_NCHITTEST: {const LRESULT hit=DefWindowProcW(window,message,wparam,lparam);POINT point={static_cast<short>(LOWORD(lparam)),static_cast<short>(HIWORD(lparam))};ScreenToClient(window,&point);return hit==HTCLIENT&&point.y<104?HTCAPTION:hit;}
+  case WM_CLOSE: return 0;
   case WM_DESTROY: DeleteObject(font); DeleteObject(headingFont); DeleteObject(background); PostQuitMessage(0); return 0;
   }
   return DefWindowProcW(window, message, wparam, lparam);
@@ -11637,8 +11678,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
   if (std::wstring(arguments) == L"/S") { fs::path temp; try { const auto engine = extractEngine(temp); const auto result = runEngine(engine, L"/S"); removeOwnedDirectory(temp); return static_cast<int>(result); } catch (...) { return 1; } }
 #endif
   INITCOMMONCONTROLSEX controls = { sizeof(controls), ICC_PROGRESS_CLASS }; InitCommonControlsEx(&controls);
-  WNDCLASSW type = {}; type.lpfnWndProc = procedure; type.hInstance = instance; type.lpszClassName = L"CovoSetupWindow"; type.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&type);
-  HWND window = CreateWindowExW(WS_EX_APPWINDOW, type.lpszClassName, L"Covo", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 584, 416, nullptr, nullptr, instance, nullptr);
+  brandIcon=static_cast<HICON>(LoadImageW(instance,MAKEINTRESOURCEW(201),IMAGE_ICON,64,64,LR_SHARED));SetCurrentProcessExplicitAppUserModelID(L"app.covo.setup");
+  WNDCLASSW progressType={};progressType.lpfnWndProc=progressProcedure;progressType.hInstance=instance;progressType.lpszClassName=L"CovoSetupProgress";RegisterClassW(&progressType);
+  WNDCLASSW type = {}; type.lpfnWndProc = procedure; type.hInstance = instance; type.lpszClassName = L"CovoSetupWindow"; type.hIcon=brandIcon;type.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&type);
+  HWND window = CreateWindowExW(WS_EX_APPWINDOW, type.lpszClassName, L"Covo", WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, 568, 394, nullptr, nullptr, instance, nullptr);
+  SendMessageW(window,WM_SETICON,ICON_BIG,reinterpret_cast<LPARAM>(brandIcon));SendMessageW(window,WM_SETICON,ICON_SMALL,reinterpret_cast<LPARAM>(brandIcon));
   if (!window) return 1;
   POINT pointer; GetCursorPos(&pointer); MONITORINFO monitor = { sizeof(monitor) };
   if (GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -11647,6 +11691,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
       monitor.rcWork.top + ((monitor.rcWork.bottom - monitor.rcWork.top) - (rectangle.bottom - rectangle.top)) / 2, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
   }
   BOOL dark = !lightTheme; DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
+  const DWORD roundedCorners=2;DwmSetWindowAttribute(window,33,&roundedCorners,sizeof(roundedCorners));
   HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\CovoSetupMaintenance");
   if (mutex && GetLastError() == ERROR_ALREADY_EXISTS) {
     DestroyWindow(window); CloseHandle(mutex); return 1;
@@ -11676,6 +11721,119 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
   if (mutex) CloseHandle(mutex);
   return completed ? 0 : 1;
 }
+</file>
+
+<file path="DEV_TESTING.md">
+# PC・スマホ・Windows版の開発テスト
+
+## Web / スマホ
+
+```powershell
+npm run test:web
+```
+
+- PCは **http://localhost:5000** を開く。127.0.0.1で画面を開いた場合もlocalhostへ移動する。
+- 同じWi-Fiのスマホ向けに、検出したプライベートIPv4のURLとQRをターミナルに表示する。Wi-Fi等の通常アダプターを先に表示し、仮想アダプターは後に表示する。
+- QRは初回設定ページを開く。iPhone/iPad/Androidの証明書設定を済ませ、ページ内のHTTPSリンクからCovoへ進む。
+- HTTPのLAN接続では設定ページと公開CA証明書だけを配信し、アプリやAPIの通信を通さない。アプリはHTTPSの5443番ポートを使用する。
+- Node.jsへの通信が止まる場合は、Windowsのファイアウォールを**プライベートネットワーク**で確認する。ファイアウォールの自動変更やルーターのポート開放は行わない。
+
+### HTTPS / PWA / 録音
+
+暗号化や録音等の機能を検証するため、LAN向けに開発用CAとHTTPS証明書を生成する。iPhone/iPadではプロファイルのインストールに加え「一般 → 情報 → 証明書信頼設定」での信頼が必要。[Appleの公式手順](https://support.apple.com/en-au/102390)も参照。
+
+CAは`.cache/dev-preview/tls`に保管し、IPが増減した場合も同じCAでサーバー証明書を更新する。端末へ配布するのは公開CAだけで、秘密鍵は配信しない。CAの指紋をターミナルと端末で照合する。CAの破損・鍵の欠落がある場合は勝手に入れ替えず停止する。検証終了後、不要なら端末からこのCAを削除する。
+
+このフォルダーはGit追跡対象外であり、public配信領域にも置かない。証明書の信頼設定をアプリから自動操作しない。実機の証明書インストール・PWA追加・マイク権限はユーザー側で行う。
+
+同じPCでCAの保存データを保持していれば、iPhone側の信頼設定は通常初回だけ。IP変更時のサーバー証明書の再発行でもCAを再利用する。サーバー証明書は30日、CAは生成時から約3年で、サーバー証明書は開発サーバーの起動時に期限を確認して更新する。CAを変更した場合・CAの期限切れ・別PCに移した場合は端末側の再設定が必要になる。
+
+ルートCAの信頼はCovoだけに限定されない。このCAの秘密鍵で署名したHTTPS証明書を端末が信頼するため、PC側の秘密鍵を保護する。継続して検証する間は保持して利用できるが、使わない期間は信頼をオフにするか、プロファイルを削除する。本番Covoには不要。
+
+### PWAとして検証する
+
+1. PCで`npm run test:web`を起動し、iPhoneを同じWi-Fiに接続する。
+2. SafariでHTTPSのアプリURL（例：`https://192.168.0.4:5443/`）を開く。HTTPの証明書案内ページは追加しない。
+3. 共有 →「ホーム画面に追加」→「Webアプリとして開く」をオンにし、名前を「Covoテスト」にして追加する。[Appleの手順](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/27/ios/27)参照。
+4. ホーム画面の新しいアイコンから起動する。本番用のCovoは削除しない。PCと開発サーバーを動かしておく必要がある。
+
+PWAの開始URLが`/index.html`になっても、開発用ランタイムを挿入する配信対象であることを確認する。IPが変わった場合はホーム画面のURLも確認する。コードを変更した後はテスト用PWAを終了して開き直す。
+
+2026-10-25の追加修正：HTTPのパイプライン要求では、応答側の`socket`が未割り当てになることがある。要求側の接続からポートとTLS状態を取得し、切断済みの応答へは書き込まない。遅延したAPI転送も、接続終了後は本文を破棄して終了する。開発用CAの再作成は不要。
+
+### Googleログイン
+
+今回のエラーは`auth/unauthorized-domain`。Firebaseの公開設定の読み取りで、**localhostは登録済み、127.0.0.1は未登録**であることを確認した。PCはlocalhostへ統一した。
+
+訂正：Firebase ConsoleがLAN IPを有効なドメインとして受け付けないため、以前の「IPを登録する」という案内は使わない。LANのHTTPSはメール・パスワードで検証する。スマホのGoogleログインは次のHostingプレビューを使う。[公式プレビュー手順](https://firebase.google.com/docs/hosting/test-preview-deploy)参照。
+
+```powershell
+npm run test:web:google
+```
+
+このコマンドはフロントエンドを`mobile-test`チャンネルの1日限定公開URLへアップロードする。初回はFirebase CLIへのログインが必要。表示されたURLをスマホで開く。Firebase CLIがプレビュー用ドメインを承認設定へ追加する。未承認エラーが残る場合はプレビューURLのホスト名だけを承認済みドメインへ追加する。IP/スキーム/ポート/パスは登録しない。
+
+専用の`firebase.preview.json`には本番のpredeploy/postdeploy、Workerデプロイ、バージョン更新、DBルールがない。本番Hostingを置き換えないが、アカウント・DB・Workerは本番に接続する。プレビューのHosting保存・配信量を消費するため、通常の編集確認にはLAN検証を使う。コード変更後のプレビュー確認には再実行が必要。実機PWAにもこのHTTPSのプレビューURLをホーム画面へ追加でき、開発用CAは不要。今回この公開コマンド自体は実行していない。
+
+Google SDKから未承認エラーが返った場合も、アプリに必要な設定を日本語で表示する。拡張機能の`disconnected port`等とは別の問題として扱う。
+
+### 接続先と通信
+
+2026-10-25追記：Googleログインの承認済みドメインと、会話・添付ファイルの読み込みは別の経路。承認対象はGoogleログインに使うプレビューのホスト名で、登録はFirestore/RTDBの読み取り権限を付与する操作ではない。
+
+開発ランタイムはfetch/XHRに加え、画像・動画・ダウンロードのURLプロパティ、属性、innerHTML内のWorker URLもPCの固定プロキシへ向ける。承認済みドメインの追加で画像のCORSを解除しようとしたり、Firestore/RTDBのルールを公開設定に変えたりしない。会話が空欄の原因は実機の診断なしでは断定できない。受信権限拒否/中断を診断集計に追加したため、継続時はレポートで区別する。
+
+### デプロイ前のGitロック
+
+今回の`index.lock`は、Gitプロセスがなく、10分以上前の空ファイルで、排他的に開けることを確認して削除した。デプロイスクリプトはバージョン更新・ビルドの前にロックを確認して停止する。他のGit操作のロックを自動削除しない。今回の失敗はステージング前で、コミット・タグ・プッシュは未実行。ただしローカルのバージョンファイルは1.1.287へ更新済みのため、通常の再実行では次の番号へ進む。
+
+**Firebaseのアカウント・会話・通常APIは本番環境に接続する。隔離したテスト用データベースではない。**
+
+LANのCORS制約はローカルサーバーが固定Workerへの通信を仲介して扱う。IDトークン・プロトコルヘッダー・本文を保持し、Workerの認証・認可エラーをそのまま返す。任意の外部URLへ転送するプロキシではない。メンテナンス確認の旧Workerの正確な404だけをローカル互換として扱い、実際のメンテナンスや401/403/5xxを無視しない。
+
+QR・証明書・ビルドキャッシュはPC内で生成する。外部QRサービスや公開トンネル、Firebase Hostingのテスト用デプロイは追加していない。開発サーバーの起動だけで計測・通知テスト・データ初期化は行わない。
+
+## Windows版
+
+```powershell
+npm run test:win
+```
+
+1. Firebase/updaterのバンドルを内容照合し、変更がない場合は再生成しない。
+2. 開発用の固定URL `http://localhost:5030` を起動する。
+3. ネイティブ入力・環境・実行ファイルを照合し、前回の正常な開発ビルドを再利用できればCargoを起動せずアプリを開く。
+4. 初回・Rust/設定/依存関係等の変更時はTauriでビルドする。成功ログとソースの再照合を経てキャッシュする。失敗したビルドは成功キャッシュにしない。
+
+HTML/CSS/JSの修正は、アプリを開いたまま**Ctrl+R**で確認する。Rustの変更はアプリとテストコマンドを終了して起動し直す。常時のRust監視や自動再ビルドをしない。ターミナルのCtrl+Cはこのコマンドが起動した子プロセスを終了する。
+
+強制的にビルドしたい場合：
+
+```powershell
+npm run test:win:native
+```
+
+開発中は本番アップデーターによるダウンロード/適用と再インストールUIを停止する。インストーラーや更新そのものは署名付きの配布ビルドで検証する。既に通常版が起動している場合は、通常版をトレイから終了してからテストする。
+
+通常のリリース設定は変更せず、専用の`tauri.dev.conf.json`でdevUrlを指定する。[Tauriの開発設定](https://v2.tauri.app/develop/configuration-files/)を参照。初回のコンパイル時間自体がゼロになるものではない。
+
+## 検証と限界
+
+2026-10-25追加修正（CIのchat-scroll失敗と実機のカクつき）：テストの時計を停止して明示的にフレームを進め、CIが遅いと中間状態の確認前にアニメーションが終了する競合を除去した。実装も実時間から進捗を計算する減速へ変更し、scrollTopの丸め誤差を蓄積しない。通常のスクロールでは、仮想表示の余裕領域を出た場合だけ全体を再描画する。遠い履歴は目的地付近の領域を先に準備して最終区間をアニメーションし、全ての中間行を作成しない。自動移動中は通常の履歴アンカー補正と競合させない。
+
+「一番下に戻る」は最新位置から20px超、または履歴ジャンプ表示中に出す。表示を1つの関数に集約し、通常スクロール・描画完了・アニメーション終了/中断で更新する。履歴表示の末尾は実際の最新位置とは区別する。到着後にボタンを隠すだけでなく、aria-hiddenとキーボードフォーカスも同期する。
+
+この追加修正後のブラウザ全80件、関連単体123件、秘密情報混入チェックが通過。1万件の履歴で表示160行以内、遠いリプライ移動の全体再描画12回未満、中央誤差1px以内、実際の最下部ボタン操作後のscrollTop=0を検証した。描画高さ変更・操作中断・別移動・動きを減らす設定も確認。これはChromeでの自動検証であり、後からの未確定メディアサイズ変更や全OSのあらゆる状態に対する無誤差を保証するものではない。自動移動からの履歴ページ追加通信は抑止し、常時ポーリングは追加していない。GitHubへのプッシュやデプロイは実行していない。
+
+2026-10-25スクロール修正：リプライ先への仮想行の先行テレポートをやめ、移動中に測定済み高さと描画行の中心位置を再計算する短時間のスクロール処理へ統一。最下部ボタンも同じ処理を使う。手動操作/移動の置き換え/チャンネル変更で停止し、動きを減らす設定では即時補正する。プログラム移動中は履歴ページ読み込みを発火させない。画像に永続的な再ジャンプコールバックを残さず、移動終了後に読者を引き戻さない。スクロール自体に通信を追加していない。
+
+スクロール・開発プレビューのブラウザ検証17件、チャット回帰/ライフサイクルの単体検証45件が通過。別途、1万件の実レンダラーの仮想表示/リプライ先の中央位置/最下部到達を検証した。実機iOSの操作感と、Firebase CLIによるGoogle用プレビュー公開・認証完了は未確認。
+
+- ブラウザ全体68件が通過。その後の証明書生成ライブラリの変更でも、証明書チェーン・IP変更時のCA保持・秘密鍵の非配信・APIの認可維持・キャッシュ無効化を再検証。
+- フロントエンドの内容未変更時の準備は、このPCで約0.58秒（単発測定、起動全体の時間ではない）。
+- 実際のターミナルでPC URL、LAN URL、QR、HTTPS URL、CA指紋の表示を確認。
+- Windowsの起動コマンドはTauri/Cargoまで進むが、このPCのMSVC `link.exe`不足で停止した。実際のネイティブ再利用の起動時間、実機のiOS/Androidの証明書登録、ユーザー操作を伴うGoogleログイン完了は未確認。
+- 既存の650件IndexedDBテストが複数検証を同時実行した際に15秒でタイムアウトした。負荷が落ち着いた再実行では制限を変更せず、単体テスト全228件が通過した。
+- 証明書生成をNode WebCryptoと`@peculiar/x509`へ切り替えた後、スマホ案内ページのライト/ダーク表示を含む関連ブラウザ検証11件が通過。最初に検討した既知の脆弱性がある証明書ライブラリは依存関係から除去した。
 </file>
 
 <file path="PWA_RECOVERY_REFINEMENT_REPORT.md">
@@ -11926,54 +12084,19 @@ test('installed mobile server panel has no gradient shadow and chrome follows na
     expect(await page.locator('#userPanel').evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
   }
 });
-test('mobile diagnostics has a direct settings entry, back navigation and a viewport report', async ({ page }) => {
-  await page.setViewportSize({ width: 402, height: 874 });
-  await routeApp(page, { standalone: true, ios: true });
-  const main = fs.readFileSync('public/js/main.js', 'utf8');
-  const navigation = parser.parse(main, { sourceType: 'module' }).program.body.filter(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && ['openMobileDetail', 'closeMobileDetail'].includes(node.expression.left.property?.name)).map(node => main.slice(node.start, node.end)).join('\n');
-  await page.evaluate(async navigation => {
-    document.getElementById('appLoadingSplash').remove();
-    document.body.className = 'auth-ready logged-in discord-ui-mode';
-    document.getElementById('mobileProfileScreen').classList.add('active');
-    window.loadLocalDiagnostics = () => {};
-    window.eval(navigation);
-    (await import('/js/diagnostics_runtime.js')).installDiagnostics();
-  }, navigation);
-  await page.locator('.covo-mobile-diagnostics-entry').click();
-  await expect(page.locator('#mobileDetailDiagnostics')).toBeVisible();
-  await page.locator('#mobileDetailDiagnostics').getByRole('button', { name: '結果を表示', exact: true }).click();
-  const report = JSON.parse(await page.locator('#mobileDetailDiagnostics pre').textContent());
-  expect(report.viewport.standalone).toBe(true); expect(report.viewport.ios).toBe(true);
-  for (const status of await page.locator('[data-covo-diagnostics-status]').all()) await expect(status).toBeHidden();
-  await page.getByRole('button', { name: '設定に戻る', exact: true }).click();
-  await expect(page.locator('#mobileDetailDiagnostics')).toBeHidden();
-});
-for (const [name, width, ios] of [['ipad',1180,true],['desktop',1440,false]]) {
-  test(`${name}: diagnostic entry waits for lazy settings and scrolls to the report controls`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 1000 }); await routeApp(page, { ios, standalone: ios });
-    const main = fs.readFileSync('public/js/main.js','utf8');
-    const node = parser.parse(main,{sourceType:'module'}).program.body.find(node => node.type === 'ExpressionStatement' && node.expression.type === 'AssignmentExpression' && node.expression.left.property?.name === 'openCovoDiagnostics');
-    await page.evaluate(async source => {
-      document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready logged-in discord-ui-mode';
-      document.getElementById('settingsModal').classList.remove('hidden'); window.scrollChecks = [];
-      window.switchDiscordSettingsTab = async tab => {
-        await new Promise(resolve => setTimeout(resolve,30));
-        (await import('/js/settings_feature.js')).installSettingsFeature({ _appVersion:'1.1.286', updateE2EEStatusUI(){}, updateLayoutDebugUI(){} });
-        window.switchDiscordSettingsTab(tab);
-      };
-      window.loadLocalDiagnostics = async () => {
-        await new Promise(resolve => setTimeout(resolve,20));
-        (await import('/js/diagnostics_runtime.js')).installDiagnostics();
-        const section = document.querySelector('#appinfoSection .covo-diagnostics'), scroll = section.scrollIntoView.bind(section);
-        section.scrollIntoView = options => { window.scrollChecks.push(document.getElementById('appinfoSection').classList.contains('active')); scroll(options); };
-      };
-      window.eval(source);
-    }, main.slice(node.start,node.end));
-    await page.locator('#settingsModal').getByRole('button',{name:'通信・表示の診断',exact:true}).click();
-    await expect.poll(() => page.evaluate(() => scrollChecks)).toEqual([true]);
-    const report = page.locator('#appinfoSection .covo-diagnostics'); await expect(report.getByRole('button',{name:'レポートを丸ごとコピー',exact:true})).toBeInViewport();
-    await report.getByRole('button',{name:'結果を表示',exact:true}).click();
-    expect(JSON.parse(await report.locator('pre').textContent()).viewport.ios).toBe(ios);
+for (const [name,width,ios] of [['phone',402,true],['ipad',1180,true],['desktop',1440,false]]) {
+  test(name+': diagnostics remains inside app info without a duplicate settings entry',async({page})=>{
+    await page.setViewportSize({width,height:1000});await routeApp(page,{ios,standalone:ios});
+    await page.evaluate(async()=>{
+      document.getElementById('appLoadingSplash').remove();document.body.className='auth-ready logged-in discord-ui-mode';
+      if(innerWidth>=768){document.getElementById('settingsModal').classList.remove('hidden');(await import('/js/settings_feature.js')).installSettingsFeature({_appVersion:'1.1.286',updateE2EEStatusUI(){},updateLayoutDebugUI(){}});window.switchDiscordSettingsTab('appinfo');}
+      (await import('/js/diagnostics_runtime.js')).installDiagnostics();
+    });
+    expect(await page.locator('[onclick="openCovoDiagnostics()"],.covo-mobile-diagnostics-entry,#mobileDetailDiagnostics').count()).toBe(0);
+    const host=page.locator(width<768?'#mobileDetailAppInfo':'#appinfoSection');
+    await host.evaluate(node=>{node.style.display='block';node.classList.add('active');});
+    await host.getByRole('button',{name:'結果を表示',exact:true}).dispatchEvent('click');
+    expect(JSON.parse(await host.locator('.covo-diagnostics pre').textContent()).viewport.ios).toBe(ios);
   });
 }
 for (const [theme, width] of [['', 1180], ['dark-server-theme', 402], ['discord-dark-theme', 820]]) {
@@ -12783,217 +12906,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit "v$($config.version)" --draft=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-</file>
-
-<file path="browser-tests/timeline.spec.cjs">
-const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const parser = require('@babel/parser');
-const main = fs.readFileSync('public/js/main.js', 'utf8');
-const ast = parser.parse(main, { sourceType: 'module' });
-const codeFor = name => {
-  const node = ast.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
-  return main.slice(node.start, node.end);
-};
-const exitJumpModeNode=ast.program.body.find(node=>node.type==='ExpressionStatement'&&node.expression.type==='AssignmentExpression'&&node.expression.left.type==='MemberExpression'&&node.expression.left.object.name==='window'&&node.expression.left.property.name==='exitJumpMode');
-test('real chat reconciliation keeps 10,000 messages bounded and stable through scroll, arrival and resize', async ({ page }) => {
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  await page.setContent(`<style>
-    #messagesDisplay { height:600px; width:800px; overflow:auto; transform:scaleY(-1); overflow-anchor:none; }
-    .message-row { transform:scaleY(-1); min-height:64px; margin-top:8px; box-sizing:border-box; }
-    .message-content { display:block; white-space:normal; }
-    .date-divider { height:24px; transform:scaleY(-1); }
-  </style><div id="searchContainer"></div><div id="messagesDisplay"></div><button id="jumpModeExitBtn"><span id="jumpModeUnreadBadge"></span></button>`);
-  await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
-  await page.addScriptTag({ content: fs.readFileSync('public/js/chat_scroll.js', 'utf8').replace(/\bexport /g, '') });
-  await page.addScriptTag({ content: `
-    const messagesDisplay = document.getElementById('messagesDisplay'), searchContainer = document.getElementById('searchContainer');
-    let currentDmId = null, currentServerId = 'server', currentRoomId = 'room', currentDmParticipant = null;
-    let searchQuery = '', _searchHistoryResults = null, _searchVisibleCount = 50, isJumpView = false, isLoadingOlderMessages = false, hasMoreOlderMessages = true;
-    let allLoadedMessages = Array.from({length:10000}, (_,i)=>({id:'m'+i,text:'message '+i,senderId:'alice',timestamp:1700000000000+i}));
-    let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
-    const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
-    const _chatScroller=createChatScroller(messagesDisplay);let _activeChannelSessionId=1;
-    let _jumpGeneration=0,isLoadingJumpOlder=false,isLoadingJumpNewer=false;
-    const updateReadReceiptForCurrentUser=()=>{};
-    const getMsgTimestamp = message => message.timestamp;
-    const parseTimestampToMs = value => Number(value || 0);
-    const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
-    const compareHistoryMessages = (a,b) => a.timestamp-b.timestamp;
-    const isEncrypted = () => false;
-    const escapeHtmlAndLinkUrls = text => text;
-    const escapeHtml = text => text;
-    const computeReadByCount = () => 0;
-    const updateReactionsUI = () => {};
-    const resolveUnreadBoundaryMessageId = () => null;
-    const renderUnreadDivider = () => {};
-    function createMessageElement(message) {
-      const row=document.createElement('div');row.className='message-row';
-      const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
-      const text=document.createElement('span');text.className='message-content';text.textContent=message.text;
-      bubble.appendChild(text);row.appendChild(bubble);return row;
-    }
-    ${codeFor('virtualSpacer')}
-    ${codeFor('patchMessageHtml')}
-    ${codeFor('renderMessagesWithReadReceipts')}
-    ${codeFor('doJumpHighlight')}
-    ${codeFor('updateJumpToLatestButton')}
-    window.updateJumpToLatestButton=updateJumpToLatestButton;
-    messagesDisplay.addEventListener('scroll',updateJumpToLatestButton);
-    messagesDisplay.addEventListener('covo-scroll-settled',updateJumpToLatestButton);
-    ${main.slice(exitJumpModeNode.start,exitJumpModeNode.end)}
-    window.testJump=doJumpHighlight;
-    let _virtualRenderFrame=null;
-    ${codeFor('scheduleTimelineRender')}
-    ${codeFor('scheduleTimelineScrollRender')}
-    messagesDisplay.addEventListener('scroll',scheduleTimelineScrollRender);
-    window.testRender = renderMessagesWithReadReceipts;
-    window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
-    window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
-    window.testRender();window.testRender();
-  ` });
-  await expect(page.locator('.message-row')).toHaveCount(160);
-  for (const offset of [10000, 250000, 500000, 800000]) {
-    await page.evaluate(offset => window.testMove(offset), offset);
-    expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-    expect(await page.locator('.message-row').count()).toBeGreaterThan(0);
-  }
-  const before = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
-  await page.evaluate(() => window.testArrive());
-  const after = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
-  expect(after.id).toBe(before.id);
-  expect(after.offset).toBeGreaterThan(before.offset);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => { messagesDisplay.style.width='350px';window.testRender(); });
-  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-  expect(errors).toEqual([]);
-  // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
-  const oldMain = fs.readFileSync(require('path').join(__dirname, 'fixtures/timeline-before-virtualization.js'), 'utf8');
-  const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
-  const client = await page.context().newCDPSession(page);
-  await client.send('Performance.enable');
-  const metrics = async () => {
-    await client.send('HeapProfiler.collectGarbage');
-    const performance = await client.send('Performance.getMetrics');
-    const memory = await client.send('Memory.getDOMCounters');
-    return { heapBytes: performance.metrics.find(metric => metric.name === 'JSHeapUsedSize').value, domNodes: memory.nodes, rows: await page.locator('.message-row').count() };
-  };
-  await page.addScriptTag({ content: oldMain.slice(oldNode.start, oldNode.end) });
-  const baselineMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
-  const baseline = await metrics();
-  await page.addScriptTag({ content: codeFor('renderMessagesWithReadReceipts') });
-  const optimizedMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); _virtualTimeline.reset(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
-  const optimized = await metrics();
-  await page.evaluate(() => { for (let i = 0; i < 100; i++) { messagesDisplay.scrollTop = i % 2 ? 0 : 20000; renderMessagesWithReadReceipts(); } });
-  const repeated = await metrics();
-  expect(baseline.rows).toBe(10001);
-  expect(optimized.rows).toBeLessThanOrEqual(160);
-  expect(repeated.rows).toBeLessThanOrEqual(160);
-  expect(repeated.domNodes).toBeLessThan(baseline.domNodes / 5);
-  expect(repeated.heapBytes).toBeLessThan(optimized.heapBytes + 1024 * 1024);
-  const report = { fixture: 'Chrome on Windows, 10001 text messages, current reconciliation with mocked data services', baseline: { ...baseline, renderMs: baselineMs }, optimized: { ...optimized, renderMs: optimizedMs }, after100Scrolls: repeated };
-  fs.mkdirSync('scratch', { recursive: true });
-  fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
-  console.log(JSON.stringify(report));
-  await page.evaluate(()=>{window.renderCount=0;const render=renderMessagesWithReadReceipts;renderMessagesWithReadReceipts=function(){window.renderCount++;return render();};});
-  await page.evaluate(()=>window.testJump('m1250'));
-  await expect.poll(()=>page.evaluate(()=>{const row=document.querySelector('[data-message-id="m1250"]').closest('.message-row'),r=row.getBoundingClientRect(),c=messagesDisplay.getBoundingClientRect();return Math.abs((r.top+r.bottom-c.top-c.bottom)/2);})).toBeLessThanOrEqual(1);
-  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
-  expect(await page.evaluate(()=>window.renderCount)).toBeLessThan(12);
-  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
-  await page.evaluate(()=>window.exitJumpMode());
-  await expect.poll(()=>page.evaluate(()=>_chatScroller.running)).toBe(false);
-  expect(await page.evaluate(()=>messagesDisplay.scrollTop)).toBe(0);
-  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
-  await page.evaluate(()=>{isJumpView=true;updateJumpToLatestButton();});
-  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
-  await page.evaluate(()=>{isJumpView=false;messagesDisplay.scrollTop=60;updateJumpToLatestButton();});
-  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
-  await page.evaluate(()=>{messagesDisplay.scrollTop=0;updateJumpToLatestButton();});
-  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
-});
-for (const channel of ['server', 'dm']) {
-  test(`${channel}: cached ciphertext, textless arrivals and real decryption update existing rows`, async ({ page }) => {
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    await page.route('https://covo.test/**', route => route.fulfill({ contentType: 'text/html', body: '<div id="searchContainer"></div><div id="messagesDisplay" style="height:600px;overflow:auto"></div>' }));
-    await page.goto('https://covo.test/');
-    for (const file of ['loading_runtime.js', 'virtual_timeline.js', 'crypto_helpers.js']) {
-      await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '') });
-    }
-    await page.addScriptTag({ content: `
-      const channel = ${JSON.stringify(channel)};
-      const messagesDisplay=document.getElementById('messagesDisplay'),searchContainer=document.getElementById('searchContainer');
-      let currentDmId=channel==='dm'?'alice_bob':null,currentServerId=channel==='server'?'server':null,currentRoomId=channel==='server'?'room':null,currentDmParticipant=null;
-      let userId='alice',userNickname='Alice',cachedUsers=[],roomNames={room:'Room'},_outboxEntries=new Map(),messagesIndexMap={};
-      let searchQuery='',_searchHistoryResults=null,_searchVisibleCount=50,isJumpView=false,isLoadingOlderMessages=false,hasMoreOlderMessages=true;
-      let allLoadedMessages=[],lastMessagesData=[],jumpViewMessages=[];
-      const _virtualTimeline=new VirtualTimeline(),_virtualRowObserver=null,_attachmentResources={prune(){}};
-      const _abToB64=buffer=>btoa(String.fromCharCode(...new Uint8Array(buffer)));
-      const _b64ToAb=value=>Uint8Array.from(atob(value),character=>character.charCodeAt(0)).buffer;
-      const LocalStore={putMessage:async()=>{}},doc=(_,path)=>path;
-      const getDoc=async path=>({exists:()=>true,data:()=>path.includes('/roomKeys/')?window.wrappedKeys:{currentKeyVersion:2}});
-      const getMsgTimestamp=message=>message.timestamp,parseTimestampToMs=value=>Number(value||0),countNewerMessages=()=>0;
-      const isEncrypted=_isEncrypted,escapeHtml=text=>String(text||''),escapeHtmlAndLinkUrls=escapeHtml;
-      const computeReadByCount=()=>0,updateReactionsUI=()=>{},resolveUnreadBoundaryMessageId=()=>null,renderUnreadDivider=()=>{};
-      function createMessageElement(message){
-        const row=document.createElement('div');row.className='message-row';
-        const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
-        const text=document.createElement('span');text.className='message-content';
-        if(message.text?.startsWith('enc::')){const waiting=document.createElement('span');waiting.className='covo-msg-loading-shimmer';text.appendChild(waiting);}else text.textContent=message.text||'';
-        bubble.appendChild(text);row.appendChild(bubble);return row;
-      }
-      ${codeFor('virtualSpacer')}
-      ${codeFor('patchMessageHtml')}
-      ${codeFor('renderMessagesWithReadReceipts')}
-      initCryptoContext({getDb:()=>({}),getUserId:()=>userId,getAppId:()=>'testApp',getIsAdmin:()=>false});
-      window.exerciseEncryptedTimeline=async()=>{
-        const keys={};
-        for(const version of ['1','2'])keys[version]=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
-        const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
-        Object.assign(_e2ee,{ready:true,privateKey:pair.privateKey,publicKey:pair.publicKey});
-        const versions={};
-        for(const version of ['1','2'])versions[version]=_abToB64(await crypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,await crypto.subtle.exportKey('raw',keys[version])));
-        window.wrappedKeys={versions,latestVersion:'1'};
-        observeRoomKeyVersion('server','room',2);
-        if(channel==='dm')_e2ee.dmKeyCache.alice_bob={...keys,latest:keys['2'],latestVersion:'2'};
-        const old=await _encryptText('保存済みの本文',{latest:keys['1'],latestVersion:'1'});
-        const fresh=await _encryptText('新着の本文',{latest:keys['2'],latestVersion:'2'});
-        allLoadedMessages=[{id:'old',senderId:'alice',timestamp:1,text:old,_originalText:old,_decrypted:false}];
-        renderMessagesWithReadReceipts();
-        const incoming=[{id:'old',senderId:'alice',timestamp:1,text:old},{id:'file',senderId:'alice',timestamp:2,fileName:'file',fileData:'https://covo.test/file'},{id:'sticker',senderId:'alice',timestamp:3,sticker:'🙂'},{id:'fresh',senderId:'alice',timestamp:4,text:fresh}];
-        allLoadedMessages=mergeChannelRecords(allLoadedMessages,incoming);
-        renderMessagesWithReadReceipts();
-        if(channel==='dm')await _decryptDmMessagesInPlace(incoming,'alice_bob',['alice','bob']);
-        else await _decryptMessagesInPlace(incoming,'server','room',['alice']);
-        renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();
-        return allLoadedMessages.filter(message=>message.text).map(message=>({text:message.text,decrypted:message._decrypted}));
-      };
-    ` });
-    expect(await page.evaluate(() => window.exerciseEncryptedTimeline())).toEqual([{ text: '保存済みの本文', decrypted: true }, { text: '新着の本文', decrypted: true }]);
-    await expect(page.locator('.message-row')).toHaveCount(4);
-    await expect(page.locator('.covo-msg-loading-shimmer')).toHaveCount(0);
-    await expect(page.locator('[data-message-id="old"] .message-content')).toHaveText('保存済みの本文');
-    await expect(page.locator('[data-message-id="fresh"] .message-content')).toHaveText('新着の本文');
-    expect(errors).toEqual([]);
-  });
-}
-test('quick switcher ignores IME Enter and closes with focus restored', async ({ page }) => {
-  await page.setContent('<button id="origin">Open</button>');
-  await page.addScriptTag({ content: fs.readFileSync('public/js/navigation_ui.js', 'utf8').replace(/\bexport /g, '') + `
-    window.opened=[];
-    installNavigationUI({conversations:()=>[{id:'one',name:'# general'}],openConversation:item=>window.opened.push(item.id),openSearch(){},moveChannel(){},cancelRecording:()=>false,closeOverlay:()=>false});
-  ` });
-  await page.locator('#origin').focus();
-  await page.keyboard.press('Control+k');
-  await expect(page.locator('#quickConversationSwitcher')).toBeVisible();
-  await page.locator('#quickConversationSwitcher input').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
-  expect(await page.evaluate(() => window.opened)).toEqual([]);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0);
-  await expect(page.locator('#origin')).toBeFocused();
-});
 </file>
 
 <file path="public/css/modules/mobile.css">
@@ -15480,6 +15392,217 @@ if (typeof window !== 'undefined') {
 </html>
 </file>
 
+<file path="browser-tests/timeline.spec.cjs">
+const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const parser = require('@babel/parser');
+const main = fs.readFileSync('public/js/main.js', 'utf8');
+const ast = parser.parse(main, { sourceType: 'module' });
+const codeFor = name => {
+  const node = ast.program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
+  return main.slice(node.start, node.end);
+};
+const exitJumpModeNode=ast.program.body.find(node=>node.type==='ExpressionStatement'&&node.expression.type==='AssignmentExpression'&&node.expression.left.type==='MemberExpression'&&node.expression.left.object.name==='window'&&node.expression.left.property.name==='exitJumpMode');
+test('real chat reconciliation keeps 10,000 messages bounded and stable through scroll, arrival and resize', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setContent(`<style>
+    #messagesDisplay { height:600px; width:800px; overflow:auto; transform:scaleY(-1); overflow-anchor:none; }
+    .message-row { transform:scaleY(-1); min-height:64px; margin-top:8px; box-sizing:border-box; }
+    .message-content { display:block; white-space:normal; }
+    .date-divider { height:24px; transform:scaleY(-1); }
+  </style><div id="searchContainer"></div><div id="messagesDisplay"></div><button id="jumpModeExitBtn"><span id="jumpModeUnreadBadge"></span></button>`);
+  await page.addScriptTag({ content: fs.readFileSync('public/js/virtual_timeline.js', 'utf8').replace(/\bexport /g, '') });
+  await page.addScriptTag({ content: fs.readFileSync('public/js/chat_scroll.js', 'utf8').replace(/\bexport /g, '') });
+  await page.addScriptTag({ content: `
+    const messagesDisplay = document.getElementById('messagesDisplay'), searchContainer = document.getElementById('searchContainer');
+    let currentDmId = null, currentServerId = 'server', currentRoomId = 'room', currentDmParticipant = null;
+    let searchQuery = '', _searchHistoryResults = null, _searchVisibleCount = 50, isJumpView = false, isLoadingOlderMessages = false, hasMoreOlderMessages = true;
+    let allLoadedMessages = Array.from({length:10000}, (_,i)=>({id:'m'+i,text:'message '+i,senderId:'alice',timestamp:1700000000000+i}));
+    let jumpViewMessages = [], lastMessagesData = [], messagesIndexMap = {}, userId = 'alice', userNickname = 'Alice', cachedUsers = [], roomNames = {room:'Room'}, _outboxEntries = new Map();
+    const _virtualTimeline = new VirtualTimeline(), _virtualRowObserver = null, _attachmentResources = {prune() {}};
+    const _chatScroller=createChatScroller(messagesDisplay);let _activeChannelSessionId=1;
+    let _jumpGeneration=0,isLoadingJumpOlder=false,isLoadingJumpNewer=false;
+    const updateReadReceiptForCurrentUser=()=>{};
+    const getMsgTimestamp = message => message.timestamp;
+    const parseTimestampToMs = value => Number(value || 0);
+    const countNewerMessages = (messages,id) => {const i=messages.findIndex(m=>m.id===id);return i<0?0:messages.length-i-1};
+    const compareHistoryMessages = (a,b) => a.timestamp-b.timestamp;
+    const isEncrypted = () => false;
+    const escapeHtmlAndLinkUrls = text => text;
+    const escapeHtml = text => text;
+    const computeReadByCount = () => 0;
+    const updateReactionsUI = () => {};
+    const resolveUnreadBoundaryMessageId = () => null;
+    const renderUnreadDivider = () => {};
+    function createMessageElement(message) {
+      const row=document.createElement('div');row.className='message-row';
+      const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
+      const text=document.createElement('span');text.className='message-content';text.textContent=message.text;
+      bubble.appendChild(text);row.appendChild(bubble);return row;
+    }
+    ${codeFor('virtualSpacer')}
+    ${codeFor('patchMessageHtml')}
+    ${codeFor('renderMessagesWithReadReceipts')}
+    ${codeFor('doJumpHighlight')}
+    ${codeFor('updateJumpToLatestButton')}
+    window.updateJumpToLatestButton=updateJumpToLatestButton;
+    messagesDisplay.addEventListener('scroll',updateJumpToLatestButton);
+    messagesDisplay.addEventListener('covo-scroll-settled',updateJumpToLatestButton);
+    ${main.slice(exitJumpModeNode.start,exitJumpModeNode.end)}
+    window.testJump=doJumpHighlight;
+    let _virtualRenderFrame=null;
+    ${codeFor('scheduleTimelineRender')}
+    ${codeFor('scheduleTimelineScrollRender')}
+    messagesDisplay.addEventListener('scroll',scheduleTimelineScrollRender);
+    window.testRender = renderMessagesWithReadReceipts;
+    window.testMove = offset => { messagesDisplay.scrollTop=offset;renderMessagesWithReadReceipts();renderMessagesWithReadReceipts(); };
+    window.testArrive = () => { allLoadedMessages.push({id:'fresh',senderId:'alice',text:'new',timestamp:1800000000000});renderMessagesWithReadReceipts(); };
+    window.testRender();window.testRender();
+  ` });
+  await expect(page.locator('.message-row')).toHaveCount(160);
+  for (const offset of [10000, 250000, 500000, 800000]) {
+    await page.evaluate(offset => window.testMove(offset), offset);
+    expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+    expect(await page.locator('.message-row').count()).toBeGreaterThan(0);
+  }
+  const before = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
+  await page.evaluate(() => window.testArrive());
+  const after = await page.evaluate(() => ({ id: _virtualTimeline.ids[_virtualTimeline.indexAt(messagesDisplay.scrollTop)], offset: messagesDisplay.scrollTop }));
+  expect(after.id).toBe(before.id);
+  expect(after.offset).toBeGreaterThan(before.offset);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { messagesDisplay.style.width='350px';window.testRender(); });
+  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+  expect(errors).toEqual([]);
+  // Pin the pre-virtualization release so committing a newer release cannot change the baseline.
+  const oldMain = fs.readFileSync(require('path').join(__dirname, 'fixtures/timeline-before-virtualization.js'), 'utf8');
+  const oldNode = parser.parse(oldMain, { sourceType: 'module' }).program.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'renderMessagesWithReadReceipts');
+  const client = await page.context().newCDPSession(page);
+  await client.send('Performance.enable');
+  const metrics = async () => {
+    await client.send('HeapProfiler.collectGarbage');
+    const performance = await client.send('Performance.getMetrics');
+    const memory = await client.send('Memory.getDOMCounters');
+    return { heapBytes: performance.metrics.find(metric => metric.name === 'JSHeapUsedSize').value, domNodes: memory.nodes, rows: await page.locator('.message-row').count() };
+  };
+  await page.addScriptTag({ content: oldMain.slice(oldNode.start, oldNode.end) });
+  const baselineMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
+  const baseline = await metrics();
+  await page.addScriptTag({ content: codeFor('renderMessagesWithReadReceipts') });
+  const optimizedMs = await page.evaluate(() => { messagesDisplay.replaceChildren(); _virtualTimeline.reset(); messagesDisplay.scrollTop = 0; const start = performance.now(); renderMessagesWithReadReceipts(); return performance.now() - start; });
+  const optimized = await metrics();
+  await page.evaluate(() => { for (let i = 0; i < 100; i++) { messagesDisplay.scrollTop = i % 2 ? 0 : 20000; renderMessagesWithReadReceipts(); } });
+  const repeated = await metrics();
+  expect(baseline.rows).toBe(10001);
+  expect(optimized.rows).toBeLessThanOrEqual(160);
+  expect(repeated.rows).toBeLessThanOrEqual(160);
+  expect(repeated.domNodes).toBeLessThan(baseline.domNodes / 5);
+  expect(repeated.heapBytes).toBeLessThan(optimized.heapBytes + 1024 * 1024);
+  const report = { fixture: 'Chrome on Windows, 10001 text messages, current reconciliation with mocked data services', baseline: { ...baseline, renderMs: baselineMs }, optimized: { ...optimized, renderMs: optimizedMs }, after100Scrolls: repeated };
+  fs.mkdirSync('scratch', { recursive: true });
+  fs.writeFileSync('scratch/timeline-performance.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+  await page.evaluate(()=>{window.renderCount=0;const render=renderMessagesWithReadReceipts;renderMessagesWithReadReceipts=function(){window.renderCount++;return render();};});
+  await page.evaluate(()=>window.testJump('m1250'));
+  await expect.poll(()=>page.evaluate(()=>{const row=document.querySelector('[data-message-id="m1250"]').closest('.message-row'),r=row.getBoundingClientRect(),c=messagesDisplay.getBoundingClientRect();return Math.abs((r.top+r.bottom-c.top-c.bottom)/2);})).toBeLessThanOrEqual(1);
+  expect(await page.locator('.message-row').count()).toBeLessThanOrEqual(160);
+  expect(await page.evaluate(()=>window.renderCount)).toBeLessThan(12);
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>window.exitJumpMode());
+  await expect.poll(()=>page.evaluate(()=>_chatScroller.running)).toBe(false);
+  expect(await page.evaluate(()=>messagesDisplay.scrollTop)).toBe(0);
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
+  await page.evaluate(()=>{isJumpView=true;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>{isJumpView=false;messagesDisplay.scrollTop=60;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','false');
+  await page.evaluate(()=>{messagesDisplay.scrollTop=0;updateJumpToLatestButton();});
+  await expect(page.locator('#jumpModeExitBtn')).toHaveAttribute('aria-hidden','true');
+});
+for (const channel of ['server', 'dm']) {
+  test(`${channel}: cached ciphertext, textless arrivals and real decryption update existing rows`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://covo.test/**', route => route.fulfill({ contentType: 'text/html', body: '<div id="searchContainer"></div><div id="messagesDisplay" style="height:600px;overflow:auto"></div>' }));
+    await page.goto('https://covo.test/');
+    for (const file of ['loading_runtime.js', 'virtual_timeline.js', 'crypto_helpers.js']) {
+      await page.addScriptTag({ content: fs.readFileSync('public/js/' + file, 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '') });
+    }
+    await page.addScriptTag({ content: `
+      const channel = ${JSON.stringify(channel)};
+      const messagesDisplay=document.getElementById('messagesDisplay'),searchContainer=document.getElementById('searchContainer');
+      let currentDmId=channel==='dm'?'alice_bob':null,currentServerId=channel==='server'?'server':null,currentRoomId=channel==='server'?'room':null,currentDmParticipant=null;
+      let userId='alice',userNickname='Alice',cachedUsers=[],roomNames={room:'Room'},_outboxEntries=new Map(),messagesIndexMap={};
+      let searchQuery='',_searchHistoryResults=null,_searchVisibleCount=50,isJumpView=false,isLoadingOlderMessages=false,hasMoreOlderMessages=true;
+      let allLoadedMessages=[],lastMessagesData=[],jumpViewMessages=[];
+      const _virtualTimeline=new VirtualTimeline(),_virtualRowObserver=null,_attachmentResources={prune(){}};
+      const _abToB64=buffer=>btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const _b64ToAb=value=>Uint8Array.from(atob(value),character=>character.charCodeAt(0)).buffer;
+      const LocalStore={putMessage:async()=>{}},doc=(_,path)=>path;
+      const getDoc=async path=>({exists:()=>true,data:()=>path.includes('/roomKeys/')?window.wrappedKeys:{currentKeyVersion:2}});
+      const getMsgTimestamp=message=>message.timestamp,parseTimestampToMs=value=>Number(value||0),countNewerMessages=()=>0;
+      const isEncrypted=_isEncrypted,escapeHtml=text=>String(text||''),escapeHtmlAndLinkUrls=escapeHtml;
+      const computeReadByCount=()=>0,updateReactionsUI=()=>{},resolveUnreadBoundaryMessageId=()=>null,renderUnreadDivider=()=>{};
+      function createMessageElement(message){
+        const row=document.createElement('div');row.className='message-row';
+        const bubble=document.createElement('div');bubble.className='message-bubble';bubble.dataset.messageId=message.id;
+        const text=document.createElement('span');text.className='message-content';
+        if(message.text?.startsWith('enc::')){const waiting=document.createElement('span');waiting.className='covo-msg-loading-shimmer';text.appendChild(waiting);}else text.textContent=message.text||'';
+        bubble.appendChild(text);row.appendChild(bubble);return row;
+      }
+      ${codeFor('virtualSpacer')}
+      ${codeFor('patchMessageHtml')}
+      ${codeFor('renderMessagesWithReadReceipts')}
+      initCryptoContext({getDb:()=>({}),getUserId:()=>userId,getAppId:()=>'testApp',getIsAdmin:()=>false});
+      window.exerciseEncryptedTimeline=async()=>{
+        const keys={};
+        for(const version of ['1','2'])keys[version]=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+        const pair=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+        Object.assign(_e2ee,{ready:true,privateKey:pair.privateKey,publicKey:pair.publicKey});
+        const versions={};
+        for(const version of ['1','2'])versions[version]=_abToB64(await crypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,await crypto.subtle.exportKey('raw',keys[version])));
+        window.wrappedKeys={versions,latestVersion:'1'};
+        observeRoomKeyVersion('server','room',2);
+        if(channel==='dm')_e2ee.dmKeyCache.alice_bob={...keys,latest:keys['2'],latestVersion:'2'};
+        const old=await _encryptText('保存済みの本文',{latest:keys['1'],latestVersion:'1'});
+        const fresh=await _encryptText('新着の本文',{latest:keys['2'],latestVersion:'2'});
+        allLoadedMessages=[{id:'old',senderId:'alice',timestamp:1,text:old,_originalText:old,_decrypted:false}];
+        renderMessagesWithReadReceipts();
+        const incoming=[{id:'old',senderId:'alice',timestamp:1,text:old},{id:'file',senderId:'alice',timestamp:2,fileName:'file',fileData:'https://covo.test/file'},{id:'sticker',senderId:'alice',timestamp:3,sticker:'🙂'},{id:'fresh',senderId:'alice',timestamp:4,text:fresh}];
+        allLoadedMessages=mergeChannelRecords(allLoadedMessages,incoming);
+        renderMessagesWithReadReceipts();
+        if(channel==='dm')await _decryptDmMessagesInPlace(incoming,'alice_bob',['alice','bob']);
+        else await _decryptMessagesInPlace(incoming,'server','room',['alice']);
+        renderMessagesWithReadReceipts();renderMessagesWithReadReceipts();
+        return allLoadedMessages.filter(message=>message.text).map(message=>({text:message.text,decrypted:message._decrypted}));
+      };
+    ` });
+    expect(await page.evaluate(() => window.exerciseEncryptedTimeline())).toEqual([{ text: '保存済みの本文', decrypted: true }, { text: '新着の本文', decrypted: true }]);
+    await expect(page.locator('.message-row')).toHaveCount(4);
+    await expect(page.locator('.covo-msg-loading-shimmer')).toHaveCount(0);
+    await expect(page.locator('[data-message-id="old"] .message-content')).toHaveText('保存済みの本文');
+    await expect(page.locator('[data-message-id="fresh"] .message-content')).toHaveText('新着の本文');
+    expect(errors).toEqual([]);
+  });
+}
+test('quick switcher ignores IME Enter and closes with focus restored', async ({ page }) => {
+  await page.setContent('<button id="origin">Open</button>');
+  await page.addScriptTag({ content: fs.readFileSync('public/js/navigation_ui.js', 'utf8').replace(/\bexport /g, '') + `
+    window.opened=[];
+    installNavigationUI({conversations:()=>[{id:'one',name:'# general'}],openConversation:item=>window.opened.push(item.id),openSearch(){},moveChannel(){},cancelRecording:()=>false,closeOverlay:()=>false});
+  ` });
+  await page.locator('#origin').focus();
+  await page.keyboard.press('Control+k');
+  await expect(page.locator('#quickConversationSwitcher')).toBeVisible();
+  await page.locator('#quickConversationSwitcher input').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
+  expect(await page.evaluate(() => window.opened)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#quickConversationSwitcher')).toHaveCount(0);
+  await expect(page.locator('#origin')).toBeFocused();
+});
+</file>
+
 <file path="public/css/modules/theme.css">
 /* ===== カスタムスクロールバー（全要素共通・矢印ボタン完全非表示）===== */
     * {
@@ -17789,386 +17912,6 @@ if (typeof window !== 'undefined') {
 }
 </file>
 
-<file path="public/firebase-messaging-sw.js">
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-const firebaseConfig = {
-  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
-  authDomain: "simplechat-65a0d.firebaseapp.com",
-  projectId: "simplechat-65a0d",
-  storageBucket: "simplechat-65a0d.firebasestorage.app",
-  messagingSenderId: "611067360180",
-  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
-};
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-// ─── SW内キャッシュ ───────────────────────────────────────────
-// メインスクリプトから postMessage で受け取る
-self._cachedUserId  = null;
-self._cachedAppId   = null;
-self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
-self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
-self._notifEnabled  = true; // 通知トグル状態
-// Persist only the account binding, never its auth token. SW globals disappear on suspension.
-let _bindingRevision = 0;
-let _bindingWrites = Promise.resolve();
-let _lastBinding = null;
-const _bindingReady = caches.open('covo_push_binding_v1').then(cache => cache.match('/__covo_push_binding__')).then(response => response ? response.json() : null).then(binding => {
-  if (_bindingRevision === 0) { self._cachedUserId = binding?.userId || null; self._notifEnabled = binding?.notifEnabled !== false; _lastBinding = JSON.stringify({ userId: self._cachedUserId, notifEnabled: self._notifEnabled }); }
-}).catch(() => {});
-function savePushBinding(userId) {
-  _bindingRevision++;
-  const binding = { userId: userId || null, notifEnabled: self._notifEnabled };
-  _bindingWrites = _bindingWrites.catch(() => {}).then(async () => {
-    const encoded = JSON.stringify(binding);
-    if (_lastBinding === encoded) return;
-    const cache = await caches.open('covo_push_binding_v1');
-    await cache.put('/__covo_push_binding__', new Response(encoded, { headers: { 'Content-Type': 'application/json' } }));
-    _lastBinding = encoded;
-  });
-  return _bindingWrites.catch(() => {});
-}
-async function notificationBelongsToCurrentAccount(data) {
-  await _bindingReady; await _bindingWrites.catch(() => {});
-  return Boolean(self._cachedUserId && data.ownerId === self._cachedUserId);
-}
-// 重複通知防止キャッシュ (iOS PWA多重受信防止・30秒ウィンドウ)
-const _recentNotifs = new Map();
-function _isDuplicate(key) {
-  const now = Date.now();
-  for (const [k, time] of _recentNotifs.entries()) {
-    if (now - time > 30000) _recentNotifs.delete(k);
-  }
-  if (_recentNotifs.has(key)) return true;
-  _recentNotifs.set(key, now);
-  return false;
-}
-// ─── postMessage受信 ────────────────────────────────────────────
-self.addEventListener('message', (event) => {
-  if (!event.data) return;
-  switch (event.data.type) {
-    case 'SET_NOTIF_ENABLED':
-      self._notifEnabled = event.data.enabled !== false;
-      event.waitUntil(savePushBinding(self._cachedUserId));
-      break;
-    case 'SET_USER_ID':
-      self._cachedUserId  = event.data.userId  || null;
-      self._cachedAppId   = event.data.appId   || null;
-      self._cachedIdToken = event.data.idToken || null;
-      if (typeof event.data.notifEnabled === 'boolean') {
-        self._notifEnabled = event.data.notifEnabled;
-      }
-      event.waitUntil(savePushBinding(self._cachedUserId));
-      break;
-    case 'CLEAR_USER_ID':
-      self._cachedUserId  = null;
-      self._cachedAppId   = null;
-      self._cachedIdToken = null;
-      self._badgeCount    = 0;
-      event.waitUntil(savePushBinding(null));
-      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
-      break;
-    case 'CACHE_AUTH_TOKEN':
-      if (!self._cachedUserId || event.data.userId !== self._cachedUserId) break;
-      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
-      // クライアントが死んでもSW側からofflineビーコンを送れる
-      self._cachedIdToken = event.data.idToken || null;
-      self._cachedAppId   = event.data.appId   || self._cachedAppId;
-      self._cachedUserId  = event.data.userId  || self._cachedUserId;
-      break;
-    case 'CLEAR_BADGE':
-      self._badgeCount = 0;
-      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
-        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
-      }
-      break;
-    case 'SET_BADGE_COUNT':
-      self._badgeCount = event.data.count || 0;
-      _updateBadge();
-      break;
-  }
-});
-// バッジを更新するヘルパー
-function _updateBadge() {
-  try {
-    if (self._badgeCount > 0) {
-      if ('setAppBadge' in self.navigator) {
-        navigator.setAppBadge(self._badgeCount).catch(() => {});
-      } else if ('setAppBadge' in self) {
-        self.setAppBadge(self._badgeCount).catch(() => {});
-      }
-    } else {
-      if ('clearAppBadge' in self.navigator) {
-        navigator.clearAppBadge().catch(() => {});
-      } else if ('clearAppBadge' in self) {
-        self.clearAppBadge().catch(() => {});
-      }
-    }
-  } catch (_) {}
-}
-// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
-async function _sendOfflineIfNoClients() {
-  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
-  try {
-    const claims = JSON.parse(atob(self._cachedIdToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    if (claims.sub !== self._cachedUserId || !(claims.exp * 1000 > Date.now() + 5000)) return;
-  } catch (_) { return; }
-  try {
-    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
-    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
-    if (clientList.length === 0) {
-      const data = JSON.stringify({
-        userId: self._cachedUserId,
-        appId:  self._cachedAppId,
-        idToken: self._cachedIdToken,
-        clientProtocol: 2
-      });
-      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: data,
-        keepalive: true
-      }).catch(() => {});
-      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
-    }
-  } catch (e) {
-    console.warn('[SW] _sendOfflineIfNoClients error:', e);
-  }
-}
-// ─── バックグラウンドメッセージ処理 ────────────────────────────
-messaging.onBackgroundMessage(async (payload) => {
-  if (!await notificationBelongsToCurrentAccount(payload.data || {})) return;
-  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました');
-  let title = 'Covo';
-  let body  = '新しいメッセージがあります';
-  let data  = {};
-  if (payload.data) {
-    title = payload.data.title || title;
-    body  = payload.data.body  || body;
-    data  = payload.data;
-  }
-  if (payload.notification) {
-    title = payload.notification.title || title;
-    body  = payload.notification.body  || body;
-  }
-  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
-  if (typeof body === 'string') {
-    if (body.includes('enc::v') || body.startsWith('enc::')) {
-      if (body.includes(': enc::') || body.includes(':enc::')) {
-        const senderPart = body.split(/:\s*enc::/)[0];
-        body = `${senderPart}: 新着メッセージがあります`;
-      } else {
-        body = '新着メッセージがあります';
-      }
-    }
-  }
-  if (typeof title === 'string') {
-    if (title.includes('enc::v') || title.startsWith('enc::')) {
-      title = 'Covo';
-    } else if (title.startsWith('ダイレクトメッセージ › @')) {
-      title = title.replace('ダイレクトメッセージ › @', '');
-    }
-  }
-  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
-  if (typeof body === 'string') {
-    function _swFormatContent(s) {
-      if (!s || typeof s !== 'string') return '新着メッセージがあります';
-      const trimmed = s.trim();
-      if (
-        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
-        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
-        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
-      ) {
-        return '[スタンプ]';
-      }
-      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
-        return '📷 [写真]';
-      }
-      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
-        return '🎥 [動画]';
-      }
-      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
-        return '🎤 [ボイスメッセージ]';
-      }
-      if (
-        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
-        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
-        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
-      ) {
-        return '📎 [ファイル]';
-      }
-      return trimmed;
-    }
-    const colonIdx = body.indexOf(': ');
-    if (colonIdx !== -1) {
-      const senderPart = body.substring(0, colonIdx);
-      const rest = body.substring(colonIdx + 2);
-      body = `${senderPart}: ${_swFormatContent(rest)}`;
-    } else {
-      body = _swFormatContent(body);
-    }
-  }
-  // 自分が送ったメッセージへの通知はスキップ
-  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
-    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
-    return;
-  }
-  // 通知設定がオフならスキップ
-  if (self._notifEnabled === false) {
-    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
-    return;
-  }
-  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
-  const dedupKey = (data.type === 'incoming_call' && data.callId)
-    ? `call-${data.callId}`
-    : (data.messageId
-      ? `msg-${data.messageId}`
-      : `${data.roomId || 'covo'}_${title}_${body}`);
-  if (_isDuplicate(dedupKey)) {
-    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
-    return;
-  }
-  // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
-  if (data.type !== 'incoming_call') {
-    let hasActiveAppWindow = false;
-    try {
-      const appClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-      hasActiveAppWindow = appClients.some(c => c.url && c.url.startsWith(self.location.origin) && (c.focused || c.visibilityState === 'visible'));
-    } catch (_) {}
-    // 画面が見えている/フォーカス中なら画面側(アプリ内トースト)に任せ、SW通知・バッジ加算は行わない
-    if (hasActiveAppWindow) {
-      console.log('🔔 [バックグラウンド] アプリウィンドウが表示中のためSW通知表示を抑制しました');
-      return;
-    }
-  }
-  // バッジ更新（未読+1）
-  self._badgeCount = (self._badgeCount || 0) + 1;
-  _updateBadge();
-  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
-  _sendOfflineIfNoClients();
-  let notificationOptions;
-  if (data.type === 'incoming_call') {
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag: `call-${data.callId || 'covo-call'}`,
-      requireInteraction: true,
-      data,
-      actions: [
-        { action: 'accept',  title: '応答' },
-        { action: 'decline', title: '拒否'  }
-      ]
-    };
-  } else {
-    // 画面側の Web Notification（tag: chat-{roomId}）と同じタグに揃え、OS側でも同一ルームの通知を1件に集約する
-    const tag = data.roomId
-      ? `chat-${data.roomId}`
-      : (data.messageId ? `msg-${data.messageId}` : 'chat-covo');
-    notificationOptions = {
-      body,
-      icon: '/img/icon-192x192.png?v=6',
-      badge: '/img/icon-192x192.png?v=6',
-      tag,
-      data,
-      requireInteraction: false,
-      actions: [
-        { action: 'open', title: '開く' }
-      ]
-    };
-  }
-  if (data.ownerId !== self._cachedUserId) return;
-  const showPromise = self.registration.showNotification(title, notificationOptions);
-  return showPromise;
-  });
-// ─── 通知クリック ───────────────────────────────────────────────
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  // バッジをクリア（通知タップでアイコンの赤マークを消す）
-  self._badgeCount = 0;
-  _updateBadge();
-  const data   = event.notification.data || {};
-  const action = event.action;
-  const urlToOpen = self.location.origin + '/?ownerId=' + encodeURIComponent(data.ownerId || '');
-  // 着信「拒否」アクション
-  if (data.type === 'incoming_call' && action === 'decline') {
-    event.waitUntil(
-      notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : []).then((clientList) => {
-        if (data.ownerId !== self._cachedUserId) return;
-        for (const client of clientList) {
-          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
-            return;
-          }
-        }
-      })
-    );
-    return;
-  }
-  event.waitUntil(
-    notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : null).then((clientList) => {
-      if (!clientList || data.ownerId !== self._cachedUserId) return;
-      // 既存のウィンドウがあればフォーカス
-      for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-          return client.focus();
-        }
-      }
-      // なければ新しく開く（通知対象のURLパラメータを付与して直接遷移可能にする）
-      if (clients.openWindow) {
-        let launchUrl = urlToOpen;
-        if (data.callId) {
-          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `callId=${encodeURIComponent(data.callId)}`;
-        } else if (data.roomId) {
-          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `roomId=${encodeURIComponent(data.roomId)}` + (data.serverId ? `&serverId=${encodeURIComponent(data.serverId)}` : '');
-        }
-        return clients.openWindow(launchUrl).then(client => {
-          if (client && 'focus' in client) {
-             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
-             return client.focus();
-          }
-        });
-      }
-    })
-  );
-});
-</file>
-
-<file path="public/recovery.html">
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>Covo - リカバリーパネル</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/main.css">
-  <script src="js/viewport_runtime.js" async></script>
-</head>
-<body class="covo-recovery-page">
-  <script>try { const theme=localStorage.getItem('covo_app_theme')||(localStorage.getItem('covo_dark_server')==='true'?'dark-navy':'light'); if(['dark-navy','dark','discord-dark'].includes(theme))document.body.classList.add('dark-server-theme'); } catch(_) {}</script>
-  <main class="covo-recovery-shell">
-    <header><p class="covo-recovery-eyebrow">Covo サポート</p><h1>リカバリーパネル</h1><p>状況を確認して、必要な操作だけを実行できます。暗号鍵・メッセージ履歴・送信待ちは削除しません。</p></header>
-    <div id="recoveryStatus" class="covo-recovery-status" role="status" aria-live="polite">診断を開始するか、修復する操作を選んでください。</div>
-    <section class="covo-recovery-actions" aria-label="復旧操作">
-      <article><h2>端末の状態を確認</h2><p>保存領域と画面のサイズを端末内で確認します。サーバーへのテスト通信は行いません。</p><button class="covo-button covo-button-secondary" data-action="inspect">診断する</button></article>
-      <article><h2>表示・接続を修復</h2><p>一時的な読み込み失敗の記録を解除し、開いている会話を履歴を保持して再接続します。</p><button class="covo-button covo-button-secondary" data-action="repair">修復を実行</button></article>
-      <article><h2>最新版を確認</h2><p>Windows版はメイン画面で署名付き更新を確認します。適用の前に通話や送信待ちを確認できます。</p><button class="covo-button covo-button-secondary" data-action="update">更新を確認</button></article>
-      <article><h2>診断結果を共有</h2><p>表示した診断結果をコピーできます。本文・暗号鍵・アカウントIDは含みません。</p><button class="covo-button covo-button-secondary" data-action="copy">診断をコピー</button></article>
-    </section>
-    <section class="covo-recovery-results"><h2>診断結果</h2><pre id="recoveryReport" tabindex="0">まだ診断していません。</pre></section>
-    <section class="covo-recovery-results"><h2>対応しているWindows版</h2><p>正式公開版の署名付きインストーラーだけを選択できます。旧通信方式のバージョンには戻せません。</p><div id="recoveryReleases"></div><button class="covo-button covo-button-secondary" data-action="releases">バージョン一覧を表示</button></section>
-    <footer><button class="covo-button" data-action="return">アプリへ戻る</button><button class="covo-button covo-button-secondary" data-action="logs">ログフォルダ</button><button class="covo-button covo-button-secondary" data-action="quit">アプリを終了</button></footer>
-  </main>
-  <script type="module" src="js/recovery_panel.js"></script>
-</body>
-</html>
-</file>
-
 <file path="public/js/local_store.js">
 /**
  * Covo Local-first Storage Engine (local_store.js)
@@ -18944,6 +18687,386 @@ if (typeof window !== 'undefined') {
     clearAllLocalData
   };
 }
+</file>
+
+<file path="public/firebase-messaging-sw.js">
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
+const firebaseConfig = {
+  apiKey: "AIzaSyDxGdHwHnJYhBErKcQHZs0H9JpwcSN-huY",
+  authDomain: "simplechat-65a0d.firebaseapp.com",
+  projectId: "simplechat-65a0d",
+  storageBucket: "simplechat-65a0d.firebasestorage.app",
+  messagingSenderId: "611067360180",
+  appId: "1:611067360180:web:5c43144af3ccc4988878e1"
+};
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+// ─── SW内キャッシュ ───────────────────────────────────────────
+// メインスクリプトから postMessage で受け取る
+self._cachedUserId  = null;
+self._cachedAppId   = null;
+self._cachedIdToken = null; // Offlineビーコン送信用（iOS対策）
+self._badgeCount    = 0;    // アプリアイコンバッジの未読カウント
+self._notifEnabled  = true; // 通知トグル状態
+// Persist only the account binding, never its auth token. SW globals disappear on suspension.
+let _bindingRevision = 0;
+let _bindingWrites = Promise.resolve();
+let _lastBinding = null;
+const _bindingReady = caches.open('covo_push_binding_v1').then(cache => cache.match('/__covo_push_binding__')).then(response => response ? response.json() : null).then(binding => {
+  if (_bindingRevision === 0) { self._cachedUserId = binding?.userId || null; self._notifEnabled = binding?.notifEnabled !== false; _lastBinding = JSON.stringify({ userId: self._cachedUserId, notifEnabled: self._notifEnabled }); }
+}).catch(() => {});
+function savePushBinding(userId) {
+  _bindingRevision++;
+  const binding = { userId: userId || null, notifEnabled: self._notifEnabled };
+  _bindingWrites = _bindingWrites.catch(() => {}).then(async () => {
+    const encoded = JSON.stringify(binding);
+    if (_lastBinding === encoded) return;
+    const cache = await caches.open('covo_push_binding_v1');
+    await cache.put('/__covo_push_binding__', new Response(encoded, { headers: { 'Content-Type': 'application/json' } }));
+    _lastBinding = encoded;
+  });
+  return _bindingWrites.catch(() => {});
+}
+async function notificationBelongsToCurrentAccount(data) {
+  await _bindingReady; await _bindingWrites.catch(() => {});
+  return Boolean(self._cachedUserId && data.ownerId === self._cachedUserId);
+}
+// 重複通知防止キャッシュ (iOS PWA多重受信防止・30秒ウィンドウ)
+const _recentNotifs = new Map();
+function _isDuplicate(key) {
+  const now = Date.now();
+  for (const [k, time] of _recentNotifs.entries()) {
+    if (now - time > 30000) _recentNotifs.delete(k);
+  }
+  if (_recentNotifs.has(key)) return true;
+  _recentNotifs.set(key, now);
+  return false;
+}
+// ─── postMessage受信 ────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+  switch (event.data.type) {
+    case 'SET_NOTIF_ENABLED':
+      self._notifEnabled = event.data.enabled !== false;
+      event.waitUntil(savePushBinding(self._cachedUserId));
+      break;
+    case 'SET_USER_ID':
+      self._cachedUserId  = event.data.userId  || null;
+      self._cachedAppId   = event.data.appId   || null;
+      self._cachedIdToken = event.data.idToken || null;
+      if (typeof event.data.notifEnabled === 'boolean') {
+        self._notifEnabled = event.data.notifEnabled;
+      }
+      event.waitUntil(savePushBinding(self._cachedUserId));
+      break;
+    case 'CLEAR_USER_ID':
+      self._cachedUserId  = null;
+      self._cachedAppId   = null;
+      self._cachedIdToken = null;
+      self._badgeCount    = 0;
+      event.waitUntil(savePushBinding(null));
+      console.log('⚙️ [バックグラウンド] ユーザーのキャッシュを消去しました');
+      break;
+    case 'CACHE_AUTH_TOKEN':
+      if (!self._cachedUserId || event.data.userId !== self._cachedUserId) break;
+      // iOS対策: visibilitychange:hidden 時にトークンをSWに預けておく
+      // クライアントが死んでもSW側からofflineビーコンを送れる
+      self._cachedIdToken = event.data.idToken || null;
+      self._cachedAppId   = event.data.appId   || self._cachedAppId;
+      self._cachedUserId  = event.data.userId  || self._cachedUserId;
+      break;
+    case 'CLEAR_BADGE':
+      self._badgeCount = 0;
+      if ('clearAppBadge' in self.navigator || 'clearAppBadge' in self) {
+        try { (navigator.clearAppBadge || self.clearAppBadge).call(navigator || self).catch(() => {}); } catch(_) {}
+      }
+      break;
+    case 'SET_BADGE_COUNT':
+      self._badgeCount = event.data.count || 0;
+      _updateBadge();
+      break;
+  }
+});
+// バッジを更新するヘルパー
+function _updateBadge() {
+  try {
+    if (self._badgeCount > 0) {
+      if ('setAppBadge' in self.navigator) {
+        navigator.setAppBadge(self._badgeCount).catch(() => {});
+      } else if ('setAppBadge' in self) {
+        self.setAppBadge(self._badgeCount).catch(() => {});
+      }
+    } else {
+      if ('clearAppBadge' in self.navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      } else if ('clearAppBadge' in self) {
+        self.clearAppBadge().catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+// iOS対策: クライアントが応答しているか確認し、いなければofflineビーコン送信
+async function _sendOfflineIfNoClients() {
+  if (!self._cachedUserId || !self._cachedAppId || !self._cachedIdToken) return;
+  try {
+    const claims = JSON.parse(atob(self._cachedIdToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (claims.sub !== self._cachedUserId || !(claims.exp * 1000 > Date.now() + 5000)) return;
+  } catch (_) { return; }
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // すべてのウィンドウが閉じられている（clientList.length === 0）場合のみオフライン化
+    // ※タブがバックグラウンド待機中（非表示）の時にメッセージを受信して勝手にオフライン化されるのを防止
+    if (clientList.length === 0) {
+      const data = JSON.stringify({
+        userId: self._cachedUserId,
+        appId:  self._cachedAppId,
+        idToken: self._cachedIdToken,
+        clientProtocol: 2
+      });
+      fetch('https://simplechat-api.astro-fray-server.workers.dev/api/setOffline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: data,
+        keepalive: true
+      }).catch(() => {});
+      console.log('⚙️ [バックグラウンド] アプリウィンドウが閉じられたため、オフライン状態をサーバーに送信しました');
+    }
+  } catch (e) {
+    console.warn('[SW] _sendOfflineIfNoClients error:', e);
+  }
+}
+// ─── バックグラウンドメッセージ処理 ────────────────────────────
+messaging.onBackgroundMessage(async (payload) => {
+  if (!await notificationBelongsToCurrentAccount(payload.data || {})) return;
+  console.log('🔔 [バックグラウンド] プッシュ通知を受信しました');
+  let title = 'Covo';
+  let body  = '新しいメッセージがあります';
+  let data  = {};
+  if (payload.data) {
+    title = payload.data.title || title;
+    body  = payload.data.body  || body;
+    data  = payload.data;
+  }
+  if (payload.notification) {
+    title = payload.notification.title || title;
+    body  = payload.notification.body  || body;
+  }
+  // 暗号文が来たら汎用文言に置き換え（SW は鍵を持たない・送信者プレフィックス付き暗号文にも対応）
+  if (typeof body === 'string') {
+    if (body.includes('enc::v') || body.startsWith('enc::')) {
+      if (body.includes(': enc::') || body.includes(':enc::')) {
+        const senderPart = body.split(/:\s*enc::/)[0];
+        body = `${senderPart}: 新着メッセージがあります`;
+      } else {
+        body = '新着メッセージがあります';
+      }
+    }
+  }
+  if (typeof title === 'string') {
+    if (title.includes('enc::v') || title.startsWith('enc::')) {
+      title = 'Covo';
+    } else if (title.startsWith('ダイレクトメッセージ › @')) {
+      title = title.replace('ダイレクトメッセージ › @', '');
+    }
+  }
+  // スタンプ/添付ファイルのURLを可読テキストに変換（Discord & LINE 準拠）
+  if (typeof body === 'string') {
+    function _swFormatContent(s) {
+      if (!s || typeof s !== 'string') return '新着メッセージがあります';
+      const trimmed = s.trim();
+      if (
+        trimmed.includes('[STAMP]') || trimmed.includes('/stamps/') ||
+        trimmed.includes('covo:') || trimmed.includes('covonew:') || trimmed.includes('serverstamp:') ||
+        trimmed.startsWith('スタンプ') || trimmed === '🌟 スタンプ' || trimmed === '[スタンプ]'
+      ) {
+        return '[スタンプ]';
+      }
+      if (/\.(jpg|jpeg|png|gif|webp|heic|svg)/i.test(trimmed) || trimmed === '（画像）' || trimmed === '[画像]') {
+        return '📷 [写真]';
+      }
+      if (/\.(mp4|mov|webm|avi|m4v)/i.test(trimmed) || trimmed === '（動画）' || trimmed === '[動画]') {
+        return '🎥 [動画]';
+      }
+      if (/\.(mp3|wav|ogg|m4a|aac)/i.test(trimmed) || trimmed === '（音声）' || trimmed === '[ボイスメッセージ]') {
+        return '🎤 [ボイスメッセージ]';
+      }
+      if (
+        trimmed.includes('firebase-storage') || trimmed.includes('cloudinary') ||
+        trimmed.includes('r2.cloudflarestorage') || trimmed.includes('/api/file/') ||
+        trimmed === '（ファイル）' || /\.(pdf|zip|txt|docx?|xlsx?)/i.test(trimmed)
+      ) {
+        return '📎 [ファイル]';
+      }
+      return trimmed;
+    }
+    const colonIdx = body.indexOf(': ');
+    if (colonIdx !== -1) {
+      const senderPart = body.substring(0, colonIdx);
+      const rest = body.substring(colonIdx + 2);
+      body = `${senderPart}: ${_swFormatContent(rest)}`;
+    } else {
+      body = _swFormatContent(body);
+    }
+  }
+  // 自分が送ったメッセージへの通知はスキップ
+  if (self._cachedUserId && data.senderId && data.senderId === self._cachedUserId) {
+    console.log('🔔 [バックグラウンド] 自分自身のメッセージのため通知表示をスキップしました');
+    return;
+  }
+  // 通知設定がオフならスキップ
+  if (self._notifEnabled === false) {
+    console.log('🔔 [バックグラウンド] 通知設定がOFFのため通知をスキップしました');
+    return;
+  }
+  // 重複通知チェック (同一メッセージや同一着信・同一内容の多重表示防止)
+  const dedupKey = (data.type === 'incoming_call' && data.callId)
+    ? `call-${data.callId}`
+    : (data.messageId
+      ? `msg-${data.messageId}`
+      : `${data.roomId || 'covo'}_${title}_${body}`);
+  if (_isDuplicate(dedupKey)) {
+    console.log('🔔 [バックグラウンド] 重複通知を検知したため表示を抑制しました:', dedupKey);
+    return;
+  }
+  // 🌟 アプリのウィンドウ（タブ）が開いている場合、メッセージ通知は画面側のリスナーが表示するためSW側の重複表示を抑制
+  if (data.type !== 'incoming_call') {
+    let hasActiveAppWindow = false;
+    try {
+      const appClients = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      hasActiveAppWindow = appClients.some(c => c.url && c.url.startsWith(self.location.origin) && (c.focused || c.visibilityState === 'visible'));
+    } catch (_) {}
+    // 画面が見えている/フォーカス中なら画面側(アプリ内トースト)に任せ、SW通知・バッジ加算は行わない
+    if (hasActiveAppWindow) {
+      console.log('🔔 [バックグラウンド] アプリウィンドウが表示中のためSW通知表示を抑制しました');
+      return;
+    }
+  }
+  // バッジ更新（未読+1）
+  self._badgeCount = (self._badgeCount || 0) + 1;
+  _updateBadge();
+  // iOS対策: push受信時にアクティブクライアントがなければofflineビーコン送信
+  _sendOfflineIfNoClients();
+  let notificationOptions;
+  if (data.type === 'incoming_call') {
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag: `call-${data.callId || 'covo-call'}`,
+      requireInteraction: true,
+      data,
+      actions: [
+        { action: 'accept',  title: '応答' },
+        { action: 'decline', title: '拒否'  }
+      ]
+    };
+  } else {
+    // 画面側の Web Notification（tag: chat-{roomId}）と同じタグに揃え、OS側でも同一ルームの通知を1件に集約する
+    const tag = data.roomId
+      ? `chat-${data.roomId}`
+      : (data.messageId ? `msg-${data.messageId}` : 'chat-covo');
+    notificationOptions = {
+      body,
+      icon: '/img/icon-192x192.png?v=6',
+      badge: '/img/icon-192x192.png?v=6',
+      tag,
+      data,
+      requireInteraction: false,
+      actions: [
+        { action: 'open', title: '開く' }
+      ]
+    };
+  }
+  if (data.ownerId !== self._cachedUserId) return;
+  const showPromise = self.registration.showNotification(title, notificationOptions);
+  return showPromise;
+  });
+// ─── 通知クリック ───────────────────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // バッジをクリア（通知タップでアイコンの赤マークを消す）
+  self._badgeCount = 0;
+  _updateBadge();
+  const data   = event.notification.data || {};
+  const action = event.action;
+  const urlToOpen = self.location.origin + '/?ownerId=' + encodeURIComponent(data.ownerId || '');
+  // 着信「拒否」アクション
+  if (data.type === 'incoming_call' && action === 'decline') {
+    event.waitUntil(
+      notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : []).then((clientList) => {
+        if (data.ownerId !== self._cachedUserId) return;
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.postMessage({ type: 'CALL_DECLINED_FROM_NOTIFICATION', callId: data.callId, data });
+            return;
+          }
+        }
+      })
+    );
+    return;
+  }
+  event.waitUntil(
+    notificationBelongsToCurrentAccount(data).then(allowed => allowed ? clients.matchAll({ type: 'window', includeUncontrolled: true }) : null).then((clientList) => {
+      if (!clientList || data.ownerId !== self._cachedUserId) return;
+      // 既存のウィンドウがあればフォーカス
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+          return client.focus();
+        }
+      }
+      // なければ新しく開く（通知対象のURLパラメータを付与して直接遷移可能にする）
+      if (clients.openWindow) {
+        let launchUrl = urlToOpen;
+        if (data.callId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `callId=${encodeURIComponent(data.callId)}`;
+        } else if (data.roomId) {
+          launchUrl += (launchUrl.includes('?') ? '&' : '?') + `roomId=${encodeURIComponent(data.roomId)}` + (data.serverId ? `&serverId=${encodeURIComponent(data.serverId)}` : '');
+        }
+        return clients.openWindow(launchUrl).then(client => {
+          if (client && 'focus' in client) {
+             client.postMessage({ type: 'NOTIFICATION_CLICKED', data });
+             return client.focus();
+          }
+        });
+      }
+    })
+  );
+});
+</file>
+
+<file path="public/recovery.html">
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Covo - リカバリーパネル</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/main.css">
+  <script src="js/viewport_runtime.js" async></script>
+</head>
+<body class="covo-recovery-page">
+  <script>try { const theme=localStorage.getItem('covo_app_theme')||(localStorage.getItem('covo_dark_server')==='true'?'dark-navy':'light'); if(['dark-navy','dark','discord-dark'].includes(theme))document.body.classList.add('dark-server-theme'); } catch(_) {}</script>
+  <main class="covo-recovery-shell">
+    <header><p class="covo-recovery-eyebrow">Covo サポート</p><h1>リカバリーパネル</h1><p>状況を確認して、必要な操作だけを実行できます。暗号鍵・メッセージ履歴・送信待ちは削除しません。</p></header>
+    <div id="recoveryStatus" class="covo-recovery-status" role="status" aria-live="polite">診断を開始するか、修復する操作を選んでください。</div>
+    <section class="covo-recovery-actions" aria-label="復旧操作">
+      <article><h2>端末の状態を確認</h2><p>保存領域と画面のサイズを端末内で確認します。サーバーへのテスト通信は行いません。</p><button class="covo-button covo-button-secondary" data-action="inspect">診断する</button></article>
+      <article><h2>表示・接続を修復</h2><p>一時的な読み込み失敗の記録を解除し、開いている会話を履歴を保持して再接続します。</p><button class="covo-button covo-button-secondary" data-action="repair">修復を実行</button></article>
+      <article><h2>最新版を確認</h2><p>Windows版はメイン画面で署名付き更新を確認します。適用の前に通話や送信待ちを確認できます。</p><button class="covo-button covo-button-secondary" data-action="update">更新を確認</button></article>
+      <article><h2>診断結果を共有</h2><p>表示した診断結果をコピーできます。本文・暗号鍵・アカウントIDは含みません。</p><button class="covo-button covo-button-secondary" data-action="copy">診断をコピー</button></article>
+    </section>
+    <section class="covo-recovery-results"><h2>診断結果</h2><pre id="recoveryReport" tabindex="0">まだ診断していません。</pre></section>
+    <section class="covo-recovery-results"><h2>対応しているWindows版</h2><p>正式公開版の署名付きインストーラーだけを選択できます。旧通信方式のバージョンには戻せません。</p><div id="recoveryReleases"></div><button class="covo-button covo-button-secondary" data-action="releases">バージョン一覧を表示</button></section>
+    <footer><button class="covo-button" data-action="return">アプリへ戻る</button><button class="covo-button covo-button-secondary" data-action="logs">ログフォルダ</button><button class="covo-button covo-button-secondary" data-action="quit">アプリを終了</button></footer>
+  </main>
+  <script type="module" src="js/recovery_panel.js"></script>
+</body>
+</html>
 </file>
 
 <file path="src-tauri/src/lib.rs">
@@ -32128,13 +32251,13 @@ async function handleSetOffline(request, env) {
 </file>
 
 <file path="public/js/main.js">
-import { createAuthTransition } from './auth_transition.js?v=1.1.289';
-import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.289';
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.289';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.289';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.289';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.289';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.289';
+import { createAuthTransition } from './auth_transition.js?v=1.1.290';
+import { createMaintenanceGate } from './maintenance_runtime.js?v=1.1.290';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.290';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.290';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.290';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.290';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.290';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -32143,7 +32266,7 @@ import { createStatePublisher, createSubscriptionRegistry, requiredMessageBacken
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.289';
+import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.290';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -32240,13 +32363,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.289';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.290';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.289';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.289';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.289';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.289';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.289';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.290';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.290';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.290';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.290';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.290';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -35615,22 +35738,24 @@ window.triggerTestTelemetryError = function(type = 'warn') {
   alertMessage(`${type === 'error' ? 'エラー' : '警告'}のテストログを発行しました。一覧をご確認ください`, 'success');
 };
 window.sendTestNotification = async function() {
-  if (!('Notification' in window)) {
+  if (!isTauri && !('Notification' in window)) {
     alertMessage('お使いのブラウザはデスクトップ通知に対応していません', 'warning');
     return;
   }
-  if (Notification.permission === 'default') {
+  if (!isTauri && Notification.permission === 'default') {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') {
       alertMessage('通知権限が許可されませんでした。ブラウザのアドレスバー横から通知を許可してください', 'warning');
       return;
     }
-  } else if (Notification.permission === 'denied') {
+  } else if (!isTauri && Notification.permission === 'denied') {
     alertMessage('通知がブロックされています。ブラウザ設定から通知を「許可」に変更してください', 'error');
     return;
   }
-  alertMessage('Windowsへテスト通知を送信しました！', 'success');
-  showNotification('Covo テスト通知', 'Windowsのデスクトップ通知が正常に動作しています！', null, true);
+  try {
+    const sent=await showNotification('Covo テスト通知', 'これはこの端末での通知表示テストです。', null, null, true);
+    alertMessage(sent ? 'OSへ通知の表示を依頼しました。表示されない場合は通知センターとWindows・Chromeの通知設定をご確認ください。' : '通知を表示できませんでした。通知の許可とOSの設定をご確認ください。',sent?'info':'warning');
+  } catch(error){alertMessage('テスト通知を表示できませんでした。通知の許可とOSの設定をご確認ください。','warning');}
 };
 function renderTelemetryErrorsList() {
   const listEl = document.getElementById("telemetryErrorsList");
@@ -37643,12 +37768,10 @@ window.openMobileDetail = function (type) {
     reports: 'mobileDetailReports',
     cfstatus: 'mobileDetailCfStatus',
     appinfo: 'mobileDetailAppInfo',
-    diagnostics: 'mobileDetailDiagnostics',
     admintools: 'mobileDetailAdminTools'
   };
   const el = document.getElementById(m[type]);
   if (el) {
-    if (type === 'diagnostics') loadLocalDiagnostics();
     if (type === 'profile') {
       if (typeof initProfileState === 'function') initProfileState();
     }
@@ -56535,7 +56658,8 @@ async function showNotification(title, body, roomId, serverId = null, forceOs = 
     if (window.__TAURI__?.core?.invoke) {
       await window.__TAURI__.core.invoke('send_desktop_notification', {
         title, body: displayBody, target: { ownerId: userId, serverId, roomId, dmId: serverId ? null : String(roomId || '').replace(/^dm_/, '') }
-      }).catch(err => console.warn('[Notification] native delivery failed:', err));
+      }).catch(err => { console.warn('[Notification] native delivery failed:', err); if(forceOs)throw err; });
+      return true;
     }
   } else {
     // Web/PWA版: 通知許可があれば Windows 通知 (Web Notification) を確実に発行
@@ -56555,36 +56679,34 @@ async function showNotification(title, body, roomId, serverId = null, forceOs = 
             try { n.close(); } catch (_) {}
             window.openNotificationTarget({ ownerId: notifOwner, serverId, roomId });
           };
-        } catch (_) {}
+          return true;
+        } catch (_) {return false;}
       };
-      // テスト通知 (forceOs = true) の場合は Service Worker の待機デッドロックを避けてネイティブ通知を直接即座に発行
-      if (forceOs) {
-        showNativeDirect();
-        return;
-      }
+      // Existing registrations resolve without waiting forever for SW readiness.
       try {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-          navigator.serviceWorker.ready.then(reg => {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistration) {
+          let timer;
+          const reg=await Promise.race([navigator.serviceWorker.getRegistration(),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1500);})]).finally(()=>clearTimeout(timer));
             if (reg && reg.showNotification) {
-              reg.showNotification(title, {
+              await reg.showNotification(title, {
                 body: displayBody,
                 icon: '/img/icon-192x192.png?v=6',
                 badge: '/img/icon-192x192.png?v=6',
                 tag: notifTag,
                 data: { roomId, serverId, ownerId: notifOwner }
-              }).catch(showNativeDirect);
+              });return true;
             } else {
-              showNativeDirect();
+              return showNativeDirect();
             }
-          }).catch(showNativeDirect);
         } else {
-          showNativeDirect();
+          return showNativeDirect();
         }
       } catch (_) {
-        showNativeDirect();
+        return showNativeDirect();
       }
     }
   }
+  return false;
 }
 // --- ブロッキングアップデートチェック ---
 let pendingUpdate = null;
@@ -57232,7 +57354,19 @@ window.showLatestAnnouncementModal = async function (force = false) {
   }
 };
 // 手動アップデート確認（設定のアプリ情報から呼ばれる）
-window.manualCheckUpdate = async (btnId, statusId) => { const button = document.getElementById(btnId); const status = document.getElementById(statusId); if(button) button.disabled = true; try { const found = await window.covoCheckUpdate?.(true); if(status) status.textContent = found ? '更新を準備しています' : '最新バージョンです'; } catch(error) { if(status) status.textContent = '確認に失敗しました'; alertMessage(error.message, 'warning'); } finally { if(button) button.disabled = false; } };
+window.manualCheckUpdate = async (btnId, statusId) => {
+  const button=document.getElementById(btnId),status=document.getElementById(statusId);
+  if(button?.disabled)return;
+  if(button)button.disabled=true;
+  try{
+    if(typeof window.covoCheckUpdate!=='function'){if(status)status.textContent='Web版はページを開き直すと最新版を確認できます。';return;}
+    if(window.covoReinstalling||window.covoMaintenanceBlocked){if(status)status.textContent=window.covoReinstalling?'再インストールの完了後にお試しください。':'メンテナンス終了後にお試しください。';return;}
+    if(status)status.textContent='更新状態を確認しています…';
+    await window.covoCheckUpdate(true);
+    if(window.covoNativeDevelopment&&status)status.textContent='開発実行中は本番版の更新を停止しています。';
+  }catch(error){if(status)status.textContent='更新を確認できませんでした。接続を確認して再試行してください。';alertMessage(error.message,'warning');}
+  finally{if(button)button.disabled=false;}
+};
 // デスクトップショートカット作成（設定のアプリ情報から呼ばれる）
 window.createDesktopShortcut = async function (btnId, statusId) {
   const btn = document.getElementById(btnId);
@@ -59104,7 +59238,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.289').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.290').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -59851,10 +59985,6 @@ function loadLocalDiagnostics() {
   return _diagnosticsLoading;
 }
 window.covoEnsureDiagnostics = loadLocalDiagnostics;
-window.openCovoDiagnostics = async function () {
-  await switchDiscordSettingsTab('appinfo'); await loadLocalDiagnostics();
-  requestAnimationFrame(() => { const section = document.getElementById('appinfoSection'); if (section?.classList.contains('active')) (section.querySelector('.covo-diagnostics') || section.querySelector('[data-covo-diagnostics-status]'))?.scrollIntoView({ block: 'center' }); });
-};
 loadLocalDiagnostics();
 window.addEventListener('online', loadLocalDiagnostics);
 const retryPushRegistration = () => {
@@ -59906,17 +60036,17 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <script src="js/viewport_runtime.js?v=1.1.289" async></script>
+  <script src="js/viewport_runtime.js?v=1.1.290" async></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Tailwind CSS (本番ビルド) -->
-  <link rel="stylesheet" href="css/styles.css?v=1.1.289" />
+  <link rel="stylesheet" href="css/styles.css?v=1.1.290" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="css/font-awesome.min.css">
   <!-- Twemoji（絵文字スタンプ用・統一感のある綺麗な絵文字画像に変換） -->
   <script src="https://cdn.jsdelivr.net/npm/twemoji@14.0.2/dist/twemoji.min.js" async crossorigin="anonymous" onload="window.dispatchEvent(new Event('covo-emoji-ready'))"></script>
-  <link rel="stylesheet" href="css/main.css?v=1.1.289" />
+  <link rel="stylesheet" href="css/main.css?v=1.1.290" />
   <!-- Agora RTC Web SDK (v4.22.2) -->
   <script>
     // Agora SDK 初期化実行時の [DEBUG] / [INFO] ログを完全消音
@@ -61327,7 +61457,6 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
               <button class="settings-nav-item" id="snav-appinfo" onclick="switchDiscordSettingsTab('appinfo')">
                 <i class="fas fa-info-circle fa-fw"></i>アプリ情報
               </button>
-              <button class="settings-nav-item" onclick="openCovoDiagnostics()" aria-label="通信・表示の診断"><i class="fas fa-chart-line fa-fw" aria-hidden="true"></i>通信・表示の診断</button>
               <button class="settings-nav-item" id="snav-admintools" onclick="switchDiscordSettingsTab('admintools')">
                 <i class="fas fa-screwdriver-wrench fa-fw"></i>ツール
               </button>
@@ -64069,7 +64198,7 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
   </script>
-  <script type="module" src="js/main.js?v=1.1.289"></script>
+  <script type="module" src="js/main.js?v=1.1.290"></script>
   <div id="imageLightbox" class="fixed inset-0 z-[9999] items-center justify-center bg-black/80" style="display:none">
     <div class="absolute top-4 right-4 z-50 flex items-center gap-4">
       <button id="lightboxDownload" class="text-white text-2xl opacity-80 hover:opacity-100 p-2">
@@ -64744,11 +64873,6 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
           <span class="mobile-settings-row-text">通知設定</span>
           <i class="fas fa-chevron-right mobile-settings-row-arrow"></i>
         </div>
-        <button type="button" class="mobile-settings-row covo-mobile-diagnostics-entry" onclick="openMobileDetail('diagnostics')">
-          <span class="mobile-settings-row-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></span>
-          <span class="mobile-settings-row-text">通信・表示の診断</span>
-          <i class="fas fa-chevron-right mobile-settings-row-arrow" aria-hidden="true"></i>
-        </button>
         <div class="mobile-settings-row" onclick="openMobileDetail('appinfo')">
           <div class="mobile-settings-row-icon" style="background:#374151;color:#e5e7eb"><i class="fas fa-info-circle"></i></div>
           <span class="mobile-settings-row-text">アプリ情報</span>
@@ -65051,18 +65175,6 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
     </div>
   </div>
   <!-- Mobile Detail: App Info -->
-  <div class="mobile-settings-detail" id="mobileDetailDiagnostics">
-    <div class="mobile-detail-header">
-      <button type="button" class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailDiagnostics')" aria-label="設定に戻る"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
-      <span>通信・表示の診断</span>
-    </div>
-    <div class="covo-mobile-diagnostics-content" data-covo-diagnostics-host>
-      <div data-covo-diagnostics-status role="status">
-        <span>端末内の診断を準備しています…</span>
-        <button type="button" class="covo-button covo-button-secondary" onclick="window.covoEnsureDiagnostics?.()">再試行</button>
-      </div>
-    </div>
-  </div>
   <div class="mobile-settings-detail" id="mobileDetailAppInfo">
     <div class="mobile-detail-header">
       <div class="mobile-detail-back" onclick="closeMobileDetail('mobileDetailAppInfo')"><i class="fas fa-chevron-left"></i></div>
@@ -65588,7 +65700,7 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
 
 <file path="public/version.json">
 {
-    "version":  "1.1.289",
+    "version":  "1.1.290",
     "force":  true,
     "dataProtocol":  2,
     "minimumWindowsVersion":  "1.1.282"
@@ -65599,7 +65711,7 @@ window.__TAURI__?.event?.listen('request-recovery-repair', () => window.covoRepa
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Covo",
-  "version": "1.1.289",
+  "version": "1.1.290",
   "identifier": "com.simplechat.desktop",
   "build": {
     "frontendDist": "../public",

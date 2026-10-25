@@ -4,7 +4,7 @@ const path = require('path');
 async function fixture(page, theme = '') {
   await page.route('https://covo.test/**', route => {
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><div id="desktopSettingsContainer"></div></body></html>' });
+    if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/desktop.css"></head><body style="color:var(--covo-text)"><div id="desktopSettingsContainer"></div><button id="pcCheckUpdateBtn">更新を確認</button><span id="pcCheckUpdateStatus"></span></body></html>' });
     const file = path.resolve('public', '.' + pathname);
     if (!file.startsWith(path.resolve('public') + path.sep) || !fs.existsSync(file)) return route.fulfill({ status: 404 });
     return route.fulfill({ path: file, contentType: file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : undefined });
@@ -54,6 +54,12 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
     });
     const panel = page.locator('.covo-desktop-update');
     await expect(panel).toBeVisible(); await expect(panel.getByRole('status')).toContainText('再起動して適用');
+    await panel.getByRole('button',{name:'あとで',exact:true}).click();await expect(panel).toBeHidden();
+    const main=fs.readFileSync('public/js/main.js','utf8'),start=main.indexOf('window.manualCheckUpdate =');
+    await page.evaluate(source=>{window.eval(source);document.getElementById('pcCheckUpdateBtn').onclick=()=>window.manualCheckUpdate('pcCheckUpdateBtn','pcCheckUpdateStatus');},main.slice(start,main.indexOf('// デスクトップショートカット',start)));
+    await page.locator('#pcCheckUpdateBtn').click();await expect(panel).toBeVisible();
+    await expect(page.locator('#pcCheckUpdateStatus')).toContainText('再起動して適用');
+    expect(await page.evaluate(()=>window.downloads)).toBe(1);
     const colors = await panel.evaluate(element => ({ background: getComputedStyle(element).backgroundColor, expected: getComputedStyle(document.body).getPropertyValue('--covo-surface').trim() }));
     expect(colors.background).toBe(theme ? theme === 'discord-dark-theme' ? 'rgb(43, 45, 49)' : 'rgb(30, 41, 59)' : 'rgb(255, 255, 255)');
     await page.evaluate(() => { window.busy = true; });
@@ -71,6 +77,18 @@ for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
   });
 }
 
+
+test('download progress can be reopened without checking or downloading twice',async({page})=>{
+  await fixture(page,'discord-dark-theme');
+  await page.route('https://covo.test/vendor/desktop-updater.js',route=>route.fulfill({contentType:'text/javascript',body:`export async function check(){window.checks++;return {version:'2.0.0',download:async callback=>{window.downloads++;callback({event:'Started',data:{contentLength:100}});callback({event:'Progress',data:{chunkLength:40}});await new Promise(resolve=>window.finishDownload=resolve);},install:async()=>{},close:async()=>{}};}`}));
+  await page.evaluate(async()=>{window.checks=0;window.downloads=0;window.covoDesktopBusy=()=>false;window.__TAURI__={core:{invoke:async()=>{}},event:{listen:async()=>{}}};await import('/js/desktop_runtime.js');window.pending=window.covoCheckUpdate(true);});
+  const panel=page.locator('.covo-desktop-update');await expect(panel.locator('progress')).toHaveAttribute('value','40');await expect(panel.getByRole('status')).toContainText('40%');
+  await page.screenshot({path:'scratch/desktop-update-progress.png'});
+  await panel.getByRole('button',{name:'あとで',exact:true}).click();await expect(panel).toBeHidden();
+  await page.evaluate(()=>window.covoCheckUpdate(true));await expect(panel).toBeVisible();
+  expect(await page.evaluate(()=>({checks,downloads}))).toEqual({checks:1,downloads:1});
+  await page.evaluate(async()=>{finishDownload();await pending;});await expect(panel.getByRole('button',{name:'再起動して更新',exact:true})).toBeEnabled();
+});
 
 test('native development skips production updater checks and reinstall while retaining desktop controls', async ({ page }) => {
   await fixture(page);
