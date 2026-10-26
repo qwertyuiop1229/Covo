@@ -1929,7 +1929,9 @@ async function handleSendNotification(request, env) {
       }
     }
 
-    const workerToken = await getWorkerAuthToken(env);
+    // Recipient scope has already been authorized above. Private preferences must
+    // use service-account OAuth: a worker's Firebase user cannot read another user's settings.
+    const workerToken = await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
     if (!workerToken) return new Response(JSON.stringify({ success: false, error: "Worker Auth failed" }), { status: 500, headers: dynamicCors });
 
     const projectId = env.FIREBASE_PROJECT_ID;
@@ -1952,7 +1954,8 @@ async function handleSendNotification(request, env) {
         let shouldSend = true;
         // Preferences are private; the privileged worker reads only after recipient authorization.
         const preferenceUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${rid}/notificationSettings/preferences`;
-        const preferenceResponse = await fetch(preferenceUrl, { headers: { Authorization: `Bearer ${workerToken}` } });
+        const preferenceResponse = await fetch(preferenceUrl, { headers: { Authorization: `Bearer ${workerToken}` }, signal: AbortSignal.timeout(8000) }).catch(() => null);
+        if (!preferenceResponse) { results.push({ receiverId: rid, error: 'preferences-unavailable' }); continue; }
         if (preferenceResponse.ok) {
           const fields = (await preferenceResponse.json()).fields || {};
           const channelKey = serverId ? `${serverId}:${roomId}` : `dm:${String(roomId || '').replace(/^dm_/, '')}`;
@@ -1969,7 +1972,7 @@ async function handleSendNotification(request, env) {
             // 1. 相手のステータスをRTDBから取得
             if (rtdbToken) {
               const statusUrl = `${rtdbUrl}/status/${rid}.json?access_token=${rtdbToken}`;
-              const statusRes = await fetch(statusUrl);
+              const statusRes = await fetch(statusUrl, { signal: AbortSignal.timeout(8000) });
               const statusData = await statusRes.json(); // RTDB形式: { state, last_changed(ms), currentRoomId, ... } or null
 
               if (statusData && !statusData.error) {
@@ -2007,7 +2010,8 @@ async function handleSendNotification(request, env) {
         if (shouldSend) {
             // 2. 相手の FCM トークンを取得
             const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/artifacts/${appId}/users/${rid}`;
-            const userRes = await fetch(userUrl, { headers: { "Authorization": `Bearer ${workerToken}` } });
+            const userRes = await fetch(userUrl, { headers: { "Authorization": `Bearer ${workerToken}` }, signal: AbortSignal.timeout(8000) }).catch(() => null);
+            if (!userRes || (!userRes.ok && userRes.status !== 404)) { results.push({ receiverId: rid, error: 'recipient-unavailable' }); continue; }
             const userData = await userRes.json();
 
             if (!userData.error && userData.fields && userData.fields.fcmTokens) {
@@ -2155,7 +2159,7 @@ async function handleSendNotification(request, env) {
     const acceptedTokens = results.filter(result => result.success).length;
     const failedTokens = results.filter(result => result.error === 'fcm-rejected').length;
     const expiredTokens = results.filter(result => result.error === 'expired-token').length;
-    const failedRecipients = results.filter(result => result.error === 'preferences-unavailable').length;
+    const failedRecipients = results.filter(result => result.error === 'preferences-unavailable' || result.error === 'recipient-unavailable').length;
     const failed = failedTokens + failedRecipients > 0;
     return new Response(JSON.stringify({ success: !failed || acceptedTokens > 0, acceptedTokens, failedTokens, expiredTokens, failedRecipients, delivery: 'accepted-by-fcm-not-os-delivery', results }), { status: failed && acceptedTokens === 0 ? 502 : 200, headers: { ...dynamicCors, 'Content-Type': 'application/json' } });
   } catch (error) {

@@ -204,6 +204,14 @@
         background-color: #2b2d31 !important;
       }
 
+      /* A translated-offscreen sheet must not cast its shadow into the home area. */
+      .covo-bottom-sheet:not(.bottom-sheet-open),
+      #membersSidebar:not(.bottom-sheet-open),
+      #callPickerModal:not(.show) .call-picker-box {
+        box-shadow: none !important;
+        pointer-events: none;
+      }
+
       .covo-bottom-sheet.bottom-sheet-open,
       #membersSidebar.bottom-sheet-open,
       #callPickerModal.show .call-picker-box {

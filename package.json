@@ -11,6 +11,7 @@
     "build:css": "node scripts/build_tailwind.mjs",
     "build:css:regen": "node scripts/build_tailwind.mjs --regen",
     "test:web": "node scripts/build_firebase.mjs --if-needed && node scripts/serve_web_preview.mjs",
+    "test:firebase-runtime": "node scripts/build_firebase.mjs --if-needed && firebase emulators:exec --config firebase.emulators.json --project demo-covo-security-test --only firestore \"playwright test browser-tests/firestore-sdk.spec.cjs\"",
     "test:web:google": "node scripts/build_firebase.mjs --if-needed && npx --yes firebase-tools hosting:channel:deploy mobile-test --expires 1d --project simplechat-65a0d --config firebase.preview.json",
     "test:win": "node scripts/test_windows.mjs",
     "test:win:native": "node scripts/test_windows.mjs --native",
@@ -47,7 +48,8 @@
     "@tauri-apps/plugin-updater": "2.10.0",
     "esbuild": "0.25.12",
     "firebase-admin": "^14.1.0",
-    "firebase-runtime": "npm:firebase@11.6.1",
-    "jimp": "^1.6.1"
+    "firebase-runtime": "npm:firebase@12.14.0",
+    "jimp": "^1.6.1",
+    "photoswipe": "5.4.3"
   }
 }

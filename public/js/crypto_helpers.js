@@ -42,7 +42,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     export function setCryptoAccount(ownerId) {
       if (_e2ee.ownerId === ownerId) return;
       _cryptoEpoch++;
-      Object.assign(_e2ee, { ownerId, ready: false, privateKey: null, publicKey: null, publicKeyJwk: null, _initPromise: null, mem: {}, roomKeyCache: {}, roomKeyVersions: {}, dmKeyCache: {}, pubKeyCache: {}, _roomKeyPromises: {}, _dmKeyPromises: {}, _rescueRequestFlags: {} });
+      Object.assign(_e2ee, { ownerId, ready: false, privateKey: null, publicKey: null, publicKeyJwk: null, _initPromise: null, mem: {}, roomKeyCache: {}, roomKeyVersions: {}, roomWrapSignatures: {}, dmKeyCache: {}, pubKeyCache: {}, _roomKeyPromises: {}, _dmKeyPromises: {}, _rescueRequestFlags: {}, _dmRescueRequestFlags: {} });
     }
     export function roomKeyScope(serverId, roomId) {
       return JSON.stringify([_getAppId(), serverId, roomId]);
@@ -394,24 +394,32 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     }
 
     export async function _requestEscrowRescue(serverId, roomId) {
+      if (window.covoMaintenanceBlocked) return;
       if (!_getUserId() || !serverId || !roomId) return;
+      const owner = _getUserId(), epoch = _cryptoEpoch;
       if (!_e2ee._rescueRequestFlags) _e2ee._rescueRequestFlags = {};
       const now = Date.now();
       if (_e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] && (now - _e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] < 60000)) {
         return; // 1分以内の連続リクエストはスキップ
       }
       _e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] = now;
+      const flags = _e2ee._rescueRequestFlags;
       try {
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
           userId: _getUserId(), requestedAt: serverTimestamp()
         }, { merge: true });
+        if (epoch !== _cryptoEpoch || owner !== _getUserId()) return;
         console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
         delete _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
         delete _e2ee._roomKeyPromises[roomKeyScope(serverId, roomId)];
-      } catch (e) { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
+      } catch (e) {
+        if (e?.code === 'covo/maintenance') delete flags[roomKeyScope(serverId, roomId)];
+        else { console.warn("[E2EE] 救済リクエスト発行に失敗:", e); }
+      }
     }
     // 【DM E2EE 自動治癒】DM鍵未到着・不一致時の救済リクエスト（デバウンス付き）
     export async function _requestDmKeyRescue(dmId, otherUid) {
+      if (window.covoMaintenanceBlocked) return;
       const uid = _getUserId();
       if (!uid || !dmId || !otherUid) return;
       const rawDmId = dmId.startsWith('dm_') ? dmId.slice(3) : dmId;
@@ -422,6 +430,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         return; // 30秒以内の重複リクエストは抑止
       }
       _e2ee._dmRescueRequestFlags[cleanDmId] = now;
+      const flags = _e2ee._dmRescueRequestFlags;
       try {
         // Firestore: dm_channels ドキュメントに救済リクエストを記録 (新規作成時でもルールを通るよう participants を常時包含)
         await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/dm_channels/${cleanDmId}`), {
@@ -430,10 +439,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             [uid]: Date.now()
           },
           updatedAt: serverTimestamp()
-        }, { merge: true }).catch(() => {});
+        }, { merge: true });
         console.log(`[E2EE] DM鍵の救済リクエストを発行しました (dmId=${cleanDmId}, target=${otherUid})`);
       } catch (e) {
-        console.warn("[E2EE] DM救済リクエスト発行警告:", e);
+        if (e?.code === 'covo/maintenance') delete flags[cleanDmId];
+        else { console.warn("[E2EE] DM救済リクエスト発行警告:", e); }
       }
     }
 
@@ -496,6 +506,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
     // ルーム共通鍵(AES-GCM)を取得。無ければ生成し、全メンバー＋エスクローへ配布。
     // 取得・生成いずれも失敗したら null（送信側は暗号化できるまで送信を止める）。
     export async function _getOrCreateRoomKey(serverId, roomId, memberIds, forDecryption = false) {
+      if (window.covoMaintenanceBlocked) return null;
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       const scope = roomKeyScope(serverId, roomId);
       const usable = keys => keys && (forDecryption || keys.latest && roomKeyVersionIsCurrent(serverId, roomId, keys)) ? keys : null;
@@ -575,7 +586,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               }
             }
             if (Object.keys(versionsMap).length === 0 && data.wrappedKey) {
-              versionsMap[currentVer || "1"] = data.wrappedKey;
+              // A legacy wrapper belongs to its recorded version, never the
+              // room's newer active version. Relabelling it corrupts new sends.
+              const wrappedVersion = String(data.latestVersion || '1');
+              if (/^[1-9]\d*$/.test(wrappedVersion)) versionsMap[wrappedVersion] = data.wrappedKey;
             }
             for (const ver in versionsMap) {
               try {
@@ -595,6 +609,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
             if (Object.keys(keysObj).some(version => /^\d+$/.test(version))) {
               if (keyEpoch !== _cryptoEpoch || keyOwner !== _getUserId()) return null;
               selectRoomKeyVersion(serverId, roomId, keysObj, currentVer);
+              (_e2ee.roomWrapSignatures ||= {})[roomKeyScope(serverId, roomId)] = JSON.stringify(data);
               _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)] = keysObj;
               return keysObj;
             }
@@ -608,7 +623,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
               const escrowWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)).catch(() => null);
               if (escrowWrapSnap && escrowWrapSnap.exists()) {
                 const eData = escrowWrapSnap.data() || {};
-                const eVersions = eData.versions || (eData.wrappedKey ? { [currentVer || "1"]: eData.wrappedKey } : {});
+                const eVersions = eData.versions || (eData.wrappedKey ? { [String(eData.latestVersion || '1')]: eData.wrappedKey } : {});
                 for (const ver in eVersions) {
                   try {
                     const raw = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, escrowPriv, _b64ToAb(eVersions[ver]));
@@ -674,10 +689,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 4) 完全新規ルームの場合、新しいルーム鍵を生成して全メンバーへ配布（平文sharedKeyは一切保存しない）
         const key = await window.crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
         const raw = await window.crypto.subtle.exportKey("raw", key);
-        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { currentKeyVersion: 1 }).catch(() => {});
+        await updateDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`), { currentKeyVersion: 1 });
 
         // 参加メンバーおよびエスクローへ暗号化鍵バージョン1を即時配布
-        await __distributeRoomKeyVersion(serverId, roomId, raw, memberIds || [], 1).catch(() => {});
+        await __distributeRoomKeyVersion(serverId, roomId, raw, memberIds || [], 1);
 
         keysObj["1"] = key;
         keysObj.latest = key;
@@ -704,6 +719,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       const deadline = Date.now() + maxWaitMs;
       let attempt = 0;
       while (true) {
+        if (window.covoMaintenanceBlocked) return null;
         const keyObj = await _getOrCreateRoomKey(serverId, roomId, memberIds, forDecryption);
         if (keyObj) return keyObj;
         if (Date.now() >= deadline) return null; 
@@ -764,7 +780,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           wrappedKey: b64Wrapped,
           updatedAt: serverTimestamp() 
         }, { merge: true }
-      ).catch(() => {}));
+      ).then(() => ({ uid, ok: true }), () => ({ uid, ok: false })));
     } catch (e) {}
   }
   const escrowPub = await __getEscrowPublicKey();
@@ -784,7 +800,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       ));
     } catch (e) {}
   }
-  await Promise.all(writes);
+  const results = await Promise.all(writes);
+  if (!results.some(result => result?.uid === owner && result.ok)) throw new Error('鍵の保存を確認できません');
   if (requireAll) {
     for (const uid of ids) {
       if (!active()) throw new Error('鍵の配布中にアカウントが変更されました');
@@ -804,8 +821,11 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
 }
 
 
-    export async function _backfillRoomKeysForMembers(serverId, roomId, memberIds) {
+    export async function _backfillRoomKeysForMembers(serverId, roomId, memberIds, refreshPublicKey = false) {
       if (!_subtleOK || !_getUserId()) return;
+      const owner = _getUserId(), epoch = _cryptoEpoch;
+      const active = () => owner === _getUserId() && epoch === _cryptoEpoch && !window.covoMaintenanceBlocked;
+      const recipientKeys = new Map();
       try {
         const isD1 = false;
         const roomKeyObj = _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
@@ -817,9 +837,12 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           const writePromises = [];
           for (const uid of ids) {
             try {
-              const pub = (uid === _getUserId()) ? _e2ee.publicKey : await __getUserPublicKey(uid);
+              if (!active()) return;
+              if (uid !== owner && !recipientKeys.has(uid)) recipientKeys.set(uid, await __getUserPublicKey(uid, refreshPublicKey));
+              const pub = uid === owner ? _e2ee.publicKey : recipientKeys.get(uid);
               if (!pub) continue; 
               const wrapped = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, rawKey);
+              if (!active()) return;
               if (isD1) {
                 // D1用
               } else {

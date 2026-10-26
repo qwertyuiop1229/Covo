@@ -173,11 +173,27 @@ test('push notification opt-out is checked before presence or FCM delivery', asy
   ctx.isAppAdmin = async () => false;
   ctx.isServerMemberCheck = async () => true;
   ctx.getWorkerAuthToken = async () => 'worker';
+  ctx.getFirestoreAdminToken = async () => 'service-oauth';
   ctx.getFCMToken = async () => 'fcm';
   ctx.getRTDBToken = async () => 'rtdb';
   const response = await ctx.worker.fetch(currentClientRequest('https://api.test/api/sendNotification', { method: 'POST', body: JSON.stringify({ appId: 'testApp', senderId: 'alice', receiverIds: ['bob'], title: 'message', body: 'new message', idToken: 'token', serverId: 'server1', roomId: 'room1' }) }), { FIREBASE_APP_ID: 'testApp', FIREBASE_PROJECT_ID: 'test', SERVICE_ACCOUNT_JSON: '{}' }, {});
   expect(response.status).toBe(200);
   expect(fetchImpl.mock.calls.some(([url]) => url.includes('/status/') || url.includes('fcm.googleapis.com'))).toBe(false);
+});
+
+test.each([200,403,503])('private notification preferences use service OAuth and fail closed on HTTP %s', async status => {
+  const fetcher=jest.fn(async (url,options={})=>{
+    if(url.includes('/notificationSettings/preferences')) {
+      expect(options.headers.Authorization).toBe('Bearer service-oauth');
+      return new Response(JSON.stringify({fields:{channels:{mapValue:{fields:{'server:room':{stringValue:'none'}}}}}}),{status});
+    }
+    throw Error('opt-out or unavailable preferences must stop downstream work');
+  });
+  const ctx=loadWorker(fetcher);ctx.verifyFirebaseIdToken=async()=>({uid:'alice'});ctx.isAppAdmin=async()=>true;
+  ctx.getWorkerAuthToken=async()=>{throw Error('ordinary worker identity must not read private preferences');};
+  ctx.getFirestoreAdminToken=jest.fn(async()=> 'service-oauth');ctx.getFCMToken=async()=> 'fcm';ctx.getRTDBToken=async()=> 'rtdb';
+  const response=await ctx.worker.fetch(currentClientRequest('https://api.test/api/sendNotification',{method:'POST',body:JSON.stringify({appId:'testApp',senderId:'alice',receiverIds:['bob'],title:'new',body:'message',serverId:'server',roomId:'room',idToken:'valid'})}),{FIREBASE_APP_ID:'testApp',FIREBASE_PROJECT_ID:'test',SERVICE_ACCOUNT_JSON:'{}'},{});
+  expect(response.status).toBe(status===200?200:502);expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
 test.each(['pinned', 'conflict', 'rtdb-failure', 'firestore-failure'])('pruning protects attachments and reports failure accurately: %s', async scenario => {
@@ -437,7 +453,7 @@ test.each(['accepted','project-not-found','unregistered'])('notification %s repo
     throw Error('unexpected request');
   });
   const ctx=loadWorker(fetcher);ctx.verifyFirebaseIdToken=async()=>({uid:'alice'});ctx.isAppAdmin=async()=>true;
-  ctx.getWorkerAuthToken=async()=> 'worker';ctx.getFCMToken=async()=> 'fcm';ctx.getRTDBToken=async()=> 'rtdb';
+  ctx.getWorkerAuthToken=async()=> 'worker';ctx.getFirestoreAdminToken=async()=> 'service-oauth';ctx.getFCMToken=async()=> 'fcm';ctx.getRTDBToken=async()=> 'rtdb';
   const response=await ctx.worker.fetch(currentClientRequest('https://api.test/api/sendNotification',{method:'POST',body:JSON.stringify({appId:'testApp',senderId:'alice',receiverIds:['bob'],title:'new',body:'message',serverId:'server',roomId:'room',idToken:'valid'})}),{FIREBASE_APP_ID:'testApp',FIREBASE_PROJECT_ID:'test',SERVICE_ACCOUNT_JSON:'{}'},{});
   const result=await response.json();expect(JSON.stringify(result)).not.toContain('PRIVATE_FCM_TOKEN');
   expect(response.status).toBe(scenario==='project-not-found'?502:200);expect(result.acceptedTokens).toBe(scenario==='accepted'?1:0);

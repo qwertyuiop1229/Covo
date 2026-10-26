@@ -10,6 +10,14 @@ const main = fs.readFileSync('public/js/main.js', 'utf8');
 const ast = parser.parse(main, { sourceType: 'module' });
 function declaration(name) { const node = ast.program.body.find(n => n.type === 'FunctionDeclaration' && n.id.name === name); return main.slice(node.start, node.end); }
 
+test('Firebase report signatures coalesce timestamps but retain distinct assertion codes', () => {
+  const ctx=vm.createContext({});vm.runInContext(declaration('_createErrorSignature'),ctx);
+  const a='[2026-10-25T14:28:21.930Z] @firebase/firestore: Firestore (11.6.1): INTERNAL ASSERTION FAILED (ID: b815)';
+  const b=a.replace('14:28:21.930','14:27:36.882');
+  expect(ctx._createErrorSignature('error',a,'')).toBe(ctx._createErrorSignature('error',b,''));
+  expect(ctx._createErrorSignature('error',a,'')).not.toBe(ctx._createErrorSignature('error',a.replace('b815','ca9'),''));
+});
+
 test('maintenance closes all history peers and rejects newly created peers without retaining them', () => {
   const peers = new Set(), unsubscribe = jest.fn();
   const ctx = vm.createContext({ window: { covoMaintenanceBlocked: false }, _p2pHistoryConnections: peers, _p2pLogSyncUnsub: unsubscribe });

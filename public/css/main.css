@@ -2,11 +2,13 @@
 @import url('./modules/sidebar.css?v=3846d5279cef6db9');
 @import url('./modules/chat.css?v=997e00b3aa2f7ec6');
 @import url('./modules/components.css?v=9e24056341c7d0b5');
-@import url('./modules/mobile.css?v=49b20b7b934f7192');
+@import url('./modules/mobile.css?v=3ea3a83798f40da0');
 @import url('./modules/animations.css?v=4e68c92b0ba7c758');
 @import url('./modules/theme.css?v=bd5c0c8a4b9dcc99');
 @import url('./modules/refinements.css?v=209af8e91d446dd6');
-@import url('./modules/pwa-layout.css?v=8114c5e25f45d4e7');
+@import url('./modules/pwa-layout.css?v=5ebcb7f8e89ca3bc');
 @import url('./modules/server-settings.css?v=52c12f8062054d72');
-@import url('./modules/stability.css?v=9ffa678328794719');
+@import url('./modules/pwa-phone.css?v=278fc3ba95e79ca3');
+@import url('./modules/pwa-tablet.css?v=f0885b7dacfa4d0c');
+@import url('./modules/stability.css?v=62dd3491d95e0345');
 

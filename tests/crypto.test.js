@@ -21,6 +21,28 @@ function loadCrypto() {
   return { ctx, api: ctx.api, writes };
 }
 
+test('maintenance starts no key lookup or rescue writes and failed rescue remains retryable', async () => {
+  const {ctx,api,writes}=loadCrypto();ctx.window.covoMaintenanceBlocked=true;
+  const read=jest.fn();ctx.getDoc=read;
+  await ctx._requestEscrowRescue('server1','room1');await ctx._requestDmKeyRescue('alice_bob','bob');
+  expect(await api._getOrCreateRoomKey('server1','room1',[])).toBeNull();expect(read).not.toHaveBeenCalled();expect(writes).toEqual([]);
+  ctx.window.covoMaintenanceBlocked=false;
+  ctx.setDoc=jest.fn(async()=>{throw Object.assign(Error('maintenance'),{code:'covo/maintenance'});});
+  await ctx._requestEscrowRescue('server1','room1');
+  ctx.setDoc=jest.fn(async()=>{});await ctx._requestEscrowRescue('server1','room1');expect(ctx.setDoc).toHaveBeenCalledTimes(1);
+});
+
+test('a late rescue response cannot clear another account keys and failures do not flood writes', async () => {
+  const {ctx,api}=loadCrypto();let owner='alice',finish;
+  api.initCryptoContext({getUserId:()=>owner});api.setCryptoAccount(owner);
+  ctx.setDoc=()=>new Promise(resolve=>{finish=resolve;});
+  const pending=ctx._requestEscrowRescue('server1','room1');
+  owner='bob';api.setCryptoAccount(owner);const scope=api.roomKeyScope('server1','room1');api._e2ee.roomKeyCache[scope]={latest:'BOB_KEY'};
+  finish();await pending;expect(api._e2ee.roomKeyCache[scope].latest).toBe('BOB_KEY');
+  ctx.setDoc=jest.fn(async()=>{throw Error('offline');});
+  await ctx._requestEscrowRescue('server1','room1');await ctx._requestEscrowRescue('server1','room1');expect(ctx.setDoc).toHaveBeenCalledTimes(1);
+});
+
 for (const kind of ['room','dm']) test(`a ${kind} batch finishing decryption after account change cannot mutate or persist the old message`, async () => {
   const {ctx,api}=loadCrypto();let owner='alice',finish;
   api.initCryptoContext({getUserId:()=>owner});api.setCryptoAccount(owner);
@@ -176,6 +198,39 @@ test('new room with version 1 generates a key and stores wrapped versions as nes
   expect(Object.keys(ownWrite.data).some(k => k.startsWith('versions.'))).toBe(false);
   const raw = await webcrypto.subtle.decrypt({ name: 'RSA-OAEP' }, pair.privateKey, Buffer.from(ownWrite.data.versions['1'], 'base64'));
   expect(Buffer.from(raw)).toEqual(Buffer.from(await webcrypto.subtle.exportKey('raw', keys.latest)));
+});
+
+test('a legacy v1 wrapper is never relabelled as the current v2 sending key', async () => {
+  const {api,ctx}=loadCrypto();
+  const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  const raw=webcrypto.getRandomValues(new Uint8Array(32));
+  const wrappedKey=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP'},pair.publicKey,raw)).toString('base64');
+  api._e2ee.ready=true;api._e2ee.publicKey=pair.publicKey;api._e2ee.privateKey=pair.privateKey;
+  ctx.getDoc=async path=>({exists:()=>true,data:()=>path.endsWith('/rooms/room1')?{currentKeyVersion:2}:{wrappedKey,latestVersion:'1'}});
+  const keys=await api.__getOrCreateRoomKeyImpl('server1','room1',['alice']);
+  expect(keys['1']).toBeTruthy();expect(keys['2']).toBeUndefined();expect(keys.latest).toBeFalsy();
+  expect(await api._encryptText('must not send with an old key',keys)).toBeNull();
+});
+
+test('a rejected new-room key save cannot produce a sending key or populate the cache',async()=>{
+  const {api,ctx}=loadCrypto();
+  const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  api._e2ee.ready=true;api._e2ee.privateKey=pair.privateKey;api._e2ee.publicKey=pair.publicKey;
+  ctx.setDoc=async()=>{throw Error('permission-denied');};
+  expect(await api.__getOrCreateRoomKeyImpl('server1','room1',['alice'])).toBeNull();
+  expect(api._e2ee.roomKeyCache[api.roomKeyScope('server1','room1')]).toBeUndefined();
+});
+
+test('server rescue refreshes a stale recipient public key once for all historical versions',async()=>{
+  const {api,ctx,writes}=loadCrypto();
+  const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  const jwk=await webcrypto.subtle.exportKey('jwk',pair.publicKey);
+  const key=await webcrypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  api._e2ee.pubKeyCache.bob={stale:true};api._e2ee.roomKeyCache[api.roomKeyScope('server1','room1')]={'1':key,'2':key,latest:key,latestVersion:'2'};
+  ctx.getDoc=jest.fn(async()=>({exists:()=>true,data:()=>({publicKeyJwk:jwk})}));
+  await ctx._backfillRoomKeysForMembers('server1','room1',['bob'],true);
+  expect(ctx.getDoc).toHaveBeenCalledTimes(1);expect(writes).toHaveLength(2);
+  for(const write of writes){const wrapped=Object.values(write.data.versions)[0];expect(Buffer.from(await webcrypto.subtle.decrypt({name:'RSA-OAEP'},pair.privateKey,Buffer.from(wrapped,'base64')))).toEqual(Buffer.from(await webcrypto.subtle.exportKey('raw',key)));}
 });
 
 

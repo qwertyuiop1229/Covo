@@ -1,0 +1,8 @@
+/* iPhone/iPod installed layout. Backgrounds extend to the bottom; only controls move. */
+@media (max-width:768px) {
+  html.covo-ios-phone body.discord-ui-mode #appContainer :is(#currentRoomHeader,#serverHeader,#discordDmHeader,#discordDiscoverHeader) { background-image:linear-gradient(to bottom,var(--covo-shell-background) 0px,var(--covo-shell-background) var(--safe-top),transparent var(--safe-top)) !important; }
+}
+html.covo-ios-phone body.discord-ui-mode #messageInputArea { padding-bottom:max(10px,var(--safe-bottom)) !important; }
+html.covo-ios-phone body.discord-ui-mode #appContainer #sidebar #userPanel { bottom:calc(10px + var(--safe-bottom)) !important; }
+html.covo-ios-phone body.discord-ui-mode #discordServerNav { padding-bottom:calc(80px + var(--safe-bottom)) !important; }
+html.covo-ios-phone body.discord-ui-mode #sidebar :is(#roomList,#discordHomeSidebar) { padding-bottom:calc(80px + var(--safe-bottom)) !important; }

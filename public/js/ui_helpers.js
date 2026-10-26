@@ -108,15 +108,29 @@ if (typeof window !== 'undefined') {
  * 新着メッセージやメンション通知音の再生（Web Audio API チャイム）
  */
 let audioCtx = null;
+function notificationSoundEnabled() {
+  try { return localStorage.getItem('simplechat_sound') !== 'false' && localStorage.getItem('simplechat_browser_notif') !== 'false'; }
+  catch (_) { return false; }
+}
+// Unlock only during a real gesture. Notifications must never resume a suspended
+// context in the background, or queue old chimes for the next interaction.
+function unlockNotificationAudio(event) {
+  if (!event.isTrusted || !notificationSoundEnabled()) return;
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return;
+    if (!audioCtx || audioCtx.state === 'closed') audioCtx = new Context();
+    if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') audioCtx.resume().catch(() => {});
+  } catch (_) {}
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', unlockNotificationAudio, { passive: true });
+  window.addEventListener('touchend', unlockNotificationAudio, { passive: true });
+  window.addEventListener('keydown', unlockNotificationAudio, { passive: true });
+}
 export function playNotificationSound() {
   try {
-    const soundEnabled = localStorage.getItem('simplechat_sound') !== 'false';
-    const notifEnabled = localStorage.getItem('simplechat_browser_notif') !== 'false';
-    if (!soundEnabled || !notifEnabled) return;
-
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    if (!notificationSoundEnabled() || !audioCtx || audioCtx.state !== 'running') return;
     const play = () => {
       const now = audioCtx.currentTime;
       const notes = [659.25, 783.99, 1046.50]; // E5, G5, C6
@@ -134,11 +148,7 @@ export function playNotificationSound() {
         osc.stop(now + i * 0.09 + 0.5);
       });
     };
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(play).catch(() => {});
-    } else {
-      play();
-    }
+    play();
   } catch (e) { }
 }
 

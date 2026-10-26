@@ -205,7 +205,8 @@ for (const theme of ['', 'discord-dark-theme']) test('attachment gradient fits t
   let release; await page.route('https://covo.test/test-image.svg', route => new Promise(resolve => { release = () => route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"><rect width="120" height="240" fill="#5865f2"/></svg>'}).then(resolve); }));
   await page.evaluate(async source => {
     const {createMediaPlaceholder}=await import('/js/media_placeholder.js');
-    const setSrc = Function('createMediaPlaceholder','message','targetAttachmentUrl','isFileMissing','scheduleMediaLoad','createExpiredFileCard','unmarkFileAsMissing','const setMediaSrc = '+source+'; return setMediaSrc;')(createMediaPlaceholder,{fileName:'portrait.svg'},'https://covo.test/test-image.svg',()=>false,(_,load)=>queueMicrotask(load),()=>{const card=document.createElement('button');card.className='media-error';card.textContent='再試行';return card;},()=>{});
+    window.mediaMissing=new Set();
+    const setSrc = Function('createMediaPlaceholder','message','targetAttachmentUrl','isFileMissing','scheduleMediaLoad','createExpiredFileCard','unmarkFileAsMissing','markFileAsMissing','const setMediaSrc = '+source+'; return setMediaSrc;')(createMediaPlaceholder,{fileName:'portrait.svg'},'https://covo.test/test-image.svg',url=>mediaMissing.has(url),(_,load)=>queueMicrotask(load),()=>{const card=document.createElement('button');card.className='media-error';card.textContent='再試行';return card;},url=>mediaMissing.delete(url),url=>mediaMissing.add(url));
     window.testSetMediaSrc=setSrc;
     const parent=document.createElement('div');parent.style.width='200px';document.body.append(parent);
     const image=document.createElement('img');image.style.maxHeight='250px';setSrc(image,'src');parent.append(image._covoShell);
@@ -218,8 +219,8 @@ for (const theme of ['', 'discord-dark-theme']) test('attachment gradient fits t
   expect(await page.locator('.covo-media-shell').evaluate(node => ({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))).toEqual({width:120,height:240});
   let retries=0;await page.route('https://covo.test/retry.svg',route=>route.fulfill(++retries===1?{status:503,body:'unavailable'}:{contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"/>'}));
   await page.evaluate(()=>window.testSetMediaSrc(document.querySelector('.covo-media-shell img'),'src','https://covo.test/retry.svg'));
-  await expect(page.locator('.media-error')).toBeVisible();await page.locator('.media-error').press('Enter');
-  await expect(page.locator('.covo-media-shell')).not.toHaveClass(/is-loading/);expect(retries).toBe(2);await expect(page.locator('.covo-media-shell img')).toHaveCount(1);
+  await expect(page.locator('.media-error')).toBeVisible();expect(await page.evaluate(()=>mediaMissing.size)).toBe(1);await page.locator('.media-error').press('Enter');
+  await expect(page.locator('.covo-media-shell')).not.toHaveClass(/is-loading/);expect(retries).toBe(2);expect(await page.evaluate(()=>mediaMissing.size)).toBe(0);await expect(page.locator('.covo-media-shell img')).toHaveCount(1);
 });
 
 test('diagnostic copy is local, bounded and excludes private context', async ({ page }) => {

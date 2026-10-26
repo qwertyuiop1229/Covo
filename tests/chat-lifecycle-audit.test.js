@@ -9,6 +9,18 @@ function declaration(name) {
 }
 const tick = () => new Promise(setImmediate);
 
+test('a room-key repair refreshes partial cached history and unchanged wraps do not repeat reads',async()=>{
+  let node,callback;const walk=n=>{if(!n||typeof n!=='object')return;if(n.type==='AssignmentExpression'&&n.left?.type==='MemberExpression'&&n.left.property?.name==='_activeMyRoomKeyUnsub')node=n;for(const value of Object.values(n))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);};walk(ast);
+  const data={versions:{'1':'older-key','2':'current-key'}},scope='server:room';
+  const decrypt=jest.fn(async()=>{}),render=jest.fn();
+  const ctx=vm.createContext({window:{},myKeyRef:'own-key',onSnapshot:(_,fn)=>{callback=fn;return()=>{};},active:()=>true,activeServerId:'server',activeRoomId:'room',members:['alice'],roomKeyScope:()=>scope,
+    _e2ee:{roomKeyCache:{[scope]:{latest:'only-v2'}},_roomKeyPromises:{},roomWrapSignatures:{}},allLoadedMessages:[{text:'encrypted'}],decryptMessagesInPlace:decrypt,renderMessagesWithReadReceipts:render});
+  ctx.getOrCreateRoomKey=jest.fn(async()=>{ctx._e2ee.roomWrapSignatures[scope]=JSON.stringify(data);return {latest:'v2','1':'v1'};});
+  vm.runInContext(main.slice(node.start,node.end),ctx);await callback({exists:()=>true,data:()=>data});
+  expect(decrypt).toHaveBeenCalledTimes(1);expect(render).toHaveBeenCalledTimes(1);
+  await callback({exists:()=>true,data:()=>data});expect(ctx.getOrCreateRoomKey).toHaveBeenCalledTimes(1);
+});
+
 test('a queued attachment from Alice cannot start uploading after switching to Bob', async () => {
   const upload = jest.fn(async()=> 'https://files.test/private');
   const ctx = vm.createContext({ userId:'bob', auth:{currentUser:{uid:'bob'}}, window:{},

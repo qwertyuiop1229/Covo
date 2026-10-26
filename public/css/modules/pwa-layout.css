@@ -1,13 +1,19 @@
-/* Use the opaque OS status bar and keep the browser's actual safe-area values. */
-html.covo-ios-standalone { background: var(--covo-shell-background, #f2f3f5); }
+/* Extend the themed surface behind system bars; inset interactive controls once. */
+html.covo-ios-standalone { background-color:var(--covo-canvas-background,#fff); }
 html.covo-ios-standalone:has(body.discord-ui-mode):not(:has(#appLoadingSplash)),
 html.covo-ios-standalone:has(body.discord-ui-mode):not(:has(#appLoadingSplash)) body,
-html.covo-ios-standalone body.discord-ui-mode .container { background: var(--covo-shell-background, #e2e8f0) !important; }
+html.covo-ios-standalone body.discord-ui-mode .container {
+  background-color:var(--covo-canvas-background,#fff) !important;
+  background-image:linear-gradient(to bottom,var(--covo-shell-background,#e2e8f0) 0px,var(--covo-shell-background,#e2e8f0) var(--safe-top),var(--covo-canvas-background,#fff) var(--safe-top),var(--covo-canvas-background,#fff) 100%) !important;
+}
 html.covo-ios-standalone body { position: fixed; inset: 0; height: auto; min-height: 0; overflow: hidden; }
 html.covo-ios-standalone .container { position: absolute; inset: 0; height: auto; min-height: 0; }
+html.covo-ios-standalone #mainContent { min-height:0; flex:1 1 0%; }
+html.covo-ios-standalone #appContainer { height:auto !important; min-height:0; }
 #appLoadingSplash { height: 100%; background: #232b38; }
 html.covo-ios-standalone #appLoadingSplash { height: auto; inset: 0; }
 html:has(#appLoadingSplash), html:has(#appLoadingSplash) body { background: #232b38 !important; }
+html.covo-ios-standalone:has(#appLoadingSplash) .container { background:#232b38 !important; }
 html.covo-keyboard-open .container {
   top: var(--covo-keyboard-top); bottom: auto; height: var(--covo-keyboard-height);
 }
@@ -29,19 +35,15 @@ html.covo-keyboard-open { --safe-bottom: 0px; }
 }
 html.covo-ios-standalone :is(#mobileProfileScreen,#mobileNotifScreen,.mobile-settings-detail) { height: 100% !important; min-height: 0 !important; }
 html.covo-ios-standalone :is(#authContainer,#nicknameContainer) { min-height: 0 !important; }
-@media (max-width: 768px) {
-  body.discord-ui-mode #appContainer #sidebar #userPanel {
-    box-shadow: none !important; filter: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-    transition-property: background-color, border-color, color !important;
-  }
+html.covo-ios-standalone body.discord-ui-mode #appContainer #sidebar #userPanel,
+html.covo-ios-standalone body.discord-ui-mode #messageInputArea {
+  box-shadow:none !important; filter:none !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+  background-image:none !important; transition-property:background-color,border-color,color !important;
 }
+html.covo-ios-standalone :is(#userPanel,#messageInputArea)::before,
+html.covo-ios-standalone :is(#userPanel,#messageInputArea)::after { content:none !important; box-shadow:none !important; }
+html.covo-ios-standalone body.discord-ui-mode:not(.dark-server-theme):not(.discord-dark-theme) #messageInputArea { background-color:#fff !important; }
 html.covo-ios-standalone body.discord-ui-mode :is(#serverHeader,#discordTitleBar) { background: var(--covo-shell-background,#e2e8f0) !important; }
-#covoPwaBottomSurface { display: none; }
-html.covo-ios-standalone:not(.covo-keyboard-open) #covoPwaBottomSurface {
-  display: block; position: fixed; inset: auto 0 0; height: env(safe-area-inset-bottom,0px); pointer-events: none;
-  background: var(--covo-shell-background,#f2f3f5); z-index: 60; box-shadow: none; filter: none;
-}
-html:has(#appLoadingSplash) #covoPwaBottomSurface { background: #232b38 !important; }
 .covo-auth-transition[hidden] { display: none !important; }
 .covo-auth-transition { position: fixed; inset: 0; z-index: 99998; display: flex; align-items: center; justify-content: center; background: var(--covo-surface,#fff); background: color-mix(in srgb,var(--covo-surface,#fff) 94%,transparent); padding: 24px; }
 .covo-auth-transition-card { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; color: var(--covo-text,#1e293b); }

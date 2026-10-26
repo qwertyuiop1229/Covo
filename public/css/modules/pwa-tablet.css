@@ -1,0 +1,8 @@
+/* iPad installed layout, including narrow Split View. Each column paints its own home area. */
+@media (max-width:768px) {
+  html.covo-ios-tablet body.discord-ui-mode #appContainer :is(#currentRoomHeader,#serverHeader,#discordDmHeader,#discordDiscoverHeader) { background-image:linear-gradient(to bottom,var(--covo-shell-background) 0px,var(--covo-shell-background) var(--safe-top),transparent var(--safe-top)) !important; }
+}
+html.covo-ios-tablet body.discord-ui-mode #messageInputArea { padding-bottom:max(12px,var(--safe-bottom)) !important; }
+html.covo-ios-tablet body.discord-ui-mode #appContainer #sidebar #userPanel { bottom:calc(8px + var(--safe-bottom)) !important; }
+html.covo-ios-tablet body.discord-ui-mode #discordServerNav { padding-bottom:calc(78px + var(--safe-bottom)) !important; }
+html.covo-ios-tablet body.discord-ui-mode #sidebar :is(#roomList,#discordHomeSidebar) { padding-bottom:calc(78px + var(--safe-bottom)) !important; }

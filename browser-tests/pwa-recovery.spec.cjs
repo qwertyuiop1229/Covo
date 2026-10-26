@@ -3,14 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const parser = require('@babel/parser');
 
-async function routeApp(page, { standalone = false, ios = false, recovery = false } = {}) {
-  await page.addInitScript(({ standalone, ios }) => {
+async function routeApp(page, { standalone = false, ios = false, recovery = false, tablet = page.viewportSize()?.width > 768 } = {}) {
+  await page.addInitScript(({ standalone, ios, tablet }) => {
     Object.defineProperty(navigator, 'standalone', { value: standalone, configurable: true });
-    if (ios) { Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPad; CPU OS 26_5_2 like Mac OS X)', configurable: true }); Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true }); }
+    if (ios) { Object.defineProperty(navigator, 'userAgent', { value: tablet ? 'Mozilla/5.0 (iPad; CPU OS 26_5_2 like Mac OS X)' : 'Mozilla/5.0 (iPhone; CPU iPhone OS 27_2 like Mac OS X)', configurable: true }); Object.defineProperty(navigator, 'maxTouchPoints', { value: 5, configurable: true }); }
     localStorage.setItem('covo_private_key_alice', 'KEEP_KEY');
     localStorage.setItem('covo_outbox_alice', 'KEEP_OUTBOX');
     localStorage.setItem('covo_missing_files_v3', '[]');
-  }, { standalone, ios });
+  }, { standalone, ios, tablet });
   await page.route('https://covo.test/**', route => {
     const url = new URL(route.request().url());
     let file = path.resolve('public', '.' + (url.pathname === '/' ? '/index.html' : url.pathname));
@@ -32,7 +32,7 @@ for (const [name, width, height] of [['iphone', 402, 874], ['ipad', 1180, 820]])
     await page.setViewportSize({ width, height });
     await routeApp(page, { standalone: true, ios: true });
     await expect(page.locator('html')).toHaveClass(/covo-ios-standalone/);
-    expect(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content')).toBe('default');
+    expect(await page.locator('meta[name="apple-mobile-web-app-status-bar-style"]').getAttribute('content')).toBe('black-translucent');
     const splash = await page.locator('#appLoadingSplash').boundingBox();
     expect(splash.y).toBe(0); expect(splash.height).toBe(height);
     await page.evaluate(() => { document.getElementById('appLoadingSplash').remove(); document.body.className = 'auth-ready logged-in discord-ui-mode discord-home-view discord-discover-view'; });
@@ -182,9 +182,69 @@ test('installed mobile server panel has no gradient shadow and chrome follows na
   await routeApp(page, { standalone: true, ios: true });
   for (const theme of ['', 'dark-server-theme', 'discord-dark-theme']) {
     await page.evaluate(theme => { document.getElementById('appLoadingSplash')?.remove(); document.body.className = `auth-ready logged-in discord-ui-mode ${theme}`; window.covoViewport.refresh(); }, theme);
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(await page.locator('#discordServerNav').evaluate(el => getComputedStyle(el).backgroundColor));
+    const navColor=await page.locator('#discordServerNav').evaluate(el=>getComputedStyle(el).backgroundColor);
+    await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.documentElement).backgroundImage)).toContain(navColor);
     expect(await page.locator('#userPanel').evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
   }
+});
+
+for(const [width,tablet] of [[402,false],[1180,true],[600,true]]) test(`installed ${width}: integrated columns reach bottom and controls clear home indicator`,async({page})=>{
+  await page.setViewportSize({width,height:874});await routeApp(page,{ios:true,standalone:true,tablet});
+  await page.evaluate(()=>{document.getElementById('appLoadingSplash').remove();document.documentElement.style.setProperty('--safe-bottom','34px');document.documentElement.style.setProperty('--safe-top','24px');document.getElementById('appContainer').classList.remove('hidden');document.getElementById('discordHomeSidebar').classList.remove('hidden');});
+  await expect(page.locator('html')).toHaveClass(new RegExp(tablet?'covo-ios-tablet':'covo-ios-phone'));
+  await expect(page.locator('#covoPwaBottomSurface')).toHaveCount(0);
+  for(const theme of ['', 'dark-server-theme','discord-dark-theme']){
+    await page.evaluate(theme=>{document.body.className=`auth-ready logged-in discord-ui-mode discord-home-view discord-dm-view ${theme}`;window.covoViewport.refresh();},theme);
+    const panel=await page.locator('#userPanel').boundingBox(), sidebar=await page.locator('#sidebar').boundingBox();
+    expect(Math.abs(sidebar.y+sidebar.height-874)).toBeLessThan(1);
+    expect(panel.y+panel.height).toBeLessThanOrEqual(874-34);
+    expect(await page.locator('#userPanel').evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
+    expect(await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.closest('#userPanel')?.id,{x:panel.x+panel.width/2,y:panel.y+panel.height-4})).toBe('userPanel');
+    if(width>768){const friends=await page.locator('#discordDmHomeView').boundingBox();expect(Math.abs(friends.y+friends.height-874)).toBeLessThan(1);}
+    const nav=await page.locator('#discordServerNav').evaluate(el=>getComputedStyle(el).backgroundColor);
+    await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.documentElement).backgroundImage)).toContain(nav);
+    expect(await page.evaluate(()=>getComputedStyle(document.documentElement,'::before').content)).toBe('none');
+    await page.evaluate(theme=>{document.body.className=`auth-ready logged-in discord-ui-mode discord-dm-chat in-chat-view ${theme}`;document.getElementById('currentRoomHeader').classList.remove('hidden');window.covoViewport.refresh();},theme);
+    const composer=await page.locator('#messageInputArea').boundingBox();expect(Math.abs(composer.y+composer.height-874)).toBeLessThan(1);
+    expect(await page.locator('#messageInputArea').evaluate(el=>parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThanOrEqual(34);
+    expect(await page.locator('#messageInputArea').evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
+  }
+  await page.screenshot({path:`scratch/pwa-integrated-${width}.png`});
+});
+
+for(const [width,tablet] of [[402,false],[1180,true]]) test(`installed ${width}: keyboard canvas matches composer and restores the active panel`,async({page})=>{
+  await page.setViewportSize({width,height:874});await routeApp(page,{ios:true,standalone:true,tablet});
+  await page.evaluate(()=>{
+    document.getElementById('appLoadingSplash').remove();document.getElementById('appContainer').classList.remove('hidden');
+    document.getElementById('currentRoomHeader').classList.remove('hidden');
+    document.getElementById('messageInput').disabled=false;
+    const vv=new EventTarget();Object.assign(vv,{height:420,offsetTop:0,scale:1});Object.defineProperty(window,'visualViewport',{value:vv,configurable:true});
+  });
+  for(const theme of ['', 'dark-server-theme','discord-dark-theme']){
+    await page.evaluate(theme=>{document.body.className=`auth-ready logged-in discord-ui-mode discord-dm-chat in-chat-view ${theme}`;document.getElementById('messageInput').focus();visualViewport.height=420;window.covoViewport.refresh();},theme);
+    await expect(page.locator('html')).toHaveClass(/covo-keyboard-open/);
+    await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.documentElement).backgroundColor)).toBe(await page.locator('#messageInputArea').evaluate(el=>getComputedStyle(el).backgroundColor));
+    if(!theme)expect(await page.evaluate(()=>getComputedStyle(document.documentElement).backgroundColor)).toBe('rgb(255, 255, 255)');
+    const nav=await page.locator('#discordServerNav').evaluate(el=>getComputedStyle(el).backgroundColor);
+    expect(await page.evaluate(()=>getComputedStyle(document.documentElement).backgroundImage)).toContain(nav);
+    if(width<=768)expect(await page.locator('#currentRoomHeader').evaluate(el=>getComputedStyle(el).backgroundImage)).toContain(nav);
+    await page.evaluate(()=>{document.getElementById('messageInput').blur();visualViewport.height=innerHeight;window.covoViewport.refresh();});
+    await expect(page.locator('html')).not.toHaveClass(/covo-keyboard-open/);
+    await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.documentElement).backgroundColor)).toBe(await page.locator('#chatArea').evaluate(el=>getComputedStyle(el).backgroundColor));
+    if(width>768){await page.evaluate(()=>{document.body.classList.remove('in-chat-view');window.covoViewport.refresh();});await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.documentElement).backgroundColor)).toBe(await page.locator('#chatArea').evaluate(el=>getComputedStyle(el).backgroundColor));}
+  }
+});
+
+test('closed phone sheets cast no shadow while an opened members sheet remains interactive',async({page})=>{
+  await page.setViewportSize({width:402,height:874});await routeApp(page,{ios:true,standalone:true});
+  await page.evaluate(()=>{document.getElementById('appLoadingSplash').remove();document.body.className='auth-ready logged-in discord-ui-mode in-chat-view';document.getElementById('appContainer').classList.remove('hidden');});
+  const sheet=page.locator('#membersSidebar');
+  expect(await sheet.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
+  await sheet.evaluate(el=>el.classList.add('bottom-sheet-open'));
+  expect(await sheet.evaluate(el=>getComputedStyle(el).boxShadow)).not.toBe('none');
+  expect(await sheet.evaluate(el=>getComputedStyle(el).pointerEvents)).toBe('auto');
+  await sheet.evaluate(el=>el.classList.remove('bottom-sheet-open'));
+  expect(await sheet.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
 });
 
 for (const [name,width,ios] of [['phone',402,true],['ipad',1180,true],['desktop',1440,false]]) {

@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import {cacheMatches,recordCache} from './dev_build_cache.mjs';
 import {assertSecretSafety} from './check_secret_safety.mjs';
 await assertSecretSafety();
@@ -33,5 +33,8 @@ const firebaseBuild = await build({
 await writeFile('.cache/firebase/metafile.json', JSON.stringify(firebaseBuild.metafile, null, 2));
 
 const desktopBuild=await build({ entryPoints: ['node_modules/@tauri-apps/plugin-updater/dist-js/index.js'], outfile: 'public/vendor/desktop-updater.js', bundle: true, format: 'esm', minify: true, metafile:true });
+const photoBuild=await build({ entryPoints: ['node_modules/photoswipe/dist/photoswipe.esm.js'], outfile: 'public/vendor/photoswipe.js', bundle: true, format: 'esm', minify: true, metafile:true });
+await copyFile('node_modules/photoswipe/dist/photoswipe.css','public/vendor/photoswipe.css');
+await copyFile('node_modules/photoswipe/LICENSE','public/vendor/photoswipe.LICENSE');
 await (await import('./build_css_modules.mjs')).stampCssImports();
-await recordCache(cacheFile,[...required,...Object.keys(firebaseBuild.metafile.inputs),...Object.keys(firebaseBuild.metafile.outputs),...Object.keys(desktopBuild.metafile.inputs),...Object.keys(desktopBuild.metafile.outputs)]);
+await recordCache(cacheFile,[...required,...Object.keys(firebaseBuild.metafile.inputs),...Object.keys(firebaseBuild.metafile.outputs),...Object.keys(desktopBuild.metafile.inputs),...Object.keys(desktopBuild.metafile.outputs),...Object.keys(photoBuild.metafile.inputs),...Object.keys(photoBuild.metafile.outputs),'node_modules/photoswipe/dist/photoswipe.css','node_modules/photoswipe/LICENSE','public/vendor/photoswipe.css','public/vendor/photoswipe.LICENSE']);
