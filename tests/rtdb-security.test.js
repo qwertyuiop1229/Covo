@@ -143,3 +143,12 @@ describe.each([['server', message], ['DM', dmMessage]])('%s retired message form
     await assertFails(set(ref(db('mallory'), fresh + '_spoof'), { senderId: 'mallory', text: 'cipher', storageVersion: 2, clientProtocol: 2 }));
   });
 });
+
+
+test('deleted-channel tombstones block queued bodies and late key writes for members and admins',async()=>{
+  await env.withSecurityRulesDisabled(async c=>{await update(ref(c.database(),server),{'rooms/general':null,'deletedChannels/general':true});});
+  for(const uid of ['alice','owner','mod']){
+    await assertFails(set(ref(db(uid),message),{senderId:uid,text:'enc::v1::iv::cipher',timestamp:2,storageVersion:2,clientProtocol:2}));
+    await assertFails(set(ref(db(uid),server+'/rooms/general/roomKeys/'+uid),{wrappedKey:'late'}));
+  }
+});

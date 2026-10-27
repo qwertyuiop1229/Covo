@@ -1,10 +1,10 @@
-import { createAuthTransition } from './auth_transition.js?v=1.1.292';
-import { createMaintenanceGate, createMaintenanceSignalHandler } from './maintenance_runtime.js?v=1.1.292';
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.292';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.292';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.292';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.292';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.292';
+import { createAuthTransition } from './auth_transition.js?v=1.1.293';
+import { createMaintenanceGate, createMaintenanceSignalHandler } from './maintenance_runtime.js?v=1.1.293';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.293';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.293';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.293';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.293';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.293';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
@@ -13,7 +13,7 @@ import { createStatePublisher, createSubscriptionRegistry, requiredMessageBacken
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.292';
+import { startIndependentReads, createDecryptRecovery, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.293';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -113,13 +113,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.292';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.293';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.292';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.292';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.292';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.292';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.292';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.293';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.293';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.293';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.293';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.293';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -796,10 +796,12 @@ const nicknameContainer = document.getElementById("nicknameContainer");
 const appContainer = document.getElementById("appContainer");
 const loadingOverlay = document.getElementById("loadingOverlay");
 const authTransition = createAuthTransition();
-let _maintenanceUnsub = null, _maintenanceControlDb=null, _maintenanceWatchingControl=false, _maintenanceWatchPending=false, _maintenanceWatchGeneration=0, _maintenanceInitialized = false, _maintenanceHadSession = false;
+let _maintenanceUnsub = null, _maintenanceControlDb=null, _maintenanceWatchingControl=false, _maintenanceWatchPending=false, _maintenanceWatchGeneration=0, _maintenanceInitialized = false, _maintenanceHadSession = false, _maintenanceStopped = false;
 const maintenanceGate = createMaintenanceGate({ endpoint: WORKER_BASE_URL + '/api/maintenance',
   getOwner: () => auth?.currentUser?.uid,
   stopped: async () => {
+    if(_maintenanceStopped){ensureMaintenanceWatch();return;}
+    _maintenanceStopped=true;
     if (isAuthReady) _maintenanceHadSession = true;
     _lastAuthUserId = null; isAuthReady = false;
     invalidateComposerOperation();
@@ -842,6 +844,7 @@ function ensureMaintenanceWatch() {
     _maintenanceWatchingControl=database===_maintenanceControlDb;
     const signal=createMaintenanceSignalHandler({
       enabled:()=>maintenanceGate.state?.enabled,blocked:()=>window.covoMaintenanceBlocked,
+      settling:()=>maintenanceGate.state?.transitioning===true,
       block:()=>{if(!isAdmin){window.covoMaintenanceBlocked=true;document.querySelector('.container').inert=true;}},
       refresh:async()=>{const allowed=await maintenanceGate.changed(auth.currentUser);
         const toggle = document.getElementById('adminMaintenanceToggle');
@@ -1187,6 +1190,8 @@ function initializeFirebase() {
     function cleanupAllActiveFirestoreListeners() {
       try {
         cleanupGlobalNotificationListeners();
+        if (typeof window._activeMyRoomKeyUnsub === 'function') { window._activeMyRoomKeyUnsub(); window._activeMyRoomKeyUnsub=null; }
+        if (typeof window._activeRescueRequestsUnsub === 'function') { window._activeRescueRequestsUnsub(); window._activeRescueRequestsUnsub=null; }
         if (typeof window._activeDmKeyUnsub === 'function') { window._activeDmKeyUnsub(); window._activeDmKeyUnsub = null; }
         if (typeof window._activeDmUserDocUnsub === 'function') { window._activeDmUserDocUnsub(); window._activeDmUserDocUnsub = null; }
         if (typeof _announcementListenerUnsub === 'function') { _announcementListenerUnsub(); _announcementListenerUnsub = null; }
@@ -1221,8 +1226,9 @@ function initializeFirebase() {
       try {
         if (!await maintenanceGate.authorize(user)) return;
         if (auth.currentUser?.uid !== user?.uid) return;
+        _maintenanceStopped=false;
         if (_maintenanceHadSession) { location.reload(); return; }
-        if (db) await enableNetwork(db);
+        if (db) await withReadDeadline(enableNetwork(db),5000);
         if (window.covoMaintenanceBlocked || auth.currentUser?.uid !== user?.uid) return;
         if (_rtdb) goOnline(_rtdb);
         ensureMaintenanceWatch();
@@ -11153,6 +11159,7 @@ function renderDmConversationsList() {
   const dmKeySessionActive = () => userId === dmKeyOwner && currentDmId === dmId && _activeChannelSessionId === currentSession;
   (async () => {
     try {
+
       if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
       if (!dmKeySessionActive()) return;
       const activeDmId = dmId;
@@ -13401,22 +13408,19 @@ async function loadServerSettingsRooms() {
       delBtn.dataset.roomName = room.name;
       delBtn.innerHTML = `<i class="fas fa-trash"></i>`;
       delBtn.addEventListener("click", async () => {
+        const targetServer=currentServerId, owner=userId;
         if (!await showCustomConfirm(`「${delBtn.dataset.roomName}」を削除しますか？`, "削除")) return;
+        if(currentServerId!==targetServer || userId!==owner)return;
+        delBtn.disabled=true;
         loadingOverlay.classList.remove("hidden");
         try {
-          await deleteRoomCascade(currentServerId, delBtn.dataset.roomId);
-          if (currentRoomId === delBtn.dataset.roomId) {
-            currentRoomId = null;
-            currentRoomHeader.classList.add("hidden");
-            clearMessagesDOM();
-            messageInput.disabled = true;
-            sendMessageButton.disabled = true;
-          }
+          await deleteRoomAndMessages(delBtn.dataset.roomId,targetServer);
+          if(currentServerId!==targetServer || userId!==owner)return;
           roomsData = roomsData.filter(r => r.id !== delBtn.dataset.roomId);
           renderRoomsListUI();
           if (typeof loadServerRooms === 'function') loadServerRooms(currentServerId);
-        } catch (e) { alertMessage("削除に失敗しました", "error"); }
-        finally { loadingOverlay.classList.add("hidden"); }
+        } catch (e) { alertMessage(e?.message || "削除に失敗しました", "error"); }
+        finally { loadingOverlay.classList.add("hidden");delBtn.disabled=false; }
       });
 
       btnsContainer.appendChild(upBtn);
@@ -16136,6 +16140,16 @@ async function subscribeToMessagesRTDB(session) {
     if (targetDmId) await _decryptDmMessagesInPlace(list, targetDmId, targetDmParticipants);
     else await decryptMessagesInPlace(list, targetServerId, targetRoomId, targetServerData?.joinedUsers || []);
   };
+  const recovery=createDecryptRecovery({
+    active:isStillActive,
+    pending:()=>allLoadedMessages.filter(record=>record && ((!record._decrypted && typeof record.text==='string' && record.text.startsWith('enc::')) || (typeof record.replyTo?.text==='string' && record.replyTo.text.startsWith('enc::')))),
+    decrypt:decryptInPlace,
+    render:()=>{renderMessagesWithReadReceipts();if(!allLoadedMessages.some(record=>!record._decrypted&&typeof record.text==='string'&&record.text.startsWith('enc::'))&&!_channelPermissionDenied)setChannelLoadStatus('');},
+    waiting:()=>{if(!_channelPermissionDenied)setChannelLoadStatus('暗号鍵の確認・復号を待っています。接続が戻ると再確認します。',true);}
+  });
+  const resumeDecrypt=()=>{if(!document.hidden)recovery.run(true);};
+  window.addEventListener('online',resumeDecrypt);document.addEventListener('visibilitychange',resumeDecrypt);
+  cleanups.push(()=>{recovery.close();window.removeEventListener('online',resumeDecrypt);document.removeEventListener('visibilitychange',resumeDecrypt);});
   _channelPermissionDenied = false;
   restoreOutboxForChannel(chId).catch(() => {});
   setChannelLoadStatus('保存済みの履歴と接続を確認中…');
@@ -16166,10 +16180,8 @@ async function subscribeToMessagesRTDB(session) {
       updateReadReceiptForCurrentUser();
     }
     // Neither key retrieval, persistence nor notification text can block message arrival.
-    const receivedIds = new Set(records.map(record => record.id));
-    const visibleRecords = allLoadedMessages.filter(record => receivedIds.has(record.id));
     const decryptStarted = Date.now();
-    decryptInPlace(visibleRecords).then(() => {
+    Promise.resolve(recovery.run(true)).then(() => {
       globalThis.covoDiagnostics?.timing('channel.decrypt', Date.now() - decryptStarted);
       if (isStillActive()) renderMessagesWithReadReceipts();
     }).catch(error => {
@@ -16498,14 +16510,39 @@ function selectRoom(roomId, roomName) {
     const activeServerId = currentServerId, activeRoomId = currentRoomId;
     const owner = userId, session = _activeChannelSessionId;
     const active = () => owner === userId && session === _activeChannelSessionId && currentServerId === activeServerId && currentRoomId === activeRoomId;
+    const members = (currentServerData && currentServerData.joinedUsers) || [];
     try {
+      {
+        // Watch one's own wraps even with a partial cache: older keys can arrive later.
+        const myKeyRef = doc(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/roomKeys/${userId}`);
+        window._activeMyRoomKeyUnsub = onSnapshot(myKeyRef, async (snap) => {
+          if (snap.exists() && active()) {
+            const signature = JSON.stringify(snap.data());
+            const scope = roomKeyScope(activeServerId, activeRoomId);
+            if (_e2ee.roomWrapSignatures?.[scope] === signature) return;
+            delete _e2ee.roomKeyCache[roomKeyScope(activeServerId, activeRoomId)];
+            delete _e2ee._roomKeyPromises[roomKeyScope(activeServerId, activeRoomId)];
+            const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members, true);
+            if (!active()) return;
+            if (arrived) {
+              if (allLoadedMessages && allLoadedMessages.length > 0) {
+                allLoadedMessages.forEach(m => {
+                  if (m._decryptionFailed) m._decryptionFailed = false;
+                });
+                await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
+                if (!active()) return;
+                renderMessagesWithReadReceipts();
+              }
+            }
+          }
+        }, () => {});
+      }
       if (typeof ensureE2EEKeys === 'function') await ensureE2EEKeys();
       if (!active()) return;
-      const members = (currentServerData && currentServerData.joinedUsers) || [];
       const key = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
       if (!active()) return;
       if (key) {
-        await backfillRoomKeysForMembers(activeServerId, activeRoomId, members);
+        backfillRoomKeysForMembers(activeServerId, activeRoomId, members).catch(()=>{});
         if (!active()) return;
       }
       if (key && (isAdmin || currentServerData?.createdBy === owner || currentServerData?.serverAdmins?.includes(owner))) {
@@ -16531,31 +16568,7 @@ function selectRoom(roomId, roomName) {
           }
         }, () => {});
       }
-      {
-        // Watch one's own wraps even with a partial cache: older keys can arrive later.
-        const myKeyRef = doc(db, `artifacts/${appId}/servers/${activeServerId}/rooms/${activeRoomId}/roomKeys/${userId}`);
-        window._activeMyRoomKeyUnsub = onSnapshot(myKeyRef, async (snap) => {
-          if (snap.exists() && active()) {
-            const signature = JSON.stringify(snap.data());
-            const scope = roomKeyScope(activeServerId, activeRoomId);
-            if (_e2ee.roomWrapSignatures?.[scope] === signature) return;
-            delete _e2ee.roomKeyCache[roomKeyScope(activeServerId, activeRoomId)];
-            delete _e2ee._roomKeyPromises[roomKeyScope(activeServerId, activeRoomId)];
-            const arrived = await getOrCreateRoomKey(activeServerId, activeRoomId, members);
-            if (!active()) return;
-            if (arrived) {
-              if (allLoadedMessages && allLoadedMessages.length > 0) {
-                allLoadedMessages.forEach(m => {
-                  if (m._decryptionFailed) m._decryptionFailed = false;
-                });
-                await decryptMessagesInPlace(allLoadedMessages, activeServerId, activeRoomId, members).catch(() => {});
-                if (!active()) return;
-                renderMessagesWithReadReceipts();
-              }
-            }
-          }
-        }, () => {});
-      }
+
     } catch (e) { }
   })();
 
@@ -16735,7 +16748,7 @@ messagesDisplay.addEventListener("wheel", (e) => {
 // 旧ルーム作成ボタンは無効化（サーバー設定から管理）
 
 function handleDeleteRoomClick(id, name) {
-  pendingRoomDelete = { roomId: id, roomName: name };
+  pendingRoomDelete = { serverId:currentServerId, owner:userId, roomId: id, roomName: name };
   const delModal = document.getElementById("deleteRoomConfirmModal");
   if (delModal) delModal.classList.remove("hidden");
   const nameEl = document.getElementById("roomToDeleteName");
@@ -16748,7 +16761,7 @@ if (confirmDelButton) {
     const delModal = document.getElementById("deleteRoomConfirmModal");
     if (delModal) delModal.classList.add("hidden");
     if (pendingRoomDelete) {
-      await deleteRoomAndMessages(pendingRoomDelete.roomId);
+      await executeDeleteRoom();
     }
   });
 }
@@ -16760,9 +16773,16 @@ if (cancelDelButton) {
   });
 }
 
-async function deleteRoomAndMessages(roomId) {
-  if (!currentServerId) return;
-  if (currentRoomId === roomId) {
+async function deleteRoomAndMessages(roomId, serverId=currentServerId) {
+  if (!serverId) throw new Error('サーバーを選択してください。');
+  const owner=userId;
+  await deleteRoomCascade(serverId,roomId);
+  if(userId!==owner)return;
+  if (currentServerId===serverId && currentRoomId === roomId) {
+    ++_activeChannelSessionId;
+    window.rtdbMessagesUnsub?.();window.rtdbMessagesUnsub=null;
+    window._activeMyRoomKeyUnsub?.();window._activeMyRoomKeyUnsub=null;
+    window._activeRescueRequestsUnsub?.();window._activeRescueRequestsUnsub=null;
     currentRoomId = null;
     updateUserStatus('online');
     currentRoomHeader.classList.add("hidden");
@@ -16774,19 +16794,20 @@ async function deleteRoomAndMessages(roomId) {
     if (readReceiptsUnsubscribe) { readReceiptsUnsubscribe(); readReceiptsUnsubscribe = null; }
     if (typingUnsubscribe) { typingUnsubscribe(); typingUnsubscribe = null; }
   }
-  await deleteRoomCascade(currentServerId, roomId);
 }
 const executeDeleteRoom = async () => {
   if (!pendingRoomDelete) return;
+  const target=pendingRoomDelete;
+  if(target.owner!==userId || target.serverId!==currentServerId)return;
+  pendingRoomDelete = null;
   loadingOverlay.classList.remove("hidden");
   try {
-    await deleteRoomAndMessages(pendingRoomDelete.roomId);
-    alertMessage(`ルーム「${pendingRoomDelete.roomName}」を削除しました。`, "success");
+    await deleteRoomAndMessages(target.roomId,target.serverId);
+    if(userId===target.owner)alertMessage(`ルーム「${target.roomName}」を削除しました。`, "success");
   } catch (error) {
-    alertMessage("ルームの削除に失敗しました。", "error");
+    if(userId===target.owner)alertMessage(error.message || "ルームの削除に失敗しました。", "error");
   } finally {
     loadingOverlay.classList.add("hidden");
-    pendingRoomDelete = null;
   }
 };
 
@@ -22393,63 +22414,27 @@ async function batchDeleteCollection(colRef) {
     hasMore = snap.docs.length === 10;
   }
 }
-// ルームと配下の全データ（添付ファイル、messages, readReceipts, roomKeys, rescueRequests, LocalStore）を完全削除
+// Workerで認可を確認して会話・鍵・ルームを削除。共有され得る添付バイナリはここでは削除しない。
 async function deleteRoomCascade(serverId, roomId) {
-  const base = `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`;
-  // 1. ルーム内メッセージに添付されていたKVファイルをクリーンアップ
-  try {
-    const msgsSnap = await getDocs(collection(db, `${base}/messages`));
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : "";
-    for (const mDoc of msgsSnap.docs) {
-      const m = mDoc.data();
-      const fileUrl = m.fileData || m.kvFileUrl;
-      if (fileUrl && fileUrl.includes('/api/file/')) {
-        const match = fileUrl.match(/\/api\/file\/([A-Za-z0-9_\-]+)/);
-        if (match) {
-          const fileKey = match[1];
-          const params = `userId=${encodeURIComponent(userId)}&idToken=${encodeURIComponent(idToken)}&forceDelete=1&appId=${encodeURIComponent(appId)}&serverId=${encodeURIComponent(serverId)}`;
-          fetch(`${WORKER_BASE_URL}/api/file/${fileKey}?${params}`, { method: 'DELETE' }).catch(() => {});
-        }
-      }
-    }
-  } catch (_) {}
-  // 2. Firestore サブコレクションの安全な個別例外保護付きバッチ削除
-  try { await batchDeleteCollection(collection(db, `${base}/messages`)); } catch (e) { console.warn('messages delete warning:', e); }
-  try { await batchDeleteCollection(collection(db, `${base}/readReceipts`)); } catch (e) { console.warn('readReceipts delete warning:', e); }
-  try { await batchDeleteCollection(collection(db, `${base}/roomKeys`)); } catch (e) { console.warn('roomKeys delete warning:', e); }
-  try { await batchDeleteCollection(collection(db, `${base}/rescueRequests`)); } catch (e) { console.warn('rescueRequests delete warning:', e); }
-  await deleteDoc(doc(db, `artifacts/${appId}/servers/${serverId}/rooms`, roomId));
-  // 3. RTDB パスの削除
-  try {
-    const { ref, remove } = await import('../vendor/firebase/firebase-database.js');
-    const rtdb = await _getOrInitRTDB();
-    if (rtdb) {
-      await remove(ref(rtdb, `artifacts/${appId}/servers/${serverId}/rooms/${roomId}`)).catch(() => {});
-    }
-  } catch (err) { console.warn("RTDB Room Delete warning (handled safely):", err); }
-  // 4. クライアント側ローカル IndexedDB のメッセージ履歴も完全消去
-  try {
-    if (typeof LocalStore !== 'undefined' && LocalStore.clearMessagesForChannel) {
-      await LocalStore.clearMessagesForChannel(`${serverId}_${roomId}`);
-    }
-  } catch (_) {}
-  // 5. 削除されたルームへのゾンビ再入室・鍵警告（roomKey未存在エラー）を確実に防止
-  try {
-    const savedLastRoom = localStorage.getItem('covo_last_room_' + serverId);
-    if (savedLastRoom === roomId) {
-      localStorage.removeItem('covo_last_room_' + serverId);
-    }
-  } catch (_) {}
-  if (window.__globalRoomsCache && window.__globalRoomsCache[serverId]) {
-    delete window.__globalRoomsCache[serverId][roomId];
-  }
+  const account=auth.currentUser, owner=userId;
+  if(!account || account.uid!==owner)throw new Error('ログイン状態を確認してください。');
+  const token=await withReadDeadline(account.getIdToken(),5000);
+  if(auth.currentUser?.uid!==owner || userId!==owner)throw new Error('アカウントが変更されました。');
+  const response=await fetchWithTimeout(fetch,WORKER_BASE_URL+'/api/deleteChannel',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({appId,serverId,roomId})},30000);
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok || result.success!==true)throw new Error(response.status===403?'チャンネルを削除する権限がありません。':response.status===404?'削除APIの更新が必要です。Workerを最新版に更新してください。':result.error || 'チャンネルを削除できませんでした。');
+  if(auth.currentUser?.uid!==owner || userId!==owner)return;
+  await withReadDeadline(LocalStore.clearMessagesForChannel(serverId+'_'+roomId),2000).catch(()=>{});
+  if(auth.currentUser?.uid!==owner || userId!==owner)return;
+  try {if(localStorage.getItem('covo_last_room_'+serverId)===roomId)localStorage.removeItem('covo_last_room_'+serverId);}catch(_){}
+  if(window.__globalRoomsCache?.[serverId])delete window.__globalRoomsCache[serverId][roomId];
 }
 // サーバーと配下の全データ（全ルーム添付ファイル、rooms, messages, readReceipts, profiles, inviteCodes, secrets, LocalStore）を削除
 async function deleteServerCascade(serverId) {
   const base = `artifacts/${appId}/servers/${serverId}`;
   const roomsSnap = await getDocs(collection(db, `${base}/rooms`));
   for (const roomDoc of roomsSnap.docs) {
-    await deleteRoomCascade(serverId, roomDoc.id).catch(() => {});
+    await deleteRoomCascade(serverId, roomDoc.id);
   }
   await batchDeleteCollection(collection(db, `${base}/profiles`));
   await batchDeleteCollection(collection(db, `${base}/inviteCodes`));
@@ -28973,7 +28958,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.292').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.293').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -29733,6 +29718,7 @@ async function finalizeRestoredMessage(entry) {
   if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
   const snapshot = await transaction.get(reference);
   if (entry.ownerId !== userId || auth.currentUser?.uid !== entry.ownerId || window.covoMaintenanceBlocked) return;
+  if (!snapshot.exists() && !destination.dmId) throw new Error('チャンネルは削除されています。');
   const metadata = snapshot.exists() ? snapshot.data() : {};
  if ((entry.id && metadata.lastMessageId === entry.id) || parseTimestampToMs(metadata.lastMessageAt) > entry.data.timestamp) return;
   const update = {lastMessageId:entry.id,lastMessageStorageVersion:entry.data.storageVersion || 1,lastMessageStorageTimestamp:entry.data.timestamp,lastMessageAt:Timestamp.fromMillis(entry.data.timestamp),lastMessageSender:entry.ownerId,lastMessageSenderNickname:entry.data.senderNickname || 'ユーザー',lastMessageText:entry.data.text || (entry.data.sticker ? 'スタンプ' : '（ファイル）')};

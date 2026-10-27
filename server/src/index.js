@@ -324,6 +324,7 @@ export default {
       if (url.pathname === "/api/sendNotification" && request.method === "POST") {
         return await handleSendNotification(request, env);
       }
+      if (url.pathname === '/api/deleteChannel' && request.method === 'POST') return await handleDeleteChannel(request, env);
       if (url.pathname === "/api/setOffline" && request.method === "POST") {
         return await handleSetOffline(request, env);
       }
@@ -398,6 +399,50 @@ export default {
       };
 
 const _maintenanceTables = new WeakMap();
+async function handleDeleteChannel(request, env) {
+  const headers={...getCorsHeaders(request),'Content-Type':'application/json'};
+  const reply=(status,error)=>new Response(JSON.stringify(error?{success:false,error}:{success:true}),{status,headers});
+  const body=await request.json().catch(()=>null);
+  const valid=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,160}$/.test(value);
+  if(!body||!isValidAppId(body.appId,env)||!valid(body.serverId)||!valid(body.roomId))return reply(400,'Invalid channel');
+  const identity=await verifyFirebaseIdToken((request.headers.get('Authorization')||'').replace(/^Bearer\s+/i,''),env);
+  if(!identity)return reply(401,'Unauthorized');
+  if(!await isServerAdminCheck(body.appId,body.serverId,identity,env))return reply(403,'Forbidden');
+  try{
+    const [token,rtdbToken]=await Promise.all([getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON),getRTDBToken(env.SERVICE_ACCOUNT_JSON)]);
+    if(!token||!rtdbToken)throw Error('Credentials unavailable');
+    const base=`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+    const channel=`artifacts/${body.appId}/servers/${body.serverId}/rooms/${body.roomId}`;
+    let calls=0;
+    const upstream=async(url,options={})=>{
+      if(++calls>40)throw Error('Deletion incomplete; retry required');
+      return fetch(url,{...options,signal:AbortSignal.timeout(8000)});
+    };
+    const authHeaders={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
+    const metadata=await upstream(`${base}/${channel}`,{headers:authHeaders});
+    if(!metadata.ok&&metadata.status!==404)throw Error('Channel metadata unavailable');
+    // Delete the live body first. A failure must leave the channel and its keys discoverable.
+    const serverPath=`artifacts/${body.appId}/servers/${body.serverId}`;
+    const database=await upstream(`${getRtdbBaseUrl(env)}/${serverPath}.json`,{method:'PATCH',headers:{Authorization:`Bearer ${rtdbToken}`,'Content-Type':'application/json'},body:JSON.stringify({[`rooms/${body.roomId}`]:null,[`deletedChannels/${body.roomId}`]:true})});
+    if(!database.ok)throw Error('Realtime data deletion failed');
+    for(const collection of ['messages','readReceipts','rescueRequests','roomKeys']){
+      while(true){
+        const response=await upstream(`${base}/${channel}/${collection}?pageSize=200`,{headers:authHeaders});
+        if(response.status===404)break;
+        if(!response.ok)throw Error('Channel contents unavailable');
+        const records=(await response.json()).documents||[];
+        if(!records.length)break;
+        const prefix=`projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${channel}/${collection}/`;
+        if(records.some(record=>typeof record.name!=='string'||!record.name.startsWith(prefix)||record.name.slice(prefix.length).includes('/')))throw Error('Invalid resource scope');
+        const commit=await upstream(`${base}:commit`,{method:'POST',headers:authHeaders,body:JSON.stringify({writes:records.map(record=>({delete:record.name,...(record.updateTime?{currentDocument:{updateTime:record.updateTime}}:{})}))})});
+        if(!commit.ok)throw Error('Channel contents changed; retry required');
+      }
+    }
+    const removed=await upstream(`${base}/${channel}`,{method:'DELETE',headers:authHeaders});
+    if(!removed.ok&&removed.status!==404)throw Error('Channel deletion failed');
+    return reply(200);
+  }catch(_){return reply(503,'削除を完了できませんでした。通信を確認して再試行してください。');}
+}
 async function maintenanceTable(env) {
   if (!env.DB) throw new Error('Maintenance control database unavailable');
   if (!_maintenanceTables.has(env.DB)) {
@@ -408,8 +453,9 @@ async function maintenanceTable(env) {
 }
 async function readMaintenanceState(env) {
   await maintenanceTable(env);
-  const state = await env.DB.prepare('SELECT enabled, revision FROM app_control WHERE id = ?').bind(env.FIREBASE_APP_ID).first();
-  return { enabled: state?.enabled === 1, revision: state?.revision || 0 };
+  const state = await env.DB.prepare('SELECT enabled, revision, locked_until FROM app_control WHERE id = ?').bind(env.FIREBASE_APP_ID).first();
+  const transitioning=Number(state?.locked_until)>Date.now();
+  return { enabled: state?.enabled === 1 || transitioning, revision: state?.revision || 0,...(transitioning?{transitioning:true}:{}) };
 }
 async function maintenanceIdentity(request, env) {
   let token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');

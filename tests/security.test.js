@@ -612,3 +612,12 @@ describe.each(['server','DM'])('%s message summary compatibility', kind => {
     await assertSucceeds(updateDoc(reference, { lastMessageAt: null, lastMessageId: null, lastMessageStorageTimestamp: null, lastMessageText: null }));
   });
 });
+
+
+test('a deleted channel cannot be recreated by a late acknowledged-message summary',async()=>{
+  await testEnv.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'artifacts/testApp/servers/server1'),{createdBy:'owner',joinedUsers:['owner'],serverAdmins:[]});});
+  const db=testEnv.authenticatedContext('owner').firestore(),reference=doc(db,'artifacts/testApp/servers/server1/rooms/deleted');
+  await assertSucceeds(setDoc(reference,{name:'A valid channel'}));await assertSucceeds(deleteDoc(reference));
+  await assertFails(setDoc(reference,{lastMessageAt:new Date(100),lastMessageStorageTimestamp:100,lastMessageStorageVersion:2,lastMessageId:'ack',lastMessageText:'enc::cipher'}));
+  await assertSucceeds(setDoc(reference,{name:'A deliberately created channel'}));
+});

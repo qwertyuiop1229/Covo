@@ -418,7 +418,8 @@
                 },
                 "$field": {
                   ".write": "(auth != null && ((root.child('artifacts').child($appId).child('settings/adminList/admins').child(auth.uid).val() === true || root.child('artifacts/simplechat-65a0d/settings/adminList/admins').child(auth.uid).val() === true) || root.child('artifacts').child($appId).child('servers').child($serverId).child('createdBy').val() === auth.uid || root.child('artifacts').child($appId).child('servers').child($serverId).child('serverAdmins').child(auth.uid).val() === true) && $field !== 'messages' && $field !== 'roomKeys' && $field !== 'rescueRequests' && $field !== 'typing' && $field !== 'readReceipts') && (root.child('maintenance/enabled').val() !== true || (auth != null && root.child('artifacts').child(root.child('maintenance/appId').val()).child('settings/adminList/admins').child(auth.uid).val() === true))"
-                }
+                },
+                ".validate": "!newData.exists() || root.child('artifacts').child($appId).child('servers').child($serverId).child('deletedChannels').child($roomId).val() !== true"
               }
             }
           }

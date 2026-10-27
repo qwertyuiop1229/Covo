@@ -10,7 +10,7 @@ function declaration(name) {
 const tick = () => new Promise(setImmediate);
 
 test('a room-key repair refreshes partial cached history and unchanged wraps do not repeat reads',async()=>{
-  let node,callback;const walk=n=>{if(!n||typeof n!=='object')return;if(n.type==='AssignmentExpression'&&n.left?.type==='MemberExpression'&&n.left.property?.name==='_activeMyRoomKeyUnsub')node=n;for(const value of Object.values(n))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);};walk(ast);
+  let node,callback;const walk=n=>{if(!n||typeof n!=='object')return;if(n.type==='AssignmentExpression'&&n.left?.type==='MemberExpression'&&n.left.property?.name==='_activeMyRoomKeyUnsub'&&n.right?.type==='CallExpression'&&n.right.callee?.name==='onSnapshot')node=n;for(const value of Object.values(n))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);};walk(ast);
   const data={versions:{'1':'older-key','2':'current-key'}},scope='server:room';
   const decrypt=jest.fn(async()=>{}),render=jest.fn();
   const ctx=vm.createContext({window:{},myKeyRef:'own-key',onSnapshot:(_,fn)=>{callback=fn;return()=>{};},active:()=>true,activeServerId:'server',activeRoomId:'room',members:['alice'],roomKeyScope:()=>scope,
@@ -237,4 +237,12 @@ test('peer arrival reopens older pagination only when it actually extends histor
   expect(ctx.allLoadedMessages[0]).toBe(latest);expect(hide).not.toHaveBeenCalled();
   ctx.appendPeerHistoryPage([{id:'older',timestamp:1}]);expect(ctx.hasMoreOlderMessages).toBe(true);
   expect(hide).toHaveBeenCalledTimes(1);expect(gate.armed).toBe(false);expect(ctx.allLoadedMessages).toHaveLength(2);
+});
+
+
+test('channel deletion failure preserves the open conversation and a late success cannot close a new room',async()=>{
+  const clear=jest.fn(),ctx=vm.createContext({userId:'alice',currentServerId:'server',currentRoomId:'room',deleteRoomCascade:jest.fn(async()=>{throw Error('offline');}),clearMessagesDOM:clear});
+  vm.runInContext(declaration('deleteRoomAndMessages'),ctx);
+  await expect(ctx.deleteRoomAndMessages('room')).rejects.toThrow('offline');expect(ctx.currentRoomId).toBe('room');expect(clear).not.toHaveBeenCalled();
+  let finish;ctx.deleteRoomCascade=()=>new Promise(resolve=>finish=resolve);const operation=ctx.deleteRoomAndMessages('room','server');ctx.currentServerId='other';ctx.currentRoomId='new-room';finish();await operation;expect(ctx.currentRoomId).toBe('new-room');expect(clear).not.toHaveBeenCalled();
 });

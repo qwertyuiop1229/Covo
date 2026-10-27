@@ -159,7 +159,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         const [privateJwk, publicJwk] = await Promise.all([window.crypto.subtle.exportKey('jwk', pair.privateKey), window.crypto.subtle.exportKey('jwk', pair.publicKey)]);
         if (!active()) return false;
         if (!await install(privateJwk, publicJwk)) return false;
-        await __backupKeysToFirestore(privateJwk, publicJwk);
+        await withReadDeadline(__backupKeysToFirestore(privateJwk, publicJwk),5000);
         return active();
       } catch (error) {
         console.warn('[E2EE] 鍵を確認できません。既存の鍵を保持して再接続を待ちます:', error);
@@ -405,9 +405,9 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       _e2ee._rescueRequestFlags[roomKeyScope(serverId, roomId)] = now;
       const flags = _e2ee._rescueRequestFlags;
       try {
-        await setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
+        await withReadDeadline(setDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/rescueRequests/${_getUserId()}`), {
           userId: _getUserId(), requestedAt: serverTimestamp()
-        }, { merge: true });
+        }, { merge: true }),5000);
         if (epoch !== _cryptoEpoch || owner !== _getUserId()) return;
         console.log(`[E2EE] Firestore救済リクエストを発行しました (room=${roomId})`);
         delete _e2ee.roomKeyCache[roomKeyScope(serverId, roomId)];
@@ -534,8 +534,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
       const keyOwner = _getUserId();
       if (!_subtleOK || !serverId || !roomId || roomId === 'null' || roomId === 'undefined') return null;
       try {
-        const rSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`)).catch(() => null);
-        if (!rSnap) return null;
+        const rSnap = await withReadDeadline(getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}`)),5000).catch(() => null);
+        if (!rSnap || !rSnap.exists()) return null;
         let roomData = rSnap.exists() ? rSnap.data() : null;
         const currentVer = (roomData && roomData.currentKeyVersion) ? String(roomData.currentKeyVersion) : "1";
         let keysObj = {};
@@ -573,7 +573,8 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
         // 2) 鍵ローテーション済み（または個別の roomKeys）から最新鍵を取得
         const ok = await _ensureE2EEKeys();
         if (ok) {
-          const myWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`)).catch(() => null);
+          const myWrapSnap = await withReadDeadline(getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/${_getUserId()}`)),5000).catch(() => null);
+          if (!myWrapSnap) return null;
           if (myWrapSnap && myWrapSnap.exists()) {
             const data = myWrapSnap.data() || {};
             const versionsMap = {};
@@ -620,7 +621,7 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           try {
             const escrowPriv = await _getEscrowPrivateKey();
             if (escrowPriv) {
-              const escrowWrapSnap = await getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)).catch(() => null);
+              const escrowWrapSnap = await withReadDeadline(getDoc(doc(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys/escrowKey`)),5000).catch(() => null);
               if (escrowWrapSnap && escrowWrapSnap.exists()) {
                 const eData = escrowWrapSnap.data() || {};
                 const eVersions = eData.versions || (eData.wrappedKey ? { [String(eData.latestVersion || '1')]: eData.wrappedKey } : {});
@@ -671,8 +672,10 @@ export const E2EE_PREFIX = "enc::v";       // 暗号文の目印（過去の平�
           return keysObj;
         }
         // 3) それでも鍵がなく、既存ルーム（メッセージや鍵が既に存在）の場合は上書き防止のためレスキュー発行
-        const msgsSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))).catch(() => null);
-        const anyKeysSnap = await getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))).catch(() => null);
+        const [msgsSnap,anyKeysSnap] = await Promise.all([
+          withReadDeadline(getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/messages`), limit(1))),5000).catch(()=>null),
+          withReadDeadline(getDocs(query(collection(_getDb(), `artifacts/${_getAppId()}/servers/${serverId}/rooms/${roomId}/roomKeys`), limit(1))),5000).catch(()=>null)
+        ]);
         const isExistingRoom = (roomData && (roomData.lastMessageAt || Number(roomData.currentKeyVersion) > 1 || roomData.sharedKey)) ||
                                (msgsSnap === null || !msgsSnap.empty) || (anyKeysSnap === null || !anyKeysSnap.empty);
         if (isExistingRoom && Object.keys(keysObj).length === 0) {

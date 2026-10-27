@@ -4,10 +4,10 @@ const vm = require('vm');
 const { webcrypto } = require('crypto');
 const { TextEncoder, TextDecoder } = require('util');
 
-function loadWorker(fetchImpl = jest.fn()) {
+function loadWorker(fetchImpl = jest.fn(), realMaintenance = false) {
   const context = vm.createContext({ Request, Response, Headers, URL, URLSearchParams, FormData, File, Blob, AbortSignal, AbortController, TextEncoder, TextDecoder, crypto: webcrypto, fetch: fetchImpl, console, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync('server/src/index.js', 'utf8').replace('export default {', 'const worker = {') + '\nglobalThis.worker = worker;', context);
-  context.readMaintenanceState = async () => ({ enabled: false, revision: 0 });
+  if(!realMaintenance)context.readMaintenanceState = async () => ({ enabled: false, revision: 0 });
   return context;
 }
 
@@ -505,7 +505,7 @@ function maintenanceDatabase() {
   return { state, prepare(sql) {
     let values = [];
     return { bind(...args) { values = args; return this; }, async first() {
-      if (sql.startsWith('SELECT')) return { ...state };
+      if (sql.startsWith('SELECT')) return { ...state, locked_until:state.lock };
       if (sql.includes('RETURNING')) {
         if (values[2] !== state.revision || state.lock >= values[3]) return null;
         state.lock = values[0]; return { revision: state.revision };
@@ -552,4 +552,41 @@ test('OAuth token cache is scoped by account and scope and removes a failed requ
   ctx._requestGoogleOAuthToken.mockRejectedValueOnce(new Error('unavailable'));
   await expect(ctx._getGoogleOAuthToken(account, 'scope-c')).rejects.toThrow();
   await ctx._getGoogleOAuthToken(account, 'scope-c'); expect(ctx._requestGoogleOAuthToken).toHaveBeenCalledTimes(4);
+});
+
+
+test.each(['success','rtdb-failure','foreign-document'])('channel deletion is authorized, scoped and reports partial failure: %s',async scenario=>{
+  let listed=false;
+  const fetcher=jest.fn(async(url,options={})=>{
+    if(url.includes('firebasedatabase.app'))return new Response('{}',{status:scenario==='rtdb-failure'?503:200});
+    if(url.endsWith(':commit'))return new Response('{}');
+    if(options.method==='DELETE')return new Response('{}');
+    if(url.includes('/messages?pageSize=')){const docs=listed?[]:[{name:'projects/test/databases/(default)/documents/artifacts/testApp/servers/'+(scenario==='foreign-document'?'victim':'server')+'/rooms/room/messages/one',updateTime:'2026-10-27T00:00:00Z'}];listed=true;return new Response(JSON.stringify({documents:docs}));}
+    return new Response('{}');
+  });
+  const ctx=loadWorker(fetcher);ctx.verifyFirebaseIdToken=async()=>({uid:'alice'});ctx.isServerAdminCheck=async()=>true;
+  ctx.getFirestoreAdminToken=async()=> 'oauth';ctx.getRTDBToken=async()=> 'rtdb';
+  const request=currentClientRequest('https://api.test/api/deleteChannel',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({appId:'testApp',serverId:'server',roomId:'room'})});
+  const response=await ctx.worker.fetch(request,{FIREBASE_APP_ID:'testApp',FIREBASE_PROJECT_ID:'test',SERVICE_ACCOUNT_JSON:'{}'},{});
+  expect(response.status).toBe(scenario==='success'?200:503);
+  const rootDelete=fetcher.mock.calls.filter(([url,options])=>url.endsWith('/rooms/room')&&options.method==='DELETE');expect(rootDelete).toHaveLength(scenario==='success'?1:0);
+  const patch=fetcher.mock.calls.find(([url])=>url.includes('firebasedatabase.app'));
+  expect(patch[1].method).toBe('PATCH');expect(JSON.parse(patch[1].body)).toEqual({'rooms/room':null,'deletedChannels/room':true});
+  if(scenario==='foreign-document')expect(fetcher.mock.calls.some(([url])=>url.endsWith(':commit'))).toBe(false);
+});
+
+test('a forged channel deletion cannot reach privileged data or request another app',async()=>{
+  const fetcher=jest.fn(),ctx=loadWorker(fetcher);ctx.verifyFirebaseIdToken=async()=>({uid:'member'});ctx.isServerAdminCheck=async()=>false;
+  const env={FIREBASE_APP_ID:'testApp'};
+  const request=appId=>new Request('https://api.test/api/deleteChannel',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({appId,serverId:'server',roomId:'room',userId:'owner',isAdmin:true})});
+  expect((await ctx.handleDeleteChannel(request('testApp'),env)).status).toBe(403);expect((await ctx.handleDeleteChannel(request('foreign'),env)).status).toBe(400);expect(fetcher).not.toHaveBeenCalled();
+});
+
+test('maintenance remains blocked while the release mirrors are being committed',async()=>{
+  const ctx=loadWorker(jest.fn(),true),DB=maintenanceDatabase();DB.state.enabled=1;
+  ctx.verifyFirebaseIdToken=async()=>({uid:'admin'});ctx.isAppAdmin=async()=>true;ctx.ensureMaintenanceAdmin=async()=>{};
+  ctx.writeMaintenanceMirrors=async()=>{expect(await ctx.readMaintenanceState({DB,FIREBASE_APP_ID:'testApp'})).toMatchObject({enabled:true,transitioning:true});};
+  const request=new Request('https://api.test/api/setMaintenance',{method:'POST',headers:{Authorization:'Bearer valid'},body:JSON.stringify({enabled:false,revision:0})});
+  expect((await ctx.handleSetMaintenance(request,{DB,FIREBASE_APP_ID:'testApp'})).status).toBe(200);
+  expect(await ctx.readMaintenanceState({DB,FIREBASE_APP_ID:'testApp'})).toEqual({enabled:false,revision:1});
 });

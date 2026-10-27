@@ -1,4 +1,24 @@
 // Independent local/remote reads. A slow cache must never delay a realtime subscription.
+export function createDecryptRecovery({pending,decrypt,render,active=()=>true,waiting=()=>{},delays=[2500,6000,12000]}) {
+  let closed=false,work=null,timer=null,slow=null,attempt=0,dirty=false;
+  const live=()=>!closed&&active();
+  const run=(reset=false)=>{
+    if(!live())return;
+    if(reset){attempt=0;clearTimeout(timer);timer=null;}
+    if(work){dirty=true;return work;}
+    if(!pending().length)return;
+    const records=pending();dirty=false;
+    slow=setTimeout(()=>{if(live())waiting();},5000);
+    work=Promise.resolve().then(()=>decrypt(records)).catch(()=>{if(live())waiting();}).finally(()=>{
+      clearTimeout(slow);work=null;if(!live())return;
+      render();
+      if(dirty){dirty=false;run();return;}
+      if(pending().length){waiting();if(attempt<delays.length)timer=setTimeout(()=>{timer=null;run();},delays[attempt++]);}
+    });
+    return work;
+  };
+  return {run,close(){closed=true;clearTimeout(timer);clearTimeout(slow);}};
+}
 export function startIndependentReads({ local, remote, apply, active = () => true, error = () => {} }) {
   let closed = false;
   let unsubscribe = null;

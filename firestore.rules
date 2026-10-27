@@ -440,7 +440,9 @@ service cloud.firestore {
         // ルーム一覧 (Channels / Rooms)
         match /rooms/{roomId} {
           allow read: if isServerMember(appId, serverId);
-          allow create: if isServerAdmin(appId, serverId) && messageSummaryIsConsistent();
+          allow create: if isServerAdmin(appId, serverId) && messageSummaryIsConsistent()
+            && request.resource.data.get('name', null) is string
+            && request.resource.data.name.size() > 0;
           allow delete: if isServerAdmin(appId, serverId);
           allow update: if preservesMessageSummary() && (isServerAdmin(appId, serverId) || (
             isAuthenticated() &&

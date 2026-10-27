@@ -6,7 +6,7 @@ const { TextEncoder, TextDecoder } = require('util');
 function loadCrypto() {
   const writes = [];
   const ctx = vm.createContext({
-    window: { crypto: webcrypto }, location: { protocol: 'https:' }, console,
+    window: { crypto: webcrypto }, location: { protocol: 'https:' }, console, withReadDeadline:promise=>promise,
     TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, Blob, CryptoKey: class CryptoKey {}, setTimeout, clearTimeout,
     _abToB64: ab => Buffer.from(ab).toString('base64'), _b64ToAb: str => Uint8Array.from(Buffer.from(str, 'base64')).buffer,
     doc: (_, path) => path, collection: (_, path) => path, query: path => path, limit: () => 1,

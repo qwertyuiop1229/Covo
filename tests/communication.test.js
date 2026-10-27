@@ -521,3 +521,36 @@ test('temporary missing-file cache expires and is bounded, with an explicit manu
   for(let i=0;i<510;i++)context.markFileAsMissing('file'+i);expect(context._missingFilesSet.size).toBe(500);
   context.unmarkFileAsMissing('file509');expect(context.isFileMissing('file509')).toBe(false);
 });
+
+
+test('maintenance release waits only for an active transition, then recovers once',async()=>{
+  const {createMaintenanceSignalHandler}=api('maintenance_runtime','createMaintenanceSignalHandler');
+  let enabled=true,blocked=true,settling=true,calls=0;
+  const recovered=jest.fn(),wait=jest.fn(async()=>{});
+  const signal=createMaintenanceSignalHandler({enabled:()=>enabled,blocked:()=>blocked,settling:()=>settling,block(){},wait,recovered,refresh:async()=>{if(++calls===3){enabled=false;blocked=false;settling=false;return true;}return false;}});
+  await signal(false);expect(calls).toBe(3);expect(wait).toHaveBeenCalledTimes(2);expect(recovered).toHaveBeenCalledTimes(1);
+  await signal(false);expect(calls).toBe(3);
+});
+
+test('pending decrypt recovery is bounded, keeps successful rows quiet, and cancels on navigation',async()=>{
+  jest.useFakeTimers();
+  try{
+    const {createDecryptRecovery}=api('loading_runtime','createDecryptRecovery');let pending=true,active=true;
+    const decrypt=jest.fn(async()=>{}),render=jest.fn();const recovery=createDecryptRecovery({pending:()=>pending?[{}]:[],decrypt,render,active:()=>active,delays:[10,20]});
+    await recovery.run();await jest.advanceTimersByTimeAsync(40);expect(decrypt).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(60000);expect(decrypt).toHaveBeenCalledTimes(3);
+    pending=false;await recovery.run(true);expect(decrypt).toHaveBeenCalledTimes(3);
+    pending=true;await recovery.run(true);recovery.close();active=false;await jest.advanceTimersByTimeAsync(60000);expect(decrypt).toHaveBeenCalledTimes(4);
+  }finally{jest.useRealTimers();}
+});
+
+
+test('rechecking a maintenance transition does not tear down and recreate its control listener',async()=>{
+  const declaration=ast.program.body.flatMap(node=>node.declarations||[]).find(node=>node.id?.name==='maintenanceGate');
+  const fn=declaration.init.arguments[0].properties.find(node=>node.key?.name==='stopped').value;
+  const cleanup=jest.fn(),watch=jest.fn(),setScope=jest.fn();
+  const ctx=vm.createContext({_maintenanceStopped:false,isAuthReady:true,_maintenanceHadSession:false,_lastAuthUserId:'alice',userId:'alice',_maintenanceUnsub:jest.fn(),_maintenanceWatchGeneration:0,_maintenanceWatchPending:false,_rtdb:null,_rtdbConnected:true,db:null,
+    window:{dispatchEvent(){},cleanupAllActiveFirestoreListeners:cleanup},Event,document:{querySelector:()=>({})},ensureMaintenanceWatch:watch,invalidateComposerOperation(){},authTransition:{fail(){}},stopPresenceSystem(){},setCryptoAccount(){},LocalStore:{setAccountScope:setScope},endCall:async()=>{},stopP2PHistoryConnections(){}});
+  vm.runInContext('globalThis.stop='+main.slice(fn.start,fn.end),ctx);
+  await ctx.stop();await ctx.stop();expect(cleanup).toHaveBeenCalledTimes(1);expect(watch).toHaveBeenCalledTimes(2);expect(ctx.userId).toBeNull();expect(setScope).toHaveBeenCalledTimes(1);
+});

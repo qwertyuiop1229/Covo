@@ -11,7 +11,7 @@ export function maintenanceStatusEndpoint(endpoint, pageUrl = typeof location ==
 
 // A public boolean is a change signal, never an authorization decision. Fetch
 // authoritative state only on transitions and drain rapid toggles in order.
-export function createMaintenanceSignalHandler({enabled,blocked,block,refresh,recovered,error=()=>{}}) {
+export function createMaintenanceSignalHandler({enabled,blocked,block,refresh,recovered,error=()=>{},settling=()=>false,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
   let latest,revision=0,running=null;
   return value=>{
     if(typeof value!=='boolean'||value===latest)return running||Promise.resolve();
@@ -24,7 +24,14 @@ export function createMaintenanceSignalHandler({enabled,blocked,block,refresh,re
         let observed;
         do{
           observed=revision;const wasBlocked=blocked();
-          const allowed=await refresh();
+          let allowed=await refresh(),retry=0;
+          // A release hint can arrive before the cross-database commit finishes.
+          // Confirm only this transition; do not poll normal sessions.
+          while(observed===revision&&latest===false&&!allowed&&settling()&&retry<5){
+            await wait([250,750,1500,3000,5000][retry++]);
+            if(observed!==revision)break;
+            allowed=await refresh();
+          }
           if(observed===revision&&allowed&&wasBlocked&&enabled()===false)await recovered();
         }while(observed!==revision);
       }catch(reason){error(reason);}finally{running=null;}
@@ -67,7 +74,7 @@ export function createMaintenanceGate({ endpoint, stopped = async () => {}, resu
         if (state.previewLegacyBackend) console.info('[test:web] 旧Workerとのローカル互換プレビューです。メンテナンス切り替えはWorkerの更新後に利用できます。');
         if (result.enabled && !result.adminAllowed) {
           window.covoMaintenanceBlocked = true;
-          display('修正と動作確認を行っています。しばらくしてから再確認してください。端末の暗号鍵・履歴・送信待ちは保持しています。');
+          display(result.transitioning?'設定を同期しています。接続準備が完了するまでお待ちください。':'修正と動作確認を行っています。しばらくしてから再確認してください。端末の暗号鍵・履歴・送信待ちは保持しています。');
           await stopped(); return false;
         }
         window.covoMaintenanceBlocked = false; panel.hidden = true;
