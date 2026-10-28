@@ -1,19 +1,19 @@
-import { createAuthTransition } from './auth_transition.js?v=1.1.293';
-import { createMaintenanceGate, createMaintenanceSignalHandler } from './maintenance_runtime.js?v=1.1.293';
-import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.293';
-import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.293';
-import { installNavigationUI } from './navigation_ui.js?v=1.1.293';
-import { installConversationNotificationUI } from './notification_ui.js?v=1.1.293';
-import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.293';
+import { createAuthTransition } from './auth_transition.js?v=1.1.294';
+import { createMaintenanceGate, createMaintenanceSignalHandler } from './maintenance_runtime.js?v=1.1.294';
+import { createServerProfileEditor, canManageServerProfile } from './server_profile_settings.js?v=1.1.294';
+import { createDiscoveryCard, installDiscoveryFilter } from './discovery_ui.js?v=1.1.294';
+import { installNavigationUI } from './navigation_ui.js?v=1.1.294';
+import { installConversationNotificationUI } from './notification_ui.js?v=1.1.294';
+import { installLocalArchiveUI } from './local_archive_ui.js?v=1.1.294';
 import { parseSearch, matchesSearch, createFetchCoalescer } from './search_engine.js';
 import { createOutbox } from './outbox.js';
 import { CLIENT_PROTOCOL, assertSupportedClient, supportsWindowsVersion, UPDATE_REQUIRED_MESSAGE } from './client_protocol.js';
 import { createMediaPlaceholder } from './media_placeholder.js';
-import { createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
+import { readSupervisor, createStatePublisher, createSubscriptionRegistry, requiredMessageBackends, usesRealtimeOnly, metadataRefersToMessage, selectWindowsInstaller, missingProfileFields, fetchWithTimeout } from './communication_runtime.js';
 import { VirtualTimeline } from './virtual_timeline.js';
 import { createChatScroller } from './chat_scroll.js';
 import { createNotificationRouter, targetFromUrl, notificationUrl, allowsNotification, notificationMode, cachedTokenIsFresh } from './notification_runtime.js';
-import { startIndependentReads, createDecryptRecovery, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.293';
+import { startIndependentReads, createDecryptRecovery, mergeChannelRecords, withReadDeadline, parseNotificationTarget, roomLayoutSignature } from './loading_runtime.js?v=1.1.294';
 import { loadPdfLibrary, loadAgoraLibrary } from './dependency_loader.js';
 import { compareHistoryMessages, olderHistoryScrollTop, countNewerMessages, HistoryLoadGate, NotificationLedger, microphoneErrorMessage, AttachmentResources } from './chat_runtime.js';
 /**
@@ -113,13 +113,13 @@ import {
 const rtdbRef = ref, rtdbSet = set, rtdbGet = get, rtdbUpdate = update, rtdbRemove = remove;
 const rtdbOnValue = onValue, rtdbOff = off, rtdbOnChildAdded = onChildAdded, rtdbOnChildChanged = onChildChanged, rtdbOnChildRemoved = onChildRemoved;
 const rtdbOrderByChild = orderByChild, rtdbLimitToLast = limitToLast, rtdbLimitToFirst = limitToFirst, rtdbOnDisconnect = onDisconnect;
-import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.293';
+import { observeRoomKeyVersion, roomKeyScope, setCryptoAccount, E2EE_PREFIX, E2EE_LS_PRIV, E2EE_LS_PUB, _e2ee, _subtleOK, _td, _te, initCryptoContext, __lsGet, __lsSet, __genUserKeyPair, __importPriv, __importPub, _ensureE2EEKeys, __ensureE2EEKeysImpl, __backupKeysToFirestore, __getUserPublicKey, __getEscrowPublicKey, _requestEscrowRescue, _requestDmKeyRescue, _ensureEscrowKey, _getOrCreateRoomKey, __getOrCreateRoomKeyImpl, _getRoomKeyWithWait, _rotateAllRoomKeys, __distributeRoomKeyVersion, _backfillRoomKeysForMembers, _encryptText, _isEncrypted, _decryptText, _decryptMessagesInPlace, _encryptFileE2EE, _decryptFileE2EE, _updateE2EEStatusUI, _backfillDmKeysForParticipant, _getOrCreateDmKey, __getOrCreateDmKeyImpl, _getDmKeyWithWait, _encryptDmText, _decryptDmText, _decryptDmMessagesInPlace } from './crypto_helpers.js?v=1.1.294';
 import * as LocalStore from './local_store.js';
-import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.293';
-import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.293';
-import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.293';
-import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.293';
-import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.293';
+import { _abToB64, _b64ToAb, formatBytes, parseTimestampToMs, getMsgTimestamp, safeCopy, _execCopyFallback, emailInitial, isSemverNewer, processHeicFile } from './utils.js?v=1.1.294';
+import { escapeHtml, getEmojiHtml, _twemojiParse, escapeHtmlAndLinkUrls } from './text_formatter.js?v=1.1.294';
+import { alertMessage, openAvatarLightbox, closeAvatarLightbox, downloadAvatarLightboxImage, playNotificationSound } from './ui_helpers.js?v=1.1.294';
+import { checkFileAllowed as _checkFileAllowed, _uploadToExternalService } from './file_uploader.js?v=1.1.294';
+import { _runShadowHunter, _updateLayoutDebugUI, __clearInspectHighlight, __showInspectHighlight, _inspectPoint, _lineColor as __lineColor, _appendConsoleLine as __appendConsoleLine, setInspectMode, toggleDevConsole, clearDevConsole, copyDevConsole, copyDebugText, getSystemDiagnosticInfo, formatDiagnosticMarkdown, copySystemDiagnosticReport, copyFullDiagnosticAndConsoleReport } from './debug_ui.js?v=1.1.294';
 // ========= 基本定数 & 認証トークン先行定義 (TDZ/ReferenceError完全防止) =========
 const WORKER_BASE_URL = 'https://simplechat-api.astro-fray-server.workers.dev';
 // P2P / WebRTC / 端末間移行用 ICE サーバー構成（TDZ防止のためトップレベル先行定義）
@@ -525,6 +525,7 @@ initCryptoContext({
   getIsAdmin: () => (typeof isAdmin !== 'undefined' ? isAdmin : false),
   getWorkerBaseUrl: () => (typeof WORKER_BASE_URL !== 'undefined' ? WORKER_BASE_URL : 'https://simplechat-api.astro-fray-server.workers.dev')
 });
+readSupervisor.configure({allowed:()=>!!userId && auth?.currentUser?.uid===userId && !window.covoMaintenanceBlocked,session:()=>auth?.currentUser || null});
 
 // === 統一ユーザープロファイルマネージャー & キャッシュ ===
 window._userProfileCache = window._userProfileCache || new Map();
@@ -553,15 +554,16 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       return cached;
     }
   }
-  if (_userProfilePromises.has(uid)) {
-    return await _userProfilePromises.get(uid);
+  const requestKey=JSON.stringify([requestingOwner,uid]);
+  if (_userProfilePromises.has(requestKey)) {
+    return await _userProfilePromises.get(requestKey);
   }
   const fetchPromise = (async () => {
     try {
       const cu = (cachedUsers || []).find(u => u.id === uid);
       const [uSnap, pSnap, statusSnap] = await Promise.all([
-        getDoc(doc(db, `artifacts/${appId}/users`, uid)).catch(() => null),
-        getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')).catch(() => null),
+        withReadDeadline(getDoc(doc(db, `artifacts/${appId}/users`, uid)),5000).catch(() => null),
+        withReadDeadline(getDoc(doc(db, `artifacts/${appId}/users/${uid}/profile`, 'nicknameDoc')),5000).catch(() => null),
         Promise.resolve(null)
       ]);
       if (!sameOwner()) return emptyProfile();
@@ -582,7 +584,7 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
       const livePresence = window._userProfileCache.get(uid);
       const rawTimestamp = livePresence?.last_changed || livePresence?.lastSeen || cu?.last_changed || cu?.lastSeen || statusData?.last_changed || statusData?.lastSeen || data?.last_changed || data?.lastSeen || data?.updatedAt || data?.createdAt || null;
       const profile = {
-        _profileDetailsLoaded: Boolean(uSnap?.exists() || pSnap?.exists()),
+        _profileDetailsLoaded: Boolean(uSnap && pSnap),
         id: uid,
         uid: uid,
         nickname,
@@ -625,9 +627,9 @@ window.getUserProfile = async function (uid, fallback = {}, forceRefresh = false
     }
   })();
 
-  _userProfilePromises.set(uid, fetchPromise);
+  _userProfilePromises.set(requestKey, fetchPromise);
   try { return await fetchPromise; }
-  finally { if (_userProfilePromises.get(uid) === fetchPromise) _userProfilePromises.delete(uid); }
+  finally { if (_userProfilePromises.get(requestKey) === fetchPromise) _userProfilePromises.delete(requestKey); }
 };
 
 window._lsGet = function (...args) { return __lsGet(...args); };
@@ -1422,7 +1424,7 @@ function initializeFirebase() {
             const data = adminSnap.data();
             const adminEmails = (data.emails || []).map(e => String(e).toLowerCase().trim());
             const adminUids = data.admins || [];
-            const hasEmail = allUserEmails.some(em => adminEmails.includes(em));
+            const hasEmail = user.emailVerified===true && !!user.email && adminEmails.includes(user.email.toLowerCase().trim());
             const hasUid = adminUids.includes(user.uid);
             isAdmin = hasEmail || hasUid;
 
@@ -1482,7 +1484,7 @@ function initializeFirebase() {
               const data = listAdminSnap.data();
               const listAdminEmails = (data.emails || []).map(e => String(e).toLowerCase().trim());
               const listAdminUids = data.admins || [];
-              const hasEmail = allUserEmails.some(em => listAdminEmails.includes(em));
+              const hasEmail = user.emailVerified===true && !!user.email && listAdminEmails.includes(user.email.toLowerCase().trim());
               const hasUid = listAdminUids.includes(user.uid);
               isListAdmin = hasEmail || hasUid;
             }
@@ -3702,8 +3704,7 @@ window.loadErrorTelemetry = async function () {
         };
         // 並行して実行された別の loadErrorTelemetry が登録したリスナーを取りこぼさないよう、登録の直前にも解除しておく
         if (typeof _telemetryErrorsUnsub === 'function') { _telemetryErrorsUnsub(); _telemetryErrorsUnsub = null; }
-        onValue(errsRef, onVal);
-        _telemetryErrorsUnsub = () => off(errsRef, 'value', onVal);
+        _telemetryErrorsUnsub = onValue(errsRef, onVal);
       }
     } catch (_) {}
   } catch (err) {
@@ -5174,7 +5175,7 @@ function setupGlobalAdminRoleListener() {
     if (adminData) {
       const adminEmails = (adminData.emails || []).map(e => String(e).toLowerCase().trim());
       const adminUids = adminData.admins || [];
-      const hasEmail = allUserEmails.some(em => adminEmails.includes(em));
+      const hasEmail = auth.currentUser?.uid===currentUid && auth.currentUser.emailVerified===true && !!auth.currentUser.email && adminEmails.includes(auth.currentUser.email.toLowerCase().trim());
       const hasUid = adminUids.includes(currentUid);
       newIsAdmin = hasEmail || hasUid;
     }
@@ -5182,7 +5183,7 @@ function setupGlobalAdminRoleListener() {
     if (!newIsAdmin && listAdminData) {
       const listAdminEmails = (listAdminData.emails || []).map(e => String(e).toLowerCase().trim());
       const listAdminUids = listAdminData.admins || [];
-      const hasEmail = allUserEmails.some(em => listAdminEmails.includes(em));
+      const hasEmail = auth.currentUser?.uid===currentUid && auth.currentUser.emailVerified===true && !!auth.currentUser.email && listAdminEmails.includes(auth.currentUser.email.toLowerCase().trim());
       const hasUid = listAdminUids.includes(currentUid);
       newListAdmin = hasEmail || hasUid;
     }
@@ -6205,8 +6206,8 @@ async function startPresenceSystem() {
         }
       }
     };
-    onValue(connectedRef, onConnected);
-    window._connectedRefUnsub = () => { connectedLive = false; off(connectedRef, 'value', onConnected); };
+    const stopConnected = onValue(connectedRef, onConnected);
+    window._connectedRefUnsub = () => { connectedLive = false; stopConnected(); };
   } catch (e) {
     console.warn('[RTDB] presence setup failed:', e);
   }
@@ -9524,7 +9525,10 @@ function isFileMissing(url) {
   if (Date.now() < time || Date.now() - time >= MISSING_FILE_TTL) { _missingFilesSet.delete(url); return false; }
   return true;
 }
-function unmarkFileAsMissing(url) { if (_missingFilesSet.delete(url)) saveMissingFiles(); }
+function unmarkFileAsMissing(url) {
+  if (_missingFilesSet.delete(url)) saveMissingFiles();
+  for(const [key,entry] of fetchWithMediaCache._pending||[])if(entry.expires && JSON.parse(key)[1]===url)fetchWithMediaCache._pending.delete(key);
+}
 
 function __setAvatarImg(container, url, name, opts) {
   if (!container) return;
@@ -9730,6 +9734,7 @@ window.enterServer = async function enterServer(serverId, serverData) {
   if (currentServerDocUnsubscribe) { currentServerDocUnsubscribe(); currentServerDocUnsubscribe = null; }
   currentServerId = serverId;
   currentServerData = serverData;
+  currentServerNickname = null;
   currentDmId = null;
   currentDmParticipant = null;
   currentDmParticipants = [];
@@ -9810,14 +9815,13 @@ window.enterServer = async function enterServer(serverId, serverData) {
   }
 
   // サーバー別ニックネームを読み込む（なければグローバルニックネームを使用）
-  try {
-    const profileSnap = await getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, userId));
-    if (thisGen !== _serverSwitchGeneration || currentServerId !== serverId) return;
+  const nicknameOwner=userId;
+  withReadDeadline(getDoc(doc(db, `artifacts/${appId}/servers/${serverId}/profiles`, nicknameOwner)),5000).then(profileSnap=>{
+    if (nicknameOwner!==userId || thisGen !== _serverSwitchGeneration || currentServerId !== serverId) return;
     currentServerNickname = (profileSnap.exists() && profileSnap.data().nickname)
       ? profileSnap.data().nickname
       : null;
-  } catch (e) { currentServerNickname = null; }
-  if (thisGen !== _serverSwitchGeneration || currentServerId !== serverId) return;
+  }).catch(()=>{});
   // カスタムスタンプを読み込む
   if (typeof loadCurrentServerStamps === 'function') {
     loadCurrentServerStamps();
@@ -15570,6 +15574,9 @@ document.getElementById('serverIconCropConfirm')?.addEventListener('click', asyn
 function loadServerRooms(serverId, _retry = 0, targetGen = null) {
   if (loadServerRooms._unsub) { loadServerRooms._unsub(); loadServerRooms._unsub = null; }
   if (!serverId || currentServerId !== serverId || (targetGen !== null && targetGen !== _serverSwitchGeneration)) return;
+  const owner=userId;
+  let disposed=false,retryTimer=null;
+  const active=()=>!disposed && owner===userId && currentServerId===serverId && (targetGen===null || targetGen===_serverSwitchGeneration);
   const roomsQuery = query(collection(db, `artifacts/${appId}/servers/${serverId}/rooms`));
   let hasLoaded = false;
   // ローカルキャッシュがあれば0msで即座にルーム一覧を描画 (正規のルームデータのみ抽出)
@@ -15841,30 +15848,33 @@ function loadServerRooms(serverId, _retry = 0, targetGen = null) {
   }
 
   const fallbackTimer = setTimeout(() => {
-    if (!hasLoaded && currentServerId === serverId) {
+    if (!hasLoaded && active()) {
       roomList.setAttribute('aria-busy', 'true');
     }
   }, 5000);
-  loadServerRooms._unsub = onSnapshot(roomsQuery, (snapshot) => {
+  const stopRooms = onSnapshot(roomsQuery, (snapshot) => {
+    if(!active())return;
     clearTimeout(fallbackTimer);
     roomList.removeAttribute('aria-busy');
     onRoomsChanged(snapshot);
   }, async (error) => {
     clearTimeout(fallbackTimer);
-    if (!auth.currentUser || !userId || currentServerId !== serverId) return;
+    if (!active() || auth.currentUser?.uid!==owner) return;
     console.warn("loadServerRooms onSnapshot retry:", error?.code || error);
     if (_retry < 5 && currentServerId === serverId && (targetGen === null || targetGen === _serverSwitchGeneration)) {
-      try { await auth.currentUser?.getIdToken(true); } catch (_) { }
-      setTimeout(() => loadServerRooms(serverId, _retry + 1, targetGen), 500 * (_retry + 1));
+      try { await withReadDeadline(auth.currentUser.getIdToken(true),3000); } catch (_) { }
+      if(active())retryTimer=setTimeout(() => {if(active())loadServerRooms(serverId, _retry + 1, targetGen);}, 500 * (_retry + 1));
     }
   });
+
+  loadServerRooms._unsub=()=>{disposed=true;clearTimeout(fallbackTimer);clearTimeout(retryTimer);stopRooms();};
+}
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".dropdown-container")) {
       document.querySelectorAll(".dropdown-content").forEach(d => d.style.display = "none");
     }
   });
-}
 
 function updateUnreadBadge(roomId) {
   const badge = document.getElementById(`unread-badge-${roomId}`);
@@ -15944,8 +15954,6 @@ async function loadOlderMessages() {
   const mergeAndRender = async (docs) => {
     if (!docs || docs.length === 0 || !isStillActive()) return false;
     LocalStore.upsertMessagesBatch(docs).catch(() => {});
-    await decryptInPlace(docs);
-    if (!isStillActive()) return false;
     const messagesDisplay = document.getElementById("messagesDisplay");
     const prevScrollHeight = messagesDisplay ? messagesDisplay.scrollHeight : 0;
     const prevScrollTop = messagesDisplay ? messagesDisplay.scrollTop : 0;
@@ -15971,6 +15979,8 @@ async function loadOlderMessages() {
         messagesDisplay.scrollTop = olderHistoryScrollTop(prevScrollTop);
       }
     }
+    // Show the page immediately; a slow key lookup must not hold pagination busy.
+    decryptInPlace(docs).then(()=>{if(isStillActive())renderMessagesWithReadReceipts();}).catch(()=>{});
     return true;
   };
 
@@ -15982,7 +15992,8 @@ async function loadOlderMessages() {
     const existingLoadedIds = new Set(allLoadedMessages.map(m => m.id));
 
     // 1. まず IndexedDB (ローカルDB) から過去ログを探索
-    const localOlder = await LocalStore.getMessages(chId, oldestTime, 30, oldestMessage.id);
+    const localOlder = await withReadDeadline(LocalStore.getMessages(chId, oldestTime, 30, oldestMessage.id),1500).catch(()=>[]);
+    if(!isStillActive())return;
     const newLocalDocs = (localOlder || []).filter(d => !existingLoadedIds.has(d.id));
     if (newLocalDocs.length > 0) {
       await mergeAndRender(newLocalDocs);
@@ -16303,7 +16314,6 @@ async function subscribeToMessagesRTDB(session) {
   });
   const cleanupTyping = () => {
     try { if (typeof onTyping === 'function') onTyping(); } catch (_) {}
-    try { off(typingRef, 'value', onTyping); } catch (_) {}
     const curInd = document.getElementById('typingIndicator');
     if (curInd) {
       curInd.textContent = '';
@@ -16331,7 +16341,6 @@ async function subscribeToMessagesRTDB(session) {
   });
   const cleanupReceipts = () => {
     try { if (typeof onRR === 'function') onRR(); } catch (_) {}
-    try { off(rrRef, 'value', onRR); } catch (_) {}
   };
 
   window.readReceiptsUnsubscribe = cleanupReceipts;
@@ -16559,8 +16568,9 @@ function selectRoom(roomId, roomName) {
               if (!active()) return;
               const reqUserId = resDoc.id;
               if (liveMembers.includes(reqUserId)) {
-                await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId], true);
+                const delivered=await backfillRoomKeysForMembers(activeServerId, activeRoomId, [reqUserId], true);
                 if (!active()) return;
+                if(!delivered)continue;
                 await _distributeRoomKeyVersion(activeServerId, activeRoomId, rawKey, [reqUserId], curKey.latestVersion);
                 await deleteDoc(resDoc.ref).catch(() => {});
               }
@@ -17059,14 +17069,20 @@ currentServerStampsUnsub = null;
 currentServerStampGroupsUnsub = null;
 async function loadCurrentServerStamps() {
   if (!currentServerId) return;
+  const owner=userId,serverId=currentServerId,scope=JSON.stringify([owner,serverId]);
+  if(loadCurrentServerStamps._scope===scope && currentServerStampsUnsub && currentServerStampGroupsUnsub)return;
   try {
     if (currentServerStampsUnsub) currentServerStampsUnsub();
     if (currentServerStampGroupsUnsub) currentServerStampGroupsUnsub();
+    loadCurrentServerStamps._scope=scope;
+    let live=true;
+    const active=()=>live&&owner===userId&&serverId===currentServerId;
 
     let stampsCache = [];
     let groupsCache = [];
 
     const renderStamps = () => {
+      if(!active())return;
       for (let i = STICKER_CATEGORIES.length - 1; i >= 0; i--) {
         if (STICKER_CATEGORIES[i].id === 'server_custom' || STICKER_CATEGORIES[i].id.startsWith('server_group_')) {
           STICKER_CATEGORIES.splice(i, 1);
@@ -17111,26 +17127,33 @@ async function loadCurrentServerStamps() {
       }
     };
 
-    const stampsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/stamps`);
-    const groupsRef = collection(db, `artifacts/${appId}/servers/${currentServerId}/stampGroups`);
+    const stampsRef = collection(db, `artifacts/${appId}/servers/${serverId}/stamps`);
+    const groupsRef = collection(db, `artifacts/${appId}/servers/${serverId}/stampGroups`);
 
-    currentServerStampsUnsub = onSnapshot(stampsRef, (snap) => {
+    const stopStamps = onSnapshot(stampsRef, (snap) => {
       stampsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
     }, (err) => {
+      if(!active())return;
+      loadCurrentServerStamps._scope=null;
       if (!auth.currentUser || !userId || !currentServerId || err?.code === 'permission-denied') return;
       console.warn('[Stamps onSnapshot] connection state updated:', err?.message || err);
     });
+    currentServerStampsUnsub=()=>{live=false;stopStamps();};
 
-    currentServerStampGroupsUnsub = onSnapshot(groupsRef, (snap) => {
+    const stopGroups = onSnapshot(groupsRef, (snap) => {
       groupsCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
       renderStamps();
     }, (err) => {
+      if(!active())return;
+      loadCurrentServerStamps._scope=null;
       if (!auth.currentUser || !userId || !currentServerId || err?.code === 'permission-denied') return;
       console.warn('[StampGroups onSnapshot] connection state updated:', err?.message || err);
     });
+    currentServerStampGroupsUnsub=()=>{live=false;stopGroups();};
 
   } catch (e) {
+    loadCurrentServerStamps._scope=null;
     console.error("Failed to load server stamps", e);
   }
 }
@@ -17934,6 +17957,22 @@ document.addEventListener('click', (e) => {
 // === ローカルメディアキャッシュ (Cache Storage API 活用) ===
 // サーバーで1,000件を超過してKVから削除された後でも、ローカルに履歴を持つ端末では画像を永久に表示可能にする
 async function fetchWithMediaCache(url) {
+  const pending=fetchWithMediaCache._pending ||= new Map();
+  const owner=typeof userId==='undefined'?null:userId;
+  const key=JSON.stringify([owner,url]);
+  const existing=pending.get(key);
+  if(existing && (existing.expires?existing.expires>Date.now():Date.now()-existing.started<8000))return (await existing.promise).clone();
+  const entry={promise:null,expires:0,started:Date.now()};
+  entry.promise=fetchMediaResource(url).then(response=>{
+    if(response.status===404||response.status===410)entry.expires=Date.now()+120000;
+    else if(pending.get(key)===entry)pending.delete(key);
+    return response;
+  },error=>{if(pending.get(key)===entry)pending.delete(key);throw error;});
+  pending.set(key,entry);
+  while(pending.size>128)pending.delete(pending.keys().next().value);
+  return (await entry.promise).clone();
+}
+async function fetchMediaResource(url) {
   if (!url || typeof url !== 'string' || !('caches' in window)) {
     return fetch(url);
   }
@@ -20423,6 +20462,32 @@ window.extractFirstOgUrl = function(text) {
   return rawUrl;
 };
 window._covoOgInFlight = window._covoOgInFlight || new Map();
+async function loadOgPreviewImage(image,url) {
+  const entries=loadOgPreviewImage.entries ||= new Map();
+  let entry=entries.get(url);
+  if(!entry || entry.expires<=Date.now()){
+    entry={expires:Date.now()+120000,promise:null};
+    entry.promise=(async()=>{
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
+      try{
+        const response=await fetch(url,{credentials:'omit',referrerPolicy:'no-referrer',signal:controller.signal});
+        if(!response.ok||!/^image\//i.test(response.headers.get('Content-Type')||''))return null;
+        const reader=response.body.getReader(),chunks=[];let size=0;
+        try {while(true){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>1048576){await reader.cancel();return null;}chunks.push(value);}}
+        finally{reader.releaseLock();}
+        entry.expires=Date.now()+300000;
+        return new Blob(chunks,{type:response.headers.get('Content-Type')});
+      }catch(_){return null;}finally{clearTimeout(timer);}
+    })();
+    entries.set(url,entry);while(entries.size>16)entries.delete(entries.keys().next().value);
+  }
+  const blob=await entry.promise;
+  if(!image.isConnected)return;
+  if(!blob){image.parentElement?.remove();return;}
+  const objectUrl=URL.createObjectURL(blob),release=()=>URL.revokeObjectURL(objectUrl);
+  image.addEventListener('load',release,{once:true});image.addEventListener('error',()=>{release();image.parentElement?.remove();},{once:true});
+  image.src=objectUrl;
+}
 window.attachDiscordOgEmbed = async function(container, targetUrl) {
   if (!container || !targetUrl) return;
   // すでにカードが存在する場合は重複生成を即座に防止
@@ -20490,11 +20555,13 @@ window.attachDiscordOgEmbed = async function(container, targetUrl) {
   ` : '';
   const imgHtml = ogData.image ? `
     <div class="covo-og-image mt-1.5 rounded-lg overflow-hidden bg-black/5 dark:bg-black/20 flex items-center justify-center">
-      <img src="${escapeHtml(ogData.image)}" alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto object-cover rounded-lg" loading="lazy" onerror="this.parentElement.remove()" />
+      <img alt="${escapeHtml(ogData.title || 'preview')}" class="w-full h-auto object-cover rounded-lg" decoding="async" />
     </div>
   ` : '';
   card.innerHTML = `${siteNameHtml}${titleHtml}${descHtml}${imgHtml}`;
   container.appendChild(card);
+  const previewImage=card.querySelector('.covo-og-image img');
+  if(previewImage)loadOgPreviewImage(previewImage,ogData.image);
 };
 
 function createMessageElement(message, messageId, readByCount = 0) {
@@ -23911,15 +23978,22 @@ readStatesUnsub = null;
 async function initReadStatesSync() {
   if (!userId || !appId) return;
   if (readStatesUnsub) { readStatesUnsub(); readStatesUnsub = null; }
-  const { ref, onValue, off } = await import('../vendor/firebase/firebase-database.js');
+  const owner=userId;
+  let closed=false,stop=null;
+  const active=()=>!closed && userId===owner && auth.currentUser?.uid===owner && !window.covoMaintenanceBlocked;
+  readStatesUnsub=()=>{closed=true;stop?.();};
+  try {
+  const { ref, onValue } = await import('../vendor/firebase/firebase-database.js');
   const rtdb = await _getOrInitRTDB();
-  const rsRef = ref(rtdb, `artifacts/${appId}/users/${userId}/readStates`);
-  const onRs = onValue(rsRef, (snap) => {
+  if(!active())return;
+  const rsRef = ref(rtdb, `artifacts/${appId}/users/${owner}/readStates`);
+  stop = onValue(rsRef, (snap) => {
+    if(!active())return;
     let changed = false;
     let rm = {};
     try { rm = JSON.parse(localStorage.getItem('covo_last_read') || '{}'); } catch (e) { }
     snap.forEach((child) => {
-      const remoteTime = child.val().lastReadAt || 0;
+      const remoteTime = child.val()?.lastReadAt || 0;
       const localTime = rm[child.key] || 0;
       if (remoteTime && remoteTime > localTime) {
         rm[child.key] = remoteTime;
@@ -23930,8 +24004,9 @@ async function initReadStatesSync() {
       localStorage.setItem('covo_last_read', JSON.stringify(rm));
       if (typeof requestScanAllUnread === 'function') requestScanAllUnread();
     }
-  });
-  readStatesUnsub = () => off(rsRef, 'value', onRs);
+  },()=>{if(active())window.covoDiagnostics?.failure('readStates.listen');});
+  if(closed)stop();
+  } catch(error) { if(active())window.covoDiagnostics?.failure('readStates.initialize'); }
 }
 
 const _readStateThrottle = {};
@@ -28958,7 +29033,7 @@ function initPinLockSystem() {
 // ==========================================
 let _backupFeaturePromise = null;
 function loadBackupFeature() {
- if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.293').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
+ if (!_backupFeaturePromise) _backupFeaturePromise = import('./backup_feature.js?v=1.1.294').then(module => module.installBackupFeature({ get currentServerId() { return currentServerId; }, get currentRoomId() { return currentRoomId; }, get currentDmId() { return currentDmId; }, get userId() { return userId; }, get currentDmParticipants() { return currentDmParticipants; }, get currentServerData() { return currentServerData; }, get roomNames() { return roomNames; }, get currentDmParticipant() { return currentDmParticipant; }, get withReadDeadline() { return withReadDeadline; }, get LocalStore() { return LocalStore; }, get getMsgTimestamp() { return getMsgTimestamp; }, get compareHistoryMessages() { return compareHistoryMessages; }, get appId() { return appId; }, get _getOrInitRTDB() { return _getOrInitRTDB; }, get orderByChild() { return orderByChild; }, get limitToLast() { return limitToLast; }, get get() { return get; }, get rtdbQuery() { return rtdbQuery; }, get ref() { return ref; }, get _decryptDmMessagesInPlace() { return _decryptDmMessagesInPlace; }, get decryptMessagesInPlace() { return decryptMessagesInPlace; }, get alertMessage() { return alertMessage; }, get closeChatExportModal() { return closeChatExportModal; }, get showCustomConfirm() { return showCustomConfirm; }, get fetchWithMediaCache() { return fetchWithMediaCache; }, get _getDmKeyWithWait() { return _getDmKeyWithWait; }, get getRoomKeyWithWait() { return getRoomKeyWithWait; }, get decryptFileE2EE() { return decryptFileE2EE; }, get isEncrypted() { return isEncrypted; }, get decryptText() { return decryptText; }, get _decryptDmText() { return _decryptDmText; }, get openEncryptedLocalArchive() { return openEncryptedLocalArchive; }, get openChatBackupViewerModal() { return openChatBackupViewerModal; }, get _archiveBlobUrls() { return _archiveBlobUrls; }, get escapeHtml() { return escapeHtml; }, get isUsableAvatarUrl() { return isUsableAvatarUrl; }, get __setAvatarImg() { return __setAvatarImg; }, get getEmojiHtml() { return getEmojiHtml; }, get _twemojiParse() { return _twemojiParse; }, get escapeHtmlAndLinkUrls() { return escapeHtmlAndLinkUrls; }, get openPhotoSwipeModal() { return openPhotoSwipeModal; } })).catch(error => { _backupFeaturePromise = null; throw error; });
  return _backupFeaturePromise;
 }
 window.openChatExportModal = (...args) => loadBackupFeature().then(() => window.openChatExportModal(...args)).catch(error => alertMessage(error.message, 'warning'));
@@ -29310,8 +29385,7 @@ window._subscribeVcSidebarStates = function(serverId) {
         });
       };
 
-      onValue(serverStateRef, handler);
-      window._vcSidebarUnsub = () => off(serverStateRef, 'value', handler);
+      window._vcSidebarUnsub = onValue(serverStateRef, handler);
     });
   }).catch(e => {
     console.error('[VoiceEngine] サイドバー状態購読失敗:', e);

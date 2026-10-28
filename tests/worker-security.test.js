@@ -11,6 +11,100 @@ function loadWorker(fetchImpl = jest.fn(), realMaintenance = false) {
   return context;
 }
 
+test('privileged email roles reject unverified email claims but preserve explicit UID roles',async()=>{
+  const ctx=loadWorker(async()=>new Response(JSON.stringify({fields:{emails:{arrayValue:{values:[{stringValue:'reserved@example.com'}]}},admins:{arrayValue:{values:[{stringValue:'uid-admin'}]}}}})));
+  ctx.getAdminTokenForFirestore=async()=> 'service';
+  const env={FIREBASE_PROJECT_ID:'test'};
+  expect(await ctx.isAppAdmin('testApp',{uid:'attacker',email:'reserved@example.com',emailVerified:false},env)).toBe(false);
+  expect(await ctx.isAppAdmin('testApp',{uid:'verified',email:'reserved@example.com',emailVerified:true},env)).toBe(true);
+  expect(await ctx.isAppAdmin('testApp',{uid:'uid-admin',emailVerified:false},env)).toBe(true);
+});
+
+test('token cache cannot outlive token expiry and fresh verification rejects disabled accounts',async()=>{
+  let now=100000,disabled=false;
+  const fetcher=jest.fn(async()=>new Response(JSON.stringify(now>=102000?{error:'TOKEN_EXPIRED'}:{users:[{localId:'alice',email:'alice@example.com',emailVerified:true,disabled}]})));
+  const ctx=loadWorker(fetcher);ctx.Date={now:()=>now};ctx.atob=atob;
+  const token='header.'+Buffer.from(JSON.stringify({exp:102})).toString('base64url')+'.signature';
+  expect((await ctx.verifyFirebaseIdToken(token,{})).emailVerified).toBe(true);
+  await ctx.verifyFirebaseIdToken(token,{});expect(fetcher).toHaveBeenCalledTimes(1);
+  disabled=true;expect(await ctx.verifyFirebaseIdToken(token,{}, {fresh:true})).toBeNull();expect(fetcher).toHaveBeenCalledTimes(2);
+  disabled=false;await ctx.verifyFirebaseIdToken(token,{});now=102001;
+  expect(await ctx.verifyFirebaseIdToken(token,{})).toBeNull();expect(fetcher).toHaveBeenCalledTimes(4);
+});
+
+async function recoveryFixture(scenario='ok'){
+  const pair=()=>webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  const [escrow,caller]=await Promise.all([pair(),pair()]);
+  const [privateJwk,escrowPub,callerPub]=await Promise.all([webcrypto.subtle.exportKey('jwk',escrow.privateKey),webcrypto.subtle.exportKey('jwk',escrow.publicKey),webcrypto.subtle.exportKey('jwk',caller.publicKey)]);
+  const raw=webcrypto.getRandomValues(new Uint8Array(32));
+  const wrapped=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP'},escrow.publicKey,raw)).toString('base64');
+  const scopedVersions={};
+  for(const version of ['1','2']){
+    const label=new TextEncoder().encode(JSON.stringify(['covo-room-escrow-v1','testApp','server',scenario==='copied-wrap'?'another-room':'room',version]));
+    scopedVersions[version]=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP',label},escrow.publicKey,raw)).toString('base64');
+  }
+  const salt=new Uint8Array(16),iv=new Uint8Array(12);
+  const material=await webcrypto.subtle.importKey('raw',new TextEncoder().encode('covo_e2ee_key_v3_salt_ctx_:escrow_priv:admin:pepper'),'PBKDF2',false,['deriveKey']);
+  const key=await webcrypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},true,['encrypt']);
+  const backup={version:3,salt:Buffer.from(salt).toString('base64'),iv:Buffer.from(iv).toString('base64'),encryptedPrivateKey:Buffer.from(await webcrypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(privateJwk)))).toString('base64')};
+  const fingerprint=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([3,backup.encryptedPrivateKey,backup.salt,backup.iv,escrowPub.n,escrowPub.e])))).toString('hex');
+  const preparationLabel=new TextEncoder().encode(JSON.stringify(['covo-escrow-preparation-v1','testApp','admin',fingerprint]));
+  const prepared={format:1,keyId:'worker-key',fingerprint,wrappedMaterial:Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP',label:preparationLabel},escrow.publicKey,await webcrypto.subtle.exportKey('raw',key))).toString('base64')};
+  if(scenario==='rotated-worker')prepared.keyId='old-worker-key';
+  if(scenario==='backup-modified')prepared.fingerprint='old-backup';
+  const encode=value=>Array.isArray(value)?{arrayValue:{values:value.map(encode)}}:value&&typeof value==='object'?{mapValue:{fields:Object.fromEntries(Object.entries(value).map(([k,v])=>[k,encode(v)]))}}:typeof value==='number'?{integerValue:String(value)}:{stringValue:value};
+  let membershipReads=0,profileReads=0;
+  const fetcher=jest.fn(async url=>{
+    const path=url.split('/documents/artifacts/testApp/')[1];let value;
+    if(path==='servers/server')value={joinedUsers:scenario==='outsider'||(scenario==='revoked'&&++membershipReads>1)?[]:['alice']};
+    else if(path==='users/alice')value={publicKeyJwk:scenario==='replaced'&&++profileReads>1?escrowPub:callerPub};
+    else if(path==='settings/escrowKey')value={createdBy:'admin',publicKeyJwk:scenario==='bad-escrow'?callerPub:escrowPub};
+    else if(path==='users/admin/private/escrowKey')value=backup;
+    else if(path==='users/admin/private/escrowRecovery'&&scenario!=='unprepared')value=prepared;
+    else if(path==='servers/server/rooms/room/roomKeys/escrowKey')value={versions:{'1':wrapped,'2':wrapped},...(scenario==='legacy-wrap'?{}:{scopedVersions})};
+    else if(path==='servers/server/rooms/room'&&scenario!=='missing-room')value={currentKeyVersion:2};
+    return value?new Response(JSON.stringify(encode(value).mapValue)):new Response('{}',{status:404});
+  });
+  const ctx=loadWorker(fetcher);ctx.atob=atob;ctx.btoa=btoa;ctx.verifyFirebaseIdToken=async token=>token==='valid'?{uid:'alice'}:null;ctx.getFirestoreAdminToken=async()=> 'admin-token';
+  ctx.getRecoveryWrappingKey=async()=>({privateKey:escrow.privateKey,publicKeyJwk:escrowPub,keyId:'worker-key'});
+  ctx.crypto={subtle:new Proxy(webcrypto.subtle,{get(target,name){if(name==='deriveKey'||name==='deriveBits')return ()=>{throw Error('Hosted PBKDF2 cap');};const value=Reflect.get(target,name);return typeof value==='function'?value.bind(target):value;}})};
+  const env={FIREBASE_APP_ID:'testApp',FIREBASE_PROJECT_ID:'test',SERVICE_ACCOUNT_JSON:'{}',E2EE_MASTER_PEPPER:'pepper'};
+  const request=(extra={},token='valid')=>currentClientRequest('https://api.test/api/e2ee/recoverRoomKey',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({appId:'testApp',serverId:'server',roomId:'room',...extra})});
+  return {ctx,env,request,fetcher,caller,raw};
+}
+
+test('escrow recovery authenticates membership and rewraps only to the canonical caller key',async()=>{
+  const {ctx,env,request,caller,raw}=await recoveryFixture();
+  const response=await ctx.handleRecoverRoomKey(request({userId:'victim',publicKeyJwk:{n:'attacker'}}),env);
+  expect(response.status).toBe(200);expect(response.headers.get('Cache-Control')).toBe('no-store');
+  const data=await response.json();expect(Object.keys(data.versions)).toEqual(['1','2']);
+  const clear=await webcrypto.subtle.decrypt({name:'RSA-OAEP'},caller.privateKey,Buffer.from(data.versions['1'],'base64'));
+  expect(Buffer.from(clear)).toEqual(Buffer.from(raw));expect(data.privateKeyJwk).toBeUndefined();expect(data.encryptedPrivateKey).toBeUndefined();
+});
+test.each([['outsider',403],['revoked',403],['missing-room',404],['bad-escrow',409],['replaced',409],['unprepared',409],['rotated-worker',409],['backup-modified',409],['copied-wrap',409],['legacy-wrap',409]])('escrow recovery fails closed for %s',async(scenario,status)=>{
+  const {ctx,env,request,fetcher}=await recoveryFixture(scenario);
+  const response=await ctx.handleRecoverRoomKey(request(),env);expect(response.status).toBe(status);expect((await response.json()).versions).toBeUndefined();
+  expect(fetcher.mock.calls.every(([,options])=>!options?.method||options.method==='GET')).toBe(true);
+  if(scenario==='outsider')expect(fetcher.mock.calls.some(([url])=>url.includes('/private/'))).toBe(false);
+});
+test('recovery public key is admin-only and never returns private RSA parameters',async()=>{
+  const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  const env={FIREBASE_APP_ID:'testApp',SERVICE_ACCOUNT_JSON:JSON.stringify({private_key:`-----BEGIN PRIVATE KEY-----\n${Buffer.from(await webcrypto.subtle.exportKey('pkcs8',pair.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`})};
+  const ctx=loadWorker();ctx.atob=atob;ctx.verifyFirebaseIdToken=async()=>({uid:'admin'});ctx.isAppAdmin=async()=>false;
+  const request=()=>currentClientRequest('https://api.test/api/e2ee/recoveryPublicKey',{headers:{Authorization:'Bearer token'}});
+  expect((await ctx.handleRecoveryPublicKey(request(),env)).status).toBe(403);
+  ctx.isAppAdmin=async()=>true;const response=await ctx.handleRecoveryPublicKey(request(),env);expect(response.status).toBe(200);
+  const data=await response.json();expect(data.publicKeyJwk.d).toBeUndefined();expect(data.publicKeyJwk.p).toBeUndefined();expect(data.keyId).toMatch(/^[a-f0-9]{64}$/);
+  const pub=await webcrypto.subtle.importKey('jwk',data.publicKeyJwk,{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+  const clear=await webcrypto.subtle.decrypt({name:'RSA-OAEP'},pair.privateKey,await webcrypto.subtle.encrypt({name:'RSA-OAEP'},pub,new Uint8Array([1,2,3])));expect([...new Uint8Array(clear)]).toEqual([1,2,3]);
+});
+test('escrow recovery rejects invalid scope and missing identity before privileged reads',async()=>{
+  const {ctx,env,request,fetcher}=await recoveryFixture();
+  expect((await ctx.handleRecoverRoomKey(request({},'bad'),env)).status).toBe(401);
+  for(const extra of [{appId:'other'},{roomId:'../room'},{serverId:'server/other'}])expect((await ctx.handleRecoverRoomKey(request(extra),env)).status).toBe(400);
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
 test('telemetry requires authentication, writes only RTDB, and retries are idempotent', async () => {
   let stored = null;
   const fetchImpl = jest.fn(async (url, options = {}) => {

@@ -94,7 +94,7 @@ test('a late older-history read cannot persist or display data after maintenance
     allLoadedMessages:[{id:'recent',timestamp:2}],_activeChannelSessionId:1,currentServerId:'server',currentRoomId:'room',currentDmId:null,currentDmParticipants:[],currentServerData:{},
     document:{getElementById:()=>null},getMsgTimestamp:m=>m.timestamp,compareHistoryMessages:(a,b)=>a.timestamp-b.timestamp,
     LocalStore:{getMessages:()=>new Promise(resolve=>{finish=resolve;}),upsertMessagesBatch:persist},
-    decryptMessagesInPlace:async()=>{},renderMessagesWithReadReceipts:render,console});
+    withReadDeadline:promise=>promise,decryptMessagesInPlace:async()=>{},renderMessagesWithReadReceipts:render,console});
   vm.runInContext(declaration('loadOlderMessages'),ctx);
   const work=ctx.loadOlderMessages();await tick();ctx.userId=null;ctx.window.covoMaintenanceBlocked=true;
   finish([{id:'private',timestamp:1}]);await work;

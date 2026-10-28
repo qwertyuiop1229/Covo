@@ -28,10 +28,23 @@ test('URL cards and images stay compact on narrow layouts',async({page})=>{
   await fixture(page);await page.setViewportSize({width:402,height:874});
   const source=fs.readFileSync('public/js/main.js','utf8'),parser=require('@babel/parser');const n=parser.parse(source,{sourceType:'module'}).program.body.find(n=>n.type==='ExpressionStatement'&&n.expression.type==='AssignmentExpression'&&n.expression.left.property?.name==='attachDiscordOgEmbed');
   await page.route('https://covo.test/preview.svg',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"></svg>'}));
-  await page.evaluate(code=>{window.escapeHtml=v=>String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');window._covoOgCache=new Map([['https://example.com',{success:true,title:'Preview',description:'Preview description',image:'https://covo.test/preview.svg'}]]);window.eval(code);},source.slice(n.start,n.end));
+  const loader=parser.parse(source,{sourceType:'module'}).program.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name==='loadOgPreviewImage');
+  await page.evaluate(code=>{window.escapeHtml=v=>String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');window._covoOgCache=new Map([['https://example.com',{success:true,title:'Preview',description:'Preview description',image:'https://covo.test/preview.svg'}]]);window.eval(code);},source.slice(loader.start,loader.end)+'\n'+source.slice(n.start,n.end));
   await page.evaluate(()=>window.attachDiscordOgEmbed(document.getElementById('appinfoSection'),'https://example.com'));
   const card=page.locator('.covo-og-embed-card');expect(await card.evaluate(node=>node.getBoundingClientRect().width)).toBeLessThanOrEqual(340);
   await expect.poll(()=>page.locator('.covo-og-image img').evaluate(img=>img.complete)).toBe(true);expect(await page.locator('.covo-og-image').evaluate(node=>node.getBoundingClientRect().height)).toBeLessThanOrEqual(128);
+});
+test('repeated preview images share a request and a rate-limited image keeps its card text',async({page})=>{
+  await fixture(page);let requests=0;
+  await page.route('https://covo.test/rate-limited.png',route=>{requests++;return route.fulfill({status:429,body:'rate limited'});});
+  const source=fs.readFileSync('public/js/main.js','utf8'),parser=require('@babel/parser');
+  const node=parser.parse(source,{sourceType:'module'}).program.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name==='loadOgPreviewImage');
+  await page.evaluate(async code=>{
+    window.eval(code);
+    const load=async()=>{const card=document.createElement('div');card.innerHTML='<a>リンクは利用できます</a><div><img></div>';document.body.appendChild(card);await loadOgPreviewImage(card.querySelector('img'),'https://covo.test/rate-limited.png');return card;};
+    await Promise.all(Array.from({length:10},load));await load();
+  },source.slice(node.start,node.end));
+  expect(requests).toBe(1);await expect(page.locator('img')).toHaveCount(0);await expect(page.locator('a')).toHaveCount(11);
 });
 test('maintenance boolean changes revalidate authority and unblock without polling',async({page})=>{
   await fixture(page);let enabled=false,requests=0;

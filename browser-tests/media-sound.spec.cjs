@@ -46,10 +46,10 @@ test('local image viewer zooms and closes by vertical drag without a CDN or dupl
   await page.mouse.move(400,500);await page.mouse.down();await page.mouse.move(400,1050,{steps:15});await page.mouse.up();
   await expect(page.locator('.pswp')).toHaveCount(0);expect(external).toEqual([]);
 });
-for(const device of ['', 'covo-ios-phone','covo-ios-tablet'])test(`navy server context shares the channel header surface while server rail stays distinct: ${device||'desktop'}`,async({page})=>{
-  await fixture(page);await page.evaluate(device=>{document.documentElement.className=device?`covo-ios-standalone ${device}`:'';document.documentElement.style.setProperty('--covo-shell-background','#0b0f19');document.documentElement.style.setProperty('--safe-top','24px');document.body.className='discord-ui-mode dark-server-theme';document.body.innerHTML='<div id="discordTitleBar"></div><div id="appContainer"><div id="serverHeader"></div><div id="currentRoomHeader"></div><div id="discordServerNav"></div></div>';},device);
-  const colors=await page.evaluate(()=>Object.fromEntries(['discordTitleBar','serverHeader','currentRoomHeader','discordServerNav'].map(id=>[id,getComputedStyle(document.getElementById(id)).backgroundColor])));
-  expect(colors.discordTitleBar).toBe(colors.currentRoomHeader);expect(colors.serverHeader).toBe(colors.currentRoomHeader);expect(colors.discordServerNav).not.toBe(colors.serverHeader);
+for(const device of ['', 'covo-ios-phone','covo-ios-tablet'])test(`navy server title matches the channel list #111827: ${device||'desktop'}`,async({page})=>{
+  await fixture(page);await page.evaluate(device=>{document.documentElement.className=device?`covo-ios-standalone ${device}`:'';document.documentElement.style.setProperty('--covo-shell-background','#0b0f19');document.documentElement.style.setProperty('--safe-top','24px');document.body.className='discord-ui-mode dark-server-theme';document.body.innerHTML='<div id="discordTitleBar"></div><div id="appContainer"><div id="sidebar"><div id="serverHeader"></div></div><div id="currentRoomHeader"></div><div id="discordServerNav"></div></div>';},device);
+  const colors=await page.evaluate(()=>Object.fromEntries(['discordTitleBar','serverHeader','sidebar','discordServerNav'].map(id=>[id,getComputedStyle(document.getElementById(id)).backgroundColor])));
+  expect(colors.discordTitleBar).toBe('rgb(17, 24, 39)');expect(colors.serverHeader).toBe(colors.sidebar);expect(colors.sidebar).toBe('rgb(17, 24, 39)');expect(colors.discordServerNav).toBe('rgb(11, 15, 25)');
 });
 
 test('tablet two-finger pinch zoom and downward swipe work with touch input',async({page})=>{

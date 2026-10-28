@@ -371,6 +371,8 @@ export default {
       if (url.pathname === "/api/e2ee/pepper" && request.method === "GET") {
         return await handleE2EEPepper(request, env);
       }
+      if (url.pathname === '/api/e2ee/recoverRoomKey' && request.method === 'POST') return handleRecoverRoomKey(request, env);
+      if (url.pathname === '/api/e2ee/recoveryPublicKey' && request.method === 'GET') return handleRecoveryPublicKey(request, env);
       if (url.pathname === "/api/fetchOg" && (request.method === "GET" || request.method === "HEAD")) {
         return await handleFetchOg(request, env, url, cors);
       }
@@ -767,6 +769,104 @@ async function handleE2EEPepper(request, env) {
     status: 200,
     headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "private, max-age=3600" }
   });
+}
+
+// Escrow recovery never returns an escrow private key or accepts a recipient key.
+// Only the caller's canonical public key and current Firestore membership count.
+const roomRecoveryBudgets=new Map();
+async function getRecoveryWrappingKey(env){
+  const account=JSON.parse(env.SERVICE_ACCOUNT_JSON);
+  const der=Uint8Array.from(atob(account.private_key.replace(/-----[^-]+-----/g,'').replace(/\s/g,'')),c=>c.charCodeAt(0));
+  const privateKey=await crypto.subtle.importKey('pkcs8',der,{name:'RSA-OAEP',hash:'SHA-256'},true,['decrypt']);
+  const jwk=await crypto.subtle.exportKey('jwk',privateKey),publicKeyJwk={kty:'RSA',n:jwk.n,e:jwk.e,alg:'RSA-OAEP-256',ext:true,key_ops:['encrypt']};
+  const keyId=await recoveryFingerprint([jwk.n,jwk.e]);
+  return {privateKey,publicKeyJwk,keyId};
+}
+async function recoveryFingerprint(parts){
+  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(parts)));
+  return Array.from(new Uint8Array(hash),value=>value.toString(16).padStart(2,'0')).join('');
+}
+async function handleRecoveryPublicKey(request,env){
+  const headers={...getCorsHeaders(request),'Content-Type':'application/json','Cache-Control':'no-store'};
+  const identity=await verifyFirebaseIdToken((request.headers.get('Authorization')||'').replace(/^Bearer\s+/i,''),env,{fresh:true});
+  if(!identity||!await isAppAdmin(env.FIREBASE_APP_ID,identity,env))return new Response(JSON.stringify({error:'Forbidden'}),{status:403,headers});
+  try{const {publicKeyJwk,keyId}=await getRecoveryWrappingKey(env);return new Response(JSON.stringify({publicKeyJwk,keyId}),{headers});}
+  catch(_){return new Response(JSON.stringify({error:'Recovery temporarily unavailable'}),{status:503,headers});}
+}
+async function handleRecoverRoomKey(request, env) {
+  const headers={...getCorsHeaders(request),'Content-Type':'application/json','Cache-Control':'no-store'};
+  const reply=(status,data)=>new Response(JSON.stringify(data),{status,headers});
+  const body=await request.json().catch(()=>null),valid=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,160}$/.test(id);
+  if(!body||!isValidAppId(body.appId,env)||!valid(body.serverId)||!valid(body.roomId))return reply(400,{error:'Invalid channel'});
+  const user=await verifyFirebaseIdToken((request.headers.get('Authorization')||'').replace(/^Bearer\s+/i,''),env,{fresh:true});
+  if(!user)return reply(401,{error:'Unauthorized'});
+  const now=Date.now(),budgetKey=`${body.appId}:${user.uid}`;
+  let budget=roomRecoveryBudgets.get(budgetKey);
+  if(!budget||budget.reset<=now){budget={count:0,reset:now+60000};roomRecoveryBudgets.set(budgetKey,budget);}
+  if(++budget.count>6)return reply(429,{error:'Please retry later'});
+  while(roomRecoveryBudgets.size>2048)roomRecoveryBudgets.delete(roomRecoveryBudgets.keys().next().value);
+  try {
+    const token=await getFirestoreAdminToken(env.SERVICE_ACCOUNT_JSON);
+    if(!token)throw Error('Credentials unavailable');
+    const base=`https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/artifacts/${body.appId}`;
+    const decode=value=>value?.mapValue?Object.fromEntries(Object.entries(value.mapValue.fields||{}).map(([k,v])=>[k,decode(v)])):value?.arrayValue?(value.arrayValue.values||[]).map(decode):value?.stringValue??value?.integerValue??value?.booleanValue??null;
+    const read=async path=>{
+      const response=await fetch(`${base}/${path}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(8000)});
+      if(response.status===404)return null;
+      if(!response.ok)throw Error('Backup read unavailable');
+      return decode({mapValue:await response.json()});
+    };
+    const serverPath=`servers/${body.serverId}`,roomPath=`${serverPath}/rooms/${body.roomId}`;
+    const member=server=>Array.isArray(server?.joinedUsers)&&server.joinedUsers.includes(user.uid);
+    // Check the resource scope before reading any private backup.
+    if(!member(await read(serverPath)))return reply(403,{error:'Forbidden'});
+    const [room,profile,escrow]=await Promise.all([read(roomPath),read(`users/${user.uid}`),read('settings/escrowKey')]);
+    if(!room)return reply(404,{error:'Channel unavailable'});
+    const publicJwk=profile?.publicKeyJwk;
+    if(!publicJwk?.n||!publicJwk?.e||!valid(escrow?.createdBy))return reply(409,{error:'Recovery backup unavailable'});
+    const [backup,wraps]=await Promise.all([read(`users/${escrow.createdBy}/private/escrowKey`),read(`${roomPath}/roomKeys/escrowKey`)]);
+    if(!backup||!wraps)return reply(409,{error:'Recovery backup unavailable'});
+    // Legacy RSA ciphertext has no resource binding and can be transplanted by
+    // a room writer. Never expose a global escrow decryption oracle for it.
+    if(!wraps.scopedVersions||!Object.keys(wraps.scopedVersions).length)return reply(409,{error:'Legacy key requires administrator assistance',code:'LEGACY_ESCROW_REQUIRES_ADMIN'});
+    const from64=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
+    const to64=value=>btoa(String.fromCharCode(...new Uint8Array(value)));
+    let privateJwk=null;
+    // The browser prepares this envelope at the original 200,000 iterations.
+    // Workers' hosted PBKDF2 cap must not downgrade or break existing backups.
+    if(backup.encryptedPrivateKey){
+      const [prepared,wrapping]=await Promise.all([read(`users/${escrow.createdBy}/private/escrowRecovery`),getRecoveryWrappingKey(env)]);
+      const fingerprint=await recoveryFingerprint([Number(backup.version)||0,backup.encryptedPrivateKey,backup.salt,backup.iv,escrow.publicKeyJwk?.n,escrow.publicKeyJwk?.e]);
+      if(!prepared||Number(prepared.format)!==1||prepared.keyId!==wrapping.keyId||prepared.fingerprint!==fingerprint)return reply(409,{error:'Administrator must prepare recovery',code:'ESCROW_PREPARATION_REQUIRED'});
+      const preparationLabel=new TextEncoder().encode(JSON.stringify(['covo-escrow-preparation-v1',body.appId,escrow.createdBy,fingerprint]));
+      const raw=await crypto.subtle.decrypt({name:'RSA-OAEP',label:preparationLabel},wrapping.privateKey,from64(prepared.wrappedMaterial));
+      if(raw.byteLength!==32)return reply(409,{error:'Recovery backup unavailable'});
+      const key=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['decrypt']);
+      privateJwk=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:from64(backup.iv)},key,from64(backup.encryptedPrivateKey))));
+    } else privateJwk=backup.privateKeyJwk;
+    if(!privateJwk||privateJwk.n!==escrow.publicKeyJwk?.n||privateJwk.e!==escrow.publicKeyJwk?.e)return reply(409,{error:'Recovery backup unavailable'});
+    const privateKey=await crypto.subtle.importKey('jwk',privateJwk,{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
+    const recipient=await crypto.subtle.importKey('jwk',publicJwk,{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+    const versions=wraps.scopedVersions;
+    if(Object.keys(versions).length>16)return reply(409,{error:'Recovery requires administrator assistance',code:'ESCROW_RECOVERY_TOO_LARGE'});
+    const recovered={};
+    const selected=Object.entries(versions).sort(([a],[b])=>a===String(body.wantedVersion)?-1:b===String(body.wantedVersion)?1:Number(b)-Number(a));
+    for(const [version,wrapped] of selected){
+      if(!/^[1-9]\d{0,15}$/.test(version)||typeof wrapped!=='string')continue;
+      try {
+        const label=new TextEncoder().encode(JSON.stringify(['covo-room-escrow-v1',body.appId,body.serverId,body.roomId,version]));
+        const raw=await crypto.subtle.decrypt({name:'RSA-OAEP',label},privateKey,from64(wrapped));
+        if(raw.byteLength!==32)continue;
+        recovered[version]=to64(await crypto.subtle.encrypt({name:'RSA-OAEP'},recipient,raw));
+      }catch(_){}
+    }
+    if(!Object.keys(recovered).length)return reply(409,{error:'Recovery backup unavailable'});
+    // Revocation, channel deletion or key replacement during crypto work vetoes delivery.
+    const [latestServer,latestProfile,latestRoom]=await Promise.all([read(serverPath),read(`users/${user.uid}`),read(roomPath)]);
+    if(!member(latestServer)||!latestRoom)return reply(403,{error:'Forbidden'});
+    if(latestProfile?.publicKeyJwk?.n!==publicJwk.n||latestProfile?.publicKeyJwk?.e!==publicJwk.e)return reply(409,{error:'Identity key changed'});
+    return reply(200,{success:true,versions:recovered,publicKeyJwk:{n:publicJwk.n,e:publicJwk.e},currentKeyVersion:latestRoom.currentKeyVersion||1});
+  }catch(_){return reply(503,{error:'Recovery temporarily unavailable'});}
 }
 
 // -------------------------------------------------------------
@@ -3126,9 +3226,10 @@ async function handleBulkDeleteFiles(request, env) {
 
 const tokenCache = new Map();
 
-async function verifyFirebaseIdToken(idToken, env) {
+async function verifyFirebaseIdToken(idToken, env, {fresh=false} = {}) {
   if (!idToken) return null;
   const now = Date.now();
+  if(fresh)tokenCache.delete(idToken);
   if (tokenCache.has(idToken)) {
     const cached = tokenCache.get(idToken);
     if (now < cached.expiresAt) {
@@ -3145,10 +3246,12 @@ async function verifyFirebaseIdToken(idToken, env) {
       body: JSON.stringify({ idToken })
     });
     const data = await res.json();
-    if (data.error || !data.users || data.users.length === 0) return null;
-    const user = { uid: data.users[0].localId, email: data.users[0].email };
+    if (data.error || !data.users || data.users.length === 0 || data.users[0].disabled === true) return null;
+    const user = { uid: data.users[0].localId, email: data.users[0].email, emailVerified:data.users[0].emailVerified===true };
     // 🔒 TTLを15分→5分に短縮（パスワード変更後の古いトークン受け入れ期間を最小化）
-    tokenCache.set(idToken, { user, expiresAt: now + 300000 });
+    let expiresAt=now;
+    try {const claims=JSON.parse(atob(idToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));if(Number.isFinite(claims.exp))expiresAt=Math.min(now+300000,claims.exp*1000);}catch(_){}
+    if(expiresAt>now)tokenCache.set(idToken, { user, expiresAt });
     if (tokenCache.size > 500) {
       const firstKey = tokenCache.keys().next().value;
       tokenCache.delete(firstKey);
@@ -3165,7 +3268,7 @@ async function isD1Admin(appId, verifiedUser, env) {
     const row = await env.DB.prepare("SELECT setting_data FROM settings WHERE app_id = ? AND setting_id = ?").bind(appId, "adminList").first();
     if (row && row.setting_data) {
       const data = JSON.parse(row.setting_data);
-      const emailMatch = data && Array.isArray(data.emails) && verifiedUser.email && data.emails.includes(verifiedUser.email);
+      const emailMatch = data && Array.isArray(data.emails) && verifiedUser.emailVerified===true && verifiedUser.email && data.emails.includes(verifiedUser.email);
       const uidMatch = data && Array.isArray(data.admins) && verifiedUser.uid && data.admins.includes(verifiedUser.uid);
       if (emailMatch || uidMatch) {
         return true;
@@ -3225,7 +3328,7 @@ async function isAppAdmin(appId, verifiedUser, env) {
       if (!adminData.error && adminData.fields) {
         if (adminData.fields.emails?.arrayValue?.values) {
           const emails = adminData.fields.emails.arrayValue.values.map(v => (v.stringValue || "").toLowerCase().trim());
-          if (verifiedUser.email && emails.includes(verifiedUser.email.toLowerCase().trim())) return true;
+          if (verifiedUser.emailVerified===true && verifiedUser.email && emails.includes(verifiedUser.email.toLowerCase().trim())) return true;
         }
         if (adminData.fields.admins?.arrayValue?.values) {
           const admins = adminData.fields.admins.arrayValue.values.map(v => (v.stringValue || "").trim());

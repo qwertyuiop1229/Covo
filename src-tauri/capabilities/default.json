@@ -3,7 +3,10 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "*"
+    "main",
+    "recovery-engine",
+    "notif_container",
+    "notif_pos_picker"
   ],
   "permissions": [
     "core:default",
@@ -18,7 +21,6 @@
     "core:window:default",
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",
-    "core:window:allow-create",
     "core:window:allow-start-dragging",
     "core:window:allow-set-size",
     "core:window:allow-set-position",

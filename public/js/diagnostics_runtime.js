@@ -1,4 +1,4 @@
-import { traffic } from './communication_runtime.js';
+import { traffic, readSupervisor } from './communication_runtime.js';
 import { CLIENT_PROTOCOL, WORKER_ORIGIN } from './client_protocol.js';
 
 export function createDiagnostics(now = () => Date.now(), initialStartedAt = now()) {
@@ -20,7 +20,7 @@ export function createDiagnostics(now = () => Date.now(), initialStartedAt = now
     shift(value) { if (Number.isFinite(value) && value > 0) layoutShift += value; },
     report(context = {}) {
       return { schema: 1, app: { version: /^\d+\.\d+\.\d+$/.test(context.version) ? context.version : 'unknown', nativeVersion: /^\d+\.\d+\.\d+$/.test(context.nativeVersion) ? context.nativeVersion : null, protocol: CLIENT_PROTOCOL, desktop: Boolean(context.desktop) },
-        startedAt, elapsedMs: Math.max(0, now() - startedAt), sdk: traffic.snapshot(),
+        startedAt, elapsedMs: Math.max(0, now() - startedAt), sdk: { ...traffic.snapshot(), reads: readSupervisor.snapshot() },
         network: { observedHttpTransferBytes: transferBytes, resourceCount: resources, zeroOrUnknownTransferCount: unknownTransfers,
           scope: 'Observed HTTP response transferSize only, not uploads. Zero may mean cache or missing cross-origin timing permission. Excludes WebSocket frames and Firebase billing; this is NOT total traffic or a bill.' },
         stability: { longTasks, longTaskMs, layoutShift, failures: { ...failures }, timings: Object.fromEntries([...timings].map(([name, entry]) => {

@@ -7,7 +7,7 @@ function loadCrypto() {
   const writes = [];
   const ctx = vm.createContext({
     window: { crypto: webcrypto }, location: { protocol: 'https:' }, console, withReadDeadline:promise=>promise,
-    TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, Blob, CryptoKey: class CryptoKey {}, setTimeout, clearTimeout,
+    TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, DataView, Blob, AbortController, CryptoKey: class CryptoKey {}, setTimeout, clearTimeout,
     _abToB64: ab => Buffer.from(ab).toString('base64'), _b64ToAb: str => Uint8Array.from(Buffer.from(str, 'base64')).buffer,
     doc: (_, path) => path, collection: (_, path) => path, query: path => path, limit: () => 1,
     getDoc: async path => ({ exists: () => !path.includes('/roomKeys/') && path.endsWith('/rooms/room1'), data: () => ({ currentKeyVersion: 1 }) }),
@@ -16,7 +16,7 @@ function loadCrypto() {
     LocalStore: { putMessage: async () => {} }
   });
   const source = fs.readFileSync('public/js/crypto_helpers.js', 'utf8').replace(/^import[^\n]*\n/gm, '').replace(/\bexport /g, '');
-  vm.runInContext(source + '\nglobalThis.api = { _decryptText, _decryptMessagesInPlace, _getRoomKeyWithWait, migrateLegacyDmSharedKey, observeRoomKeyVersion, roomKeyVersionIsCurrent, roomKeyScope, _getOrCreateRoomKey, _backfillDmKeysForParticipant, setCryptoAccount, __lsGet, __lsSet, __ensureE2EEKeysImpl, _e2ee, initCryptoContext, _encryptText, _encryptFileE2EE, _decryptFileE2EE, __distributeRoomKeyVersion, __getOrCreateRoomKeyImpl };', ctx);
+  vm.runInContext(source + '\nglobalThis.api = { __backupKeysToFirestore,recoverRoomKeyBackup,_ensureEscrowKey,__decryptPrivKeyFromBackup,_decryptText, _decryptMessagesInPlace, _getRoomKeyWithWait, migrateLegacyDmSharedKey, observeRoomKeyVersion, roomKeyVersionIsCurrent, roomKeyScope, _getOrCreateRoomKey, _backfillDmKeysForParticipant, setCryptoAccount, __lsGet, __lsSet, __ensureE2EEKeysImpl, _e2ee, initCryptoContext, _encryptText, _encryptFileE2EE, _decryptFileE2EE, __distributeRoomKeyVersion, __getOrCreateRoomKeyImpl };', ctx);
   ctx.api.initCryptoContext({ getDb: () => ({}), getAppId: () => 'testApp', getUserId: () => 'alice', getIsAdmin: () => false });
   return { ctx, api: ctx.api, writes };
 }
@@ -37,6 +37,7 @@ test('a late rescue response cannot clear another account keys and failures do n
   api.initCryptoContext({getUserId:()=>owner});api.setCryptoAccount(owner);
   ctx.setDoc=()=>new Promise(resolve=>{finish=resolve;});
   const pending=ctx._requestEscrowRescue('server1','room1');
+  await new Promise(setImmediate);
   owner='bob';api.setCryptoAccount(owner);const scope=api.roomKeyScope('server1','room1');api._e2ee.roomKeyCache[scope]={latest:'BOB_KEY'};
   finish();await pending;expect(api._e2ee.roomKeyCache[scope].latest).toBe('BOB_KEY');
   ctx.setDoc=jest.fn(async()=>{throw Error('offline');});
@@ -261,4 +262,107 @@ test('an old personal key read completing after account switch does not install 
   expect(await pending).toBe(false);
   expect(api._e2ee.privateKey).toBeNull();
   expect(writes).toHaveLength(0);
+});
+
+async function identityFixture(){
+  const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+  return {pair,privateJwk:await webcrypto.subtle.exportKey('jwk',pair.privateKey),publicJwk:await webcrypto.subtle.exportKey('jwk',pair.publicKey)};
+}
+test('stale local identity restores the account backup without overwriting it',async()=>{
+  const {ctx,api,writes}=loadCrypto(),[stale,canonical]=await Promise.all([identityFixture(),identityFixture()]);
+  api.__lsSet('covo_e2ee_priv',JSON.stringify(stale.privateJwk));api.__lsSet('covo_e2ee_pub',JSON.stringify(stale.publicJwk));
+  ctx.getDoc=async()=>({exists:()=>true,data:()=>({privateKeyJwk:canonical.privateJwk,publicKeyJwk:canonical.publicJwk,encryptedPrivateKey:null})});
+  expect(await api.__ensureE2EEKeysImpl()).toBe(true);expect(api._e2ee.publicKeyJwk.n).toBe(canonical.publicJwk.n);expect(writes).toEqual([]);
+});
+test('backup creation is atomic and cannot overwrite a different canonical identity',async()=>{
+  const {ctx,api}=loadCrypto(),[local,canonical]=await Promise.all([identityFixture(),identityFixture()]);
+  ctx.fetch=async()=>({ok:true,json:async()=>({pepper:'test'})});const set=jest.fn();
+  ctx.runTransaction=async(_,callback)=>callback({get:async()=>({exists:()=>true,data:()=>({encryptedPrivateKey:'keep',publicKeyJwk:canonical.publicJwk})}),set});
+  await expect(api.__backupKeysToFirestore(local.privateJwk,local.publicJwk)).rejects.toThrow('Existing identity');expect(set).not.toHaveBeenCalled();
+  ctx.runTransaction=async(_,callback)=>callback({get:async()=>({exists:()=>true,data:()=>({encryptedPrivateKey:'keep',publicKeyJwk:local.publicJwk})}),set});
+  expect(await api.__backupKeysToFirestore(local.privateJwk,local.publicJwk)).toBe(true);expect(set).not.toHaveBeenCalled();
+});
+test('failed backup configuration does not silently encrypt a new backup with a substitute value',async()=>{
+  const {ctx,api}=loadCrypto(),identity=await identityFixture();ctx.fetch=async()=>{throw Error('offline');};ctx.runTransaction=jest.fn();
+  await expect(api.__backupKeysToFirestore(identity.privateJwk,identity.publicJwk)).rejects.toThrow('configuration unavailable');expect(ctx.runTransaction).not.toHaveBeenCalled();
+});
+test('a stale public profile can be repaired only from a matching retained private backup',async()=>{
+  const {ctx,api}=loadCrypto(),[local,stale]=await Promise.all([identityFixture(),identityFixture()]);
+  ctx.fetch=async()=>({ok:true,json:async()=>({pepper:'test'})});const set=jest.fn();
+  ctx.runTransaction=async(_,callback)=>callback({get:async path=>({exists:()=>true,data:()=>path.endsWith('/private/keys')?{encryptedPrivateKey:'keep',publicKeyJwk:local.publicJwk}:{publicKeyJwk:stale.publicJwk}}),set});
+  await api.__backupKeysToFirestore(local.privateJwk,local.publicJwk);
+  expect(set).toHaveBeenCalledTimes(1);expect(set.mock.calls[0][0]).toBe('artifacts/testApp/users/alice');expect(set.mock.calls[0][1].publicKeyJwk.n).toBe(local.publicJwk.n);
+});
+test('missing historical version is repaired from escrow and the original ciphertext becomes readable',async()=>{
+  const {ctx,api,writes}=loadCrypto(),identity=await identityFixture();
+  Object.assign(api._e2ee,{ready:true,privateKey:identity.pair.privateKey,publicKey:identity.pair.publicKey,publicKeyJwk:identity.publicJwk});
+  api.initCryptoContext({getAuth:()=>({currentUser:{uid:'alice',getIdToken:async()=> 'token'}})});
+  const key=await webcrypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  const text=await api._encryptText('回復できた本文',{latest:key,latestVersion:'2'});
+  const old=await webcrypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  api._e2ee.roomKeyCache[api.roomKeyScope('server','room')]={'1':old,latest:old,latestVersion:'1'};
+  const wrapped=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP'},identity.pair.publicKey,await webcrypto.subtle.exportKey('raw',key))).toString('base64');
+  ctx.fetch=jest.fn(async()=>({ok:true,json:async()=>({success:true,versions:{'2':wrapped},publicKeyJwk:identity.publicJwk,currentKeyVersion:2})}));
+  expect(await api._decryptText(text,'server','room',['alice'])).toBe('回復できた本文');
+  expect(writes).toHaveLength(1);expect(writes[0].path).toMatch(/roomKeys\/alice$/);expect(writes[0].data.versions['2']).toBe(wrapped);expect(api._e2ee.roomKeyCache[api.roomKeyScope('server','room')]['1']).toBe(old);
+});
+test('admin preparation preserves 200k backup derivation and stores only a Worker-wrapped recovery material',async()=>{
+  const {ctx,api,writes}=loadCrypto(),[admin,worker]=await Promise.all([identityFixture(),identityFixture()]);
+  api.initCryptoContext({getIsAdmin:()=>true,getAuth:()=>({currentUser:{uid:'alice',getIdToken:async()=> 'token'}})});api.setCryptoAccount('alice');
+  ctx.fetch=jest.fn(async url=>({ok:true,json:async()=>url.endsWith('/pepper')?{pepper:'test'}:{publicKeyJwk:worker.publicJwk,keyId:'worker-key'}}));
+  const backup={...await ctx.__encryptPrivKeyForBackup(admin.privateJwk,'escrow_priv'),publicKeyJwk:admin.publicJwk};
+  ctx.getDoc=async path=>({exists:()=>!path.endsWith('/escrowRecovery'),data:()=>backup});
+  await ctx.prepareEscrowRecovery({createdBy:'alice',publicKeyJwk:admin.publicJwk});
+  expect(writes).toHaveLength(1);expect(writes[0].path).toMatch(/users\/alice\/private\/escrowRecovery$/);
+  const prepared=writes[0].data;expect(prepared.privateKeyJwk).toBeUndefined();expect(prepared.material).toBeUndefined();expect(prepared.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+  const label=new TextEncoder().encode(JSON.stringify(['covo-escrow-preparation-v1','testApp','alice',prepared.fingerprint]));
+  const raw=await webcrypto.subtle.decrypt({name:'RSA-OAEP',label},worker.pair.privateKey,Buffer.from(prepared.wrappedMaterial,'base64'));
+  const key=await webcrypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['decrypt']);
+  const clear=await webcrypto.subtle.decrypt({name:'AES-GCM',iv:Buffer.from(backup.iv,'base64')},key,Buffer.from(backup.encryptedPrivateKey,'base64'));
+  expect(JSON.parse(new TextDecoder().decode(clear)).n).toBe(admin.publicJwk.n);
+  await ctx.prepareEscrowRecovery({createdBy:'alice',publicKeyJwk:admin.publicJwk});expect(writes).toHaveLength(1);
+});
+test('a late escrow backup read cannot import or migrate a previous administrator key into another account',async()=>{
+  const {ctx,api,writes}=loadCrypto();let owner='alice',deliver;
+  api.initCryptoContext({getUserId:()=>owner,getIsAdmin:()=>true});api.setCryptoAccount(owner);
+  ctx.getDoc=()=>new Promise(resolve=>{deliver=resolve;});
+  const pending=ctx._getEscrowPrivateKey();owner='bob';api.setCryptoAccount(owner);
+  deliver({exists:()=>true,data:()=>({privateKeyJwk:{n:'alice-secret'}})});
+  expect(await pending).toBeNull();expect(writes).toEqual([]);
+});
+test('new escrow wraps bind room and version while retaining the legacy reader format',async()=>{
+  const {ctx,api,writes}=loadCrypto(),identity=await identityFixture(),escrow=await identityFixture();
+  api._e2ee.publicKey=identity.pair.publicKey;ctx.__getEscrowPublicKey=async()=>escrow.pair.publicKey;
+  const raw=webcrypto.getRandomValues(new Uint8Array(32));
+  await api.__distributeRoomKeyVersion('server','room',raw,['alice'],'2');
+  const data=writes.find(write=>write.path.endsWith('/escrowKey')).data;
+  const label=new TextEncoder().encode(JSON.stringify(['covo-room-escrow-v1','testApp','server','room','2']));
+  const clear=await webcrypto.subtle.decrypt({name:'RSA-OAEP',label},escrow.pair.privateKey,Buffer.from(data.scopedVersions['2'],'base64'));
+  expect(Buffer.from(clear)).toEqual(Buffer.from(raw));
+  await expect(webcrypto.subtle.decrypt({name:'RSA-OAEP',label:new Uint8Array([1])},escrow.pair.privateKey,Buffer.from(data.scopedVersions['2'],'base64'))).rejects.toThrow();
+  expect(Buffer.from(await webcrypto.subtle.decrypt({name:'RSA-OAEP'},escrow.pair.privateKey,Buffer.from(data.versions['2'],'base64')))).toEqual(Buffer.from(raw));
+});
+test('room backfill skips delivered versions and acknowledges failure before a rescue request can be deleted',async()=>{
+  const {ctx,api,writes}=loadCrypto(),recipient=await identityFixture();
+  const keys={};for(const version of ['1','2'])keys[version]=await webcrypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  keys.latest=keys['2'];keys.latestVersion='2';api._e2ee.roomKeyCache[api.roomKeyScope('server','room')]=keys;
+  ctx.__getUserPublicKey=jest.fn(async()=>recipient.pair.publicKey);
+  ctx.getDoc=async()=>({exists:()=>true,data:()=>({versions:{'1':'already-delivered'}})});
+  expect(await ctx._backfillRoomKeysForMembers('server','room',['bob'])).toBe(true);expect(writes).toHaveLength(1);expect(Object.keys(writes[0].data.versions)).toEqual(['2']);
+  writes.length=0;ctx.getDoc=async()=>({exists:()=>true,data:()=>({versions:{'1':'present','2':'present'}})});
+  expect(await ctx._backfillRoomKeysForMembers('server','room',['bob'])).toBe(true);expect(writes).toHaveLength(0);
+  ctx.setDoc=async()=>{throw Error('offline');};
+  expect(await ctx._backfillRoomKeysForMembers('server','room',['bob'],true)).toBe(false);expect(ctx.__getUserPublicKey).toHaveBeenLastCalledWith('bob',true);
+});
+test.each(['legacy','foreign-room','bound'])('administrator escrow recovery only accepts the bound room: %s',async mode=>{
+  const {ctx,api}=loadCrypto(),[identity,escrow]=await Promise.all([identityFixture(),identityFixture()]);
+  Object.assign(api._e2ee,{ready:true,privateKey:identity.pair.privateKey,publicKey:identity.pair.publicKey});api.initCryptoContext({getIsAdmin:()=>true});
+  ctx._getEscrowPrivateKey=async()=>escrow.pair.privateKey;ctx._requestEscrowRescue=async()=>null;
+  const raw=webcrypto.getRandomValues(new Uint8Array(32));
+  const label=new TextEncoder().encode(JSON.stringify(['covo-room-escrow-v1','testApp','server',mode==='foreign-room'?'other':'room','2']));
+  const legacy=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP'},escrow.pair.publicKey,raw)).toString('base64');
+  const bound=Buffer.from(await webcrypto.subtle.encrypt({name:'RSA-OAEP',label},escrow.pair.publicKey,raw)).toString('base64');
+  ctx.getDoc=async path=>({exists:()=>true,data:()=>path.endsWith('/escrowKey')?{versions:{'2':legacy},...(mode==='legacy'?{}:{scopedVersions:{'2':bound}})}:path.includes('/roomKeys/')?{versions:{}}:{currentKeyVersion:2,lastMessageAt:10}});
+  const result=await api.__getOrCreateRoomKeyImpl('server','room',['alice']);
+  if(mode==='bound')expect(result.latestVersion).toBe('2');else expect(result).toBeNull();
 });

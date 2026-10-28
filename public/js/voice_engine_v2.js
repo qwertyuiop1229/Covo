@@ -630,8 +630,7 @@ class VoiceEngine {
             this._applyCallMode(this._voiceStates);
           }
         };
-        onValue(configRef, configHandler);
-        this._channelConfigUnsub = () => off(configRef, 'value', configHandler);
+        this._channelConfigUnsub = onValue(configRef, configHandler);
 
         const handler = (snapshot) => {
           if (!this.isActive) return;
@@ -676,8 +675,7 @@ class VoiceEngine {
             this._applyCallMode(data);
           }
         };
-        onValue(stateRef, handler);
-        this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
+        this._voiceStatesUnsub = onValue(stateRef, handler);
       });
     }).catch(e => {
       console.error('[VoiceEngine] RTDB 初期化失敗:', e);
@@ -2204,8 +2202,7 @@ window._subscribeVcSidebarStates = function(serverId) {
         });
       };
 
-      onValue(serverStateRef, handler);
-      window._vcSidebarUnsub = () => off(serverStateRef, 'value', handler);
+      window._vcSidebarUnsub = onValue(serverStateRef, handler);
     });
   }).catch(e => {
     console.error('[VoiceEngine] サイドバー状態購読失敗:', e);

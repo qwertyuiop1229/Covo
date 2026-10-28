@@ -30,6 +30,8 @@ const firebaseBuild = await build({
     b.onResolve({ filter: /communication_runtime\.js$/ }, () => ({ path: '../../js/communication_runtime.js', external: true }));
   } }]
 });
+await writeFile('.cache/firebase/firebase-messaging-worker.js',"import firebase from 'firebase-runtime/compat/app';\nimport 'firebase-runtime/compat/messaging';\nself.firebase=firebase;\n");
+const workerBuild=await build({entryPoints:['.cache/firebase/firebase-messaging-worker.js'],outfile:'public/vendor/firebase/firebase-messaging-worker.js',bundle:true,format:'iife',platform:'browser',target:['safari15','chrome100'],minify:true,metafile:true});
 await writeFile('.cache/firebase/metafile.json', JSON.stringify(firebaseBuild.metafile, null, 2));
 
 const desktopBuild=await build({ entryPoints: ['node_modules/@tauri-apps/plugin-updater/dist-js/index.js'], outfile: 'public/vendor/desktop-updater.js', bundle: true, format: 'esm', minify: true, metafile:true });
@@ -37,4 +39,4 @@ const photoBuild=await build({ entryPoints: ['node_modules/photoswipe/dist/photo
 await copyFile('node_modules/photoswipe/dist/photoswipe.css','public/vendor/photoswipe.css');
 await copyFile('node_modules/photoswipe/LICENSE','public/vendor/photoswipe.LICENSE');
 await (await import('./build_css_modules.mjs')).stampCssImports();
-await recordCache(cacheFile,[...required,...Object.keys(firebaseBuild.metafile.inputs),...Object.keys(firebaseBuild.metafile.outputs),...Object.keys(desktopBuild.metafile.inputs),...Object.keys(desktopBuild.metafile.outputs),...Object.keys(photoBuild.metafile.inputs),...Object.keys(photoBuild.metafile.outputs),'node_modules/photoswipe/dist/photoswipe.css','node_modules/photoswipe/LICENSE','public/vendor/photoswipe.css','public/vendor/photoswipe.LICENSE']);
+await recordCache(cacheFile,[...required,...Object.keys(firebaseBuild.metafile.inputs),...Object.keys(firebaseBuild.metafile.outputs),...Object.keys(workerBuild.metafile.inputs),...Object.keys(workerBuild.metafile.outputs),...Object.keys(desktopBuild.metafile.inputs),...Object.keys(desktopBuild.metafile.outputs),...Object.keys(photoBuild.metafile.inputs),...Object.keys(photoBuild.metafile.outputs),'node_modules/photoswipe/dist/photoswipe.css','node_modules/photoswipe/LICENSE','public/vendor/photoswipe.css','public/vendor/photoswipe.LICENSE']);

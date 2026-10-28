@@ -17,7 +17,7 @@ test('bundled Firestore survives repeated target teardown, reconnect and retaine
     window.sdk={fs,db,ref:fs.doc(db,'artifacts/testApp/users/alice/private/sdk-recovery-check')};
     return app.SDK_VERSION;
   };
-  expect(await page.evaluate(initialize)).toBe('12.14.0');
+  expect(await page.evaluate(initialize)).toBe('12.19.0');
   const result=await page.evaluate(async()=>{
     const {fs,db,ref}=sdk,errors=[];await fs.setDoc(ref,{value:'retained'});
     for(let cycle=0;cycle<30;cycle++){

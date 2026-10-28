@@ -28,8 +28,33 @@ afterAll(async () => {
 });
 
 const getDb = (auth) => {
-  return testEnv.authenticatedContext(auth.uid, { email: auth.email }).firestore();
+  return testEnv.authenticatedContext(auth.uid, { email: auth.email, email_verified:auth.emailVerified!==false }).firestore();
 };
+
+test('email-based administrator access requires verified ownership of the address',async()=>{
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),`artifacts/${APP_ID}/settings/adminList`),{emails:['reserved@example.com'],admins:['uid-admin']});
+    await setDoc(doc(context.firestore(),`artifacts/${APP_ID}/users/victim`),{nickname:'Victim'});
+  });
+  const path=`artifacts/${APP_ID}/users/victim`;
+  await assertFails(updateDoc(doc(getDb({uid:'attacker',email:'reserved@example.com',emailVerified:false}),path),{nickname:'Taken over'}));
+  await assertSucceeds(updateDoc(doc(getDb({uid:'verified-admin',email:'reserved@example.com',emailVerified:true}),path),{nickname:'Verified action'}));
+  await assertSucceeds(updateDoc(doc(getDb({uid:'uid-admin',emailVerified:false}),path),{nickname:'Explicit UID action'}));
+});
+
+test('prepared escrow material stays private to its owner, including against other global admins',async()=>{
+  const path=`artifacts/${APP_ID}/users/owner/private/escrowRecovery`;
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),`artifacts/${APP_ID}/settings/adminList`),{admins:['owner','otherAdmin'],emails:[]});
+  });
+  await assertSucceeds(setDoc(doc(getDb({uid:'owner'}),path),{wrappedMaterial:'wrapped',fingerprint:'fingerprint',keyId:'worker'}));
+  await assertSucceeds(getDoc(doc(getDb({uid:'owner'}),path)));
+  for(const uid of ['member','otherAdmin']){
+    await assertFails(getDoc(doc(getDb({uid}),path)));
+    await assertFails(setDoc(doc(getDb({uid}),path),{wrappedMaterial:'replacement'}));
+  }
+  await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(),path)));
+});
 
 test('maintenance blocks normal accounts at Firestore while authoritative global admins retain access', async () => {
   await testEnv.withSecurityRulesDisabled(async context => {
@@ -214,6 +239,10 @@ describe('Firestore Security Rules Testing', () => {
       await assertFails(setDoc(doc(mod, `${base}/rooms/room1/messages/spoof`), { senderId: 'alice', text: 'spoof' }));
       const key = doc(bob, `${base}/rooms/room1/roomKeys/alice`);
       await assertSucceeds(setDoc(key, { versions: { '2': 'new' }, latestVersion: '2' }, { merge: true }));
+      const escrow=doc(bob,`${base}/rooms/room1/roomKeys/escrowKey`);
+      await assertSucceeds(setDoc(escrow,{versions:{'1':'legacy'},scopedVersions:{'1':'bound'}}));
+      await assertSucceeds(setDoc(escrow,{versions:{'2':'legacy2'},scopedVersions:{'2':'bound2'}},{merge:true}));
+      await assertFails(setDoc(escrow,{versions:{'3':'legacy3'},scopedVersions:{'1':'replacement'}},{merge:true}));
       await assertFails(updateDoc(key, { 'versions.1': 'tampered' }));
       await assertFails(deleteDoc(key));
       await assertFails(updateDoc(doc(bob, `${base}/rooms/room1`), { sharedKey: 'plaintext' }));

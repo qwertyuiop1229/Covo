@@ -33,7 +33,7 @@ service cloud.firestore {
       return request.auth != null &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList) &&
         (
-          (get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('emails', []) is list && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('emails', [])) ||
+          (request.auth.token.get('email_verified', false) == true && get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('emails', []) is list && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('emails', [])) ||
           (get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('admins', []) is list && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/adminList).data.get('admins', []))
         );
     }
@@ -43,7 +43,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList) &&
         (
-          ('emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
+          (request.auth.token.get('email_verified', false) == true && 'emails' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && 'email' in request.auth.token && request.auth.token.email in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.emails) ||
           ('admins' in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/settings/listAdminList).data.admins)
         );
     }
@@ -500,7 +500,10 @@ service cloud.firestore {
                  request.resource.data.versions.diff(resource.data.get('versions', {})).changedKeys().size() == 0 &&
                  request.resource.data.versions.diff(resource.data.get('versions', {})).removedKeys().size() == 0 &&
                  request.resource.data.versions.diff(resource.data.get('versions', {})).addedKeys().size() > 0 &&
-                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
+                 request.resource.data.get('scopedVersions', {}) is map &&
+                 request.resource.data.get('scopedVersions', {}).diff(resource.data.get('scopedVersions', {})).changedKeys().size() == 0 &&
+                 request.resource.data.get('scopedVersions', {}).diff(resource.data.get('scopedVersions', {})).removedKeys().size() == 0 &&
+                 request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'scopedVersions', 'latestVersion', 'wrappedKey', 'updatedAt']))));
           }
 
           // E2EE 救済リクエスト (Rescue Requests: 本人・サーバー管理者・全体管理者限定)

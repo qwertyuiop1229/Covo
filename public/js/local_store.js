@@ -145,14 +145,20 @@ export async function initLocalDB() {
     }
   }
   if (_dbInitPromise) return _dbInitPromise;
-  _dbInitPromise = new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
-      console.warn("[LocalStore] IndexedDB is not supported in this environment");
-      return resolve(null);
-    }
+  if (typeof indexedDB === 'undefined') return null;
+  const pending = new Promise((resolve) => {
     const generation = _accountGeneration;
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled=false,req;
+    const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);resolve(value);};
+    const timer=setTimeout(()=>{
+      globalThis.covoDiagnostics?.failure('localStore.open-timeout');
+      finish(null);
+      try {req?.transaction?.abort();}catch(_){}
+    },3000);
+    try { req = indexedDB.open(DB_NAME, DB_VERSION); }
+    catch (_) { finish(null);return; }
     req.onupgradeneeded = (e) => {
+      if(settled || generation!==_accountGeneration){try{req.transaction?.abort();}catch(_){}return;}
       const db = req.result;
       // 1. messages: メッセージ履歴
       if (!db.objectStoreNames.contains("messages")) {
@@ -176,38 +182,36 @@ export async function initLocalDB() {
       }
     };
     req.onsuccess = () => {
-      if (generation !== _accountGeneration) { req.result.close(); resolve(null); return; }
+      if (settled || generation !== _accountGeneration) { req.result.close(); finish(null); return; }
       _dbInstance = req.result;
       const opened = _dbInstance;
       _dbInstance.onversionchange = () => {
         try { opened.close(); } catch (_) {}
-        if (generation !== _accountGeneration) return;
+        if (generation !== _accountGeneration || _dbInstance!==opened) return;
         _dbInstance = null;
         _dbInitPromise = null;
       };
       _dbInstance.onclose = () => {
-        if (generation !== _accountGeneration) return;
+        if (generation !== _accountGeneration || _dbInstance!==opened) return;
         _dbInstance = null;
         _dbInitPromise = null;
       };
-      resolve(_dbInstance);
+      finish(_dbInstance);
     };
     req.onerror = () => {
-      if (generation !== _accountGeneration) { resolve(null); return; }
+      if (settled || generation !== _accountGeneration) { finish(null); return; }
       console.warn("[LocalStore] Failed to open IndexedDB:", req.error);
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
+      finish(null);
     };
     req.onblocked = () => {
-      if (generation !== _accountGeneration) { resolve(null); return; }
+      if (settled || generation !== _accountGeneration) { finish(null); return; }
       console.warn("[LocalStore] IndexedDB open blocked by another tab");
-      _dbInstance = null;
-      _dbInitPromise = null;
-      resolve(null);
+      finish(null);
     };
   });
-  return _dbInitPromise;
+  _dbInitPromise=pending;
+  pending.then(()=>{if(_dbInitPromise===pending)_dbInitPromise=null;});
+  return pending;
 }
 
 /**

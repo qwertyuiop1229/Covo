@@ -8,7 +8,151 @@ function api(file, names, injected = {}) {
 }
 const main = fs.readFileSync('public/js/main.js', 'utf8');
 const ast = parser.parse(main, { sourceType: 'module' });
+test('concurrent reads share work but settled, expired, invalidated and other-account reads stay independent',async()=>{
+  const {createReadCoalescer}=api('communication_runtime','createReadCoalescer');
+  let owner={},now=0;const db={},resolvers=[],fetcher=jest.fn(()=>new Promise(resolve=>resolvers.push(resolve)));
+  const reads=createReadCoalescer({equal:(a,b)=>a===b,owner:()=>owner,now:()=>now});
+  const first=reads.read(db,'get','a',fetcher);
+  for(let i=0;i<100;i++)expect(reads.read(db,'get','a',fetcher)).toBe(first);
+  await Promise.resolve();expect(fetcher).toHaveBeenCalledTimes(1);
+  now=8000;const second=reads.read(db,'get','a',fetcher);expect(second).not.toBe(first);
+  await Promise.resolve();resolvers[0]('old');await first;
+  expect(reads.read(db,'get','a',fetcher)).toBe(second);
+  owner={};const third=reads.read(db,'get','a',fetcher);expect(third).not.toBe(second);
+  reads.invalidate(db);const fourth=reads.read(db,'get','a',fetcher);expect(fourth).not.toBe(third);
+  await Promise.resolve();for(const resolve of resolvers)resolve('ok');await Promise.all([second,third,fourth]);
+  const fresh=reads.read(db,'get','a',async()=> 'fresh');expect(await fresh).toBe('fresh');
+  await expect(reads.read(db,'get','a',async()=>{throw Error('offline');})).rejects.toThrow('offline');
+  expect(await reads.read(db,'get','a',async()=> 'retry')).toBe('retry');
+});
+
+test('local storage timeout permits retry and a late old connection cannot replace the live connection',async()=>{
+  jest.useFakeTimers();try{
+    const requests=[],indexedDB={open:()=>{const request={};requests.push(request);return request;}};
+    const store=api('local_store','initLocalDB,setAccountScope',{indexedDB});store.setAccountScope('alice');
+    const first=store.initLocalDB();await jest.advanceTimersByTimeAsync(3000);expect(await first).toBeNull();
+    const second=store.initLocalDB(),live={objectStoreNames:['messages'],close:jest.fn()};
+    requests[1].result=live;requests[1].onsuccess();expect(await second).toBe(live);
+    const stale={close:jest.fn()};requests[0].result=stale;requests[0].onsuccess();expect(stale.close).toHaveBeenCalledTimes(1);
+    expect(await store.initLocalDB()).toBe(live);
+    store.setAccountScope('bob');const third=store.initLocalDB();store.setAccountScope('carol');
+    requests[2].result=stale;requests[2].onsuccess();expect(await third).toBeNull();
+  }finally{jest.useRealTimers();}
+});
+
+test('RTDB original-callback off and returned cleanup release wrapped listeners exactly once',()=>{
+  const traffic={count:jest.fn(),listeners:{}},records=[];
+  const sdk={off:jest.fn(),onValue:(query,next,error,options)=>{const stop=jest.fn();records.push({next,error,stop});return stop;}};
+  const source=fs.readFileSync('scripts/database-entry.mjs','utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export \*[^\n]*\n/gm,'').replace(/\bexport /g,'');
+  const context=vm.createContext({db:sdk,traffic,readSupervisor:{identity:()=>null,begin:()=>()=>{},progress(){}},createReadCoalescer:api('communication_runtime','createReadCoalescer').createReadCoalescer});
+  vm.runInContext(source+'\nglobalThis.adapter={onValue,off};',context);
+  const instance={},query={ref:{database:instance},isEqual:q=>q===query},callback=jest.fn();
+  const stop=context.adapter.onValue(query,callback);context.adapter.onValue(query,callback);
+  context.adapter.off(query,'value',callback);expect(traffic.listeners.rtdb).toBe(1);stop();expect(records[0].stop).toHaveBeenCalledTimes(1);
+  records[0].next('stale');expect(callback).not.toHaveBeenCalled();records[1].next('live');expect(callback).toHaveBeenCalledWith('live');
+  context.adapter.off(query);expect(traffic.listeners.rtdb).toBe(0);expect(records[1].stop).toHaveBeenCalledTimes(1);
+  context.adapter.onValue(query,callback,{onlyOnce:true});records[2].next('once');records[2].next('duplicate');expect(traffic.listeners.rtdb).toBe(0);expect(callback).toHaveBeenCalledTimes(2);
+});
 function declaration(name) { const node = ast.program.body.find(n => n.type === 'FunctionDeclaration' && n.id.name === name); return main.slice(node.start, node.end); }
+
+describe('database read stall recovery',()=>{
+  beforeEach(()=>jest.useFakeTimers());
+  afterEach(()=>jest.useRealTimers());
+  function setup(){
+    const document={hidden:false},navigator={onLine:true},traffic={count:jest.fn()};
+    const {createReadSupervisor}=api('communication_runtime','createReadSupervisor',{document,navigator});
+    let admitted=true,owner='alice';
+    const supervisor=createReadSupervisor({allowed:()=>admitted,session:()=>owner});
+    return {supervisor,document,navigator,block:()=>{admitted=false;},switchAccount:()=>{owner='bob';}};
+  }
+  test('healthy reads and cancelled or denied listeners never restart a transport',async()=>{
+    const {supervisor}=setup(),recover=jest.fn(),db={};
+    expect(await supervisor.track('firestore',db,recover,async()=>42)).toBe(42);
+    supervisor.begin('firestore',db,recover)('cancel');
+    const error=Object.assign(Error('permission denied'),{code:'permission-denied'});
+    await expect(supervisor.track('firestore',db,recover,()=>Promise.reject(error))).rejects.toBe(error);
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(recover).not.toHaveBeenCalled();expect(supervisor.snapshot().firestore.pending).toBe(0);
+  });
+  test('recent backend progress defers recovery and cancellation removes the remaining demand',async()=>{
+    const {supervisor}=setup(),recover=jest.fn(),db={};
+    const finish=supervisor.begin('rtdb',db,recover);
+    await jest.advanceTimersByTimeAsync(11000);supervisor.progress(db);
+    await jest.advanceTimersByTimeAsync(11000);expect(recover).not.toHaveBeenCalled();
+    finish('cancel');await jest.advanceTimersByTimeAsync(60000);expect(recover).not.toHaveBeenCalled();
+  });
+  test('one shared recovery unblocks concurrent reads without replacing their results or reissuing reads',async()=>{
+    const {supervisor}=setup(),db={},resolve=[];
+    const recover=jest.fn(()=>resolve.splice(0).forEach(done=>done('original result')));
+    const read=jest.fn(()=>new Promise(done=>resolve.push(done)));
+    const first=supervisor.track('rtdb',db,recover,read),second=supervisor.track('rtdb',db,recover,read);
+    await jest.advanceTimersByTimeAsync(11999);expect(recover).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);expect(recover).toHaveBeenCalledTimes(1);
+    expect(await first).toBe('original result');expect(await second).toBe('original result');expect(read).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(120000);expect(recover).toHaveBeenCalledTimes(1);
+  });
+  test('persistent stalls recover once per demand, respect backend cooldown and do not reset the other backend',async()=>{
+    const {supervisor}=setup(),recover=jest.fn(),other=jest.fn(),db={};
+    supervisor.begin('firestore',db,recover);
+    supervisor.begin('rtdb',{},other)('success');
+    await jest.advanceTimersByTimeAsync(120000);expect(recover).toHaveBeenCalledTimes(1);expect(other).not.toHaveBeenCalled();
+    supervisor.begin('firestore',db,recover);
+    await jest.advanceTimersByTimeAsync(12000);expect(recover).toHaveBeenCalledTimes(2);
+    supervisor.begin('firestore',db,recover);
+    await jest.advanceTimersByTimeAsync(59999);expect(recover).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(1);expect(recover).toHaveBeenCalledTimes(3);
+    supervisor.reset();expect(supervisor.snapshot().firestore.pending).toBe(0);
+  });
+  test('hidden/offline waits resume only in foreground and cannot reconnect during maintenance or a new account',async()=>{
+    const state=setup(),recover=jest.fn();state.document.hidden=true;
+    state.supervisor.begin('rtdb',{},recover);
+    await jest.advanceTimersByTimeAsync(20000);expect(recover).not.toHaveBeenCalled();
+    state.document.hidden=false;state.navigator.onLine=false;state.supervisor.resume();expect(recover).not.toHaveBeenCalled();
+    state.navigator.onLine=true;state.supervisor.resume();await jest.advanceTimersByTimeAsync(0);expect(recover).toHaveBeenCalledTimes(1);
+    expect(recover.mock.calls[0][0]()).toBe(true);state.block();expect(recover.mock.calls[0][0]()).toBe(false);
+    const next=setup(),stale=jest.fn();next.supervisor.begin('firestore',{},stale);next.switchAccount();
+    await jest.advanceTimersByTimeAsync(20000);expect(stale).not.toHaveBeenCalled();
+  });
+  test.each(['firestore','rtdb'])('the bundled %s adapter reconnects a stalled read and preserves the SDK promise result',async backend=>{
+    const {supervisor}=setup(),instance={},traffic={count:jest.fn(),listeners:{}},value={source:'SDK'};
+    let deliver;
+    const pending=new Promise(resolve=>{deliver=resolve;});
+    const sdk={getDoc:jest.fn(()=>pending),get:jest.fn(()=>pending),disableNetwork:jest.fn(async()=>{}),enableNetwork:jest.fn(async()=>deliver(value)),goOffline:jest.fn(),goOnline:jest.fn(()=>deliver(value))};
+    const file=backend==='firestore'?'firebase':'database';
+    const source=fs.readFileSync(`scripts/${file}-entry.mjs`,'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export \*[^\n]*\n/gm,'').replace(/\bexport /g,'');
+    const context=vm.createContext({fs:sdk,db:sdk,traffic,readSupervisor:supervisor,createReadCoalescer:api('communication_runtime','createReadCoalescer').createReadCoalescer,assertDatabaseWriteAllowed(){}});
+    vm.runInContext(source+`\nglobalThis.readApi=${backend==='firestore'?'getDoc':'get'};`,context);
+    const result=context.readApi(backend==='firestore'?{firestore:instance}:{ref:{database:instance}});
+    await jest.advanceTimersByTimeAsync(12000);expect(await result).toBe(value);
+    expect(backend==='firestore'?sdk.disableNetwork:sdk.goOffline).toHaveBeenCalledTimes(1);
+    expect(supervisor.snapshot()[backend].pending).toBe(0);
+  });
+  test('Firestore observer overloads keep their receiver and release pending/accounting on errors and unsubscribe',()=>{
+    const {supervisor}=setup(),traffic={count:jest.fn(),listeners:{}},stop=jest.fn();let observer;
+    const source=fs.readFileSync('scripts/firebase-entry.mjs','utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export \*[^\n]*\n/gm,'').replace(/\bexport /g,'');
+    const sdk={onSnapshot:jest.fn((ref,options,next)=>{observer=next;return stop;})};
+    const context=vm.createContext({fs:sdk,traffic,readSupervisor:supervisor,createReadCoalescer:api('communication_runtime','createReadCoalescer').createReadCoalescer,assertDatabaseWriteAllowed(){}});
+    vm.runInContext(source+'\nglobalThis.listen=onSnapshot;',context);
+    const events=[],receiver={next(value){events.push([this===receiver,value]);},error(error){events.push(error);}};
+    const cleanup=context.listen({firestore:{}},{includeMetadataChanges:true},receiver);
+    observer.next(42);expect(events).toEqual([[true,42]]);expect(supervisor.snapshot().firestore.pending).toBe(0);
+    observer.error('denied');expect(traffic.listeners.firestore).toBe(0);
+    cleanup();cleanup();expect(traffic.listeners.firestore).toBe(0);expect(events[1]).toBe('denied');
+  });
+  test('a channel-list retry cannot reattach after navigation while token refresh is pending',async()=>{
+    let fail,tokenDone;
+    const snapshotStop=jest.fn(),token=new Promise(resolve=>{tokenDone=resolve;});
+    const context=vm.createContext({userId:'alice',currentServerId:'server',_serverSwitchGeneration:1,window:{},db:{},appId:'testApp',console:{warn(){}},
+      auth:{currentUser:{uid:'alice',getIdToken:()=>token}},setTimeout,clearTimeout,
+      withReadDeadline:promise=>promise,query:value=>value,collection:()=>({}),onSnapshot:(_,next,error)=>{fail=error;return snapshotStop;}});
+    vm.runInContext(declaration('loadServerRooms'),context);
+    context.loadServerRooms('server',0,1);
+    const retry=fail({code:'unavailable'});
+    context.loadServerRooms._unsub();context.currentServerId='other';tokenDone();await retry;
+    await jest.advanceTimersByTimeAsync(20000);expect(snapshotStop).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+});
 
 test('Firebase report signatures coalesce timestamps but retain distinct assertion codes', () => {
   const ctx=vm.createContext({});vm.runInContext(declaration('_createErrorSignature'),ctx);
@@ -198,14 +342,15 @@ test('profile reads coalesce and an old account response cannot replace the new 
   const oldRead = new Promise(resolve => { oldResolve = resolve; });
   const newRead = new Promise(resolve => { newResolve = resolve; });
   const context = vm.createContext({ window: { _userProfileCache: new Map() }, _userProfilePromises: new Map(), userId: 'alice', auth: { currentUser: { uid: 'alice' } }, cachedUsers: [], friendRelationships: {}, db: {}, doc: () => ({}),
-    getDoc: jest.fn(() => ++reads <= 2 ? oldRead : newRead), appId: 'testApp', Promise, console });
+    withReadDeadline:promise=>promise,getDoc: jest.fn(() => ++reads <= 2 ? oldRead : newRead), appId: 'testApp', Promise, console });
   vm.runInContext(main.slice(assignment.start, assignment.end), context);
   const old = context.window.getUserProfile('bob');
   const coalesced = context.window.getUserProfile('bob'); expect(context.getDoc).toHaveBeenCalledTimes(2);
-  context.userId = 'mallory'; context.auth.currentUser = { uid: 'mallory' }; context._userProfilePromises.clear();
-  const current = context.window.getUserProfile('bob'); const pending = context._userProfilePromises.get('bob');
+  context.userId = 'mallory'; context.auth.currentUser = { uid: 'mallory' };
+  const requestKey=JSON.stringify(['mallory','bob']);
+  const current = context.window.getUserProfile('bob'); const pending = context._userProfilePromises.get(requestKey);
   oldResolve({ exists: () => true, data: () => ({ nickname: 'stale alias' }) }); await old; await coalesced;
-  expect(context._userProfilePromises.get('bob')).toBe(pending); expect(context.window._userProfileCache.has('bob')).toBe(false);
+  expect(context._userProfilePromises.get(requestKey)).toBe(pending); expect(context.window._userProfileCache.has('bob')).toBe(false);
   newResolve({ exists: () => true, data: () => ({ nickname: 'Bob', avatarUrl: '' }) });
   expect((await current).nickname).toBe('Bob'); expect(context.window._userProfileCache.get('bob').nickname).toBe('Bob');
 });
@@ -461,14 +606,25 @@ test('a failed media network request is not retried because it happened inside a
   const fetch = jest.fn(async () => { throw Error('offline'); });
   const cache = { match: async () => null, put: jest.fn() };
   const context = vm.createContext({ window: { caches: {} }, caches: { open: async () => cache }, fetch });
-  vm.runInContext(declaration('fetchWithMediaCache'), context);
+  vm.runInContext(declaration('fetchWithMediaCache')+'\n'+declaration('fetchMediaResource'), context);
   await expect(context.fetchWithMediaCache('https://file.test/encrypted')).rejects.toThrow('offline');
   expect(fetch).toHaveBeenCalledTimes(1); expect(cache.put).not.toHaveBeenCalled();
 });
 
+test('missing media requests coalesce, expire, and manual retry bypasses the negative cache',async()=>{
+  let now=1000;const fetch=jest.fn(async()=>new Response('missing',{status:404}));
+  const context=vm.createContext({Date:{now:()=>now},Response,fetch,window:{},_missingFilesSet:new Map(),saveMissingFiles(){}});
+  vm.runInContext(['fetchWithMediaCache','fetchMediaResource','unmarkFileAsMissing'].map(declaration).join('\n'),context);
+  const responses=await Promise.all(Array.from({length:10},()=>context.fetchWithMediaCache('https://file.test/missing')));
+  expect(fetch).toHaveBeenCalledTimes(1);expect(await responses[0].text()).toBe('missing');expect(await responses[1].text()).toBe('missing');
+  await context.fetchWithMediaCache('https://file.test/missing');expect(fetch).toHaveBeenCalledTimes(1);
+  context.unmarkFileAsMissing('https://file.test/missing');await context.fetchWithMediaCache('https://file.test/missing');expect(fetch).toHaveBeenCalledTimes(2);
+  now+=120000;await context.fetchWithMediaCache('https://file.test/missing');expect(fetch).toHaveBeenCalledTimes(3);
+});
+
 test('local diagnostics computes nearest-rank percentiles and does not export private context or unknown traffic as zero total', () => {
   const traffic = { snapshot: () => ({ counters: { 'firestore.setDoc': 2 } }), reset: jest.fn() };
-  const { createDiagnostics } = api('diagnostics_runtime', 'createDiagnostics', { traffic, CLIENT_PROTOCOL: 2 });
+  const { createDiagnostics } = api('diagnostics_runtime', 'createDiagnostics', { traffic, readSupervisor:{snapshot:()=>({})},CLIENT_PROTOCOL: 2 });
   let now = 100; const metrics = createDiagnostics(() => now);
   for(let value = 1; value <= 100; value++) metrics.timing('api/syncRtdb', value);
   metrics.resource({ transferSize: 120 }); metrics.resource({ transferSize: 0 }); metrics.resource({});
@@ -514,7 +670,7 @@ test('maintenance admission initializes local UI once and never starts a delayed
 });
 
 test('temporary missing-file cache expires and is bounded, with an explicit manual retry escape', () => {
-  let now=1000;const writes=jest.fn();const context=vm.createContext({_missingFilesSet:new Map(),MISSING_FILE_TTL:120000,Date:{now:()=>now},localStorage:{setItem:writes}});
+  let now=1000;const writes=jest.fn();const context=vm.createContext({fetchWithMediaCache:{},_missingFilesSet:new Map(),MISSING_FILE_TTL:120000,Date:{now:()=>now},localStorage:{setItem:writes}});
   vm.runInContext(['saveMissingFiles','markFileAsMissing','isFileMissing','unmarkFileAsMissing'].map(declaration).join('\n'),context);
   context.markFileAsMissing('file');expect(context.isFileMissing('file')).toBe(true);
   now+=120000;expect(context.isFileMissing('file')).toBe(false);

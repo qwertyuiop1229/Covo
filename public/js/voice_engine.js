@@ -136,8 +136,7 @@ class VoiceEngine {
         }
       }
     };
-    onValue(stateRef, handler);
-    this._voiceStatesUnsub = () => off(stateRef, 'value', handler);
+    this._voiceStatesUnsub = onValue(stateRef, handler);
   }
 
   async _switchToP2P(currentStates) {
@@ -473,8 +472,7 @@ window._subscribeVcSidebarStates = function(serverId) {
       }
     });
   };
-  onValue(serverStateRef, handler);
-  window._vcSidebarUnsub = () => off(serverStateRef, 'value', handler);
+  window._vcSidebarUnsub = onValue(serverStateRef, handler);
 };
 
 // ===== ルームリストのVC表示パッチ（MutationObserver） =====

@@ -41,8 +41,11 @@ body:is(.dark-server-theme,.discord-dark-theme) { --covo-send-background: #5865f
 .covo-firestore-recovery { position:fixed; z-index:110000; top:max(72px,calc(var(--safe-top,0px) + 12px)); right:16px; width:min(420px,calc(100vw - 32px)); box-sizing:border-box; padding:20px; border-radius:16px; border:1px solid var(--covo-border); background:var(--covo-surface); color:var(--covo-text); box-shadow:var(--covo-shadow); }
 .covo-firestore-recovery strong { font-size:15px; }
 .covo-firestore-recovery p { margin:10px 0 14px; font-size:13px; line-height:1.7; color:var(--covo-text-muted); }
-/* Navy uses the channel header surface above the server list as well. */
-body.discord-ui-mode.dark-server-theme :is(#discordTitleBar,#serverHeader) { background:#111827 !important; }
+/* The server title uses the channel list surface; the rail stays darker. */
+body.dark-server-theme { --covo-navy-rail: #0b0f19; }
+body.discord-ui-mode.dark-server-theme #discordServerNav { background:var(--covo-navy-rail) !important; }
+body.discord-ui-mode.dark-server-theme #discordTitleBar,
+body.dark-server-theme #appContainer #serverHeader { background:#111827 !important; }
 body.dark-server-theme #discordTitleBar .header-notif-badge { border-color:#111827 !important; }
 html.covo-ios-standalone body.discord-ui-mode.dark-server-theme :is(#discordTitleBar,#serverHeader) { background-color:#111827 !important; }
 html.covo-ios-standalone body.discord-ui-mode.dark-server-theme #discordTitleBar { background-image:linear-gradient(to bottom,var(--covo-shell-background,#0b0f19) 0px,var(--covo-shell-background,#0b0f19) var(--safe-top),transparent var(--safe-top)) !important; }
